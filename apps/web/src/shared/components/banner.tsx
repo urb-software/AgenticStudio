@@ -6,7 +6,6 @@ type BannerTone = 'info' | 'warning' | 'danger' | 'success';
 
 type BannerProps = {
   tone?: BannerTone;
-  /** Bold summary that leads the message (for server errors: the problem+json title). */
   title?: string;
   icon?: LucideIcon;
   action?: React.ReactNode;

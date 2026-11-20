@@ -16,11 +16,8 @@ function textOf({ running, waiting }: RunsSummaryOutput): string {
 }
 
 /**
- * The top bar's global run indicator (design-system Layout): shown while any Run is under way
- * or waiting for the operator, linking to the Executions page. A waiting Run makes it amber, the
- * operator's colour. On phones it shrinks to the total, with the full text for screen readers.
- * It reads the Runs summary (two counts; Issue #115), polled only while a Run is active or
- * waiting.
+ * A waiting Run makes it amber, the operator's colour. On phones it shrinks to the total, with
+ * the full text for screen readers.
  */
 export function RunIndicator() {
   const { data } = useRunsSummary();

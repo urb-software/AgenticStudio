@@ -1,11 +1,9 @@
 import type { ReviewCommentOutput } from '../../../platform/api';
 
 /**
- * The prepared Follow-up text for selected Review comments (Issue #146), built in the browser
- * from what the operator selected: an introduction, then per comment its kind, author and
- * location and its text, each in a fence the text cannot end. The comments are untrusted (anyone
- * can write one on a public pull request): the introduction says to treat them as data, and the
- * operator reads and edits the whole text before anything is sent.
+ * The comments are untrusted (anyone can write one on a public pull request): the text says to
+ * treat them as data, each in a fence its own text cannot end, and the operator edits it all
+ * before anything is sent.
  */
 
 export const REVIEW_COMMENTS_INTRODUCTION =

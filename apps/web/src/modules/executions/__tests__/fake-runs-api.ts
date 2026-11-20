@@ -126,10 +126,10 @@ export function aRun(overrides: Partial<RunOutput> = {}): RunOutput {
     createdAt,
     environmentFileSupplied: false,
     limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
-    // Issue #141: no Run step and no Follow-up yet.
+    // No Run step and no Follow-up yet.
     steps: { used: 0, usedInPart: 0 },
     followUps: 0,
-    // Issue #103: the conversation starts with the Task.
+    // The conversation starts with the Task.
     messages: [{ role: 'operator', kind: 'task', text: task, at: createdAt }],
     ...overrides,
   };
@@ -138,14 +138,6 @@ export function aRun(overrides: Partial<RunOutput> = {}): RunOutput {
 /** A second project, which the fake does not list (its name is unknown to the UI). */
 export const OTHER_PROJECT_ID = '00000000-0000-4000-8000-0000000000b2';
 
-/**
- * A fake of the executions operator API behind `fetch` (`GET|POST /api/projects/:id/runs`,
- * `GET /api/runs`, `GET /api/runs/summary`, `GET /api/runs/:runId`, `GET /api/providers`, and
- * `GET /api/projects(/:id)` for project names), so the generated client, the wrapper and
- * TanStack Query run for real. `runs` is the server's state, newest first; tests change a Run's
- * state (as the agent worker would) and script error responses. It keeps the contract (201 with the
- * new Run's id, 202 without a body) without the API's rules.
- */
 export function fakeRunsApi(initial: RunOutput[] = []) {
   const runs = [...initial];
   const scripted: Record<Route, ScriptedResponse[]> = {
@@ -177,17 +169,17 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     diffFile: [],
   };
   const calls: { route: Route; body?: unknown; query?: URLSearchParams }[] = [];
-  /** What `GET /api/agent-worker` answers (Issue #143): no worker connected by default. */
+  /** What `GET /api/agent-worker` answers: no worker connected by default. */
   let agentWorker: AgentWorkerOutput = { connected: false };
   /** Each Run's stored log and step results, as the API would hold them. */
   const logs = new Map<string, RunEventOutput[]>();
   const stepResults = new Map<string, RunStepOutput[]>();
   const streams: FakeStream[] = [];
-  /** Each Run's prepared Follow-up of its failing checks (Issue #145). */
+  /** Each Run's prepared Follow-up of its failing checks. */
   const prepared = new Map<string, PreparedFollowUpOutput>();
-  /** Each Run's loaded Review comments (Issue #146); a load only marks the set as loading. */
+  /** Each Run's loaded Review comments; a load only marks the set as loading. */
   const reviewComments = new Map<string, ReviewCommentsOutput>();
-  /** Each Run's stored diffs by scope (Issue #144). */
+  /** Each Run's stored diffs by scope. */
   const diffs = new Map<string, Partial<Record<RunDiffOutput['scope'], FakeDiff>>>();
 
   function openStream(runId: string, after: number, signal: AbortSignal): Response {
@@ -272,7 +264,7 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
       case 'runs':
         return json(200, [...runs]);
       case 'summary':
-        // The API's counts (Issue #115): queued, preparing and running are under way.
+        // The API's counts: queued, preparing and running are under way.
         return json(200, {
           running: runs.filter((run) => ['queued', 'preparing', 'running'].includes(run.state))
             .length,
@@ -287,7 +279,7 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
         return run ? json(200, run) : json(404, problem(404, 'Run not found'));
       }
       case 'cancel': {
-        // Issue #100: the API's rules, in short.
+        // The API's rules, in short.
         const index = runs.findIndex((candidate) => candidate.id === id);
         const run = runs[index];
         if (!run) return json(404, problem(404, 'Run not found'));
@@ -316,7 +308,7 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
         });
       }
       case 'answer': {
-        // Issue #103: the API's rules, in short.
+        // The API's rules, in short.
         const index = runs.findIndex((candidate) => candidate.id === id);
         const run = runs[index];
         if (!run) return json(404, problem(404, 'Run not found'));
@@ -341,7 +333,7 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
         return new Response(null, { status: 202 });
       }
       case 'followUp': {
-        // Issue #141: the API's rules, in short.
+        // The API's rules, in short.
         const index = runs.findIndex((candidate) => candidate.id === id);
         const run = runs[index];
         if (!run) return json(404, problem(404, 'Run not found'));
@@ -392,7 +384,7 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
         return new Response(null, { status: 202 });
       }
       case 'bringUp': {
-        // Issue #147: a Follow-up of its own source; the note is optional.
+        // A Follow-up of its own source; the note is optional.
         const index = runs.findIndex((candidate) => candidate.id === id);
         const run = runs[index];
         if (!run) return json(404, problem(404, 'Run not found'));
@@ -428,8 +420,8 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
         return new Response(null, { status: 202 });
       }
       case 'refresh': {
-        // Issue #142: the API only records a request; the Run comes back as it is. Tests move
-        // the pull request on with `update`, as the agent worker's answer would.
+        // The API only records a request; the Run comes back as it is. Tests move the pull
+        // request on with `update`, as the agent worker's answer would.
         const run = runs.find((candidate) => candidate.id === id);
         if (!run) return json(404, problem(404, 'Run not found'));
         if (!run.pullRequest) {
@@ -438,16 +430,16 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
         return json(202, run);
       }
       case 'prepare': {
-        // Issue #145: the API only records a request; the Run comes back as it is. Tests move it
-        // on with `update` and `setPrepared`, as the agent worker's answer would.
+        // The API only records a request; the Run comes back as it is. Tests move it on with
+        // `update` and `setPrepared`, as the agent worker's answer would.
         const run = runs.find((candidate) => candidate.id === id);
         if (!run) return json(404, problem(404, 'Run not found'));
         if (!run.pullRequest) return json(409, problem(409, 'No pull request to read'));
         return json(202, run);
       }
       case 'loadComments': {
-        // Issue #146: the API only records a request; the set comes back marked as loading. Tests
-        // move it on with `setReviewComments`, as the agent worker's answer would.
+        // The API only records a request; the set comes back marked as loading. Tests move it on
+        // with `setReviewComments`, as the agent worker's answer would.
         const run = runs.find((candidate) => candidate.id === id);
         if (!run) return json(404, problem(404, 'Run not found'));
         if (!run.pullRequest) return json(409, problem(409, 'No pull request to read'));
@@ -484,7 +476,7 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
         return new Response(null, { status: 202 });
       }
       case 'resume': {
-        // Issue #105: back to the queue, "Continue where you stopped." as the operator's answer.
+        // Back to the queue, "Continue where you stopped." as the operator's answer.
         const index = runs.findIndex((candidate) => candidate.id === id);
         if (index === -1) return json(404, problem(404, 'Run not found'));
         const { failure, finishedAt, resumable, ...rest } = runs[index]!;
@@ -572,15 +564,15 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     setSteps(runId: string, steps: RunStepOutput[]) {
       stepResults.set(runId, steps);
     },
-    /** Sets a Run's stored diff of a scope (Issue #144). */
+    /** Sets a Run's stored diff of a scope. */
     setDiff(runId: string, scope: RunDiffOutput['scope'], diff: FakeDiff) {
       diffs.set(runId, { ...diffs.get(runId), [scope]: diff });
     },
-    /** Sets a Run's prepared Follow-up of its failing checks (Issue #145). */
+    /** Sets a Run's prepared Follow-up of its failing checks. */
     setPrepared(runId: string, draft: PreparedFollowUpOutput) {
       prepared.set(runId, draft);
     },
-    /** Sets a Run's loaded Review comments, as the server would answer them (Issue #146). */
+    /** Sets a Run's loaded Review comments, as the server would answer them. */
     setReviewComments(runId: string, set: ReviewCommentsOutput) {
       reviewComments.set(runId, set);
     },
@@ -588,7 +580,7 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     reviewComments: (runId: string) => reviewComments.get(runId),
     /** Whether the Run still has a prepared Follow-up on the server. */
     hasPrepared: (runId: string) => prepared.has(runId),
-    /** Sets what the agent worker's status answers (Issue #143). */
+    /** Sets what the agent worker's status answers. */
     setAgentWorker(status: AgentWorkerOutput) {
       agentWorker = status;
     },

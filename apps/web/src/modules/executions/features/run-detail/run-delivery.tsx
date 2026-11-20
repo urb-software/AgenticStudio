@@ -54,9 +54,7 @@ const REPORTED_RESULT: Record<'passed' | 'failed' | 'not_run', string> = {
 };
 
 /**
- * Reported checks (Issues #102, #145): the agent's own account of what it ran in its latest Run
- * step. The checks it reported failed are said plainly in a warning; when none failed but it
- * reported checks, a quiet heading with how they went. Either way it names the commit it refers to
+ * The agent's own account, kept apart from GitHub's results: it names the commit it refers to
  * and says GitHub's results are separate.
  */
 function FailingChecks({ run }: { run: RunOutput }) {
@@ -119,9 +117,9 @@ function FailingChecks({ run }: { run: RunOutput }) {
 }
 
 /**
- * The reminder on the first delivery to a Repository (Issue #102): branch protection is what
- * keeps the Agent account away from the integration branch. Shown while no earlier Run of the
- * project was delivered.
+ * The reminder on the first delivery to a Repository: branch protection is what keeps the Agent
+ * account away from the integration branch. Shown while no earlier Run of the project was
+ * delivered.
  */
 function FirstDeliveryReminder({ run }: { run: RunOutput }) {
   const { data } = useProjectRuns(run.projectId);
@@ -177,14 +175,14 @@ function RetryDelivery({ run }: { run: RunOutput }) {
 }
 
 /**
- * How the Run's result reached GitHub (Issue #102): the draft pull request, "No changes", a
- * failed delivery with "Retry delivery", failing checks, the first-delivery reminder, and where
- * the Run branch is when nothing was pushed.
+ * How the Run's result reached GitHub: the draft pull request, "No changes", a failed delivery
+ * with "Retry delivery", failing checks, the first-delivery reminder, and where the Run branch
+ * is when nothing was pushed.
  */
 export function RunDelivery({ run }: { run: RunOutput }) {
   const deliveryFailed = run.failure?.code === 'delivery_failed';
-  // Issue #141: the Run's one pull request, kept from an earlier delivery while a Follow-up
-  // works on the Run, or after a Follow-up that ended without delivering.
+  // The Run's one pull request, kept from an earlier delivery while a Follow-up works on the
+  // Run, or after a Follow-up that ended without delivering.
   const keptPullRequest = run.delivery !== 'delivered' ? run.pullRequest : undefined;
   return (
     <>
@@ -250,10 +248,8 @@ export function RunDelivery({ run }: { run: RunOutput }) {
 const shortId = (id: string) => id.slice(0, 7);
 
 /**
- * The Run branch's commits (Issue #141), oldest first: each says whether it is on the remote
- * Run branch (pushed) or exists only in the working copy on the agent worker, or that this is
- * unknown (review S5 of #150: the pushed commit is not among the listed ones). Plain text: the
- * subjects are the agent's.
+ * Whether each commit is on the remote Run branch (pushed), only in the working copy on the
+ * agent worker, or unknown. Plain text: the subjects are the agent's.
  */
 export function RunCommits({ run }: { run: RunOutput }) {
   const commits = run.commits ?? [];

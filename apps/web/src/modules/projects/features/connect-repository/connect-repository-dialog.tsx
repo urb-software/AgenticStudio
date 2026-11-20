@@ -23,7 +23,7 @@ import {
 } from '../../../../platform/api';
 import { useConnectRepository } from '../../api/projects-queries';
 
-/** The Integration branch a new connection is prefilled with (Epic #55). */
+/** The Integration branch a new connection is prefilled with. */
 const DEFAULT_INTEGRATION_BRANCH = 'dev';
 
 type Field = keyof ConnectRepositoryRequest;
@@ -73,13 +73,6 @@ type ConnectRepositoryDialogProps = {
   initialValues?: ConnectRepositoryRequest;
 };
 
-/**
- * The Connect repository dialog (a bottom sheet on phones): "Repository URL" and
- * "Integration branch" (prefilled `dev`). The generated schema gives quick hints; the API is
- * authoritative, and its field errors land on the fields. Any other failure (another
- * repository already connected, an unsupported platform) shows as a banner with the
- * problem's title and detail. On success it closes; the card then shows the clone's progress.
- */
 export function ConnectRepositoryDialog({
   projectId,
   open,

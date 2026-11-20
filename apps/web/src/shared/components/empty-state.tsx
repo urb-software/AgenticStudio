@@ -3,15 +3,12 @@ import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 
 type EmptyStateProps = {
-  /** Empty: what to do ("Create your first project"). Error: what failed. */
   title: string;
   description?: React.ReactNode;
   icon?: LucideIcon;
-  /** Replaces the icon tile. */
   illustration?: React.ReactNode;
   /** One primary action (empty), "Clear filters" (filtered) or Retry (error). */
   action?: React.ReactNode;
-  /** `error`: the list failed to load; announced as an alert. */
   tone?: 'neutral' | 'error';
   className?: string;
 };

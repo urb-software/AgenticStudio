@@ -1,10 +1,10 @@
-/** A pull request's page on github.com, exactly as the worker protocol accepts it (Issue #115). */
+/** A pull request's page on github.com, exactly as the worker protocol accepts it. */
 const GITHUB_PULL_REQUEST = /^https:\/\/github\.com\/[^/?#@:]+\/[^/?#@:]+\/pull\/[1-9]\d*$/;
 
 /**
  * Whether `url` is a pull request page on github.com over https, without credentials, port,
- * query or fragment (Issue #115). The worker protocol only accepts such URLs; this keeps any
- * other host from ever becoming a link on the Run page (also its Changes tab, Issue #144).
+ * query or fragment. The worker protocol only accepts such URLs; this keeps any other host from
+ * ever becoming a link on the Run page.
  */
 export function isGitHubPullRequestUrl(url: string): boolean {
   if (!GITHUB_PULL_REQUEST.test(url)) return false;
@@ -22,15 +22,15 @@ export function isGitHubPullRequestUrl(url: string): boolean {
   }
 }
 
-/** The pull request's "Files changed" page, or `null` when it is not on github.com (Issue #144). */
+/** The pull request's "Files changed" page, or `null` when it is not on github.com. */
 export function pullRequestFilesUrl(pullRequestUrl: string): string | null {
   return isGitHubPullRequestUrl(pullRequestUrl) ? `${pullRequestUrl}/files` : null;
 }
 
 /**
- * Whether `url` is a page on github.com over https, without credentials or port (Issue #145): the
- * only links a Pull request check gets. A check from another CI system may link anywhere; that
- * address is not made a link on the Run page.
+ * Whether `url` is a page on github.com over https, without credentials or port: the only links
+ * a Pull request check gets. A check from another CI system may link anywhere; that address is
+ * not made a link on the Run page.
  */
 export function isGitHubUrl(url: string): boolean {
   try {

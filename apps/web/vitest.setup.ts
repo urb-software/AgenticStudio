@@ -45,10 +45,8 @@ if (typeof window !== 'undefined') {
   };
 }
 
-// Accessibility assertion for component tests (frontend.md §8): `await
-// expect(element).toHaveNoAxeViolations()`. jsdom cannot compute colours or layout, so
-// colour-contrast is left to the design-system tokens and review; `region` is a page-level
-// rule (all content inside landmarks) that does not apply to a component rendered alone.
+// jsdom cannot compute colours or layout, so colour-contrast is left to the design-system tokens
+// and review; `region` is a page-level rule that does not apply to a component rendered alone.
 expect.extend({
   async toHaveNoAxeViolations(received: Element) {
     const { violations } = await axe.run(received, {

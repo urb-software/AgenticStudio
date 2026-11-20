@@ -7,7 +7,7 @@ import { DisconnectRepositoryDialog } from '../features/disconnect-repository/di
 import { fakeProjectApi } from './fake-project-api';
 
 // The Disconnect repository dialog on its own, with the generated client, the API wrapper and
-// TanStack Query real and the API faked at `fetch`: how often it asks its owner to close (#72).
+// TanStack Query real and the API faked at `fetch`: how often it asks its owner to close.
 
 const PROJECT: ProjectOutput = {
   id: '00000000-0000-4000-8000-0000000000b2',

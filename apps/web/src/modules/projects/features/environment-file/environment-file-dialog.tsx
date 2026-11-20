@@ -18,7 +18,7 @@ import {
 import { ApiError } from '../../../../platform/api';
 import { useSetEnvironmentFile } from '../../api/projects-queries';
 
-/** The path a new Environment file is prefilled with (Issue #104). */
+/** The path a new Environment file is prefilled with. */
 export const DEFAULT_ENVIRONMENT_FILE_PATH = '.env';
 
 /** Largest content, in UTF-8 bytes (the API's limit, 64 KiB). */
@@ -49,12 +49,8 @@ type EnvironmentFileDialogProps = {
 };
 
 /**
- * The "Set environment file" dialog (Issue #104; a bottom sheet on phones): the path inside
- * the repository and the content, with the warning before saving that it must hold test
- * values only, because the agent can read the file and could print or send it. The content is
- * sent once and never shown again: replacing means pasting it anew. The API checks the path
- * (relative, inside the repository, not in `.git`, not tracked) and the size; its field errors
- * land on the fields.
+ * The warning before saving: the content must be test values only, because the agent can read
+ * the file and could print or send it. The content is sent once and never shown again.
  */
 export function EnvironmentFileDialog({
   projectId,

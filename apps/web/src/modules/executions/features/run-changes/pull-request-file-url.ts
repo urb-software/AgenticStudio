@@ -14,8 +14,8 @@ async function fileAnchor(path: string): Promise<string | null> {
 }
 
 /**
- * The link to a file in the Run's pull request on GitHub (Issue #144): the "Files changed" page,
- * at the file once its anchor is computed. `null` when the pull request is not on github.com.
+ * The link to a file in the Run's pull request on GitHub: the "Files changed" page, at the file
+ * once its anchor is computed. `null` when the pull request is not on github.com.
  */
 export function usePullRequestFileUrl(pullRequestUrl: string, path: string): string | null {
   const page = pullRequestFilesUrl(pullRequestUrl);

@@ -55,9 +55,9 @@ const DELIVERY_WORDS: Record<
 };
 
 /**
- * Where a part of the Run ended before a Follow-up reopened it (review S1 of #150): its state,
- * why (the failure or cancellation, as plain text) and its delivery. `part` is 0 for the first
- * part, n for Follow-up n.
+ * Where a part of the Run ended before a Follow-up reopened it: its state, why (the failure or
+ * cancellation, as plain text) and its delivery. `part` is 0 for the first part, n for Follow-up
+ * n.
  */
 function PartEnd({ message, part }: { message: RunMessageOutput; part: number }) {
   const end = message.end;
@@ -93,7 +93,7 @@ function Options({
 }) {
   return (
     <ul className="m-0 mt-2 flex list-none flex-col gap-1 p-0" aria-label="Options offered">
-      {/* Keyed by position: the agent may offer the same text twice (Issue #115). */}
+      {/* Keyed by position: the agent may offer the same text twice. */}
       {options.map((option, index) => (
         <li
           key={`${index}-${option}`}
@@ -126,7 +126,7 @@ function Message({
   };
   /** Who and what kind, e.g. "You · Follow-up 2"; by default from the message's role and kind. */
   label?: string;
-  /** What goes under the text, e.g. the commit a bring-up-to-date request merged (Issue #147). */
+  /** What goes under the text, e.g. the commit a bring-up-to-date request merged. */
   children?: ReactNode;
 }) {
   label ??= `${ROLE_LABEL[message.role]} · ${KIND_LABEL[message.kind ?? 'answer']}`;
@@ -159,7 +159,7 @@ function Message({
 
 /**
  * Between two turns: the Run step that ran, whose log is in the Log card below. The link shows
- * that step in the log (Issue #115); without it loaded, it goes to the Log card.
+ * that step in the log; without it loaded, it goes to the Log card.
  */
 function StepDivider({
   index,
@@ -185,7 +185,7 @@ function StepDivider({
   );
 }
 
-/** Where a Follow-up begins a new part of the Run (Issue #141); the part before it has ended. */
+/** Where a Follow-up begins a new part of the Run; the part before it has ended. */
 function FollowUpDivider({ number }: { number: number }) {
   return (
     <li className="flex items-center gap-2 pt-1 text-caption font-semibold text-text-muted">
@@ -197,13 +197,9 @@ function FollowUpDivider({ number }: { number: number }) {
 }
 
 /**
- * The Run's conversation (Issue #103): the Task, each question of the agent and each answer of
- * the operator, in order, with the Run step that ran between them (its log is in the Log card).
- * Issue #141: each Follow-up begins a new part, marked by a divider, and each part's result
- * (the summary of a step that ended `done`) stays visible as the agent's turn where it ended.
- * The step numbers come from the stored step results: the k-th question ends the k-th step
- * that asked; results are placed by the time they were reported. Until those are loaded, a
- * question's step is counted from the questions before it.
+ * The step numbers come from the stored step results: the k-th question ends the k-th step that
+ * asked; results are placed by the time they were reported. Until those are loaded, a question's
+ * step is counted from the questions before it.
  */
 export function RunConversation({
   runId,
@@ -256,14 +252,14 @@ export function RunConversation({
     if (message.kind === 'follow_up') {
       followUps += 1;
       items.push(<FollowUpDivider key={`follow-up-${followUps}`} number={followUps} />);
-      // Issue #147: a request to bring the Run branch up to date is a Follow-up of its own source.
+      // A request to bring the Run branch up to date is a Follow-up of its own source.
       const bringUp = message.source === 'bring_up_to_date';
       items.push(
         <Message
           key={`${i}-${message.kind}`}
           message={message}
           label={`You · Follow-up ${followUps}${
-            // Issue #145: where a prepared Follow-up came from; Issue #147: a bring-up request.
+            // Where a prepared Follow-up came from; a bring-up request.
             bringUp
               ? ' · Bring up to date'
               : message.source === 'pull_request_checks'
@@ -317,17 +313,15 @@ function answerError(error: unknown): string | undefined {
 }
 
 /**
- * The agent's open question and the answer form (Issue #103), in the operator's colour (amber
- * means "you"): the question as plain text, the options as buttons (the recommended one marked)
- * that fill the answer, and a free-text answer. Sending stores the answer and queues the Run to
- * resume; while it is sent, and once the Run no longer waits, the form takes no input.
+ * The operator's colour (amber means "you"); while the answer is sent, and once the Run no
+ * longer waits, the form takes no input.
  */
 export function AnswerQuestion({ run, question }: { run: RunOutput; question: RunQuestionOutput }) {
   const [text, setText] = useState('');
   const [localError, setLocalError] = useState<string | undefined>();
   const answer = useAnswerRun(run.id);
-  // Another Run's page reuses this form (review Std-2 of #128): nothing typed or refused for one
-  // Run carries over to the next. The reset happens during render, before anything is shown.
+  // Another Run's page reuses this form: nothing typed or refused for one Run carries over to
+  // the next. The reset happens during render, before anything is shown.
   const [formRun, setFormRun] = useState(run.id);
   if (formRun !== run.id) {
     setFormRun(run.id);

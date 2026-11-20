@@ -6,10 +6,8 @@ import * as React from 'react';
 import { cn } from '@/shared/lib/utils';
 
 /**
- * Tones of a log row (design-system/components/LogViewer): `system` for Studio's own words,
- * `command` for `$` lines, `edit` for file writes, `ok`/`error`/`warn`, `tool` for tool
- * output, `dim` for asides, `plain` (the spec's default) for everything else. `section` marks
- * a lifecycle step's header: it starts a collapsible section of the rows below it.
+ * `section` marks a lifecycle step's header: it starts a collapsible section of the rows below
+ * it.
  */
 export type LogTone =
   'plain' | 'system' | 'command' | 'edit' | 'tool' | 'ok' | 'error' | 'warn' | 'dim' | 'section';
@@ -57,7 +55,7 @@ interface Visible {
 /**
  * The rows in view: every row keeps its line number; rows of a collapsed section are left out.
  * When `rows` only grew since `previous` (a live batch appended to the same rows) and nothing
- * was collapsed or expanded, only the new rows are walked (Issue #115); otherwise all are.
+ * was collapsed or expanded, only the new rows are walked; otherwise all are.
  */
 function visibleRows(
   previous: Visible | undefined,
@@ -112,19 +110,14 @@ export interface LogViewerHandle {
 type LogViewerProps = {
   ref?: React.Ref<LogViewerHandle>;
   /**
-   * The rows, in order. To append, pass a new array that starts with the same row objects:
-   * only the new rows are then laid out (Issue #115); anything else is laid out afresh.
+   * The rows, in order. To append, pass a new array that starts with the same row objects: only
+   * the new rows are then laid out; anything else is laid out afresh.
    */
   rows: readonly LogRow[];
-  /** Names the log for assistive technology (`role="log"`). */
   label: string;
-  /** Shown in the toolbar while new rows arrive live. */
   streaming?: boolean;
-  /** The live stream dropped; rows stay and resume where they stopped. */
   reconnecting?: boolean;
-  /** Shown when there are no rows (e.g. "Waiting for the agent…"). */
   emptyText?: string;
-  /** Extra toolbar content on the right (e.g. a loading note). */
   toolbarEnd?: React.ReactNode;
   /**
    * Said politely to assistive technology when it changes (e.g. "The log is streaming live.",
@@ -135,13 +128,9 @@ type LogViewerProps = {
 };
 
 /**
- * Live CLI output (design-system/components/LogViewer): mono, fixed 20px rows with line
- * numbers, windowed so long logs do not freeze the page, long lines scrolling inside the
- * viewer. Each `section` row is a button that collapses the rows up to the next section. It
- * follows the newest row while the operator is at the end; scrolling up pauses following and
- * shows "Jump to latest", which resumes it. `reconnecting` shows the amber stream-dropped bar
- * without clearing rows. The log is not a live region (`aria-live="off"`): windowing mounts
- * old rows while scrolling, which a screen reader would announce as new.
+ * The log is not a live region (`aria-live="off"`): windowing mounts old rows while scrolling,
+ * which a screen reader would announce as new.
+ * Scrolling up pauses following; "Jump to latest" resumes it.
  */
 function LogViewer({
   ref,
@@ -214,7 +203,7 @@ function LogViewer({
         const element = scrollRef.current;
         const index = visible.findIndex((item) => item.row.key === key);
         if (!element || index === -1) return false;
-        // Fixed row heights: the row's offset is its index in view (Issue #115).
+        // Fixed row heights: the row's offset is its index in view.
         setFollow(false);
         element.scrollTop = index * LOG_ROW_HEIGHT;
         element.focus();

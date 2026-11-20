@@ -25,7 +25,7 @@ const repositoryKey = (projectId: string) => ['projects', projectId, 'repository
 
 /**
  * How often a connecting, fetching or disconnecting Repository is polled while the tab is
- * visible (#60 clarification 8, #61 clarification 7, #63 clarification 8).
+ * visible.
  */
 export const REPOSITORY_POLL_MS = 2_000;
 
@@ -52,11 +52,9 @@ export function useProject(projectId: string) {
 const BUSY_STATES: readonly string[] = ['connecting', 'fetching', 'disconnecting'];
 
 /**
- * The project's Repository, from the server only (frontend.md §4). While it is `connecting`,
- * `fetching` or `disconnecting`, it is refetched every {@link REPOSITORY_POLL_MS} as long as
- * the tab is visible (TanStack Query pauses intervals in a hidden tab and refetches on focus);
- * it stops once the state is `ready`, `failed` or anything else, and on the 404 that says a
- * Repository is gone (a disconnect finished). Other errors keep the polling going.
+ * Refetched while `connecting`, `fetching` or `disconnecting` and the tab is visible; it stops
+ * on any other state and on the 404 that says the Repository is gone. Other errors keep the
+ * polling going.
  */
 export function useRepository(projectId: string, enabled: boolean) {
   return useQuery({
@@ -88,11 +86,9 @@ export function useConnectRepository(projectId: string) {
 }
 
 /**
- * Fetches the Repository. The 202 answer is the Repository in `fetching`; it seeds the polled
- * query (so polling starts), and the project detail is refetched for its summary. A read of
- * the Repository still in flight (e.g. a refetch on focus) is cancelled first: its older
- * `ready` answer would otherwise replace `fetching`, stop the polling and look like a fetch
- * that ended ("Already up to date"). A 409 refetches the Repository.
+ * A read of the Repository still in flight (e.g. a refetch on focus) is cancelled first: its
+ * older `ready` answer would otherwise replace `fetching`, stop the polling and look like a
+ * fetch that ended ("Already up to date").
  */
 export function useFetchRepository(projectId: string) {
   const queryClient = useQueryClient();
@@ -116,12 +112,7 @@ export function useFetchRepository(projectId: string) {
   });
 }
 
-/**
- * "Verify and clone" of an SSH Repository (also its Retry), or the confirmation of a host key
- * (`acceptHostKeyFingerprint`). The 202 answer (`connecting`, `awaiting_host_key` or `failed`)
- * seeds the polled query, so a `connecting` answer starts the polling. A 409 reads the
- * Repository again (the server is ahead of the card).
- */
+/** A 409 reads the Repository again (the server is ahead of the card). */
 export function useVerifyRepository(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -160,12 +151,9 @@ export function useForgetRepository(projectId: string) {
 }
 
 /**
- * Disconnects the Repository. A 204 (`null`: nothing is left) forgets it; a 202 answer is the
- * Repository in `disconnecting`, which seeds the polled query (polling continues until the
- * server's cleanup is done and the Repository is gone). A read still in flight is cancelled
- * first, so an older answer cannot replace the new state. `onDisconnected` runs after a 204,
- * as part of the mutation, so it runs even when the caller has unmounted meanwhile (the card's
- * empty state replaces the dialog's owner).
+ * A read still in flight is cancelled first, so an older answer cannot replace the new state.
+ * `onDisconnected` runs inside the mutation after a 204, so it runs even when the caller has
+ * unmounted.
  */
 export function useDisconnectRepository(projectId: string, onDisconnected: () => void) {
   const queryClient = useQueryClient();
@@ -194,7 +182,7 @@ export function useRefreshProject(projectId: string) {
   return () => queryClient.invalidateQueries({ queryKey: projectKey(projectId), exact: true });
 }
 
-/** One project's Environment file setting (Issue #104). */
+/** One project's Environment file setting. */
 const environmentFileKey = (projectId: string) =>
   ['projects', projectId, 'environment-file'] as const;
 
@@ -210,10 +198,9 @@ export function useEnvironmentFile(projectId: string) {
 }
 
 /**
- * Sets or replaces the Environment file; the answer (never the content) seeds the query. The
- * request (with the content) is a mutation variable, so the mutation is dropped from the
- * mutation cache as soon as nothing observes it (`gcTime: 0`; the dialog resets it when it
- * closes): the content is not kept in the browser after the save (review of #126).
+ * The request holds the content, so the mutation is dropped from the mutation cache as soon as
+ * nothing observes it (`gcTime: 0`; the dialog resets it when it closes): the content is not
+ * kept in the browser after the save.
  */
 export function useSetEnvironmentFile(projectId: string) {
   const queryClient = useQueryClient();

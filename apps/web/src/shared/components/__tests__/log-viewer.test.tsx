@@ -2,8 +2,8 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LOG_ROW_HEIGHT, LogViewer, type LogRow } from '../log-viewer';
 
-// Issue #99: the LogViewer of the design system. jsdom lays nothing out, so the viewer's
-// height is stubbed (400px: 20 rows) and scroll positions are set by hand.
+// jsdom lays nothing out, so the viewer's height is stubbed (400px: 20 rows) and scroll
+// positions are set by hand.
 const VIEWPORT = 400;
 
 const rows = (count: number, from = 0): LogRow[] =>

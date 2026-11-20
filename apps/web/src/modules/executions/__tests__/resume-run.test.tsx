@@ -5,9 +5,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { RunDetail } from '..';
 import { aRun, fakeRunsApi, problem } from './fake-runs-api';
 
-// Issue #105 on the Run page seam: resuming a Run stopped at the usage limit, with the generated
-// client, the API wrapper and TanStack Query real, and the API faked at `fetch`.
-
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 const USAGE_LIMIT = {
@@ -48,7 +45,7 @@ describe('Run page: resume after the usage limit (Issue #105)', () => {
 
     expect(await screen.findByText('Answer sent.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Resume run' })).toBeNull();
-    // The resume is the operator's message in the conversation (Issue #103's thread).
+    // The resume is the operator's message in the conversation.
     expect(await screen.findByText('Continue where you stopped.')).toBeTruthy();
     expect(api.calls('resume')).toHaveLength(1);
   });

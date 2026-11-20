@@ -24,12 +24,9 @@ export interface RunLog {
 }
 
 /**
- * A Run's log (Issue #99): the stored log first, page by page (each page shows as it arrives),
- * then, for a Run that was active when the page opened, the live stream from the last seq.
- * On a dropped stream it reconnects after the last seq it has, so the store fills the gap and
- * nothing repeats; events at or below that seq are ignored anyway. Live events are pushed onto
- * one array and published in batches, so a busy Run does not re-render per event.
- * `onResultsMayChange` fires when a step finishes and when the stream ends.
+ * Live events are pushed onto one array and published in batches, so a busy Run does not
+ * re-render per event. On a dropped stream it reconnects after the last seq it has, so the store
+ * fills the gap and nothing repeats.
  */
 export function useRunLog(
   runId: string,

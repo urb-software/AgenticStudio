@@ -7,15 +7,12 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/ui/tooltip';
 type NavItemOwnProps = {
   icon: LucideIcon;
   label: string;
-  /** The current page: brand-soft fill, brand icon, aria-current="page". */
   active?: boolean;
-  /** Amber count of items waiting on the operator; part of the accessible name. */
   badge?: number | string;
   /**
-   * `true`: the 64px icon rail; the label becomes the tooltip, and the label (with the badge
-   * count) the aria-label. `'tablet'`: the rail drawn by CSS alone at tablet width (768–1279px),
-   * for a server render that cannot know the width yet; the label and badge stay in the DOM,
-   * visually hidden, so they remain the accessible name. No tooltip until JS decides.
+   * `'tablet'`: the rail drawn by CSS alone at tablet width, for a server render that cannot
+   * know the width yet; the label and badge stay in the DOM, visually hidden, so they remain the
+   * accessible name.
    */
   collapsed?: boolean | 'tablet';
   className?: string;

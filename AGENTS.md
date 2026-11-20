@@ -31,7 +31,7 @@
 - **A comment is never for:** what the name and types already say; history (what changed, moved or was removed); an Issue or pull request number (`#<digits>` or a link); the definition of a glossary term; restating an architecture rule.
 - **Form:** at most three lines; anything longer belongs in a document, with a one-line pointer. A class or file header is one sentence or absent. Tests rely on the test name and follow the same rule.
 - **Exception:** a longer comment carries the tag `@long-comment <reason>` with a non-empty reason.
-- Existing code is brought in line by the clean-up tickets of Epic #160; the web app follows later. Do not add comments that break the rule to match a neighbour.
+- The whole repository follows this rule, and the comment checks enforce it. Do not add comments that break the rule to match a neighbour.
 
 ## 3. Git & context isolation
 

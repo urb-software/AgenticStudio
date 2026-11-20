@@ -55,12 +55,6 @@ function DiskCard({ disk }: { disk: AgentWorkerDiskOutput }) {
   );
 }
 
-/**
- * The agent side's disk on the Executions page (Issue #143): what the Working copies and caches
- * take, how many Runs the worker keeps, and the free space, with a warning below the worker's
- * threshold. Nothing while no worker is connected or it has not measured yet; a failed read
- * shows nothing either (the Runs list is the page).
- */
 export function AgentWorkerDisk() {
   const worker = useAgentWorker();
   if (!worker.data?.connected || !worker.data.disk) return null;

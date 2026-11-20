@@ -8,8 +8,8 @@ import type { ProjectOutput } from '../../../platform/api';
 import { fakeProjectApi, fieldProblem } from './fake-project-api';
 import { problem } from './fake-projects-api';
 
-// Issue #104: the project's Environment file card, on the project screen, with the generated
-// client, the API wrapper and TanStack Query real and the API faked at `fetch`. Test values.
+// The project's Environment file card, on the project screen, with the generated client, the API
+// wrapper and TanStack Query real and the API faked at `fetch`. Test values.
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 

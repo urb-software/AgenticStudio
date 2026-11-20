@@ -27,7 +27,6 @@ const STATUS_CLASS: Record<PillStatus, string> = {
 
 type StatusPillProps = {
   status: PillStatus;
-  /** Overrides the label ("Connected", "Merged") without changing the colour logic. */
   children?: React.ReactNode;
   className?: string;
 };

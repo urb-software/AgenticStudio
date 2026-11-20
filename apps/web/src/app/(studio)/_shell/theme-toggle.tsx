@@ -7,8 +7,8 @@ import { useHydrated } from '@/shared/hooks/use-hydrated';
 import { DropdownMenuItem } from '@/shared/ui/dropdown-menu';
 
 /**
- * The stored theme is known only in the browser, so the server render and hydration assume the
- * default (dark) and the control shows the real theme right after.
+ * The stored theme is known only in the browser: the server render and hydration assume the
+ * default (dark), then the control shows the real theme.
  */
 function useThemeSwitch() {
   const { resolvedTheme, setTheme } = useTheme();
@@ -21,7 +21,6 @@ function useThemeSwitch() {
   };
 }
 
-/** Top-bar theme toggle (dark/light, persisted by next-themes); hidden on phones. */
 export function ThemeToggle() {
   const { label, icon, toggle } = useThemeSwitch();
   return (
@@ -29,7 +28,6 @@ export function ThemeToggle() {
   );
 }
 
-/** The theme toggle as an operator-menu item, shown on phones only (frontend.md §9). */
 export function ThemeMenuItem() {
   const { label, icon: Icon, toggle } = useThemeSwitch();
   return (

@@ -23,11 +23,8 @@ type CancelRunDialogProps = {
 };
 
 /**
- * The Cancel run confirm (Issue #100, design system: "Destructive = confirm"): a destructive
- * dialog (alertdialog; Radix traps focus; a bottom sheet on phones) that names the Run and says
- * what happens: the agent is stopped, nothing is pushed, the Working copy is kept. A queued or
- * waiting Run is cancelled at once; a running one shows "Cancel requested…" on the page until
- * the agent worker confirms. A refusal (the Run finished meanwhile) shows as a banner here.
+ * Destructive confirm: a queued or waiting Run is cancelled at once; a running one shows "Cancel
+ * requested…" on the page until the agent worker confirms.
  */
 export function CancelRunDialog({ run, open, onOpenChange }: CancelRunDialogProps) {
   const cancel = useCancelRun(run.id);

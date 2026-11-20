@@ -30,12 +30,6 @@ function Detail({ term, children }: { term: string; children: ReactNode }) {
   );
 }
 
-/**
- * The project's "Environment file" card (Issue #104; design system: Secrets): one file of test
- * settings Studio writes into each run's working copy. Without one, it offers to set it. With
- * one, it shows that a file is set, its path, size and last change, the content only masked
- * (write-only: the browser never receives it), and Replace / Remove (destructive confirm).
- */
 export function EnvironmentFileCard({ projectId }: { projectId: string }) {
   const { data, isPending, isError, isRefetching, refetch, dataUpdatedAt } =
     useEnvironmentFile(projectId);

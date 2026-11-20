@@ -84,7 +84,7 @@ export function LoginForm() {
         error={error?.kind === 'field' ? error.message : undefined}
       />
       {error?.kind === 'rate-limited' ? (
-        // Assertive, as the lockout message was before #44 (a warning is polite by default).
+        // Assertive (a warning is polite by default), as the lockout message always was.
         <Banner tone="warning" announce="assertive" icon={LockIcon} title={error.title}>
           {error.message}
         </Banner>

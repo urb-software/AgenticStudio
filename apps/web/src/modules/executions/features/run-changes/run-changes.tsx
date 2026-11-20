@@ -70,12 +70,6 @@ function Counts({ additions, deletions }: { additions: number; deletions: number
   );
 }
 
-/**
- * The Run page's Changes tab (Issue #144): what the Run changed, from its latest diffs. A switch
- * between the whole Run and the changes since the previous result; a summary (files changed,
- * lines added and removed), the commit the diff starts from and whether it includes changes
- * that are not pushed; then the files. Empty, not-yet, unavailable and error states say why.
- */
 export function RunChanges({ run }: { run: RunOutput }) {
   const [scope, setScope] = useState<Scope>('run');
   return (
@@ -200,7 +194,7 @@ function Summary({ diff, scope }: { diff: RunDiffOutput; scope: Scope }) {
             </code>
           </span>
         ) : null}
-        {/* Only a computed diff knows whether it is pushed (review S-3 of #149). */}
+        {/* Only a computed diff knows whether it is pushed. */}
         {diff.includesUnpushed !== undefined ? (
           <span className="inline-flex items-center gap-1.5">
             <CloudUploadIcon aria-hidden="true" className="size-3.5 flex-none" />

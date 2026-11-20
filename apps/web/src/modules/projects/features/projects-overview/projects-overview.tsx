@@ -6,11 +6,6 @@ import { Button } from '@/shared/ui/button';
 import { CreateProjectDialog } from '../create-project/create-project-dialog';
 import { ProjectList } from '../project-list/project-list';
 
-/**
- * The Projects screen (prototype "PROJECTS"): the page header with the primary New project
- * action, the project list and the New project dialog, which the header and the empty state
- * both open. On phones the action wraps under the title.
- */
 export function ProjectsOverview() {
   const [creating, setCreating] = useState(false);
   const openCreate = () => setCreating(true);

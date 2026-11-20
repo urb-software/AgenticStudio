@@ -5,10 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vite
 import { DropdownMenuItem } from '@/shared/ui/dropdown-menu';
 import { OperatorMenu } from '../operator-menu';
 
-// #43 UI seam: the operator menu with the generated client, the API wrapper and TanStack Query
-// real, the API faked at `fetch` and browser navigation faked at `window.location`. The logout
-// cases were carried over from the removed LogoutButton (#24).
-
 let assign: Mock<(url: string) => void>;
 let replace: Mock<(url: string) => void>;
 

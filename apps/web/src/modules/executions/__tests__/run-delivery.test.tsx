@@ -6,9 +6,6 @@ import { RunDetail } from '..';
 import { RunRows } from '../components/run-rows';
 import { aRun, fakeRunsApi, problem } from './fake-runs-api';
 
-// Issue #102 on the Run page seam: how a Run's result reached GitHub, with the generated client,
-// the API wrapper and TanStack Query real, and the API faked at `fetch`.
-
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 const BRANCH = 'agent/add-pagination-r0b8e5c2d';
@@ -48,7 +45,7 @@ describe('Run page: delivery (Issue #102)', () => {
     expect(link.getAttribute('href')).toBe(PULL_REQUEST.url);
     expect(link.getAttribute('target')).toBe('_blank');
     expect(link.getAttribute('rel')).toContain('noreferrer');
-    // Shown once (review Std-2 of #123): not again in Details.
+    // Shown once: not again in Details.
     expect(screen.getAllByRole('link', { name: /Pull request #7/ })).toHaveLength(1);
     const branch = screen.getAllByText(BRANCH);
     expect(branch.length).toBeGreaterThan(0);
@@ -126,7 +123,7 @@ describe('Run page: delivery (Issue #102)', () => {
     expect(banner?.textContent).toContain(
       'The agent reported these checks as failed: unit tests, lint. The pull request says so too.',
     );
-    // Issue #145: the agent's own account, kept apart from GitHub's results.
+    // The agent's own account, kept apart from GitHub's results.
     expect(banner?.textContent).toContain('This is the agent’s own account of its latest run step');
     expect(banner?.textContent).toContain('GitHub’s results are under Pull request checks');
     await expect(container).toHaveNoAxeViolations();
@@ -278,8 +275,8 @@ describe('Run page: delivery (Issue #102)', () => {
     renderRun(second.id, client);
     await heading();
     await screen.findByText('Draft pull request opened.');
-    // Only once the project's Runs have loaded does the absence prove anything (review Spec-3
-    // of #123, Issue #115): the reminder shows nothing while they are loading.
+    // Only once the project's Runs have loaded does the absence prove anything: the reminder
+    // shows nothing while they are loading.
     await vi.waitFor(() => expect(api.calls('projectRuns')).toHaveLength(2));
     await vi.waitFor(() => expect(client.isFetching()).toBe(0));
     await act(async () => undefined);

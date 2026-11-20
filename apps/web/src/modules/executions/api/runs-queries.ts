@@ -23,18 +23,18 @@ const ACTIVE_POLL_MS = 2_000;
 const WAITING_POLL_MS = 10_000;
 
 /**
- * The poll interval for a set of Runs (#97 DoR): fast while any is active (or retrying its
- * delivery), slower while one only waits for the operator, and none once all are finished.
+ * The poll interval for a set of Runs: fast while any is active (or retrying its delivery),
+ * slower while one only waits for the operator, and none once all are finished.
  */
 function pollIntervalFor(
   runs: readonly RunOutput[] | undefined,
-  /** Issue #142: also follow a pull request refresh under way (the Run page only). */
+  /** Also follow a pull request refresh under way (the Run page only). */
   followRefresh = false,
 ): number | false {
   if (!runs) return false;
-  // A requested delivery retry (Issue #102) moves on without the operator too.
-  // Issue #142: a pull request refresh an agent worker is carrying out moves on by itself too;
-  // only the Run page follows it (a list cannot tell a refresh no worker will answer).
+  // A requested delivery retry moves on without the operator too. A pull request refresh an
+  // agent worker is carrying out moves on by itself too; only the Run page follows it (a list
+  // cannot tell a refresh no worker will answer).
   if (
     runs.some(
       (run) =>
@@ -51,7 +51,7 @@ function pollIntervalFor(
   return false;
 }
 
-/** The same rule for the summary's counts (Issue #115). */
+/** The same rule for the summary's counts. */
 function summaryPollInterval(summary: RunsSummaryOutput | undefined): number | false {
   if (!summary) return false;
   if (summary.running > 0) return ACTIVE_POLL_MS;
@@ -61,28 +61,21 @@ function summaryPollInterval(summary: RunsSummaryOutput | undefined): number | f
 /** Every cache entry of this module starts with this key, so a start can refresh them all. */
 const RUNS_KEY = ['runs'] as const;
 
-/** One project's Runs, newest first. */
 const projectRunsKey = (projectId: string) => ['runs', 'project', projectId] as const;
 
-/** Every Run across all projects, newest first. */
 const ALL_RUNS_KEY = ['runs', 'all'] as const;
 
-/** How many Runs are active and waiting, across all projects. */
 const RUNS_SUMMARY_KEY = ['runs', 'summary'] as const;
 
-/** The project list, for the project names on the Executions page. */
 const PROJECTS_KEY = ['runs', 'projects'] as const;
 
-/** Provider availability for one opening of the New run dialog. */
 const providersKey = (opening: number) => ['runs', 'providers', opening] as const;
 
-/** The agent side's connection and disk figures (Issue #143). */
+/** The agent side's connection and disk figures. */
 const AGENT_WORKER_KEY = ['runs', 'agent-worker'] as const;
 
-/** One Run. */
 const runKey = (runId: string) => ['runs', 'run', runId] as const;
 
-/** The project of a Run, for its name on the Run page. */
 const runProjectKey = (projectId: string) => ['runs', 'project-detail', projectId] as const;
 
 /**
@@ -100,10 +93,6 @@ export function useProjectRuns(projectId: string, enabled = true) {
   });
 }
 
-/**
- * Every Run across all projects, from the server only, for the Executions page. Polled like a
- * project's Runs: while any is active and the tab is visible.
- */
 export function useAllRuns() {
   return useQuery({
     queryKey: ALL_RUNS_KEY,
@@ -117,8 +106,7 @@ export function useAllRuns() {
 const AGENT_WORKER_POLL_MS = 30_000;
 
 /**
- * Whether an agent worker is connected and its disk figures (Issue #143), for the Executions
- * page. The worker measures at most every ten minutes, so a slow poll is enough; the page works
+ * The worker measures at most every ten minutes, so a slow poll is enough; the page works
  * without it (a failed read shows nothing).
  */
 export function useAgentWorker() {
@@ -130,10 +118,7 @@ export function useAgentWorker() {
   });
 }
 
-/**
- * How many Runs are active and waiting for the operator (Issue #115), for the top-bar run
- * indicator on every page: two counts instead of every Run. Polled like the lists.
- */
+/** Two counts instead of every Run, polled like the lists. */
 export function useRunsSummary() {
   return useQuery({
     queryKey: RUNS_SUMMARY_KEY,
@@ -144,8 +129,8 @@ export function useRunsSummary() {
 }
 
 /**
- * The projects, by id, for their names next to Runs. Its own cache entry for the same reason as
- * {@link useRunProject}: the projects module's queries are private to it.
+ * Its own cache entry for the same reason as {@link useRunProject}: the projects module's
+ * queries are private to it.
  */
 export function useProjectNames() {
   return useQuery({
@@ -166,9 +151,8 @@ export function useRun(runId: string) {
 }
 
 /**
- * The Run's project (its name and link on the Run page). A cache entry of its own on purpose:
- * the projects module's query is private to it, and importing that module from here would make
- * a cycle (projects composes this module's Runs section).
+ * A cache entry of its own: the projects module's query is private to it, and importing it here
+ * would make a cycle (projects composes this module's Runs section).
  */
 export function useRunProject(projectId: string | undefined) {
   return useQuery({
@@ -179,10 +163,9 @@ export function useRunProject(projectId: string | undefined) {
 }
 
 /**
- * Which providers can take a Run now (Issue #101), for one opening of the New run dialog. Each
- * opening has its own cache entry (`opening` counts them), so it starts with no answer (pending)
- * and never shows an earlier opening's; finished entries are dropped (`gcTime: 0`). The server's
- * start check and the agent worker's own check stay authoritative.
+ * Each opening has its own cache entry (`opening` counts them), so it starts with no answer and
+ * never shows an earlier opening's; finished entries are dropped (`gcTime: 0`).
+ * The server's start check and the agent worker's own check stay authoritative.
  */
 export function useProviderAvailability(opening: number, enabled: boolean) {
   return useQuery({
@@ -194,11 +177,7 @@ export function useProviderAvailability(opening: number, enabled: boolean) {
   });
 }
 
-/**
- * "Retry delivery": asks the agent worker to repeat only the delivery of a Run whose delivery
- * failed. The answer has no body: the Run and every Run list are read again, and the mutation
- * stays pending until the Run is read, so the page keeps showing the current Run until then.
- */
+/** The mutation stays pending until the Run is read (frontend.md §4). */
 export function useRetryDelivery(runId: string) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -207,18 +186,13 @@ export function useRetryDelivery(runId: string) {
   });
 }
 
-/**
- * Answers the agent's question. The answer has no body: the Run and every Run list are read
- * again, and the mutation stays pending until the Run is read. A 409 reads the Run again at
- * once.
- */
+/** A 409 reads the Run again at once. */
 export function useAnswerRun(runId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (request: AnswerRunRequest) => api.answerRun(runId, request),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: RUNS_KEY }),
-    // The Run moved on (answered elsewhere, cancelled): read it at once, not at the next poll
-    // (review Spec-2 of #128).
+    // The Run moved on (answered elsewhere, cancelled): read it at once, not at the next poll.
     onError: async (error: unknown) => {
       if (error instanceof ApiError && error.status === 409) {
         await queryClient.invalidateQueries({ queryKey: runKey(runId) });
@@ -227,11 +201,7 @@ export function useAnswerRun(runId: string) {
   });
 }
 
-/**
- * Sends a Follow-up to a finished Run. The answer has no body: the Run and every Run list are
- * read again, and the mutation stays pending until the Run is read. A 409 (the Run cannot take
- * one now) reads the Run again at once, so the page says why.
- */
+/** A 409 (the Run cannot take one now) reads the Run again at once, so the page says why. */
 export function useFollowUpRun(runId: string) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -251,11 +221,7 @@ export function useFollowUpRun(runId: string) {
   });
 }
 
-/**
- * Asks for the Run's branch to be brought up to date. The answer has no body: the Run and every
- * Run list are read again, and the mutation stays pending until the Run is read. A 409 (the Run
- * cannot take a Follow-up now) reads the Run again at once, so the page says why.
- */
+/** A 409 (the Run cannot take a Follow-up now) reads the Run again at once, so the page says why. */
 export function useBringUpToDateRun(runId: string) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -270,10 +236,8 @@ export function useBringUpToDateRun(runId: string) {
 }
 
 /**
- * Asks for the state of the Run's pull request to be read again (Issue #142), when the Run page
- * opens (`onOpen`, which the API takes at most once a minute) or on "Refresh". The 202 answer (the
- * Run, marked as refreshing) replaces the cached Run, so the page polls it until an agent worker
- * has reported what it read.
+ * `onOpen` (the Run page opening) is limited by the API to once a minute. The 202 answer
+ * replaces the cached Run, so the page polls it until an agent worker has reported what it read.
  */
 export function useRefreshPullRequest(runId: string) {
   const queryClient = useQueryClient();
@@ -285,14 +249,12 @@ export function useRefreshPullRequest(runId: string) {
   });
 }
 
-/** The Review comments loaded for the Run (Issue #146). */
 const reviewCommentsKey = (runId: string) => ['review-comments', runId] as const;
 
 /**
- * The Run's loaded Review comments and the state of the latest load (Issue #146). Followed every
- * two seconds while a load is under way (and the tab is visible); otherwise read when the page
- * opens or gets focus, which never changes what the operator is looking at: the page keys its
- * selection to the load it belongs to.
+ * Followed every two seconds while a load is under way; otherwise read on open or focus, which
+ * never changes what the operator is looking at: the page keys its selection to the load it
+ * belongs to.
  */
 export function useReviewComments(runId: string, enabled: boolean) {
   return useQuery({
@@ -305,9 +267,9 @@ export function useReviewComments(runId: string, enabled: boolean) {
 }
 
 /**
- * "Load review comments" (Issue #146): asks the agent worker to read the pull request's comments.
- * The 202 answer (the set as it is now, marked as loading) replaces the cached one, so the page
- * follows the load. Nothing is sent to an agent.
+ * "Load review comments": asks the agent worker to read the pull request's comments. The 202
+ * answer (the set as it is now, marked as loading) replaces the cached one, so the page follows
+ * the load. Nothing is sent to an agent.
  */
 export function useLoadReviewComments(runId: string) {
   const queryClient = useQueryClient();
@@ -325,13 +287,12 @@ export function useLoadReviewComments(runId: string) {
   });
 }
 
-/** The Follow-up prepared from the Run's failing checks (Issue #145). */
 const preparedFollowUpKey = (runId: string) => ['prepared-follow-up', runId] as const;
 
 /**
- * "Send failing checks to the agent" (Issue #145): asks the agent worker to read the logs of the
- * failed Pull request checks. The 202 answer (the Run, marked as preparing) replaces the cached
- * Run, so the page follows it until the draft is ready. Nothing is sent to an agent.
+ * "Send failing checks to the agent": asks the agent worker to read the logs of the failed Pull
+ * request checks. The 202 answer (the Run, marked as preparing) replaces the cached Run, so the
+ * page follows it until the draft is ready. Nothing is sent to an agent.
  */
 export function usePrepareFailingChecks(runId: string) {
   const queryClient = useQueryClient();
@@ -350,9 +311,8 @@ export function usePrepareFailingChecks(runId: string) {
 }
 
 /**
- * The Follow-up prepared from the failing checks, for the operator's review (Issue #145); only
- * while the Run says one is ready. Read once per preparation, never refetched under the
- * operator's edits.
+ * The Follow-up prepared from the failing checks, for the operator's review; only while the Run
+ * says one is ready. Read once per preparation, never refetched under the operator's edits.
  */
 export function usePreparedFollowUp(runId: string, enabled: boolean) {
   return useQuery({
@@ -365,7 +325,7 @@ export function usePreparedFollowUp(runId: string, enabled: boolean) {
   });
 }
 
-/** Discards the prepared Follow-up without sending it (Issue #145); the Run is read again. */
+/** Discards the prepared Follow-up without sending it; the Run is read again. */
 export function useDiscardPreparedFollowUp(runId: string) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -377,11 +337,7 @@ export function useDiscardPreparedFollowUp(runId: string) {
   });
 }
 
-/**
- * "Resume run": resumes a Run stopped at the subscription's usage limit. The answer has no body:
- * the Run and every Run list are read again, and the mutation stays pending until the Run is
- * read. A 409 (resumed elsewhere) reads the Run again at once.
- */
+/** A 409 (resumed elsewhere) reads the Run again at once. */
 export function useResumeRun(runId: string) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -422,10 +378,8 @@ export function useCancelRun(runId: string) {
   });
 }
 
-/** The structured results of a Run's steps, shown at each step's end in its log (Issue #99). */
 const runStepsKey = (runId: string) => ['runs', 'steps', runId] as const;
 
-/** Step results by step number; stable per response, so derived rows are not rebuilt. */
 const stepsByIndex = (list: RunStepListOutput) =>
   new Map(list.steps.map((step) => [step.index, step]));
 
@@ -443,16 +397,16 @@ export function useRefreshRunSteps(runId: string) {
   return () => queryClient.invalidateQueries({ queryKey: runStepsKey(runId) });
 }
 
-/** A Run's diff of one scope (Issue #144), and one file of it. */
+/** A Run's diff of one scope, and one file of it. */
 const runDiffKey = (runId: string, scope: RunDiffOutput['scope']) =>
   ['runs', 'diff', runId, scope] as const;
 const runDiffFileKey = (runId: string, scope: RunDiffOutput['scope'], path: string) =>
   ['runs', 'diff', runId, scope, 'file', path] as const;
 
 /**
- * A Run's diff (Issue #144): read while the Changes tab shows it, and again while the Run is
- * active (a new result replaces it), like the Run itself. A 404 means no result yet (the client
- * never retries a 4xx).
+ * A Run's diff: read while the Changes tab shows it, and again while the Run is active (a new
+ * result replaces it), like the Run itself. A 404 means no result yet (the client never retries
+ * a 4xx).
  */
 export function useRunDiff(run: RunOutput, scope: RunDiffOutput['scope']) {
   return useQuery({
@@ -464,8 +418,8 @@ export function useRunDiff(run: RunOutput, scope: RunDiffOutput['scope']) {
 }
 
 /**
- * One file of a Run's diff with its patch (Issue #144), loaded only once the file is expanded
- * (`enabled`), so a large diff loads per file.
+ * One file of a Run's diff with its patch, loaded only once the file is expanded (`enabled`), so
+ * a large diff loads per file.
  */
 export function useRunDiffFile(
   runId: string,

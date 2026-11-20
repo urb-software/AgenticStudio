@@ -8,8 +8,8 @@
 //   - the number of public methods per handler,
 //   - the number of collaborators per module (files directly in `application/`),
 //   - the number of files per feature (`application/features/<feature>/`, tests included),
-//   - the comment-to-code ratio per production file across the API, the agent worker and the shared
-//     packages, with the files above 0.25 flagged (rule 14).
+//   - the comment-to-code ratio per production file across the API, the web app, the agent worker
+//     and the shared packages, with the files above 0.25 flagged (rule 14).
 //
 // With `--base-ref <git ref>` it also reads the same tree at that ref and shows, beside each number,
 // the change against it ("new" when the base has no such file, interface, handler or feature; for
@@ -262,7 +262,13 @@ export function report(current, base, top = 10) {
 }
 
 /** What the comparison reads from the base: the API source and the other trees of the comment ratio. */
-const BASE_PATHS = ['apps/api/src', 'apps/agent-worker', 'packages', 'tests/architecture'];
+const BASE_PATHS = [
+  'apps/api/src',
+  'apps/web',
+  'apps/agent-worker',
+  'packages',
+  'tests/architecture',
+];
 
 /** The trees as they were at `ref`, extracted to a temporary directory (undefined if it cannot be). */
 function extractBase(ref) {

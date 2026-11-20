@@ -5,9 +5,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RunDetail } from '..';
 import { aRun, type FakeDiff, fakeRunsApi, problem, SHA } from './fake-runs-api';
 
-// Changes tab seam (Issue #144): the public RunDetail of the executions module with the
-// generated client, the API wrapper and TanStack Query real, and the API faked at `fetch`.
-
 const push = vi.hoisted(() => vi.fn());
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }));
 
@@ -266,7 +263,7 @@ describe('Run page: Changes tab', () => {
 
     expect(await screen.findByText('No changes')).toBeTruthy();
     expect(screen.getByText('The run has not changed any files.')).toBeTruthy();
-    // Nothing to say about pushing when nothing changed (review S-3 of #149).
+    // Nothing to say about pushing when nothing changed.
     expect(screen.queryByText(/pushed/)).toBeNull();
     await expect(container).toHaveNoAxeViolations();
   });

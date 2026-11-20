@@ -67,7 +67,6 @@ function CardContent({
   flush = false,
   ...props
 }: React.ComponentProps<'div'> & {
-  /** Children run edge to edge (lists, tables). */
   flush?: boolean;
 }) {
   return <div data-slot="card-content" className={cn(!flush && 'p-4', className)} {...props} />;

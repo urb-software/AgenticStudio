@@ -17,7 +17,6 @@ import { useDisconnectRepository } from '../../api/projects-queries';
 
 type DisconnectRepositoryDialogProps = {
   projectId: string;
-  /** The Repository's URL as entered, named in the dialog. */
   url: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -29,13 +28,8 @@ type DisconnectRepositoryDialogProps = {
 };
 
 /**
- * The Disconnect repository confirm (design system: "Destructive = confirm"): a destructive
- * dialog (alertdialog; a bottom sheet on phones) that names the Repository and says what is
- * kept and what is deleted. Confirming is the operator's explicit authorization of the
- * destructive Git operation (security.md §4). When everything is removed at once it closes
- * and `onDisconnected` confirms it (the toast "Repository disconnected"); when the server's
- * cleanup is still pending it closes and the card shows "Disconnecting…". A refusal shows as a
- * banner here.
+ * Confirming is the operator's explicit authorization of the destructive Git operation
+ * (security.md §4).
  */
 export function DisconnectRepositoryDialog({
   projectId,

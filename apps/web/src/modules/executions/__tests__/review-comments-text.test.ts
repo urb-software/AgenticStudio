@@ -8,8 +8,8 @@ import {
   REVIEW_COMMENTS_INTRODUCTION,
 } from '../components/review-comments-text';
 
-// Issue #146: the prepared Follow-up text is built from the comments the operator selected: each
-// comment delimited, with its location, in a fence its own text cannot end.
+// The prepared Follow-up text is built from the comments the operator selected: each comment
+// delimited, with its location, in a fence its own text cannot end.
 
 const comment = (overrides: Partial<ReviewCommentOutput> = {}): ReviewCommentOutput => ({
   id: 'conversation-1',

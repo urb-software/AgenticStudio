@@ -13,10 +13,7 @@ import {
 } from './fake-project-api';
 import { problem } from './fake-projects-api';
 
-// Project screen seam (Stories #60, #61, #62 and #63): the public ProjectDetail of the projects module, with the
-// generated client, the API wrapper and TanStack Query real, and the API faked at `fetch`.
-
-// The composed Runs section (executions, #97) has the New run dialog, which navigates.
+// The composed Runs section has the New run dialog, which navigates.
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 const PROJECT: ProjectOutput = {

@@ -5,9 +5,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RunDetail } from '..';
 import { aRun, fakeRunsApi } from './fake-runs-api';
 
-// Story #100 seam: cancelling a Run and the limits on the public RunDetail, with the generated
-// client, the API wrapper and TanStack Query real, and the API faked at `fetch`.
-
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 function renderRun(runId: string) {
@@ -166,7 +163,7 @@ describe('Cancel run (Issue #100)', () => {
 
     await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel run' }));
 
-    // The Run is read again and is now final; the dialog and its answer stay (review of #124).
+    // The Run is read again and is now final; the dialog and its answer stay.
     await vi.waitFor(() => expect(pill().textContent).toBe('Succeeded'));
     await act(() => new Promise((resolve) => setTimeout(resolve, 100)));
     const stillOpen = screen.getByRole('alertdialog', { name: 'Cancel run' });

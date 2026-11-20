@@ -94,8 +94,8 @@ function Target({ repository }: { repository: RepositorySummaryOutput }) {
 }
 
 /**
- * SSH Repositories (Issue #62) carry the Deploy key's public half; HTTPS ones do not. The API
- * exposes neither the transport nor the host (#72), so the card derives them here.
+ * SSH Repositories carry the Deploy key's public half; HTTPS ones do not. The API exposes
+ * neither the transport nor the host, so the card derives them here.
  */
 function transportOf(repository: RepositoryOutput): Transport {
   return repository.publicKey === undefined ? 'https' : 'ssh';
@@ -119,8 +119,8 @@ function keyComment(publicKey: string): string | undefined {
 }
 
 /**
- * The Deploy key's public half (Issue #62) in mono, scrolling inside its own box (one long
- * line), with a Copy button and the instruction. The private half never reaches the browser.
+ * The Deploy key's public half in mono, scrolling inside its own box (one long line), with a
+ * Copy button and the instruction. The private half never reaches the browser.
  */
 function PublicKey({ publicKey }: { publicKey: string }) {
   const comment = keyComment(publicKey);
@@ -440,8 +440,8 @@ function GitOutput({ failure }: { failure: NonNullable<RepositoryOutput['failure
 
 /**
  * `failed` with no usable Clone (a failed connect, or a fetch that hit the size limit). Retry
- * connects again over HTTPS; over SSH it verifies again with the same Deploy key (#62), which
- * stays on screen so it can be added on the Git host.
+ * connects again over HTTPS; over SSH it verifies again with the same Deploy key, which stays on
+ * screen so it can be added on the Git host.
  */
 function FailedBody({
   projectId,
@@ -554,8 +554,8 @@ type StateView = {
 };
 
 /**
- * Every state the card knows, in one place (#72): a state the API adds must be added here, and
- * any other value is shown as {@link UNAVAILABLE}.
+ * Every state the card knows, in one place: a state the API adds must be added here, and any
+ * other value is shown as {@link UNAVAILABLE}.
  */
 const STATE_VIEWS: Record<RepositoryStateOutput, StateView> = {
   awaiting_key: {
@@ -644,14 +644,6 @@ type RepositoryCardProps = {
   summary: RepositorySummaryOutput | null;
 };
 
-/**
- * The project's one Repository card, in every state: none (connect), awaiting_key (the Deploy
- * key to add, Verify and clone), awaiting_host_key (confirm the host's fingerprint), connecting (progress,
- * polled), ready (Fetch), fetching (progress, polled), failed with a usable Clone (the
- * previous data, Fetch again), failed without one (message, redacted detail, Retry),
- * disconnecting (progress, polled) and any state a later API adds ("unavailable"). Every state
- * but none offers Disconnect (#63). The state always comes from the server.
- */
 export function RepositoryCard({ projectId, summary }: RepositoryCardProps) {
   const [connectOpen, setConnectOpen] = useState(false);
   // Remounts the dialog per opening, so it starts from the right values (empty or prefilled).
@@ -671,8 +663,8 @@ export function RepositoryCard({ projectId, summary }: RepositoryCardProps) {
   const repository = repositoryQuery.data;
   const state = repository?.state ?? summary?.state;
 
-  // When polling sees the Repository leave a state, the project's summary is refreshed too,
-  // and a fetch that ended well is confirmed with a toast (#61 clarification 7).
+  // When polling sees the Repository leave a state, the project's summary is refreshed too, and
+  // a fetch that ended well is confirmed with a toast.
   const last = useRef(repository);
   useEffect(() => {
     const previous = last.current;
@@ -689,17 +681,16 @@ export function RepositoryCard({ projectId, summary }: RepositoryCardProps) {
     last.current = repository;
   }, [repository, refreshProject]);
 
-  // A disconnecting Repository that polling no longer finds (404) is gone: the server's
-  // cleanup finished. Confirm it and show the empty state (#63 clarification 8).
+  // A disconnecting Repository that polling no longer finds (404) is gone: the server's cleanup
+  // finished. Confirm it and show the empty state.
   const gone =
     repositoryQuery.error instanceof ApiError &&
     repositoryQuery.error.status === 404 &&
     repository?.state === 'disconnecting';
 
-  // One confirmation per disconnect: the dialog's 204 and this card's polling can both see the
-  // same disconnect, and the later one can land after the first toast was dismissed (#72). A
-  // Repository seen again (not gone) starts a new disconnect. (`goneHandled` below guards the
-  // polling path's forget; this guards the toast across both paths.)
+  // One confirmation per disconnect: the dialog's 204 and this card's polling can both see it, and
+  // the later one can land after the first toast was dismissed. A Repository seen again starts a
+  // new disconnect. (`goneHandled` guards the polling path's forget.)
   const disconnectConfirmed = useRef(false);
   useEffect(() => {
     if (repository && !gone) disconnectConfirmed.current = false;

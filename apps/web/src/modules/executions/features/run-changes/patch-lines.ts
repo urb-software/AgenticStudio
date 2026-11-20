@@ -3,11 +3,8 @@ import type { DiffLine } from '@/shared/components/diff-view';
 const HUNK = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
 
 /**
- * The rows of one file's unified diff (Git's text for the file, Issue #144) for the DiffView:
- * each hunk header, then its added, deleted and context lines with their old and new line
- * numbers. Git's file headers (`diff --git`, `index`, `---`, `+++`, renames, modes) before the
- * first hunk are left out; a patch without a hunk (a pure rename or mode change) has no rows.
- * The text is kept verbatim, to be shown as plain text.
+ * Git's file headers before the first hunk are left out; a patch without a hunk (a pure rename
+ * or mode change) has no rows. The text is kept verbatim, to be shown as plain text.
  */
 export function patchLines(patch: string): DiffLine[] {
   const lines = patch.split('\n');

@@ -6,11 +6,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/ui/tooltip';
 
 type IconButtonProps = Omit<React.ComponentProps<'button'>, 'children' | 'aria-label'> & {
   icon: LucideIcon;
-  /** Required: the accessible name and the tooltip. */
   label: string;
   /** 36px default, 28px `sm` inside rows and dialog headers (44px on coarse pointers). */
   size?: 'sm' | 'md';
-  /** Unread marker (notifications). */
   dot?: boolean;
 };
 

@@ -9,10 +9,9 @@ export const STABLE_AFTER_MS = 10_000;
 
 export interface FollowStreamOptions {
   /**
-   * Opens one connection; calls `onOpen` once it is open. Resolves `end` when the server
-   * finished the stream on purpose, `refused` when it will not serve it (stop, no retry),
-   * `dropped` otherwise (a rejection counts as dropped). The
-   * caller resumes from what it already has (e.g. the last seq), so nothing repeats.
+   * Resolves `end` when the server finished the stream on purpose, `refused` when it will not
+   * serve it (stop, no retry), `dropped` otherwise. The caller resumes from what it already has,
+   * so nothing repeats.
    */
   connect: (handlers: {
     onOpen: () => void;
@@ -38,11 +37,8 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 /**
- * The server-sent events lifecycle (frontend.md §7, Issue #99): connect, report `live` once
- * open, and on a drop report `reconnecting` and connect again with backoff (reset only by a
- * stable connection: one event, or {@link STABLE_AFTER_MS} open) until the server
- * ends the stream (`ended`), refuses it (`refused`) or `signal` aborts. Authoritative state comes from the server on
- * every reconnect; this layer holds none.
+ * The backoff resets only after a stable connection (one event, or {@link STABLE_AFTER_MS}
+ * open). Authoritative state comes from the server on every reconnect; this layer holds none.
  */
 export async function followStream({
   connect,

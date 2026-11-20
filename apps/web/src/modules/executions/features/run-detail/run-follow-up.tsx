@@ -13,8 +13,8 @@ import { FOLLOW_UP_MAX_LENGTH } from '../../components/follow-up-limits';
 type Refusal = NonNullable<NonNullable<RunOutput['followUp']>['reason']>;
 
 /**
- * Why the Run cannot take a Follow-up (Issue #141), in plain words, and whether the operator
- * should start a new run instead ("Run again") rather than wait.
+ * Why the Run cannot take a Follow-up, in plain words, and whether the operator should start a
+ * new run instead ("Run again") rather than wait.
  */
 function refusalText(run: RunOutput, reason: Refusal): { text: string; runAgain: boolean } {
   switch (reason) {
@@ -66,9 +66,9 @@ function refusalText(run: RunOutput, reason: Refusal): { text: string; runAgain:
 }
 
 /**
- * "Open to Follow-ups until <date>" (Issue #143): when the Run's working copy and agent session
- * are kept until, moved by activity on the Run. Instead, "Removal pending" when the date has passed or the per-Project limit removes the Run.
- * Nothing when the page has neither.
+ * "Open to Follow-ups until <date>": when the Run's working copy and agent session are kept
+ * until, moved by activity on the Run. Instead, "Removal pending" when the date has passed or
+ * the per-Project limit removes the Run. Nothing when the page has neither.
  */
 function OpenUntil({ followUp }: { followUp: NonNullable<RunOutput['followUp']> }) {
   const { openUntil } = followUp;
@@ -96,12 +96,6 @@ function fieldError(error: unknown): string | undefined {
   return error.problem?.errors?.[0]?.message ?? error.problem?.detail;
 }
 
-/**
- * The Follow-up on the Run page (Issue #141), for a finished Run whose page knows whether it can
- * take one: the operator's further instruction, which the same agent continues in the same
- * session and working copy, delivering to the same pull request. When it cannot, the section
- * says why, and points to "Run again" when only a new run can go on.
- */
 export function RunFollowUp({
   run,
   followUp,

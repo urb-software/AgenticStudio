@@ -6,13 +6,10 @@ import { Label } from '@/shared/ui/label';
 import { Textarea } from '@/shared/ui/textarea';
 
 type TextFieldOwnProps = {
-  /** Visible label, mandatory: no placeholder-as-label. */
   label: string;
-  /** Help text under the control, wired with aria-describedby. */
   help?: string;
   /** Replaces the help text and marks the control invalid. Say what's wrong and how to fix it. */
   error?: string;
-  /** For code values: repo URLs, branch names, commands, env var names. */
   mono?: boolean;
   className?: string;
 };

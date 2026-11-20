@@ -30,11 +30,9 @@ function withoutSection(text: string, section: string): string {
 }
 
 /**
- * The prepared Follow-up for review (Issue #145): which failing checks go in, and the text, which
- * the operator can change freely. Nothing is sent until "Send Follow-up". The text comes from CI
- * jobs, so it is shown only in a text box, as plain text, and the operator reads it before it
- * reaches an agent. A deselected check leaves its part of the text; a part the operator edited
- * is left alone and said so.
+ * The text comes from CI jobs, so it is shown only in a text box, as plain text, and the
+ * operator reads it before it reaches an agent. A part the operator edited is left alone when
+ * its check is deselected, and said so.
  */
 function PreparedPreview({
   run,
@@ -199,13 +197,6 @@ function PreparedPreview({
   );
 }
 
-/**
- * "Send failing checks to the agent" (Issue #145), on the pull request card when at least one
- * Pull request check failed and the Run can take a Follow-up: the action asks the agent worker to
- * read the end of each failed check's log, then the page shows the prepared Follow-up for review
- * (deselect, edit, send or discard). It says why it cannot be offered when the Run cannot take a
- * Follow-up. There is no setting that sends failing checks by itself.
- */
 export function RunFailingChecks({
   run,
   pullRequest,

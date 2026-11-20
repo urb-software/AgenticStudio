@@ -258,7 +258,7 @@ Rules that are review only are covered by the specific backend items of the revi
 
 ### Rule 14: comments
 
-Rule 14 is not a structure rule: it is about readability and applies to the whole repository (API, agent worker, shared packages and tests). It is recorded beside rules 1 to 13 so there is one list ([Backend](../architecture/backend.md) §3). Existing code is brought in line by the clean-up tickets of Epic #160; the web app follows later.
+Rule 14 is not a structure rule: it is about readability and applies to the whole repository (API, web app, agent worker, shared packages and tests). It is recorded beside rules 1 to 13 so there is one list ([Backend](../architecture/backend.md) §3).
 
 **Comments explain why, briefly, and only when the code cannot.**
 
@@ -319,7 +319,7 @@ Enforcement:
 | Issue or pull request reference | Fails a comment that contains `#<digits>` or a link to an Issue or pull request | the same run |
 | Structure report figure | Reports the comment-to-code ratio per production file and flags files above 0.25; reported, not blocking | `pnpm structure:report` (§4) |
 
-Both checks read comments with the TypeScript scanner (never a pattern over code), so a string or template literal that contains `//` or `#123` is not a comment. They are `tests/architecture/monorepo/comment-rules.test.ts` over `scripts/comment-rules.mjs`, with passing and failing fixtures in `tests/architecture/fixtures/comments/`, and they run locally with `pnpm architecture:monorepo`. They cover `apps/api/src`, `apps/agent-worker`, `packages/*` and `tests/architecture` (JavaScript and TypeScript files, hand-written declaration files included). Excluded: `apps/web`, until its own clean-up; generated code (any `generated/` directory, or a file with a generated-file header such as `@generated`); build output and `node_modules`; and the gate fixtures in `tests/architecture/fixtures/`, which violate on purpose. The `@long-comment` tag is a budgeted exception: a pull request that adds one lists it with its reason.
+Both checks read comments with the TypeScript scanner (never a pattern over code), so a string or template literal that contains `//` or `#123` is not a comment. They are `tests/architecture/monorepo/comment-rules.test.ts` over `scripts/comment-rules.mjs`, with passing and failing fixtures in `tests/architecture/fixtures/comments/`, and they run locally with `pnpm architecture:monorepo`. They cover `apps/api/src`, `apps/web`, `apps/agent-worker`, `packages/*` and `tests/architecture` (JavaScript and TypeScript files, hand-written declaration files included). Excluded: generated code (any `generated/` directory, or a file with a generated-file header such as `@generated`); build output and `node_modules`; and the gate fixtures in `tests/architecture/fixtures/`, which violate on purpose. The `@long-comment` tag is a budgeted exception: a pull request that adds one lists it with its reason.
 
 ## 6. Test stack and placement
 

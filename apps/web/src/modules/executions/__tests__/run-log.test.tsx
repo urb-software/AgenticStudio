@@ -6,9 +6,7 @@ import { RunDetail } from '..';
 import type { RunStepOutput } from '../../../platform/api';
 import { anEvent, aRun, fakeRunsApi } from './fake-runs-api';
 
-// Issue #99, the Run page's log: the public RunDetail with the generated client (paged read and
-// server-sent events), the API wrapper and TanStack Query real, the API faked at `fetch`. jsdom
-// lays nothing out, so the viewer's height is stubbed (400px: 20 rows in view).
+// jsdom lays nothing out, so the viewer's height is stubbed (400px: 20 rows in view).
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 

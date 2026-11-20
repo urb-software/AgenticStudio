@@ -26,13 +26,9 @@ function sessionLabel(status: 'pending' | 'error' | 'success', error: unknown): 
 }
 
 /**
- * The operator menu of the Studio Shell top bar: who is signed in and the logout action. The
- * session has no display name, so the operator is shown as "Operator". Asking the API for the
- * session also sends the browser to the login page on 401; the API, not this menu, enforces
- * authorization. `children` are extra items the shell adds (the theme toggle on phones).
- *
  * A failed logout (403, 5xx, network error) may leave the session valid, so the menu stays open
  * and says so instead of pretending the operator is signed out.
+ * The API, not this menu, enforces authorization.
  */
 export function OperatorMenu({ children }: { children?: ReactNode }) {
   const session = useQuery({ queryKey: SESSION_QUERY_KEY, queryFn: api.getSession });

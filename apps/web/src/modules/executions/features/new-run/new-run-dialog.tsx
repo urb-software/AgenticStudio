@@ -66,18 +66,9 @@ const EMPTY: StartRunRequest = { task: '', provider: 'claude_code' };
 type Provider = StartRunRequest['provider'];
 
 /**
- * The New run dialog (a bottom sheet on phones): the Task as free text and the Provider.
- *
- * Each time it opens it reads which providers are available (Issue #101) and offers no provider
- * and no start until that answer arrives. An unavailable provider stays focusable but cannot be
- * selected, and its reason is shown and announced. The first available provider is preselected
- * (Claude Code when available) unless the prefilled one is available; when none is, it cannot
- * start a Run. If availability cannot be read, both are offered and the server decides.
- *
- * The generated Zod schema gives quick feedback; the API is authoritative, and its field errors
- * land on the field, any other rejection (no ready Repository, provider unavailable) shows the
- * server's title and detail. On success it opens the new Run's page. It cannot be closed while
- * the request is in flight.
+ * The first available provider is preselected (Claude Code when available) unless the prefilled
+ * one is available; when none is, the dialog cannot start a Run.
+ * If availability cannot be read, both are offered and the server decides.
  */
 export function NewRunDialog({
   projectId,

@@ -6,10 +6,6 @@ import { ExecutionsOverview, RunDetail } from '..';
 import type { RunOutput } from '../../../platform/api';
 import { aRun, fakeRunsApi, problem } from './fake-runs-api';
 
-// Issue #142 on the Run page seam: the pull request card, its refresh, and what a pull request
-// that is merged, closed or gone does to the Follow-up, with the generated client, the API
-// wrapper and TanStack Query real, and the API faked at `fetch`.
-
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 const URL_OF_PULL_REQUEST = 'https://github.com/acme/shop/pull/7';

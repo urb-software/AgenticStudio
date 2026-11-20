@@ -12,10 +12,9 @@ import { failedRequest } from '../../components/failed-request';
 const RESUME_REQUEST = 'POST /api/runs/{runId}/resume';
 
 /**
- * "Resume run" (Issue #105) on a Run stopped at the subscription's usage limit, laid out like
- * the answer form of a waiting Run (#103): the operator's next action, as its own section. The
- * agent worker continues the same agent session in the kept Working copy, with "Continue where
- * you stopped." as the operator's message. Shown only while the API says the Run is resumable.
+ * Laid out like the answer form of a waiting Run. The agent worker continues the same agent
+ * session in the kept Working copy, with "Continue where you stopped." as the operator's
+ * message.
  */
 export function ResumeRun({ run }: { run: RunOutput }) {
   const titleId = useId();
