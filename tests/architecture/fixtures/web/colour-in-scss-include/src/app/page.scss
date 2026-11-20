@@ -1,0 +1,7 @@
+@mixin glow($c) {
+  box-shadow: 0 0 4px $c;
+}
+
+.page {
+  @include glow(#000);
+}
