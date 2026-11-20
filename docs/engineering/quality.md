@@ -42,6 +42,7 @@ The module layout and the thirteen structure rules are canonical in [Backend](..
 - Feature handlers depend on interfaces/ports, not concrete adapters/repository implementations.
 - Domain repository contracts live in `domain/repositories/`; read ports and other service interfaces in `ports/` (naming convention in [Backend](../architecture/backend.md) §4).
 - No prohibited cycles between modules or layers.
+- No chain of imports, through `shared/`, `platform/` or a workspace package, leads `domain/`, `application/ports/` or `contracts/` to the ORM, a concrete client, the database client or `infrastructure/` (`api-domain-no-reachable-clients`, `api-ports-no-reachable-clients`, `api-contracts-no-reachable-clients`); a module's `contracts/` imports no other module's `contracts/` (`api-contracts-no-foreign-contracts`).
 - Event consumers use the owning module's public contract and do not bypass module boundaries.
 - Composition-root DI wiring exceptions are narrowly scoped and explicitly tested, not broad allowlists.
 - `application/` imports no HTTP, schema, OpenAPI, queue or scheduler API: no `nestjs-zod`, `@nestjs/swagger`, `class-validator`, `class-transformer`, `express`, `@nestjs/platform-express`, `bullmq`, `@nestjs/bullmq`, `@nestjs/schedule`, `node-cron`, `cron`, Node `http`/`https`/`http2`, and no controller, route or parameter decorator from `@nestjs/common` (`Controller`, `Get`, `Body`, `UseGuards`, …). Plain `zod` stays allowed for now. `application/` also imports nothing from `platform/queue/`: a job is started and cancelled through a port whose adapter lives in `infrastructure/`, and its events reach a handler through an entry point. The tests of `application/` (`__tests__/`) are not checked: they may import the queue's error classes to make a fake adapter fail the way the real one does.
@@ -75,6 +76,9 @@ The module layout and the thirteen structure rules are canonical in [Backend](..
 - Concrete read/write repository implementations belong in `infrastructure/repositories/`, adapters in `infrastructure/adapters/`.
 - Public integration event definitions are versioned and publisher-owned: `contracts/events/<event-name>-v<n>.ts` exporting only `<EventName>V<n>` / `<EventName>V<n>Schema`, with no duplicate event definitions across modules (convention in [Backend](../architecture/backend.md) §6).
 - `contracts/` holds only `index.ts` and `events/`.
+- An event file (`contracts/events/*`) imports only from `zod` (`api-event-file-imports-zod-only`); the wrapped aliases of a module's own events in its own `contracts/index.ts` are left to review ([Backend](../architecture/backend.md) §6).
+- The `secret` model, raw SQL on `secrets` (`FROM`, `INTO`, `UPDATE`, `JOIN`, `TABLE`, `TRUNCATE`, `COPY`, quoted or schema-qualified) and `secretsKey` reads (property, destructuring, element access) stay in `platform/secrets/` (and `platform/config/` for the key); each form has its own fixture.
+- The port check follows `export *` inside a port file itself, recursively with a cycle guard: an entry point reaching a port token through a handler and a chain of port files is refused.
 - No directory named `shared`, `common`, `utils` or `helpers` inside a module; the one exemption is exactly `entry-points/http/shared/`.
 - Every file in `domain/entities/` exports a class with a non-public constructor, in every module (an aggregate root is always such a class, declared or as `export const X = class {}`; records without behaviour that are not roots live in `domain/value-objects/`); the type-only companions recognised by their suffix are the exception (see above).
 - No `domain/services/` directory, in every module (by path pattern).
@@ -112,6 +116,7 @@ The module layout and the thirteen structure rules are canonical in [Backend](..
 - No web imports of server or privileged implementations.
 - Shared public contracts have a single canonical source; no duplicate event definitions.
 - No prohibited package cycles, hidden app-to-app implementation imports, or shortcuts bypassing published interfaces.
+- No exported name shaped `<Name>V<n>` or `<Name>V<n>Schema` in `packages/contracts/src`: it holds no Integration Event ([Backend](../architecture/backend.md) §6).
 - Rule 14 comment checks (§5): no Issue or pull request number in a comment, and no comment block longer than three lines without `@long-comment <reason>`.
 
 **All three checks inspect the entire relevant dependency graph on code/config PRs**, even when affected unit tests run on a subset.
@@ -214,6 +219,14 @@ Positive and negative fixtures prove the rules catch violations:
 | Repository methods and application collaborators match the pinned lists | PASS |
 | A repository method or application collaborator is added, renamed or removed without updating its pinned list | FAIL |
 | The reference module fixture (the complete approved layout) | PASS |
+| `domain/`, `application/ports/` or `contracts/` reaches the ORM or a concrete client through a re-export chain | FAIL |
+| A `contracts/` file imports the `contracts/` of another module | FAIL |
+| An event file imports only `zod` | PASS |
+| An event file imports a module other than `zod` | FAIL |
+| A module uses the `secret` model or runs raw SQL on `secrets` (any statement, quoted or qualified) | FAIL |
+| A module reads `secretsKey` outside `platform/config` and `platform/secrets` (property, destructuring, element access) | FAIL |
+| `packages/contracts` exports no name shaped like an event version | PASS |
+| `packages/contracts` exports a `<Name>V<n>` or `<Name>V<n>Schema` name | FAIL |
 | Web imports `@/modules/agents` public entrypoint | PASS |
 | Web deep-imports another module's private Zustand store | FAIL |
 | Two modules introduce a dependency cycle | FAIL |

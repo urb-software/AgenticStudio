@@ -2,11 +2,13 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, posix } from 'node:path';
 import ts from 'typescript';
 import { listFiles, type Violation } from '../harness';
+import { moduleImports } from './syntax';
 
 /** Syntax-only rules Dependency Cruiser cannot express: they depend on declaration names. */
 export const SOURCE_RULES = [
   'api-event-versioned',
   'api-event-publisher-owned',
+  'api-event-file-imports-zod-only',
   'api-event-no-duplicates',
   'api-repository-contract-placement',
   'api-adapter-contract-placement',
@@ -51,6 +53,11 @@ function eventViolations(baseDir: string, files: SourceFile[]): Violation[] {
   const publishers = new Map<string, Set<string>>();
 
   for (const { path, source } of files.filter((file) => EVENTS_DIR.test(file.path))) {
+    for (const { specifier } of moduleImports(baseDir, path)) {
+      if (specifier !== 'zod') {
+        violations.push({ rule: 'api-event-file-imports-zod-only', from: path, to: specifier });
+      }
+    }
     const match = EVENT_FILE.exec(path);
     if (!match) {
       violations.push({ rule: 'api-event-versioned', from: path });

@@ -1,5 +1,10 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import ts from 'typescript';
+import { exportedNames } from '../api/syntax';
 import {
   coreModules,
+  listFiles,
   npmPackages,
   ORM_PACKAGES,
   SERVER_PACKAGES,
@@ -182,8 +187,9 @@ export const monorepoGate: Gate = {
       'mono-manifest-no-app-dependencies',
       'mono-manifest-web-no-server-packages',
       'mono-manifest-no-package-cycles',
+      'mono-contracts-no-event-versions',
     ],
-    check: manifestViolations,
+    check: (baseDir) => [...manifestViolations(baseDir), ...eventVersionNames(baseDir)],
   },
 };
 
@@ -228,4 +234,26 @@ function manifestViolations(baseDir: string): Violation[] {
     }
   }
   return violations;
+}
+
+/** An integration event definition name (backend.md §6): `<EventName>V<n>` or `...V<n>Schema`. */
+const EVENT_VERSION_NAME = /^[A-Z]\w*V\d+(Schema)?$/;
+
+/**
+ * `packages/contracts` holds the worker protocol and the shared kernel and no Integration Event:
+ * no exported name there is shaped like an event version. Tests are not checked.
+ */
+function eventVersionNames(baseDir: string): Violation[] {
+  return listFiles(baseDir, 'packages/contracts/src')
+    .filter((path) => /\.tsx?$/.test(path) && !/(^|\/)__tests__\/|\.test\.tsx?$/.test(path))
+    .flatMap((path) => {
+      const source = ts.createSourceFile(
+        path,
+        readFileSync(join(baseDir, path), 'utf8'),
+        ts.ScriptTarget.Latest,
+      );
+      return exportedNames(source)
+        .filter((name) => EVENT_VERSION_NAME.test(name))
+        .map((name) => ({ rule: 'mono-contracts-no-event-versions', from: path, to: name }));
+    });
 }

@@ -36,6 +36,31 @@ const TESTS = '(^|/)__tests__/';
 const ORM = [npmPackages(...ORM_PACKAGES), '(^|/)packages/database/'];
 
 /**
+ * The re-export counterpart of a layer's direct bans: no chain of imports from `directory` of a
+ * module leads to the ORM, a concrete client, the database client or infrastructure/.
+ */
+function reachableClientsRule(name: string, directory: string, layer: string) {
+  return {
+    name,
+    comment:
+      `No chain of imports (through shared/, platform/ or a workspace package) leads ${layer} ` +
+      'to the ORM, a concrete client, the database client or infrastructure/: the direct bans ' +
+      'cover one import, this rule a re-export.',
+    severity: 'error' as const,
+    from: { path: `^src/modules/[^/]+/${directory}` },
+    to: {
+      path: [
+        '^src/modules/[^/]+/infrastructure/',
+        '^src/platform/database/',
+        ...ORM,
+        CONCRETE_CLIENTS,
+      ],
+      reachable: true,
+    },
+  };
+}
+
+/**
  * `architecture:api`: the NestJS rules of docs/engineering/quality.md §4 and
  * docs/architecture/backend.md §2–§3. Paths are relative to `apps/api`.
  */
@@ -193,6 +218,15 @@ export const apiGate: Gate = {
       },
     },
     {
+      name: 'api-contracts-no-foreign-contracts',
+      comment:
+        "A module's contracts/ imports no other module's contracts/, so no event or type can be " +
+        'republished under another name or module (backend.md §6).',
+      severity: 'error',
+      from: { path: '^src/modules/([^/]+)/contracts/' },
+      to: { path: CONTRACTS, pathNot: '^src/modules/$1/' },
+    },
+    {
       name: 'api-features-no-concrete-adapters',
       comment:
         'Feature handlers, entry points (endpoints, event consumers) depend on domain repository ' +
@@ -227,6 +261,13 @@ export const apiGate: Gate = {
         reachable: true,
       },
     },
+    reachableClientsRule('api-domain-no-reachable-clients', 'domain/', 'domain/'),
+    reachableClientsRule(
+      'api-ports-no-reachable-clients',
+      'application/ports/',
+      'application/ports/',
+    ),
+    reachableClientsRule('api-contracts-no-reachable-clients', 'contracts/', 'a public contracts/'),
     {
       name: 'api-application-no-http-queue-scheduler-libraries',
       comment:

@@ -75,7 +75,7 @@ logging/    # Structured logs, correlation/tracing
 - `apps/api`: authoritative business operations, state, authentication, coordination; REST for operations, SSE for realtime delivery.
 - `apps/agent-worker`: runs on the host as the agent user, outside Studio's containers ([ADR 0002](adr/0002-agent-run-isolation.md)). It always calls the API, with a token limited to handling runs, to take approved runs and report status, events and results; the API never reaches into the host, and the worker has no access to the database or Redis. It runs official CLI adapters in a working copy per run ([behaviour notes](agent-worker.md)). **Never gets access to the system Docker daemon or its socket**; agents may use the agent user's rootless Docker daemon ([Security](../engineering/security.md) §2).
 - `apps/environment-controller`: narrow privileged interface for validated, authorized Docker Compose operations; no generic shell/Docker command interface.
-- `packages/contracts`: a cross-process contract is extracted here **only if** multiple runtime apps need it. One source of truth; never the same schema in both a module and a shared package.
+- `packages/contracts`: a cross-process contract is extracted here **only if** multiple runtime apps need it. One source of truth; never the same schema in both a module and a shared package. It holds the worker protocol and the shared kernel ([Backend](backend.md) §6) and no Integration Event: a cross-process Integration Event needs a decision first, and `architecture:monorepo` rejects an event-versioned export name there.
 
 ## 6. Integration events and reliable messaging
 

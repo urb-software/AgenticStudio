@@ -15,8 +15,9 @@ const CONFIG_DIR = /^src\/platform\/config\//;
 /** The Prisma delegate of the `Secret` model (`db.secret`, `tx.secret`, `{ secret } = db`). */
 const SECRET_DELEGATE = 'secret';
 const SECRETS_KEY = 'secretsKey';
-/** Raw SQL naming the table: `FROM secrets`, `INTO "secrets"`, `UPDATE secrets`. */
-const SECRETS_TABLE_SQL = /\b(from|into|update|join|table)\s+(\w+\.)?"?secrets"?(?![\w-])/i;
+/** Raw SQL naming the table: `FROM secrets`, `INTO "secrets"`, `COPY secrets`, `"public"."secrets"`. */
+const SECRETS_TABLE_SQL =
+  /\b(from|into|update|join|table|truncate|copy)\s+("?\w+"?\.)?"?secrets"?(?![\w-])/i;
 
 export function secretsViolations(baseDir: string): Violation[] {
   return listFiles(baseDir, 'src')
