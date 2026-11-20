@@ -104,7 +104,6 @@ CODEX_CLI_ENABLED=false
 - **Release age (Issue #30 decision 4):** `pnpm-workspace.yaml` sets `minimumReleaseAge: 10080` (7 days). pnpm refuses to resolve a version younger than that, and `pnpm install --frozen-lockfile` (local and CI) refuses a lockfile entry younger than that, so a fresh compromised release cannot slip in through an update or a hand-edited lockfile.
 - **Exclusions** live in `minimumReleaseAgeExclude`, as exact `name@version` entries only (never a bare name or a range), each with a comment.
 - **Urgent security fix younger than 7 days:** the implementer adds the exact patched version to `minimumReleaseAgeExclude` with a comment naming the advisory (GHSA/CVE), the tracking Issue and a removal date (at most the day the version turns 7 days old), bumps the dependency, and states the exclusion in the PR's review notes. The independent reviewer checks the advisory and the exact version; the operator's merge is the approval. Once the version is 7 days old, the entry is removed in a follow-up.
-- **Adoption baseline (operator-approved, temporary; decision on Issue #30):** the exact versions already locked when the policy was adopted (2026-11-13) are listed as a baseline block, removed once they are all 7 days old (2026-11-18T12:31Z). Removal is tracked in Issue #36. Every other exclusion stays reserved for urgent security fixes.
 
 ## 4. Git, branch and merge protection
 
