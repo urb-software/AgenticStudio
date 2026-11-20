@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { DisconnectRepositoryHandler } from '../../application/features/disconnect-repository/handler.js';
 import { FailInterruptedClonesHandler } from '../../application/features/fail-interrupted-clones/handler.js';
 import { FailInterruptedFetchesHandler } from '../../application/features/fail-interrupted-fetches/handler.js';
+import { ResumeDisconnectsHandler } from '../../application/features/resume-disconnects/handler.js';
 import { SweepOrphanedDeployKeysHandler } from '../../application/features/sweep-orphaned-deploy-keys/handler.js';
 import { SweepOrphanedEnvironmentFilesHandler } from '../../application/features/sweep-orphaned-environment-files/handler.js';
 
@@ -14,7 +14,7 @@ export class RepositoryStartupRecovery {
   constructor(
     private readonly failInterruptedClones: FailInterruptedClonesHandler,
     private readonly failInterruptedFetches: FailInterruptedFetchesHandler,
-    private readonly disconnect: DisconnectRepositoryHandler,
+    private readonly resumeDisconnects: ResumeDisconnectsHandler,
     private readonly orphanedKeys: SweepOrphanedDeployKeysHandler,
     private readonly orphanedEnvironmentFiles: SweepOrphanedEnvironmentFilesHandler,
   ) {}
@@ -22,7 +22,7 @@ export class RepositoryStartupRecovery {
   async run(): Promise<void> {
     await this.failInterruptedClones.execute();
     await this.failInterruptedFetches.execute();
-    await this.disconnect.resumeAll();
+    await this.resumeDisconnects.execute();
     await this.orphanedKeys.execute();
     await this.orphanedEnvironmentFiles.execute();
   }

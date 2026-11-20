@@ -15,7 +15,8 @@ import { REPOSITORY_CONNECTION_REPOSITORY } from '../../../../domain/repositorie
 import { InMemoryRepositoryConnectionRepository } from '../../../../domain/repositories/__tests__/in-memory-repository-connection-repository.js';
 import { REPOSITORY_GIT } from '../../../../application/ports/repository-git.js';
 import { FakeRepositoryGit } from '../../../../application/ports/__tests__/fake-repository-git.js';
-import { DisconnectRepositoryHandler } from '../../../../application/features/disconnect-repository/handler.js';
+import { ResumeDisconnectsHandler } from '../../../../application/features/resume-disconnects/handler.js';
+import { RepositoryCleanup } from '../../../../application/repository-cleanup.js';
 import { CloneRepositoryHandler } from '../../../../application/features/clone-repository/handler.js';
 import {
   DEPLOY_KEY_SWEEP_SETTINGS,
@@ -111,7 +112,8 @@ function startupContext(
       RecordUnfinishedFetchHandler,
       FailInterruptedClonesHandler,
       FailInterruptedFetchesHandler,
-      DisconnectRepositoryHandler,
+      RepositoryCleanup,
+      ResumeDisconnectsHandler,
       GetRepositoryOperationHandler,
       RepositoryStartupRecovery,
       RepositoryJobProcessor,
