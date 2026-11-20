@@ -32,7 +32,7 @@ function pollIntervalFor(
   followRefresh = false,
 ): number | false {
   if (!runs) return false;
-  // A requested delivery retry moves on without the operator too. a pull request refresh an
+  // A requested delivery retry moves on without the operator too. A pull request refresh an
   // agent worker is carrying out moves on by itself too; only the Run page follows it (a list
   // cannot tell a refresh no worker will answer).
   if (

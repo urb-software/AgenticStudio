@@ -33,6 +33,7 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
       <body>
         <ThemeProvider>
           {children}
+          {/* Inside the theme provider, so toasts follow the theme. */}
           <Toaster />
         </ThemeProvider>
       </body>
