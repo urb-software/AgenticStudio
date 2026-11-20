@@ -1264,6 +1264,16 @@ describeGate('api', apiGate, 'apps/api', [
     qualityRow: ROW_SINGLE_EXECUTE_FAIL,
   },
   {
+    fixture: 'handler-public-arrow-property',
+    expected: ['api-handler-single-execute'],
+    qualityRow: ROW_SINGLE_EXECUTE_FAIL,
+  },
+  {
+    fixture: 'handler-overloaded-execute',
+    expected: [],
+    qualityRow: 'A handler has one public method, `execute`',
+  },
+  {
     fixture: 'reference-module',
     expected: [],
     qualityRow: 'The reference module fixture (the complete approved layout)',

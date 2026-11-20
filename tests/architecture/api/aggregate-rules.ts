@@ -379,14 +379,23 @@ function handlerSingleExecuteViolations(baseDir: string, path: string): Violatio
     .filter(ts.isClassDeclaration)
     .filter((declaration) => declaration.name && HANDLER_SUFFIX.test(declaration.name.text))
     .flatMap((handler) => {
-      const methods = handler.members
-        .filter(isPublicMethod)
-        .filter(
-          (method) =>
-            !(ts.getModifiers(method) ?? []).some(
-              (modifier) => modifier.kind === ts.SyntaxKind.StaticKeyword,
-            ),
-        );
+      const isPublic = (member: ts.ClassElement): boolean =>
+        !(ts.getModifiers(member as ts.HasModifiers) ?? []).some(
+          (modifier) =>
+            modifier.kind === ts.SyntaxKind.PrivateKeyword ||
+            modifier.kind === ts.SyntaxKind.ProtectedKeyword ||
+            modifier.kind === ts.SyntaxKind.StaticKeyword,
+        ) && !member.name?.getText().startsWith('#');
+      const members = handler.members.filter(
+        (member) =>
+          isPublic(member) &&
+          ((ts.isMethodDeclaration(member) && member.body !== undefined) ||
+            (ts.isPropertyDeclaration(member) &&
+              member.initializer !== undefined &&
+              (ts.isArrowFunction(member.initializer) ||
+                ts.isFunctionExpression(member.initializer)))),
+      );
+      const methods = members as (ts.MethodDeclaration | ts.PropertyDeclaration)[];
       const names = methods.map((method) => method.name.getText());
       if (names.length === 1 && names[0] === 'execute') return [];
       return [
