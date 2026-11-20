@@ -348,6 +348,8 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
       const result = await this.withOperation(this.settings.fetchTimeoutMs, {}, (context) =>
         this.git(context, ['--version']),
       );
+      // Under prlimit a missing binary is the exit status of prlimit, not a spawn error.
+      if (result.exitCode !== 0) throw new Error('git failed');
       output = result.stdout.trim();
     } catch (error) {
       throw new Error(
