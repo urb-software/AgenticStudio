@@ -65,6 +65,13 @@ describe('web-no-colour-literals', () => {
     ],
     ['an SCSS @include argument', 'card.scss', `.a { @include glow(#000); }`],
     ['an SCSS @include with several arguments', 'card.scss', `.a { @include ring(2px, #e4e4e7); }`],
+    [
+      'a Sass @include argument',
+      'card.sass',
+      `.a
+  @include glow(#000)
+`,
+    ],
     ['a Sass +mixin argument', 'card.sass', `.a\n  +glow(#000)\n`],
   ])('fails on %s', (_name, path, text) => {
     expect(rulesIn(colourViolationsInFile(path, text))).toEqual(['web-no-colour-literals']);
@@ -104,6 +111,15 @@ describe('web-no-colour-literals', () => {
     ['a media query', 'card.css', `@media (min-width: 768px) { #add { padding: 0; } }`],
   ])('allows %s', (_name, path, text) => {
     expect(colourViolationsInFile(path, text)).toEqual([]);
+  });
+});
+
+describe('colour function scanning', () => {
+  it('handles a long run of unclosed colour functions quickly', () => {
+    const text = `const c = '${'rgb(1 '.repeat(20000)}';`;
+    const start = Date.now();
+    colourViolationsInFile('page.tsx', text);
+    expect(Date.now() - start).toBeLessThan(2000);
   });
 });
 

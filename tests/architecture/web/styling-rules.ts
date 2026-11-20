@@ -175,11 +175,7 @@ export function colourViolationsInFile(path: string, text: string): Violation[] 
 
 /** `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, not part of a longer word, entity or URL. */
 const HEX_COLOUR = /(?<![A-Za-z0-9&#/])#(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{3,4})(?![\w-])/gi;
-/**
- * A CSS colour function followed by colour arguments (a number, `var(`, `#`, relative-colour
- * `from`, `none`, or a colour space), so prose such as `color(optional)` is not one.
- * `color-mix()` over tokens is fine, so it is not listed.
- */
+/** CSS colour functions; `color-mix()` over tokens is fine, so it is not listed. */
 const COLOUR_FUNCTION_NAME = /(?<![A-Za-z0-9-])(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(/gi;
 /** What may open the arguments: a number, `#`, `from`, `none`, a colour space or a nested call. */
 const COLOUR_ARGUMENTS =
@@ -187,16 +183,20 @@ const COLOUR_ARGUMENTS =
 
 /** Colour function calls, found by balanced-parenthesis scanning so `rgb(calc(…))` is whole. */
 function colourFunctions(text: string): string[] {
+  // One linear pass pairs every `(` with its `)`; an unclosed one runs to the end of the text.
+  const closing = new Map<number, number>();
+  const open: number[] = [];
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '(') open.push(i);
+    else if (text[i] === ')') {
+      const opener = open.pop();
+      if (opener !== undefined) closing.set(opener, i + 1);
+    }
+  }
   const calls: string[] = [];
   for (const match of text.matchAll(COLOUR_FUNCTION_NAME)) {
     const start = match.index + match[0].length;
-    let depth = 1;
-    let end = start;
-    while (end < text.length && depth > 0) {
-      if (text[end] === '(') depth++;
-      else if (text[end] === ')') depth--;
-      end++;
-    }
+    const end = closing.get(start - 1) ?? text.length;
     if (COLOUR_ARGUMENTS.test(text.slice(start, end))) calls.push(text.slice(match.index, end));
   }
   return calls;
@@ -205,7 +205,7 @@ function colourFunctions(text: string): string[] {
 const DATA_URI_HEX = /(?:#|%23)(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{3,4})(?![\w-])/gi;
 
 /**
- * Colours inside a `data:` URI: `#hex` or URL-encoded `%23hex`, and colour functions. Base64
+ * Colours inside a `data:` URI: `#hex` or URL-encoded `%23hex` (also `%23abc`), and colour functions. Base64
  * payloads are not decoded (out of scope).
  */
 function dataUriColours(text: string): string[] {
@@ -240,7 +240,7 @@ function stylesheetColours(path: string, text: string): string[] {
 /** Arguments of SCSS `@include mixin(…)` (Sass: `+mixin(…)`) calls, which are not declarations. */
 function mixinArguments(path: string, css: string): string[] {
   const call = path.endsWith('.sass')
-    ? /^\s*\+[\w-]+\(([^\n]*)/gm
+    ? /^\s*(?:\+|@include\s+)[\w.-]+\(([^\n]*)/gm
     : /@include\s+[\w.-]+\s*\(([^;{]*)/g;
   return [...css.matchAll(call)].map((match) => match[1] ?? '');
 }
