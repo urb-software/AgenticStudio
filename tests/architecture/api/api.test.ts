@@ -11,6 +11,12 @@ const ROW_PORT_ANY_ROUTE =
   'An entry point imports a repository interface or port file by any route (nested, side-effect, dynamic, re-exported by a handler)' as const;
 const ROW_ERROR_THROUGH_HANDLER =
   'An entry point imports an error class through a handler, or a test imports a fake from `ports/__tests__/`' as const;
+const ROW_SECRET_MODEL =
+  'A module uses the `secret` model or runs raw SQL on `secrets` (any statement, quoted or qualified)' as const;
+const ROW_SECRETS_KEY =
+  'A module reads `secretsKey` outside `platform/config` and `platform/secrets` (property, destructuring, element access)' as const;
+const ROW_REACHABLE_CLIENT =
+  '`domain/`, `application/ports/` or `contracts/` reaches the ORM, a concrete client or (`domain/`) a framework, runtime module or `platform/` through a re-export chain' as const;
 const ROW_HANDLER_FAIL =
   'A handler returns an entity class, does not export its result type, or has a public method with no declared return type' as const;
 
@@ -48,12 +54,16 @@ describeGate('api', apiGate, 'apps/api', [
   },
   {
     fixture: 'domain-imports-orm',
-    expected: ['api-domain-independent', 'api-orm-only-in-infrastructure-repositories'],
+    expected: [
+      'api-domain-independent',
+      'api-orm-only-in-infrastructure-repositories',
+      'api-domain-no-reachable-clients',
+    ],
     qualityRow: 'Domain imports ORM/NestJS',
   },
   {
     fixture: 'domain-imports-nestjs',
-    expected: ['api-domain-independent'],
+    expected: ['api-domain-independent', 'api-domain-no-reachable-clients'],
     qualityRow: 'Domain imports ORM/NestJS',
   },
   {
@@ -66,7 +76,10 @@ describeGate('api', apiGate, 'apps/api', [
     expected: ['api-no-module-cycle'],
     qualityRow: 'Two modules introduce a dependency cycle',
   },
-  { fixture: 'domain-imports-infrastructure', expected: ['api-domain-independent'] },
+  {
+    fixture: 'domain-imports-infrastructure',
+    expected: ['api-domain-independent', 'api-domain-no-reachable-clients'],
+  },
   {
     fixture: 'handler-imports-own-concrete-adapter',
     expected: ['api-features-no-concrete-adapters', 'api-features-no-reachable-adapters'],
@@ -102,20 +115,38 @@ describeGate('api', apiGate, 'apps/api', [
       'api-features-no-reachable-adapters',
     ],
   },
-  { fixture: 'domain-imports-docker-client', expected: ['api-domain-independent'] },
+  {
+    fixture: 'domain-imports-docker-client',
+    expected: ['api-domain-independent', 'api-domain-no-reachable-clients'],
+  },
   { fixture: 'unresolved-relative-import', expected: ['api-local-imports-resolve'] },
   {
     fixture: 'handler-imports-adapter-via-port',
-    expected: ['api-ports-independent', 'api-features-no-reachable-adapters'],
+    expected: [
+      'api-ports-independent',
+      'api-features-no-reachable-adapters',
+      'api-ports-no-reachable-clients',
+    ],
   },
   {
     fixture: 'contracts-reexport-infrastructure',
-    expected: ['api-contracts-self-contained', 'api-features-no-reachable-adapters'],
+    expected: [
+      'api-contracts-self-contained',
+      'api-features-no-reachable-adapters',
+      'api-contracts-no-reachable-clients',
+    ],
   },
-  { fixture: 'contracts-import-domain', expected: ['api-contracts-self-contained'] },
+  {
+    fixture: 'contracts-import-domain',
+    expected: ['api-contracts-self-contained', 'api-event-file-imports-zod-only'],
+  },
   {
     fixture: 'domain-imports-file-system',
-    expected: ['api-domain-independent', 'api-domain-no-runtime-modules'],
+    expected: [
+      'api-domain-independent',
+      'api-domain-no-runtime-modules',
+      'api-domain-no-reachable-clients',
+    ],
   },
   {
     fixture: 'module-root-file-reexports-adapter',
@@ -131,7 +162,11 @@ describeGate('api', apiGate, 'apps/api', [
   },
   {
     fixture: 'port-reexports-database-client',
-    expected: ['api-ports-independent', 'api-features-no-reachable-adapters'],
+    expected: [
+      'api-ports-independent',
+      'api-features-no-reachable-adapters',
+      'api-ports-no-reachable-clients',
+    ],
   },
   { fixture: 'handler-legitimate-dependencies', expected: [] },
   { fixture: 'shared-reexports-database-client', expected: ['api-features-no-reachable-adapters'] },
@@ -142,9 +177,17 @@ describeGate('api', apiGate, 'apps/api', [
   },
   {
     fixture: 'contracts-reexport-database-client',
-    expected: ['api-features-no-reachable-adapters'],
+    expected: [
+      'api-features-no-reachable-adapters',
+      'api-contracts-no-reachable-clients',
+      'api-contracts-self-contained',
+    ],
   },
-  { fixture: 'events-versioned-and-publisher-owned', expected: [] },
+  {
+    fixture: 'events-versioned-and-publisher-owned',
+    expected: [],
+    qualityRow: 'An event file imports only `zod`',
+  },
   {
     fixture: 'event-unversioned-export',
     expected: ['api-event-versioned'],
@@ -154,7 +197,12 @@ describeGate('api', apiGate, 'apps/api', [
   { fixture: 'event-defined-outside-contracts', expected: ['api-event-publisher-owned'] },
   {
     fixture: 'event-reexports-foreign-event',
-    expected: ['api-event-publisher-owned', 'api-event-no-duplicates'],
+    expected: [
+      'api-event-publisher-owned',
+      'api-event-no-duplicates',
+      'api-contracts-no-foreign-contracts',
+      'api-event-file-imports-zod-only',
+    ],
   },
   {
     fixture: 'event-duplicated-across-modules',
@@ -187,8 +235,14 @@ describeGate('api', apiGate, 'apps/api', [
       'api-features-no-reachable-adapters',
     ],
   },
-  { fixture: 'port-imports-framework-orm-integration', expected: ['api-ports-independent'] },
-  { fixture: 'contracts-reexport-client-wrapper', expected: ['api-contracts-self-contained'] },
+  {
+    fixture: 'port-imports-framework-orm-integration',
+    expected: ['api-ports-independent', 'api-ports-no-reachable-clients'],
+  },
+  {
+    fixture: 'contracts-reexport-client-wrapper',
+    expected: ['api-contracts-self-contained', 'api-contracts-no-reachable-clients'],
+  },
   { fixture: 'event-declared-in-contracts-root', expected: ['api-event-versioned'] },
   {
     fixture: 'adapter-implements-contract-via-ports-barrel',
@@ -200,7 +254,7 @@ describeGate('api', apiGate, 'apps/api', [
   },
   {
     fixture: 'event-republished-by-other-module',
-    expected: ['api-event-publisher-owned'],
+    expected: ['api-event-publisher-owned', 'api-contracts-no-foreign-contracts'],
     qualityRow: 'Integration event re-exported by another module or under another name',
   },
   { fixture: 'event-unversioned-export-alias', expected: ['api-event-publisher-owned'] },
@@ -217,18 +271,119 @@ describeGate('api', apiGate, 'apps/api', [
     expected: ['api-database-package-imports-resolve'],
   },
   { fixture: 'port-aliases-contract-outside-ports', expected: ['api-adapter-contract-placement'] },
-  { fixture: 'event-default-export', expected: ['api-event-publisher-owned'] },
-  { fixture: 'event-namespace-alias', expected: ['api-event-publisher-owned'] },
-  { fixture: 'event-namespace-reexport', expected: ['api-event-publisher-owned'] },
-  { fixture: 'event-interface-alias', expected: ['api-event-publisher-owned'] },
+  {
+    fixture: 'event-default-export',
+    expected: ['api-event-publisher-owned', 'api-contracts-no-foreign-contracts'],
+  },
+  {
+    fixture: 'event-namespace-alias',
+    expected: ['api-event-publisher-owned', 'api-contracts-no-foreign-contracts'],
+  },
+  {
+    fixture: 'event-namespace-reexport',
+    expected: ['api-event-publisher-owned', 'api-contracts-no-foreign-contracts'],
+  },
+  {
+    fixture: 'event-interface-alias',
+    expected: ['api-event-publisher-owned', 'api-contracts-no-foreign-contracts'],
+  },
   { fixture: 'secrets-used-through-entry-points', expected: [] },
   { fixture: 'module-imports-secrets-internals', expected: ['api-secrets-via-entry-points'] },
   {
     fixture: 'secrets-module-imported-outside-module-file',
     expected: ['api-secrets-module-in-module-files'],
   },
-  { fixture: 'module-uses-secret-model', expected: ['api-secret-model-in-secrets-only'] },
-  { fixture: 'module-reads-secrets-key', expected: ['api-secrets-key-reads'] },
+  {
+    fixture: 'module-uses-secret-model-delegate',
+    expected: ['api-secret-model-in-secrets-only'],
+    qualityRow: ROW_SECRET_MODEL,
+  },
+  {
+    fixture: 'module-uses-secret-model-raw-sql',
+    expected: ['api-secret-model-in-secrets-only'],
+    qualityRow: ROW_SECRET_MODEL,
+  },
+  {
+    fixture: 'module-uses-secret-model-truncate-sql',
+    expected: ['api-secret-model-in-secrets-only'],
+    qualityRow: ROW_SECRET_MODEL,
+  },
+  {
+    fixture: 'module-uses-secret-model-copy-sql',
+    expected: ['api-secret-model-in-secrets-only'],
+    qualityRow: ROW_SECRET_MODEL,
+  },
+  {
+    fixture: 'module-uses-secret-model-quoted-schema-sql',
+    expected: ['api-secret-model-in-secrets-only'],
+    qualityRow: ROW_SECRET_MODEL,
+  },
+  {
+    fixture: 'module-reads-secrets-key-property-read',
+    expected: ['api-secrets-key-reads'],
+    qualityRow: ROW_SECRETS_KEY,
+  },
+  {
+    fixture: 'module-reads-secrets-key-destructuring',
+    expected: ['api-secrets-key-reads'],
+    qualityRow: ROW_SECRETS_KEY,
+  },
+  {
+    fixture: 'module-reads-secrets-key-element-access',
+    expected: ['api-secrets-key-reads'],
+    qualityRow: ROW_SECRETS_KEY,
+  },
+  {
+    fixture: 'domain-reaches-client-through-shared',
+    expected: ['api-domain-no-reachable-clients'],
+    qualityRow: ROW_REACHABLE_CLIENT,
+  },
+  {
+    fixture: 'port-reaches-client-through-workspace-package',
+    expected: ['api-ports-no-reachable-clients'],
+    qualityRow: ROW_REACHABLE_CLIENT,
+  },
+  {
+    fixture: 'contracts-reach-client-through-workspace-package',
+    expected: ['api-contracts-no-reachable-clients'],
+    qualityRow: ROW_REACHABLE_CLIENT,
+  },
+  {
+    fixture: 'contracts-reach-foreign-contracts-through-shared',
+    expected: ['api-contracts-self-contained'],
+    qualityRow:
+      'A `contracts/` file imports `shared/` or `platform/`, or the `contracts/` of another module',
+  },
+  {
+    fixture: 'domain-reaches-nestjs-through-shared',
+    expected: ['api-domain-no-reachable-clients'],
+    qualityRow: ROW_REACHABLE_CLIENT,
+  },
+  {
+    fixture: 'domain-reaches-child-process-through-shared',
+    expected: ['api-domain-no-reachable-clients'],
+    qualityRow: ROW_REACHABLE_CLIENT,
+  },
+  {
+    fixture: 'event-file-uses-require',
+    expected: ['api-event-file-imports-zod-only'],
+    qualityRow: 'An event file imports a module other than `zod` (import, export from, require)',
+  },
+  {
+    fixture: 'contracts-import-foreign-contracts',
+    expected: ['api-contracts-no-foreign-contracts'],
+    qualityRow: 'A `contracts/` file imports the `contracts/` of another module',
+  },
+  {
+    fixture: 'event-file-imports-non-zod-module',
+    expected: ['api-event-file-imports-zod-only', 'api-contracts-self-contained'],
+    qualityRow: 'An event file imports a module other than `zod` (import, export from, require)',
+  },
+  {
+    fixture: 'entry-point-imports-port-token-through-port-export-star',
+    expected: ['api-entry-points-no-ports-or-infrastructure'],
+    qualityRow: ROW_PORT_ANY_ROUTE,
+  },
   { fixture: 'platform-only-handled-error-and-queue-health', expected: [] },
   {
     fixture: 'module-imports-handled-server-error',
@@ -701,6 +856,7 @@ describeGate('api', apiGate, 'apps/api', [
       'api-domain-independent',
       'api-domain-tests-no-database-or-containers',
       'api-orm-only-in-infrastructure-repositories',
+      'api-domain-no-reachable-clients',
     ],
     qualityRow: 'A domain test imports a database client or container tooling',
   },

@@ -22,6 +22,51 @@ export const QUALITY_TABLE = [
     expected: 'FAIL',
     gate: 'api',
   },
+  {
+    row: '`domain/`, `application/ports/` or `contracts/` reaches the ORM, a concrete client or (`domain/`) a framework, runtime module or `platform/` through a re-export chain',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: 'A `contracts/` file imports `shared/` or `platform/`, or the `contracts/` of another module',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: 'A `contracts/` file imports the `contracts/` of another module',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: 'An event file imports only `zod`',
+    expected: 'PASS',
+    gate: 'api',
+  },
+  {
+    row: 'An event file imports a module other than `zod` (import, export from, require)',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: 'A module uses the `secret` model or runs raw SQL on `secrets` (any statement, quoted or qualified)',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: 'A module reads `secretsKey` outside `platform/config` and `platform/secrets` (property, destructuring, element access)',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: '`packages/contracts` exports no name shaped like an event version',
+    expected: 'PASS',
+    gate: 'monorepo',
+  },
+  {
+    row: '`packages/contracts` exports a `<Name>V<n>` or `<Name>V<n>Schema` name',
+    expected: 'FAIL',
+    gate: 'monorepo',
+  },
   { row: 'Web imports `@/modules/agents` public entrypoint', expected: 'PASS', gate: 'web' },
   { row: "Web deep-imports another module's private Zustand store", expected: 'FAIL', gate: 'web' },
   { row: 'Two modules introduce a dependency cycle', expected: 'FAIL', gate: 'api' },

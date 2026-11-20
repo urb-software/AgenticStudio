@@ -218,11 +218,9 @@ function portReexports(
       const to = target(file, specifier);
       if (!to) continue;
       const inner = REPOSITORY_OR_PORT_FILE.test(to)
-        ? existsSync(join(baseDir, to))
-          ? exportedNames(parse(baseDir, to))
-              .filter((name) => !ERROR_NAME.test(name))
-              .map((name) => ({ name, origin: to }))
-          : []
+        ? portFileNames(baseDir, to)
+            .filter((name) => !ERROR_NAME.test(name))
+            .map((name) => ({ name, origin: to }))
         : portReexports(baseDir, to, [...chain, file]);
       if (clause) {
         // `export * as ns`: one name, `ns`, for everything the file leads to.
@@ -241,6 +239,29 @@ function portReexports(
     }
   }
   return found;
+}
+
+/**
+ * Every name a port or repository file exposes: its own exports and, followed through relative
+ * files with a cycle guard, those of an `export * from` it holds (a port re-exporting another).
+ */
+function portFileNames(baseDir: string, file: string, seen = new Set<string>()): string[] {
+  if (seen.has(file) || !existsSync(join(baseDir, file))) return [];
+  seen.add(file);
+  const source = parse(baseDir, file);
+  const starred = source.statements.flatMap((statement) => {
+    if (
+      !ts.isExportDeclaration(statement) ||
+      statement.exportClause ||
+      !statement.moduleSpecifier ||
+      !ts.isStringLiteral(statement.moduleSpecifier)
+    ) {
+      return [];
+    }
+    const to = target(file, statement.moduleSpecifier.text);
+    return to ? portFileNames(baseDir, to, seen) : [];
+  });
+  return [...exportedNames(source), ...starred];
 }
 
 /**

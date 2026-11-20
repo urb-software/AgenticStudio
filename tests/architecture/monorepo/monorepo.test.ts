@@ -25,7 +25,16 @@ describeGate('monorepo', monorepoGate, '.', [
     fixture: 'app-imports-package-by-relative-path',
     expected: ['mono-no-relative-imports-into-packages'],
   },
-  { fixture: 'agent-worker-uses-contracts', expected: [] },
+  {
+    fixture: 'agent-worker-uses-contracts',
+    expected: [],
+    qualityRow: '`packages/contracts` exports no name shaped like an event version',
+  },
+  {
+    fixture: 'packages-contracts-exports-event-version',
+    expected: ['mono-contracts-no-event-versions'],
+    qualityRow: '`packages/contracts` exports a `<Name>V<n>` or `<Name>V<n>Schema` name',
+  },
   {
     fixture: 'agent-worker-imports-database-package',
     expected: [
