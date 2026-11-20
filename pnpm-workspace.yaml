@@ -84,6 +84,10 @@ peerDependencyRules:
 # Tracking task #19: https://github.com/urb-software/AgenticStudio/issues/19
 overrides:
   '@hey-api/json-schema-ref-parser>js-yaml': '4.3.2'
+  # @prisma/config 7.10.1 pins effect 3.20.0, affected by GHSA-7589-6fvf-x4pw (ReDoS in
+  # Schema.TemplateLiteral; high). 3.22.4 is a patched release of the same major. Remove once
+  # Prisma depends on a patched effect.
+  '@prisma/config>effect': '3.22.4'
 
 # Temporary audit ignore, scoped to one advisory: GHSA-fc5q-39xc-vjpf (picomatch <=4.0.7, ReDoS
 # through single-branch repeated extglobs; high). The patched 4.0.8 is not yet released. It is
