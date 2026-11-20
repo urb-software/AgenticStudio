@@ -7,10 +7,17 @@ import ts from 'typescript';
 /** Comment blocks longer than this many lines need `@long-comment <reason>`. */
 export const MAX_COMMENT_LINES = 3;
 
-/** Source roots under the repository root; `apps/web` is out until its own clean-up. */
-const ROOTS = ['apps/api/src', 'apps/agent-worker', 'packages', 'tests/architecture'];
+/** Source roots under the repository root. */
+const ROOTS = ['apps/api/src', 'apps/agent-worker', 'apps/web', 'packages', 'tests/architecture'];
 const SOURCE = /\.(?:[cm]?[jt]s|tsx)$/;
-const SKIPPED_DIRECTORIES = new Set(['node_modules', 'dist', 'build', 'coverage', 'generated']);
+const SKIPPED_DIRECTORIES = new Set([
+  'node_modules',
+  'dist',
+  'build',
+  'coverage',
+  'generated',
+  '.next',
+]);
 // Only a marker in a comment line of the header counts, never the word in prose: `@generated`,
 // "auto-generated", or "Code generated ... DO NOT EDIT".
 const GENERATED_HEADER =
