@@ -20,11 +20,12 @@ const PROJECT_ID = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const URL = 'https://github.com/owner/repo.git';
 
 describe('SystemGitAdapter production wiring', () => {
-  it('pins the limits: 10 minutes to clone, 2 minutes to fetch, 2 GiB on disk', () => {
+  it('pins the limits: 10 minutes to clone, 2 minutes to fetch, 2 GiB on disk, 2 GiB of memory per process', () => {
     expect(PRODUCTION_GIT_LIMITS).toEqual({
       cloneTimeoutMs: 600_000,
       fetchTimeoutMs: 120_000,
       maxCloneBytes: 2_147_483_648,
+      maxProcessMemoryBytes: 2_147_483_648,
     });
     expect(systemGitSettings(testConfig({ dataDir: '/srv/studio' }))).toEqual({
       dataDir: '/srv/studio',
@@ -32,6 +33,7 @@ describe('SystemGitAdapter production wiring', () => {
       cloneTimeoutMs: 600_000,
       fetchTimeoutMs: 120_000,
       maxCloneBytes: 2_147_483_648,
+      maxProcessMemoryBytes: 2_147_483_648,
       allowPrivateRemotes: false,
     });
   });

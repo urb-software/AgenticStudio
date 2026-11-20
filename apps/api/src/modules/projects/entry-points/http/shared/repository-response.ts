@@ -50,7 +50,8 @@ export const repositoryFailureCodeSchema = z
   .meta({
     id: 'RepositoryFailureCode',
     description:
-      'The fixed failure reason codes. remote_not_allowed: the remote host is or resolves ' +
+      "The fixed failure reason codes. size_limit: the Clone exceeded Studio's disk or memory limit; " +
+      'remote_not_allowed: the remote host is or resolves ' +
       'to an address Studio does not connect to; redirect_refused: the remote answered ' +
       'with an HTTP redirect, which Studio does not follow; interrupted: the operation was cut off by ' +
       'a crash or a restart of Studio, not by the repository. Later versions may add values; treat an ' +

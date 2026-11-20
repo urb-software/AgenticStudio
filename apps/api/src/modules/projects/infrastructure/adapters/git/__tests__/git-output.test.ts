@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { classifyGitFailure, MAX_DETAIL_LENGTH, redactGitOutput } from '../git-output.js';
+import {
+  classifyGitFailure,
+  isOutOfMemory,
+  MAX_DETAIL_LENGTH,
+  redactGitOutput,
+} from '../git-output.js';
 
 describe('redactGitOutput', () => {
   it('removes credentials embedded in URLs', () => {
@@ -97,5 +102,27 @@ describe('classifyGitFailure', () => {
     ['', 'unknown'],
   ])('maps %j to %s', (stderr, reason) => {
     expect(classifyGitFailure(stderr)).toBe(reason);
+  });
+});
+
+describe('isOutOfMemory', () => {
+  it.each([
+    'fatal: Out of memory, malloc failed (tried to allocate 60000001 bytes)',
+    'remote: fatal: mmap failed, check sys.vm.max_map_count and/or RLIMIT_DATA: Cannot allocate memory',
+    'fork: Cannot allocate memory',
+    'xmalloc: out of memory (allocating 4096 bytes)',
+    'fatal: unable to create thread: Resource temporarily unavailable',
+    'error: cannot create async thread: Resource temporarily unavailable',
+  ])('recognises the out-of-memory output %j', (stderr) => {
+    expect(isOutOfMemory(stderr)).toBe(true);
+  });
+
+  it.each([
+    'fatal: Authentication failed for the remote',
+    "fatal: unable to access 'https://git.example.test/': Could not resolve host",
+    "fatal: couldn't find remote ref refs/heads/main",
+    '',
+  ])('leaves other failures alone: %j', (stderr) => {
+    expect(isOutOfMemory(stderr)).toBe(false);
   });
 });

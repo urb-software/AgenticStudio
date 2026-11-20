@@ -13,7 +13,11 @@ import {
   GitRequestRejectedError,
   type GitFailureReason,
 } from '../../../../application/ports/repository-git.js';
-import { SystemGitAdapter, type SystemGitSettings } from '../system-git-adapter.js';
+import {
+  PRODUCTION_GIT_LIMITS,
+  SystemGitAdapter,
+  type SystemGitSettings,
+} from '../system-git-adapter.js';
 import { addCommit, createFixture, headOf, type Fixture } from './fixtures/fixture-repos.js';
 
 const PROJECT_ID = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
@@ -38,6 +42,7 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
       cloneTimeoutMs: 60_000,
       fetchTimeoutMs: 60_000,
       maxCloneBytes: 50 * 1024 * 1024,
+      maxProcessMemoryBytes: 2 * 1024 ** 3,
       tempRoot,
       log: (message) => logs.push(message),
       // The network fixtures listen on 127.0.0.1: an explicit opt-in.
@@ -313,6 +318,47 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
         'size_limit',
       );
       expect(await cloneEntries()).toEqual([]);
+    });
+
+    describe('memory bound (real git under prlimit)', () => {
+      // One incompressible 60 MB blob: Git must hold it in memory to pack it, which a 64 MiB
+      // address space cannot do, while the production bound (2 GiB) clones it without trouble.
+      const BLOB = 60_000_000;
+
+      it('fails a clone that needs more memory than the bound with size_limit, and keeps no Clone', async () => {
+        const fixture = createFixture(fixtures, 'heavy', { 'blob.bin': randomBytes(BLOB) });
+        await expectReason(
+          adapter({
+            maxCloneBytes: 500 * 1024 * 1024,
+            maxProcessMemoryBytes: 64 * 1024 * 1024,
+          }).clone(PROJECT_ID, fixture.url, 'main'),
+          'size_limit',
+        );
+        expect(await cloneEntries()).toEqual([]);
+        expect(logs.some((line) => line.includes('ran out of memory'))).toBe(true);
+      });
+
+      it('removes the Clone when a fetch needs more memory than the bound', async () => {
+        const fixture = createFixture(fixtures, 'heavy-fetch', { 'small.txt': 'small\n' });
+        const git = adapter({
+          maxCloneBytes: 500 * 1024 * 1024,
+          maxProcessMemoryBytes: 64 * 1024 * 1024,
+        });
+        await git.clone(PROJECT_ID, fixture.url, 'main');
+        addCommit(fixture, { 'blob.bin': randomBytes(BLOB) });
+        await expectReason(git.fetch(PROJECT_ID, fixture.url, 'main'), 'size_limit');
+        expect(await cloneEntries()).toEqual([]);
+      });
+
+      it('clones the same repository under the production bound', async () => {
+        const fixture = createFixture(fixtures, 'heavy-ok', { 'blob.bin': randomBytes(BLOB) });
+        await expect(
+          adapter({
+            maxCloneBytes: 500 * 1024 * 1024,
+            maxProcessMemoryBytes: PRODUCTION_GIT_LIMITS.maxProcessMemoryBytes,
+          }).clone(PROJECT_ID, fixture.url, 'main'),
+        ).resolves.toEqual({ commit: headOf(fixture) });
+      });
     });
 
     it('removes a Clone that a fetch pushed past the size limit', async () => {

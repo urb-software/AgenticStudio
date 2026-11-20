@@ -58,3 +58,15 @@ export function classifyGitFailure(stderr: string): GitFailureReason {
   }
   return 'unknown';
 }
+
+/**
+ * Whether a failed process ran into its memory bound (`RLIMIT_AS`): Git's `Out of memory, malloc
+ * failed` and `mmap failed: Cannot allocate memory`, ssh's `xmalloc`, a thread that could not
+ * get its stack (`unable to create thread`, `cannot create async thread`).
+ */
+const OUT_OF_MEMORY =
+  /Out of memory|malloc failed|mmap failed|Cannot allocate memory|xmalloc|unable to create thread|cannot create async thread/i;
+
+export function isOutOfMemory(stderr: string): boolean {
+  return OUT_OF_MEMORY.test(stderr);
+}

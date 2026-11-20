@@ -17,6 +17,17 @@ export interface SizeWatch {
   intervalMs: number;
 }
 
+/**
+ * A hard memory bound for the process and every child it starts: the process runs as
+ * `prlimit --as=<bytes> -- <binary> …` (util-linux). `RLIMIT_AS` is inherited across fork and
+ * exec, and an unprivileged process may lower its own limit, so no capability is needed.
+ */
+export interface MemoryBound {
+  /** Address space, in bytes, of each process in the group. */
+  bytes: number;
+  prlimitBinary: string;
+}
+
 export interface RunOptions {
   binary: string;
   args: readonly string[];
@@ -26,6 +37,7 @@ export interface RunOptions {
   deadline: number;
   signal?: AbortSignal;
   watch?: SizeWatch;
+  memoryBound?: MemoryBound;
 }
 
 export interface RunResult {
@@ -53,7 +65,12 @@ export function runGitProcess(options: RunOptions): Promise<RunResult> {
       reject(new GitProcessInterrupted('aborted'));
       return;
     }
-    const child = spawn(options.binary, options.args, {
+    const bound = options.memoryBound;
+    const file = bound ? bound.prlimitBinary : options.binary;
+    const args = bound
+      ? [`--as=${bound.bytes}`, '--', options.binary, ...options.args]
+      : options.args;
+    const child = spawn(file, args, {
       cwd: options.cwd,
       env: options.env,
       shell: false,

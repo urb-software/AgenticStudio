@@ -27,9 +27,11 @@ import {
 import {
   gitInvocations,
   keyscanInvocation,
+  prlimitInvocations,
   sshInvocation,
   writeFakeGit,
   writeFakeKeyscan,
+  writeFakePrlimit,
   writeFakeSsh,
   type FakeFetch,
 } from './fixtures/fake-binaries.js';
@@ -105,6 +107,7 @@ describe.runIf(process.platform === 'linux')(
         cloneTimeoutMs: 15_000,
         fetchTimeoutMs: 15_000,
         maxCloneBytes: 1024 * 1024,
+        maxProcessMemoryBytes: 2 * 1024 ** 3,
         sizePollIntervalMs: 20,
         tempRoot,
         log: () => {},
@@ -180,6 +183,7 @@ describe.runIf(process.platform === 'linux')(
       );
       expect(gitEnv).toEqual({
         PATH: process.env.PATH,
+        MALLOC_ARENA_MAX: '2',
         HOME: cwd,
         LC_ALL: 'C',
         LANG: 'C',
@@ -195,6 +199,90 @@ describe.runIf(process.platform === 'linux')(
       // A private per-operation directory outside the data directory, deleted afterwards.
       expect(cwd.startsWith(join(tempRoot, 'studio-git-'))).toBe(true);
       expect(existsSync(cwd)).toBe(false);
+    });
+
+    describe('memory bound', () => {
+      const BOUND = 1536 * 1024 * 1024;
+
+      it('starts git and ssh-keyscan as prlimit --as=<bytes> -- <binary>, and the limit is in force', async () => {
+        const prlimitBinary = await writeFakePrlimit(root, recordDir);
+        const keyscanBinary = await writeFakeKeyscan(root, recordDir, { stdout: '' });
+        const git = await adapter(
+          {},
+          { prlimitBinary, keyscanBinary, maxProcessMemoryBytes: BOUND },
+        );
+
+        await expect(git.inspectRemote(HTTPS_URL, 'main')).rejects.toThrow(GitOperationError);
+        await expect(git.scanHostKey(SSH_URL)).rejects.toThrow(GitOperationError);
+
+        const [gitStart, keyscanStart] = await prlimitInvocations(recordDir);
+        expect(gitStart!.slice(0, 3)).toEqual([
+          `--as=${BOUND}`,
+          '--',
+          expect.stringMatching(/fake-git$/),
+        ]);
+        expect(gitStart!.slice(3, 5)).toEqual(['-c', 'core.hooksPath=/dev/null']);
+        expect(keyscanStart!.slice(0, 3)).toEqual([
+          `--as=${BOUND}`,
+          '--',
+          expect.stringMatching(/fake-ssh-keyscan$/),
+        ]);
+        // What prlimit started runs under the bound (read from /proc, not from the arguments).
+        const [invocation] = await gitInvocations(recordDir);
+        expect(invocation!.limits).toMatch(
+          new RegExp(`^Max address space\\s+${BOUND}\\s+${BOUND}\\s+bytes\\s*$`, 'm'),
+        );
+        expect(invocation!.args).not.toContain(`--as=${BOUND}`);
+      });
+
+      it("passes Git's own memory settings to every command", async () => {
+        await expect((await adapter()).inspectRemote(HTTPS_URL, 'main')).rejects.toThrow();
+        const [invocation] = await gitInvocations(recordDir);
+        const { args, env } = invocation!;
+        const settings = args.flatMap((arg, i) => (args[i - 1] === '-c' ? [arg] : []));
+        expect(settings).toEqual(
+          expect.arrayContaining([
+            'core.packedGitWindowSize=32m',
+            'core.packedGitLimit=256m',
+            'core.deltaBaseCacheLimit=64m',
+            'pack.windowMemory=128m',
+            'pack.deltaCacheSize=64m',
+            'core.bigFileThreshold=64m',
+            'pack.threads=2',
+          ]),
+        );
+        expect(env.MALLOC_ARENA_MAX).toBe('2');
+      });
+
+      it('maps a process that ran out of memory to size_limit and removes the partial Clone', async () => {
+        const logs: string[] = [];
+        const git = await adapter(
+          { fetch: 'out-of-memory' },
+          { log: (message) => logs.push(message) },
+        );
+        await expect(git.clone(PROJECT_ID, HTTPS_URL, 'main')).rejects.toMatchObject({
+          reason: 'size_limit',
+        });
+        expect(await readdir(join(dataDir, 'clones'))).toEqual([]);
+        expect(logs.some((line) => line.includes('ran out of memory'))).toBe(true);
+      });
+
+      it('removes the Clone when a fetch ran out of memory', async () => {
+        const clone = join(dataDir, 'clones', `${PROJECT_ID}.git`);
+        await mkdir(join(clone, 'objects', 'pack'), { recursive: true });
+        const git = await adapter({ fetch: 'out-of-memory' });
+        await expect(git.fetch(PROJECT_ID, HTTPS_URL, 'main')).rejects.toMatchObject({
+          reason: 'size_limit',
+        });
+        expect(await readdir(join(dataDir, 'clones'))).toEqual([]);
+      });
+
+      it('refuses to start without a working prlimit', async () => {
+        await expect(
+          (await adapter({}, { prlimitBinary: join(root, 'no-such-prlimit') })).onModuleInit(),
+        ).rejects.toThrow(/need prlimit \(util-linux\).*could not be run/);
+        await expect((await adapter()).verifyPrlimit()).resolves.toBeUndefined();
+      });
     });
 
     it('adds the file transport only when the allowed set includes it', async () => {

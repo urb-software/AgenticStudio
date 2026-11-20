@@ -305,7 +305,7 @@ describe('Repository card states', () => {
     [
       'size_limit',
       undefined,
-      'The repository is larger than the 2 GB limit, so Studio stopped and kept no clone.',
+      'The repository is larger than the 2 GB limit, or needs more memory than Studio allows, so Studio stopped and kept no clone.',
     ],
     [
       'remote_not_allowed',

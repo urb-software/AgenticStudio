@@ -11,9 +11,11 @@ export interface Invocation {
   args: string[];
   env: Record<string, string>;
   cwd: string;
+  /** `/proc/self/limits` of the process, as it started. */
+  limits: string;
 }
 
-export type FakeFetch = 'fail' | 'grow-and-hang' | 'occupy-target';
+export type FakeFetch = 'fail' | 'grow-and-hang' | 'occupy-target' | 'out-of-memory';
 
 export async function writeFakeGit(
   dir: string,
@@ -24,6 +26,8 @@ export async function writeFakeGit(
     fail: 'echo "fatal: could not read from remote" >&2; exit 128',
     'grow-and-hang':
       'head -c 3000000 /dev/zero > "$gitdir/objects/pack/tmp_pack_fake"; exec sleep 30',
+    'out-of-memory':
+      'echo "fatal: Out of memory, malloc failed (tried to allocate 60000001 bytes)" >&2; exit 128',
     'occupy-target': 'mkdir -p "${gitdir%.partial-*}/objects"; exit 0',
   };
   const fetch = fetches[options.fetch ?? 'fail'];
@@ -33,6 +37,7 @@ n=$(ls "$rec" | grep -c '^git-.*.args$')
 printf '%s\\0' "$@" > "$rec/git-$n.args"
 env -0 > "$rec/git-$n.env"
 pwd > "$rec/git-$n.cwd"
+cp /proc/self/limits "$rec/git-$n.limits"
 gitdir=''
 for a in "$@"; do case "$a" in --git-dir=*) gitdir="\${a#--git-dir=}";; esac; done
 case " $* " in
@@ -47,6 +52,31 @@ echo "fatal: '$rec' does not appear to be a git repository" >&2
 exit 128
 `;
   return writeExecutable(join(dir, 'fake-git'), script);
+}
+
+/**
+ * A stand-in for `prlimit` that records how it is started, then runs the real one: the bound
+ * stays in force for whatever it starts.
+ */
+export async function writeFakePrlimit(dir: string, recordDir: string): Promise<string> {
+  const script = `#!/bin/sh
+rec='${recordDir}'
+n=$(ls "$rec" | grep -c '^prlimit-.*.args$')
+printf '%s\\0' "$@" > "$rec/prlimit-$n.args"
+exec "$(command -v prlimit)" "$@"
+`;
+  return writeExecutable(join(dir, 'fake-prlimit'), script);
+}
+
+export async function prlimitInvocations(recordDir: string): Promise<string[][]> {
+  const names = (await readdir(recordDir))
+    .filter((name) => /^prlimit-\d+\.args$/.test(name))
+    .sort((a, b) => parseInt(a.slice(8), 10) - parseInt(b.slice(8), 10));
+  return Promise.all(
+    names.map(async (name) =>
+      (await readFile(join(recordDir, name), 'utf8')).split('\0').slice(0, -1),
+    ),
+  );
 }
 
 export type FakeSsh = 'deny' | 'hang';
@@ -129,15 +159,17 @@ export async function gitInvocations(recordDir: string): Promise<Invocation[]> {
   const invocations: Invocation[] = [];
   for (let n = 0; n < count; n++) {
     const base = join(recordDir, `git-${n}`);
-    const [args, env, cwd] = await Promise.all([
+    const [args, env, cwd, limits] = await Promise.all([
       readFile(`${base}.args`, 'utf8'),
       readFile(`${base}.env`, 'utf8'),
       readFile(`${base}.cwd`, 'utf8'),
+      readFile(`${base}.limits`, 'utf8'),
     ]);
     invocations.push({
       args: args.split('\0').slice(0, -1),
       env: parseEnv(env),
       cwd: cwd.trim(),
+      limits,
     });
   }
   return invocations;
