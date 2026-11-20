@@ -30,14 +30,69 @@ describe('web-no-colour-literals', () => {
     ['hex in @apply', 'card.css', `.card { @apply bg-[#fff]; }`],
     ['hex in SCSS', 'card.scss', `$x: 1; .card { color: #fff; }`],
     ['hex in Sass', 'card.sass', `.card\n  color: #fff\n`],
+    ['a digits-only hex in a shadow', 'page.tsx', `const c = '0 1px 2px #000';`],
+    ['a digits-only hex in a border', 'page.tsx', `const c = '1px solid #333';`],
+    ['a digits-only hex in an attribute', 'page.tsx', `const c = 'fill="#333"';`],
+    ['a digits-only hex in braces', 'page.tsx', `const c = '{#000}';`],
+    ['a long digits-only hex', 'page.tsx', `const c = '1px solid #111111';`],
+    ['a letter hex after of', 'page.tsx', `const c = 'a shade of #abc';`],
+    ['a bare #feed (valid #RGBA)', 'page.tsx', `const c = '#feed';`],
+    ['a bare #cafe (valid #RGBA)', 'page.tsx', `const c = '#cafe';`],
+    ['a reference word inside another word', 'page.tsx', `const c = 'expr #fff';`],
+    ['a swatch href (not a link)', 'page.tsx', `<Swatch href="#ff0000" />`],
+    ['a bare hex selector argument', 'page.tsx', `el.matches('#ff0000');`],
+    ['a bare hex in closest()', 'page.tsx', `el.closest('#add');`],
+    ['rgb(calc()) in TS', 'page.tsx', `const c = 'rgb(calc(255 * 0.5) 0 0)';`],
+    ['hsl(var() calc()) in TS', 'page.tsx', `const c = 'hsl(var(--h) calc(10% * 2) 50%)';`],
+    ['rgb(calc()) in a class', 'page.tsx', `<div className="bg-[rgb(calc(1+2)_0_0)]" />`],
+    ['rgb(calc()) in CSS', 'card.css', `.a { color: rgb(calc(255 * 0.5) 0 0); }`],
+    ['oklch(calc()) in CSS', 'card.css', `.a { color: oklch(calc(0.5 + 0.1) 0.1 200); }`],
+    ['hsl(var() calc()) in SCSS', 'card.scss', `.a { color: hsl(var(--h) calc(1% * 2) 50%); }`],
+    [
+      'a URL-encoded hex in a data URI',
+      'page.tsx',
+      `const u = "url(data:image/svg+xml,%3Csvg fill='%23333'/%3E)";`,
+    ],
+    [
+      'a raw hex in a data URI',
+      'page.tsx',
+      `const u = "data:image/svg+xml;utf8,<svg fill='#e4e4e7'/>";`,
+    ],
+    [
+      'a URL-encoded hex in a CSS data URI',
+      'card.css',
+      `.a { background: url("data:image/svg+xml,%3Csvg fill='%23e4e4e7'/%3E"); }`,
+    ],
+    ['an SCSS @include argument', 'card.scss', `.a { @include glow(#000); }`],
+    ['an SCSS @include with several arguments', 'card.scss', `.a { @include ring(2px, #e4e4e7); }`],
+    [
+      'a Sass @include argument',
+      'card.sass',
+      `.a
+  @include glow(#000)
+`,
+    ],
+    ['a Sass +mixin argument', 'card.sass', `.a\n  +glow(#000)\n`],
   ])('fails on %s', (_name, path, text) => {
     expect(rulesIn(colourViolationsInFile(path, text))).toEqual(['web-no-colour-literals']);
   });
 
   it.each([
     ['an Issue or PR reference', 'page.tsx', `const t = 'PR #1234 and Refs #123';`],
-    ['a selector argument', 'page.tsx', `document.querySelector('#feed');`],
-    ['a closest() selector', 'page.tsx', `el.closest('#add');`],
+    ['a digits-only Refs reference', 'page.tsx', `const t = 'Refs #333';`],
+    ['a digits-only PR reference', 'page.tsx', `const t = 'PR #111';`],
+    ['a lower-case issue reference', 'page.tsx', `const t = 'see issue #000123';`],
+    ['a digits-only reference after of', 'page.tsx', `const t = 'review r1 of #120';`],
+    ['an Epic reference', 'page.tsx', `const t = 'Epic #55';`],
+    ['a commit hash', 'page.tsx', `const t = 'commit #abc123';`],
+    ['a selector with a combinator', 'page.tsx', `document.querySelector('#feed > a');`],
+    ['a closest() selector with a class', 'page.tsx', `el.closest('#add .row');`],
+    ['a matches() selector with an attribute', 'page.tsx', `el.matches('#ff0000[data-x]');`],
+    ['an id written without a hash', 'page.tsx', `const id = '[id="feed"]';`],
+    ['a link component href', 'page.tsx', `<Link href="#feed">Feed</Link>`],
+    ['a data URI without a colour', 'page.tsx', `const u = "data:image/svg+xml,%3Csvg/%3E";`],
+    ['a base64 data URI', 'page.tsx', `const u = 'data:image/png;base64,iVBORw0KGgo';`],
+    ['an SCSS @include without colours', 'card.scss', `.a { @include glow(2px, $token); }`],
     ['a URL fragment', 'page.tsx', `const u = '/docs/#abc';`],
     ['an anchor in a string href', 'page.tsx', `<a href="#feed">Feed</a>`],
     ['an anchor in an expression href', 'page.tsx', `<a href={'#feed'}>Feed</a>`],
@@ -56,6 +111,15 @@ describe('web-no-colour-literals', () => {
     ['a media query', 'card.css', `@media (min-width: 768px) { #add { padding: 0; } }`],
   ])('allows %s', (_name, path, text) => {
     expect(colourViolationsInFile(path, text)).toEqual([]);
+  });
+});
+
+describe('colour function scanning', () => {
+  it('handles a long run of unclosed colour functions quickly', () => {
+    const text = `const c = '${'rgb(1 '.repeat(20000)}';`;
+    const start = Date.now();
+    colourViolationsInFile('page.tsx', text);
+    expect(Date.now() - start).toBeLessThan(2000);
   });
 });
 
@@ -254,6 +318,13 @@ describe('web-no-style-colours', () => {
     ['a colour function in any value', `<div style={{ translate: 'rgb(0 0 0)' }} />`],
     ['a non-literal style', `<div style={styles} />`],
     ['a spread', `<div style={{ ...base }} />`],
+    ['a hex in a font family', `<div style={{ fontFamily: '#fff' }} />`],
+    ['a colour function in an animation', `<div style={{ animation: 'rgb(0 0 0)' }} />`],
+    [
+      'a nested colour function in a value',
+      `<div style={{ translate: 'rgb(calc(1 * 2) 0 0)' }} />`,
+    ],
+    ['a named colour in a colour key', `<div style={{ outlineStyle: 'red' }} />`],
     ['a computed key', `<div style={{ [key]: 1 }} />`],
     ['a declaration string', `<div style="color: red" />`],
   ])('fails on %s', (_name, text) => {
@@ -264,6 +335,14 @@ describe('web-no-style-colours', () => {
     ['layout values', `<div style={{ width: 240, height: '50%' }} />`],
     ['a layout custom property', `<div style={{ '--rail': '16rem', width: 'var(--rail)' }} />`],
     ['a non-colour variable', `<div style={{ width: w, gridArea: 'main' }} />`],
+    ['a font family named like a colour', `<div style={{ fontFamily: 'Gold Sans' }} />`],
+    ['an animation name named like a colour', `<div style={{ animationName: 'red-pulse' }} />`],
+    ['a kebab-case font family', `<div style={{ 'font-family': 'Tan Pearl' }} />`],
+    ['a font shorthand', `<div style={{ font: '12px Gold' }} />`],
+    ['an animation shorthand', `<div style={{ animation: 'red-pulse 1s' }} />`],
+    ['a transition property', `<div style={{ transitionProperty: 'color, gold' }} />`],
+    ['content', `<div style={{ content: 'red' }} />`],
+    ['a declaration string with a font', `<div style="font-family: Gold Sans" />`],
   ])('allows %s', (_name, text) => {
     expect(colourViolationsInFile('page.tsx', text)).toEqual([]);
   });
@@ -305,6 +384,26 @@ describe('web-no-design-system-imports', () => {
       `const ds = path.join(root, '..', '..', 'design-' + 'system');`,
     ],
     [
+      'a tailwind.config path',
+      'tailwind.config.ts',
+      `export default { content: ['../../design-system/**'] };`,
+    ],
+    [
+      'a tailwind.config.cjs path',
+      'tailwind.config.cjs',
+      `module.exports = { content: ['../../design-system/**'] };`,
+    ],
+    [
+      'a vitest.config alias',
+      'vitest.config.ts',
+      `export default { resolve: { alias: { '@ds': '../../design-system' } } };`,
+    ],
+    [
+      'a vitest.config.mts path',
+      'vitest.config.mts',
+      `export default { root: '../design-system' };`,
+    ],
+    [
       'a postcss.config path',
       'postcss.config.mjs',
       `export default { from: '../../design-system/x' };`,
@@ -326,6 +425,11 @@ describe('web-no-design-system-imports', () => {
       'a components.json to the app copy',
       'components.json',
       `{ "tailwind": { "css": "src/app/globals.css" } }`,
+    ],
+    [
+      'a vitest.config without aliases',
+      'vitest.config.ts',
+      `export default { test: { globals: true } };`,
     ],
     ['a next.config without aliases', 'next.config.ts', `export default { agentRules: false };`],
   ])('allows %s', (_name, path, text) => {

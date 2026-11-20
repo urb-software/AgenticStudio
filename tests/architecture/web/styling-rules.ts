@@ -25,8 +25,8 @@ const SCRIPT_FILE = /\.(?:[cm]?[jt]s|[jt]sx)$/;
 const STYLESHEET = /\.(?:css|scss|sass)$/;
 /** Manifests that can point an alias or a dependency at a path. */
 const MANIFEST_FILE = /(^|\/)(tsconfig[^/]*|jsconfig[^/]*|package|components)\.json$/;
-/** Build configs that can alias a path (webpack/turbopack `resolveAlias`, PostCSS options). */
-const CONFIG_FILE = /(^|\/)(next|postcss)\.config\.[cm]?[jt]s$/;
+/** Build and tool configs that can alias a path (`resolveAlias`, Tailwind, PostCSS, Vitest). */
+const CONFIG_FILE = /(^|\/)(next|postcss|tailwind|vitest)\.config\.[^/]+$/;
 
 /**
  * `design-system/` is a reference export, never a dependency (`globals.css` is an owned copy).
@@ -175,16 +175,42 @@ export function colourViolationsInFile(path: string, text: string): Violation[] 
 
 /** `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, not part of a longer word, entity or URL. */
 const HEX_COLOUR = /(?<![A-Za-z0-9&#/])#(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{3,4})(?![\w-])/gi;
-/**
- * A CSS colour function followed by colour arguments (a number, `var(`, `#`, relative-colour
- * `from`, `none`, or a colour space), so prose such as `color(optional)` is not one.
- * `color-mix()` over tokens is fine, so it is not listed.
- */
-const COLOUR_FUNCTION =
-  /(?<![\w-])(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\((?=\s*(?:[\d.+\-#]|var\(|from\b|none\b|srgb|display-p3|a98-rgb|prophoto-rgb|rec2020|xyz))/gi;
+/** CSS colour functions; `color-mix()` over tokens is fine, so it is not listed. */
+const COLOUR_FUNCTION_NAME = /(?<![A-Za-z0-9-])(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(/gi;
+/** What may open the arguments: a number, `#`, `from`, `none`, a colour space or a nested call. */
+const COLOUR_ARGUMENTS =
+  /^\s*(?:[\d.+\-#]|from\b|none\b|srgb|display-p3|a98-rgb|prophoto-rgb|rec2020|xyz|[a-z][\w-]*\()/i;
 
+/** Colour function calls, found by balanced-parenthesis scanning so `rgb(calc(…))` is whole. */
 function colourFunctions(text: string): string[] {
-  return [...text.matchAll(COLOUR_FUNCTION)].map((match) => match[0]);
+  // One linear pass pairs every `(` with its `)`; an unclosed one runs to the end of the text.
+  const closing = new Map<number, number>();
+  const open: number[] = [];
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '(') open.push(i);
+    else if (text[i] === ')') {
+      const opener = open.pop();
+      if (opener !== undefined) closing.set(opener, i + 1);
+    }
+  }
+  const calls: string[] = [];
+  for (const match of text.matchAll(COLOUR_FUNCTION_NAME)) {
+    const start = match.index + match[0].length;
+    const end = closing.get(start - 1) ?? text.length;
+    if (COLOUR_ARGUMENTS.test(text.slice(start, end))) calls.push(text.slice(match.index, end));
+  }
+  return calls;
+}
+
+const DATA_URI_HEX = /(?:#|%23)(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{3,4})(?![\w-])/gi;
+
+/**
+ * Colours inside a `data:` URI: `#hex` or URL-encoded `%23hex` (also `%23abc`), and colour functions. Base64
+ * payloads are not decoded (out of scope).
+ */
+function dataUriColours(text: string): string[] {
+  if (!/data:[a-z]+\/[^,;]*[;,]/i.test(text)) return [];
+  return [...[...text.matchAll(DATA_URI_HEX)].map((match) => match[0]), ...colourFunctions(text)];
 }
 
 /**
@@ -194,11 +220,29 @@ function colourFunctions(text: string): string[] {
  */
 function stylesheetColours(path: string, text: string): string[] {
   const css = stripStylesheetComments(path, text);
-  const values = [...stylesheetDeclarationValues(path, css), ...applyLists(css)];
-  return values.flatMap((value) => [
-    ...[...value.matchAll(HEX_COLOUR)].map((match) => match[0]),
-    ...colourFunctions(value),
-  ]);
+  const values = [
+    ...stylesheetDeclarationValues(path, css),
+    ...applyLists(css),
+    ...mixinArguments(path, css),
+  ];
+  const dataUris = [...css.matchAll(/url\(\s*(['"]?)(data:[\s\S]*?)\1\s*\)/gi)].map(
+    (match) => match[2] ?? '',
+  );
+  return [
+    ...values.flatMap((value) => [
+      ...[...value.matchAll(HEX_COLOUR)].map((match) => match[0]),
+      ...colourFunctions(value),
+    ]),
+    ...dataUris.flatMap(dataUriColours),
+  ];
+}
+
+/** Arguments of SCSS `@include mixin(…)` (Sass: `+mixin(…)`) calls, which are not declarations. */
+function mixinArguments(path: string, css: string): string[] {
+  const call = path.endsWith('.sass')
+    ? /^\s*(?:\+|@include\s+)[\w.-]+\(([^\n]*)/gm
+    : /@include\s+[\w.-]+\s*\(([^;{]*)/g;
+  return [...css.matchAll(call)].map((match) => match[1] ?? '');
 }
 
 /** Values of `prop: value`, `$var: value` and `--token: value` declarations (comments stripped). */
@@ -232,7 +276,7 @@ const SELECTOR_METHODS = new Set([
 function scriptColourViolations(path: string, source: ts.SourceFile): Violation[] {
   const violations: Violation[] = [];
   const visit = (node: ts.Node) => {
-    if (isTextLiteral(node) && !isSelectorOrHref(node)) {
+    if (isTextLiteral(node) && !isSelectorOrHref(node, node.text)) {
       for (const literal of scriptColourLiterals(node.text)) {
         violations.push({ rule: 'web-no-colour-literals', from: path, to: literal });
       }
@@ -248,24 +292,27 @@ function scriptColourViolations(path: string, source: ts.SourceFile): Violation[
   return violations;
 }
 
+/** A reference word (PR, Refs, Issue, Epic, commit) right before the `#`. */
+const REFERENCE_BEFORE = /(?<![A-Za-z])(?:PRs?|Refs?|Issues?|Epic|commit)\s+$/i;
+/** Digits only after `of` is a reference too: test titles read "review of" a ticket. */
+const OF_BEFORE = /(?<![A-Za-z])of\s+$/i;
+
 /**
- * `#` also starts ticket references, ids and URL fragments, so a hex token is a colour only by
- * context: the whole string, after `[ ( , : _ =`, or after a space with a letter among the digits.
- * Never after a word character, `/`, `&` or `#`, in an `href`, or in a selector argument.
+ * `#` also starts ticket references, so a hex token is a reference only right after a reference
+ * word; any other is a colour. Trade-off: a bare `'#feed'` or `'#cafe'` is a valid `#RGBA` colour
+ * and fails (write the id as `[id="feed"]` or without `#`).
  */
 function scriptColourLiterals(text: string): string[] {
   const hexes = [...text.matchAll(HEX_COLOUR)]
     .filter((match) => {
-      const token = match[0];
       const before = text.slice(0, match.index);
-      const after = text.slice(match.index + token.length);
-      if (before.trim() === '' && after.trim() === '') return true;
-      const previous = before.trimEnd().slice(-1);
-      if (previous !== '' && '[(,:_='.includes(previous)) return true;
-      return !/^#\d+$/.test(token);
+      return !(
+        REFERENCE_BEFORE.test(before) ||
+        (OF_BEFORE.test(before) && /^#\d+$/.test(match[0]))
+      );
     })
     .map((match) => match[0]);
-  return [...hexes, ...colourFunctions(text)];
+  return [...hexes, ...colourFunctions(text), ...dataUriColours(text)];
 }
 
 function isTextLiteral(node: ts.Node): node is ts.LiteralLikeNode {
@@ -278,8 +325,12 @@ function isTextLiteral(node: ts.Node): node is ts.LiteralLikeNode {
   );
 }
 
-/** A string inside an `href` (string or expression form) or a selector-method argument. */
-function isSelectorOrHref(node: ts.Node): boolean {
+/**
+ * A string in the `href` of a link (`<a>`, `Link`) or a selector-method argument. Trade-off: a
+ * selector that is more than a bare hex is exempt whole (`matches('#ff0000 > a')` passes,
+ * `matches('#ff0000')` fails); `<Swatch href="#ff0000">` fails, as it is not a link.
+ */
+function isSelectorOrHref(node: ts.Node, text: string): boolean {
   let current = node.parent;
   while (
     ts.isJsxExpression(current) ||
@@ -290,7 +341,7 @@ function isSelectorOrHref(node: ts.Node): boolean {
     current = current.parent;
   }
   if (ts.isJsxAttribute(current)) {
-    return ts.isIdentifier(current.name) && current.name.text === 'href';
+    return ts.isIdentifier(current.name) && current.name.text === 'href' && isLink(current);
   }
   if (ts.isCallExpression(current)) {
     const callee = current.expression;
@@ -299,9 +350,14 @@ function isSelectorOrHref(node: ts.Node): boolean {
       : ts.isIdentifier(callee)
         ? callee.text
         : undefined;
-    return name !== undefined && SELECTOR_METHODS.has(name);
+    return name !== undefined && SELECTOR_METHODS.has(name) && !/^\s*#[0-9a-f]+\s*$/i.test(text);
   }
   return false;
+}
+
+function isLink(attribute: ts.JsxAttribute): boolean {
+  const tag = attribute.parent.parent.tagName;
+  return ts.isIdentifier(tag) && (tag.text === 'a' || tag.text === 'Link');
 }
 
 /**
@@ -316,7 +372,7 @@ function styleColourProblems(attribute: ts.JsxAttribute, source: ts.SourceFile):
     const text = initializer.text;
     const declarations = text.split(';').map((d) => d.split(':'));
     const colourful = declarations.some(
-      ([property = '', value = '']) => carriesColour(property) || holdsColour(value),
+      ([property = '', value = '']) => carriesColour(property) || holdsColour(value, property),
     );
     return colourful ? [text] : [];
   }
@@ -333,7 +389,7 @@ function styleColourProblems(attribute: ts.JsxAttribute, source: ts.SourceFile):
       problems.push(key);
     } else if (ts.isPropertyAssignment(property)) {
       const value = staticText(property.initializer);
-      if (value !== undefined && holdsColour(value)) problems.push(`${key}: ${value}`);
+      if (value !== undefined && holdsColour(value, key)) problems.push(`${key}: ${value}`);
     }
   }
   return problems;
@@ -395,12 +451,20 @@ function normalisePropertyName(name: string): string {
   return name.replace(/[^a-zA-Z]/g, '').toLowerCase();
 }
 
-/** Any hex token, colour function or CSS named colour in a value. */
-function holdsColour(value: string): boolean {
+/** Properties whose value is a name or a font, never a colour: `fontFamily: 'Gold Sans'`. */
+const NAME_PROPERTIES = new Set(
+  ['fontFamily', 'font', 'animationName', 'animation', 'transitionProperty', 'content'].map(
+    normalisePropertyName,
+  ),
+);
+
+/** Any hex token, colour function or (except on name properties) CSS named colour in a value. */
+function holdsColour(value: string, property: string): boolean {
   return (
     [...value.matchAll(HEX_COLOUR)].length > 0 ||
     colourFunctions(value).length > 0 ||
-    (value.match(/[a-z]+/gi) ?? []).some((word) => NAMED_COLOURS.has(word.toLowerCase()))
+    (!NAME_PROPERTIES.has(normalisePropertyName(property)) &&
+      (value.match(/[a-z]+/gi) ?? []).some((word) => NAMED_COLOURS.has(word.toLowerCase())))
   );
 }
 
