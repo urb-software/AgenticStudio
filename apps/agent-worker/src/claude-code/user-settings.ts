@@ -9,7 +9,7 @@ import {
 /**
  * The approved Mode keeps the user setting source (`--setting-sources user`), so these files still
  * load and could hold hooks, env, an API key helper or MCP servers: both must be absent or hold
- * only `$schema`, else the step is refused. Only key names are reported, never values.
+ * only `$schema`, else the step is refused until the operator reviews them. Key names only.
  */
 
 /** User-level files that must be absent, relative to the home directory. */

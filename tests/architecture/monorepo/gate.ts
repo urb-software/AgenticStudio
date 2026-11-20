@@ -154,7 +154,7 @@ export const monorepoGate: Gate = {
       comment:
         "The agent worker's production code never imports node:module (createRequire would load " +
         'child_process unseen), node:vm (code the graph cannot see), node:cluster or ' +
-        'node:worker_threads (review of #116).',
+        'node:worker_threads.',
       severity: 'error',
       from: AGENT_WORKER_PRODUCTION,
       to: { path: coreModules('module', 'vm', 'cluster', 'worker_threads') },
