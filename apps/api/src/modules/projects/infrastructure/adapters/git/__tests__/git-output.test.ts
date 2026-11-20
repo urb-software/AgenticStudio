@@ -108,7 +108,9 @@ describe('classifyGitFailure', () => {
 describe('isOutOfMemory', () => {
   it.each([
     'fatal: Out of memory, malloc failed (tried to allocate 60000001 bytes)',
-    'remote: fatal: mmap failed, check sys.vm.max_map_count and/or RLIMIT_DATA: Cannot allocate memory',
+    'fatal: mmap failed, check sys.vm.max_map_count and/or RLIMIT_DATA: Cannot allocate memory',
+    'fatal: packfile ./objects/pack/pack-1.pack cannot be mapped, check sys.vm.max_map_count: Cannot allocate memory',
+    'error: git upload-pack: git-pack-objects died with error.\nfatal: Out of memory, malloc failed (tried to allocate 1 bytes)',
     'fork: Cannot allocate memory',
     'xmalloc: out of memory (allocating 4096 bytes)',
     'fatal: unable to create thread: Resource temporarily unavailable',
@@ -119,6 +121,12 @@ describe('isOutOfMemory', () => {
 
   it.each([
     'fatal: Authentication failed for the remote',
+    'remote: fatal: mmap failed, check sys.vm.max_map_count and/or RLIMIT_DATA: Cannot allocate memory',
+    'remote: fatal: Out of memory, malloc failed (tried to allocate 1 bytes)',
+    'remote: xmalloc: out of memory\nremote: fatal: unable to create thread: Resource temporarily unavailable',
+    "fatal: couldn't find remote ref refs/heads/fix/xmalloc",
+    "fatal: repository 'https://h/xmalloc.git/' not found",
+    "fatal: unable to access 'https://h/mmap failed.git/': Could not resolve host",
     "fatal: unable to access 'https://git.example.test/': Could not resolve host",
     "fatal: couldn't find remote ref refs/heads/main",
     '',

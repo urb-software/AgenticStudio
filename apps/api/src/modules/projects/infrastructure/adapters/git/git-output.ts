@@ -60,13 +60,17 @@ export function classifyGitFailure(stderr: string): GitFailureReason {
 }
 
 /**
- * Whether a failed process ran into its memory bound (`RLIMIT_AS`): Git's `Out of memory, malloc
- * failed` and `mmap failed: Cannot allocate memory`, ssh's `xmalloc`, a thread that could not
- * get its stack (`unable to create thread`, `cannot create async thread`).
+ * Whether a failed process ran into its memory bound (`RLIMIT_AS`): only its own diagnostic
+ * lines count, never `remote:` text. A thread stack that cannot be mapped prints
+ * `unable to create thread`; a process-count limit would too, and Studio sets none.
  */
 const OUT_OF_MEMORY =
-  /Out of memory|malloc failed|mmap failed|Cannot allocate memory|xmalloc|unable to create thread|cannot create async thread/i;
+  /^(?:fatal|error): (?:Out of memory, malloc failed|mmap failed\b|unable to create thread|cannot create async thread)|^xmalloc: |: Cannot allocate memory$/m;
 
 export function isOutOfMemory(stderr: string): boolean {
-  return OUT_OF_MEMORY.test(stderr);
+  const local = stderr
+    .split('\n')
+    .filter((line) => !line.startsWith('remote:'))
+    .join('\n');
+  return OUT_OF_MEMORY.test(local);
 }
