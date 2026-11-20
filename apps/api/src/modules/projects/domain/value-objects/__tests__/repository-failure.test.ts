@@ -11,6 +11,13 @@ import {
 } from '../repository-failure.js';
 
 describe('RepositoryFailure', () => {
+  it.each([
+    ['HOST_KEY_CHANGED_DETAIL', HOST_KEY_CHANGED_DETAIL],
+    ['NO_TRUSTED_HOST_KEY_DETAIL', NO_TRUSTED_HOST_KEY_DETAIL],
+  ])('keeps %s free of a blank line, because the web card splits at the first one', (_, detail) => {
+    expect(detail).not.toContain('\n\n');
+  });
+
   it('cuts an over-long detail and leaves out an over-long default branch', () => {
     const failure = RepositoryFailure.of(
       'branch_not_found',

@@ -125,7 +125,7 @@ function hardeningArgs(transports: readonly GitTransport[]): string[] {
  * A remote whose host was checked against the address policy: Git and ssh
  * connect only to `addresses`, never to what a second lookup might return.
  */
-interface CheckedRemote extends RemoteUrl {
+export interface CheckedRemote extends RemoteUrl {
   endpoint: RemoteEndpoint | null;
   addresses: string[];
 }
@@ -139,7 +139,7 @@ function sshAddress(addresses: string[]): string {
   return addresses.find((address) => !address.includes(':')) ?? addresses[0]!;
 }
 
-function pinArgs(remote: CheckedRemote): string[] {
+export function pinArgs(remote: CheckedRemote): string[] {
   if (remote.transport !== 'https' || !remote.endpoint) return [];
   const { host, port } = remote.endpoint;
   // An IP-literal host is never looked up; pinning it would change nothing.
