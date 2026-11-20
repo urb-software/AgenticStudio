@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { pinArgs } from '../system-git-adapter.js';
 
+const NO_IPV6 = new Set(['EADDRNOTAVAIL', 'EAFNOSUPPORT']);
 const NAME = 'git.example.test';
 
 function listenOnIpv6Loopback(onRequest: (host: string | undefined) => void): Promise<Server> {
@@ -32,7 +33,8 @@ describe.runIf(process.platform === 'linux')('IPv6 pin against real git', () => 
     const hosts: Array<string | undefined> = [];
     try {
       server = await listenOnIpv6Loopback((host) => hosts.push(host));
-    } catch {
+    } catch (error) {
+      if (!NO_IPV6.has((error as NodeJS.ErrnoException).code ?? '')) throw error;
       context.skip('this runner has no IPv6 loopback');
       return;
     }

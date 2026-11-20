@@ -26,6 +26,8 @@ function tree(files: Record<string, string | Buffer>): string {
 const CSS = ':root { --a: 1; }\n';
 const synced = { [DESIGN_SYSTEM_COPY]: CSS, [DESIGN_SYSTEM_SOURCE]: CSS };
 
+const TRACKED = [DESIGN_SYSTEM_COPY, DESIGN_SYSTEM_SOURCE];
+
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
@@ -33,20 +35,26 @@ afterEach(() => {
 // Repository guards (scripts/check-repo-guards.mjs), shown on fixtures and on the repository itself.
 describe('design-system copy', () => {
   it('passes when the copy is byte-identical to the source', () => {
-    expect(checkRepository(tree(synced), [])).toEqual([]);
+    expect(checkRepository(tree(synced), TRACKED)).toEqual([]);
   });
 
   it('fails naming both files and the restore command when they differ', () => {
     const root = tree({ ...synced, [DESIGN_SYSTEM_COPY]: `${CSS} ` });
-    const [message] = checkRepository(root, []);
+    const [message] = checkRepository(root, TRACKED);
     expect(message).toContain(DESIGN_SYSTEM_COPY);
     expect(message).toContain(DESIGN_SYSTEM_SOURCE);
     expect(message).toContain(`cp ${DESIGN_SYSTEM_SOURCE} ${DESIGN_SYSTEM_COPY}`);
   });
 
-  it('fails when one of the two files is missing', () => {
+  it('says which file is missing when one of the two cannot be read', () => {
     const root = tree({ [DESIGN_SYSTEM_SOURCE]: CSS });
-    expect(checkRepository(root, [])).toHaveLength(1);
+    expect(checkRepository(root, TRACKED)).toEqual([`${DESIGN_SYSTEM_COPY} is missing`]);
+  });
+
+  it('fails when a file exists but is not tracked', () => {
+    expect(checkRepository(tree(synced), [DESIGN_SYSTEM_SOURCE])).toEqual([
+      `${DESIGN_SYSTEM_COPY} is missing`,
+    ]);
   });
 });
 
@@ -80,7 +88,7 @@ describe('conflict markers', () => {
 
   it('fails a tracked file with markers and passes without', () => {
     const root = tree({ ...synced, 'good.md': 'Title\n=======\n', 'bad.ts': markers });
-    expect(checkRepository(root, ['good.md', 'bad.ts'])).toEqual([
+    expect(checkRepository(root, [...TRACKED, 'good.md', 'bad.ts'])).toEqual([
       'bad.ts:1: merge conflict marker',
       'bad.ts:3: merge conflict marker',
       'bad.ts:5: merge conflict marker',

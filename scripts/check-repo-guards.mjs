@@ -12,11 +12,12 @@ const BINARY_PROBE_BYTES = 8 * 1024;
 const MARKER = /^(?:<<<<<<<|>>>>>>>)(?: |$)/;
 const SEPARATOR = /^=======$/;
 
-/** An error message per problem: the copy differs from its source. */
-export function checkDesignSystemCopy(read) {
-  const copy = read(DESIGN_SYSTEM_COPY);
-  const source = read(DESIGN_SYSTEM_SOURCE);
-  if (copy && source && copy.equals(source)) return [];
+/** A message per problem: a file missing or untracked, or the copy differing from its source. */
+export function checkDesignSystemCopy(read, files) {
+  const paths = [DESIGN_SYSTEM_COPY, DESIGN_SYSTEM_SOURCE];
+  const missing = paths.filter((path) => !files.includes(path) || read(path) === null);
+  if (missing.length > 0) return missing.map((path) => `${path} is missing`);
+  if (read(DESIGN_SYSTEM_COPY).equals(read(DESIGN_SYSTEM_SOURCE))) return [];
   return [
     `${DESIGN_SYSTEM_COPY} must be byte-identical to ${DESIGN_SYSTEM_SOURCE}. ` +
       `Restore it with: cp ${DESIGN_SYSTEM_SOURCE} ${DESIGN_SYSTEM_COPY} ` +
@@ -51,7 +52,7 @@ export function checkRepository(root, files) {
       return null;
     }
   };
-  const problems = checkDesignSystemCopy(read);
+  const problems = checkDesignSystemCopy(read, files);
   for (const file of files) {
     const content = read(file);
     if (!content) continue;
