@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { RUN_ENVIRONMENT_FILE_SECRET_OWNER } from '../../../domain/value-objects/run-environment-file.js';
+import { RUN_ENVIRONMENT_FILE_SECRET_OWNER } from '../../../application/ports/environment-file-snapshots.js';
 import { InMemoryRunRepository } from '../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { InMemorySecretStore } from '../../../application/ports/__tests__/in-memory-secret-store.js';
 import { SecretStoreEnvironmentFileSnapshots } from '../environment-file-snapshots.js';

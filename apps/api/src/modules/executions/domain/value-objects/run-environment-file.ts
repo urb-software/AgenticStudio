@@ -1,5 +1,3 @@
-export const RUN_ENVIRONMENT_FILE_SECRET_OWNER = 'executions.run-environment-file';
-
 /**
  * Far longer than a claim takes between storing the snapshot and recording its
  * reference on the Run.

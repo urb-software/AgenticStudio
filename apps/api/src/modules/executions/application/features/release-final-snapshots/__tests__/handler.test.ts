@@ -1,9 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  RUN_ENVIRONMENT_FILE_ORPHAN_AGE_MS,
-  RUN_ENVIRONMENT_FILE_SECRET_OWNER,
-} from '../../../../domain/value-objects/run-environment-file.js';
+import { RUN_ENVIRONMENT_FILE_ORPHAN_AGE_MS } from '../../../../domain/value-objects/run-environment-file.js';
+import { RUN_ENVIRONMENT_FILE_SECRET_OWNER } from '../../../ports/environment-file-snapshots.js';
 import { LostWorkerRule } from '../../../../domain/value-objects/lost-worker-rule.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';

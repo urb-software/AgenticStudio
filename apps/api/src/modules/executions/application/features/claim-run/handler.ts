@@ -8,7 +8,7 @@ import {
   RUN_ENVIRONMENT_FILES,
   type RunEnvironmentFiles,
 } from '../../../../projects/contracts/index.js';
-import { RUN_ENVIRONMENT_FILE_SECRET_OWNER } from '../../../domain/value-objects/run-environment-file.js';
+import { RUN_ENVIRONMENT_FILE_SECRET_OWNER } from '../../ports/environment-file-snapshots.js';
 import { IllegalRunTransitionError, RunNotHeldError } from '../../../domain/errors/run-errors.js';
 import type { Run } from '../../../domain/entities/run.js';
 import type { Provider } from '../../../domain/value-objects/provider.js';

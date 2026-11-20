@@ -674,12 +674,12 @@ export const reportRunStateRequestSchema = z
       path: ['delivery'],
       message:
         'A delivery outcome is reported with the state succeeded, or with cancelled when the ' +
-        'cancel arrived during the delivery (review of #121).',
+        'cancel arrived during the delivery.',
     },
   )
   .refine((report) => report.sessionRef === undefined || report.failure?.code === 'usage_limit', {
     path: ['sessionRef'],
-    message: 'A session reference comes only with the failure usage_limit (Issue #105).',
+    message: 'A session reference comes only with the failure usage_limit.',
   })
   .refine(
     (report) =>
@@ -693,17 +693,16 @@ export const reportRunStateRequestSchema = z
     (report) => report.pushedCommit === undefined || report.failure?.code === 'delivery_failed',
     {
       path: ['pushedCommit'],
-      message:
-        'A pushed commit on its own comes only with the failure delivery_failed (Issue #141).',
+      message: 'A pushed commit on its own comes only with the failure delivery_failed.',
     },
   )
   .refine((report) => report.bringUpToDateStarted === undefined || report.state === 'running', {
     path: ['bringUpToDateStarted'],
-    message: 'The merge start comes only with the state running (Issue #147).',
+    message: 'The merge start comes only with the state running.',
   })
   .refine((report) => report.unchangedDetail === undefined || report.unchanged === true, {
     path: ['unchangedDetail'],
-    message: 'A reason for no change comes only with unchanged (Issue #147).',
+    message: 'A reason for no change comes only with unchanged.',
   })
   .refine(
     (report) =>
