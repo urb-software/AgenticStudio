@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import type { UnfinishedJob } from '../../domain/value-objects/unfinished-job.js';
 import { CloneRepositoryHandler } from '../../application/features/clone-repository/handler.js';
 import { FetchCloneHandler } from '../../application/features/fetch-clone/handler.js';
+import { RecordUnfinishedCloneHandler } from '../../application/features/record-unfinished-clone/handler.js';
+import { RecordUnfinishedFetchHandler } from '../../application/features/record-unfinished-fetch/handler.js';
 import { GetRepositoryOperationHandler } from '../../application/features/get-repository-operation/handler.js';
 import { RepositoryStartupRecovery } from '../startup/repository-startup-recovery.js';
 
@@ -15,6 +17,8 @@ export class RepositoryJobProcessor {
     private readonly operations: GetRepositoryOperationHandler,
     private readonly clone: CloneRepositoryHandler,
     private readonly fetchClone: FetchCloneHandler,
+    private readonly recordUnfinishedClone: RecordUnfinishedCloneHandler,
+    private readonly recordUnfinishedFetch: RecordUnfinishedFetchHandler,
     private readonly recovery: RepositoryStartupRecovery,
   ) {}
 
@@ -28,8 +32,8 @@ export class RepositoryJobProcessor {
 
   async onFailed(projectId: string, failure: UnfinishedJob): Promise<void> {
     const operation = await this.operations.execute({ projectId });
-    if (operation === 'clone') return this.clone.onFailed(projectId, failure);
-    if (operation === 'fetch') return this.fetchClone.onFailed(projectId, failure);
+    if (operation === 'clone') return this.recordUnfinishedClone.execute({ projectId, failure });
+    if (operation === 'fetch') return this.recordUnfinishedFetch.execute({ projectId, failure });
   }
 
   reconcile(): Promise<void> {

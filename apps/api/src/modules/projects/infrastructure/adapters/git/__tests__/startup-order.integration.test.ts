@@ -24,6 +24,10 @@ import {
 import { InMemorySecretStore } from '../../../../application/ports/__tests__/in-memory-secret-store.js';
 import { SecretStoreDeployKeys, SSH_TRUST_SETTINGS } from '../../secret-store-deploy-keys.js';
 import { FetchCloneHandler } from '../../../../application/features/fetch-clone/handler.js';
+import { RecordUnfinishedCloneHandler } from '../../../../application/features/record-unfinished-clone/handler.js';
+import { RecordUnfinishedFetchHandler } from '../../../../application/features/record-unfinished-fetch/handler.js';
+import { FailInterruptedClonesHandler } from '../../../../application/features/fail-interrupted-clones/handler.js';
+import { FailInterruptedFetchesHandler } from '../../../../application/features/fail-interrupted-fetches/handler.js';
 import { SweepOrphanedDeployKeysHandler } from '../../../../application/features/sweep-orphaned-deploy-keys/handler.js';
 import { GetRepositoryOperationHandler } from '../../../../application/features/get-repository-operation/handler.js';
 import { REPOSITORY_JOBS } from '../../../../application/ports/repository-jobs.js';
@@ -103,6 +107,10 @@ function startupContext(
       SweepOrphanedEnvironmentFilesHandler,
       CloneRepositoryHandler,
       FetchCloneHandler,
+      RecordUnfinishedCloneHandler,
+      RecordUnfinishedFetchHandler,
+      FailInterruptedClonesHandler,
+      FailInterruptedFetchesHandler,
       DisconnectRepositoryHandler,
       GetRepositoryOperationHandler,
       RepositoryStartupRecovery,

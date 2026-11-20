@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { CloneRepositoryHandler } from '../../application/features/clone-repository/handler.js';
 import { DisconnectRepositoryHandler } from '../../application/features/disconnect-repository/handler.js';
-import { FetchCloneHandler } from '../../application/features/fetch-clone/handler.js';
+import { FailInterruptedClonesHandler } from '../../application/features/fail-interrupted-clones/handler.js';
+import { FailInterruptedFetchesHandler } from '../../application/features/fail-interrupted-fetches/handler.js';
 import { SweepOrphanedDeployKeysHandler } from '../../application/features/sweep-orphaned-deploy-keys/handler.js';
 import { SweepOrphanedEnvironmentFilesHandler } from '../../application/features/sweep-orphaned-environment-files/handler.js';
 
@@ -12,16 +12,16 @@ import { SweepOrphanedEnvironmentFilesHandler } from '../../application/features
 @Injectable()
 export class RepositoryStartupRecovery {
   constructor(
-    private readonly clone: CloneRepositoryHandler,
-    private readonly fetchClone: FetchCloneHandler,
+    private readonly failInterruptedClones: FailInterruptedClonesHandler,
+    private readonly failInterruptedFetches: FailInterruptedFetchesHandler,
     private readonly disconnect: DisconnectRepositoryHandler,
     private readonly orphanedKeys: SweepOrphanedDeployKeysHandler,
     private readonly orphanedEnvironmentFiles: SweepOrphanedEnvironmentFilesHandler,
   ) {}
 
   async run(): Promise<void> {
-    await this.clone.reconcile();
-    await this.fetchClone.reconcile();
+    await this.failInterruptedClones.execute();
+    await this.failInterruptedFetches.execute();
     await this.disconnect.resumeAll();
     await this.orphanedKeys.execute();
     await this.orphanedEnvironmentFiles.execute();

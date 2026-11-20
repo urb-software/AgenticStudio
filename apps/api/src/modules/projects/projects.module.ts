@@ -35,6 +35,10 @@ import { GetRunStartPointHandler } from './application/features/get-run-start-po
 import { ListProjectsEndpoint } from './entry-points/http/operator/list-projects/endpoint.js';
 import { ListProjectsHandler } from './application/features/list-projects/handler.js';
 import { FetchCloneHandler } from './application/features/fetch-clone/handler.js';
+import { RecordUnfinishedCloneHandler } from './application/features/record-unfinished-clone/handler.js';
+import { RecordUnfinishedFetchHandler } from './application/features/record-unfinished-fetch/handler.js';
+import { FailInterruptedClonesHandler } from './application/features/fail-interrupted-clones/handler.js';
+import { FailInterruptedFetchesHandler } from './application/features/fail-interrupted-fetches/handler.js';
 import { GetRepositoryOperationHandler } from './application/features/get-repository-operation/handler.js';
 import { RepositoryJobProcessor } from './entry-points/jobs/repository-job-processor.js';
 import { RepositoryStartupRecovery } from './entry-points/startup/repository-startup-recovery.js';
@@ -145,6 +149,10 @@ export class ProjectsModule {
         SweepOrphanedDeployKeysHandler,
         CloneRepositoryHandler,
         FetchCloneHandler,
+        RecordUnfinishedCloneHandler,
+        RecordUnfinishedFetchHandler,
+        FailInterruptedClonesHandler,
+        FailInterruptedFetchesHandler,
         GetRepositoryOperationHandler,
         RepositoryStartupRecovery,
         RepositoryJobProcessor,

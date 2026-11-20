@@ -9,10 +9,10 @@ import {
 } from '../../../ports/repository-git.js';
 import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.js';
 import { CloneRepositoryHandler } from '../handler.js';
+import { RecordUnfinishedCloneHandler } from '../../record-unfinished-clone/handler.js';
 import {
   GIT_FAILURE_WITHOUT_OUTPUT_DETAIL,
   HOST_KEY_CHANGED_DETAIL,
-  UNEXPECTED_FAILURE_DETAIL,
 } from '../../../../domain/value-objects/repository-failure.js';
 import { testDeployKey } from '../../../../domain/value-objects/__tests__/test-deploy-key.js';
 import { NO_TRUSTED_HOST_KEY_DETAIL } from '../../../../domain/value-objects/repository-failure.js';
@@ -193,7 +193,7 @@ describe('CloneRepositoryHandler', () => {
     expect(git.calls).toEqual([]);
   });
 
-  it('lets an abort during Git propagate and leaves the failure to onFailed', async () => {
+  it('lets an abort during Git propagate and leaves the failure to the unfinished-job recording', async () => {
     await connecting();
     const controller = new AbortController();
     git.clone.mockImplementationOnce(() => {
@@ -204,40 +204,18 @@ describe('CloneRepositoryHandler', () => {
     await expect(run(controller.signal)).rejects.toThrow('aborted');
     expect((await connections.find(PROJECT))?.state).toBe('connecting');
 
-    await handler.onFailed(PROJECT, { reason: 'timeout' });
+    await new RecordUnfinishedCloneHandler(connections).execute({
+      projectId: PROJECT,
+      failure: { reason: 'timeout' },
+    });
     expect((await connections.find(PROJECT))?.failure).toMatchObject({ code: 'timeout' });
   });
 
-  it('rethrows an unexpected error, so onFailed stores unknown', async () => {
+  it('rethrows an unexpected error, so the unfinished-job recording stores unknown', async () => {
     await connecting();
     git.removeClone.mockRejectedValueOnce(new GitRequestRejectedError('unexpected'));
 
     await expect(run()).rejects.toBeInstanceOf(GitRequestRejectedError);
-  });
-
-  it.each([
-    ['stalled', { code: 'interrupted', detail: '' }],
-    ['shutdown', { code: 'interrupted', detail: '' }],
-    ['cancelled', { code: 'unknown', detail: 'Cancelled' }],
-    ['timeout', { code: 'timeout' }],
-  ] as const)('onFailed stores %s as %j', async (reason, failure) => {
-    await connecting();
-
-    await handler.onFailed(PROJECT, { reason });
-
-    expect((await connections.find(PROJECT))?.failure).toMatchObject(failure);
-  });
-
-  it('onFailed stores an unexpected error as unknown with a generic detail, never the error', async () => {
-    await connecting();
-
-    await handler.onFailed(PROJECT, { reason: 'error', error: new Error('db down at 10.0.0.7') });
-
-    expect((await connections.find(PROJECT))?.failure).toEqual({
-      code: 'unknown',
-      detail: UNEXPECTED_FAILURE_DETAIL,
-      remoteDefaultBranch: null,
-    });
   });
 
   it('says Git gave no explanation for an unknown Git failure without output', async () => {
@@ -251,31 +229,6 @@ describe('CloneRepositoryHandler', () => {
       detail: GIT_FAILURE_WITHOUT_OUTPUT_DETAIL,
       remoteDefaultBranch: null,
     });
-  });
-
-  it('reconcile fails every connecting Repository as interrupted, idempotently', async () => {
-    await connecting();
-    const other = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
-    projects.addProject(other, 'Ready one');
-    await connections.connect({
-      projectId: other,
-      url: 'https://github.com/acme/ready.git',
-      identity: 'github.com/acme/ready',
-      integrationBranch: 'dev',
-    });
-    await connections.change(other, (r) => {
-      r.completeClone({ headSha: COMMIT, fetchedAt: new Date() });
-    });
-
-    await handler.reconcile();
-    await handler.reconcile();
-
-    expect((await connections.find(PROJECT))?.failure).toEqual({
-      code: 'interrupted',
-      detail: '',
-      remoteDefaultBranch: null,
-    });
-    expect((await connections.find(other))?.state).toBe('ready');
   });
 
   describe('an SSH Repository', () => {

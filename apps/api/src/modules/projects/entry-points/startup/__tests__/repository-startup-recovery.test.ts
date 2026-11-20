@@ -7,9 +7,9 @@ import { InMemoryDeployKeys } from '../../../application/ports/__tests__/in-memo
 import { InMemoryEnvironmentFileContents } from '../../../application/ports/__tests__/in-memory-environment-file-contents.js';
 import { InMemorySecretStore } from '../../../application/ports/__tests__/in-memory-secret-store.js';
 import { RecordingRepositoryJobs } from '../../../application/ports/__tests__/recording-repository-jobs.js';
-import { CloneRepositoryHandler } from '../../../application/features/clone-repository/handler.js';
 import { DisconnectRepositoryHandler } from '../../../application/features/disconnect-repository/handler.js';
-import { FetchCloneHandler } from '../../../application/features/fetch-clone/handler.js';
+import { FailInterruptedClonesHandler } from '../../../application/features/fail-interrupted-clones/handler.js';
+import { FailInterruptedFetchesHandler } from '../../../application/features/fail-interrupted-fetches/handler.js';
 import { SweepOrphanedDeployKeysHandler } from '../../../application/features/sweep-orphaned-deploy-keys/handler.js';
 import { SweepOrphanedEnvironmentFilesHandler } from '../../../application/features/sweep-orphaned-environment-files/handler.js';
 import { RepositoryStartupRecovery } from '../repository-startup-recovery.js';
@@ -20,10 +20,10 @@ describe('RepositoryStartupRecovery', () => {
     const projects = new InMemoryProjectRepository();
     const connections = new InMemoryRepositoryConnectionRepository();
     const git = new FakeRepositoryGit();
-    const clone = new CloneRepositoryHandler(connections, git, deployKeys);
-    const fetchClone = new FetchCloneHandler(connections, git, deployKeys);
-    vi.spyOn(clone, 'reconcile');
-    vi.spyOn(fetchClone, 'reconcile');
+    const clone = new FailInterruptedClonesHandler(connections);
+    const fetchClone = new FailInterruptedFetchesHandler(connections);
+    vi.spyOn(clone, 'execute');
+    vi.spyOn(fetchClone, 'execute');
     const cleanup = new DisconnectRepositoryHandler(
       projects,
       connections,
@@ -51,14 +51,14 @@ describe('RepositoryStartupRecovery', () => {
 
     await recovery.run();
 
-    expect(clone.reconcile).toHaveBeenCalledOnce();
-    expect(fetchClone.reconcile).toHaveBeenCalledOnce();
+    expect(clone.execute).toHaveBeenCalledOnce();
+    expect(fetchClone.execute).toHaveBeenCalledOnce();
     expect(cleanup.resumeAll).toHaveBeenCalledOnce();
     expect(orphanedKeys.execute).toHaveBeenCalledOnce();
     expect(orphanedFiles.execute).toHaveBeenCalledOnce();
     const order = (spy: unknown) => vi.mocked(spy as () => unknown).mock.invocationCallOrder[0]!;
-    expect(order(fetchClone.reconcile)).toBeGreaterThan(order(clone.reconcile));
-    expect(order(cleanup.resumeAll)).toBeGreaterThan(order(fetchClone.reconcile));
+    expect(order(fetchClone.execute)).toBeGreaterThan(order(clone.execute));
+    expect(order(cleanup.resumeAll)).toBeGreaterThan(order(fetchClone.execute));
     expect(order(orphanedKeys.execute)).toBeGreaterThan(order(cleanup.resumeAll));
     expect(order(orphanedFiles.execute)).toBeGreaterThan(order(orphanedKeys.execute));
   });
