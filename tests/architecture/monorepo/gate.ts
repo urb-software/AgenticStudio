@@ -91,7 +91,7 @@ export const monorepoGate: Gate = {
     {
       name: 'mono-agent-worker-no-studio-infrastructure',
       comment:
-        "The agent worker is on the agents' side of the boundary (ADR 0002, Issue #96): outside " +
+        "The agent worker is on the agents' side of the boundary (ADR 0002): outside " +
         'its tests it never imports the database package, the ORM, Redis, the queue, Docker or ' +
         'NestJS, nor the test helpers; it reaches Studio over the worker routes only.',
       severity: 'error',
@@ -127,7 +127,7 @@ export const monorepoGate: Gate = {
       name: 'mono-agent-worker-spawn-boundary-only',
       comment:
         "Provider CLIs start only through the agent worker's spawn boundary, which checks the " +
-        'provider switch (security.md §2, Issue #101): no other production file imports ' +
+        'provider switch (security.md §2): no other production file imports ' +
         'node:child_process.',
       severity: 'error',
       from: {
@@ -142,7 +142,7 @@ export const monorepoGate: Gate = {
     {
       name: 'mono-agent-worker-allowed-imports-only',
       comment:
-        "Deny by default (review of #116): the agent worker's production code imports only its " +
+        "Deny by default: the agent worker's production code imports only its " +
         'own files, @agentic-studio/contracts, zod and Node core modules, so no npm or workspace ' +
         'package (a process wrapper, a package that spawns) can reach past the spawn boundary.',
       severity: 'error',
@@ -154,7 +154,7 @@ export const monorepoGate: Gate = {
       comment:
         "The agent worker's production code never imports node:module (createRequire would load " +
         'child_process unseen), node:vm (code the graph cannot see), node:cluster or ' +
-        'node:worker_threads (review of #116).',
+        'node:worker_threads.',
       severity: 'error',
       from: AGENT_WORKER_PRODUCTION,
       to: { path: coreModules('module', 'vm', 'cluster', 'worker_threads') },

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { EnvironmentFile } from '@agentic-studio/contracts';
-import { RUN_ENVIRONMENT_FILE_SECRET_OWNER } from '../../../../domain/value-objects/run-environment-file.js';
+import { RUN_ENVIRONMENT_FILE_SECRET_OWNER } from '../../../ports/environment-file-snapshots.js';
 import { InMemoryRunDiffRepository } from '../../../../domain/repositories/__tests__/in-memory-run-diff-repository.js';
 import { InMemoryRunLog } from '../../../../application/ports/__tests__/in-memory-run-log.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';

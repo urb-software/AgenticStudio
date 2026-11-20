@@ -66,7 +66,7 @@ export const apiGate: Gate = {
       comment:
         'Another module is reached only through its public contracts/index.ts. The shared HTTP ' +
         'shapes of a module live in its entry-points/http/shared/, which api-no-cross-module-private ' +
-        'keeps private (backend.md §2, Issue #96). Deep imports of contracts/events/ are covered by ' +
+        'keeps private (backend.md §2). Deep imports of contracts/events/ are covered by ' +
         'api-events-imported-via-contracts-index.',
       severity: 'error',
       from: { path: '^src/modules/([^/]+)/' },
@@ -370,7 +370,7 @@ export const apiGate: Gate = {
       comment:
         "HandledServerErrorException (the platform's unlogged 503 marker) is platform-only: no " +
         'chain of imports leads business-module production code to it. Modules answer a handled ' +
-        '503 with serviceUnavailable() from platform/http/problem-details.ts (Issue #70). This ' +
+        '503 with serviceUnavailable() from platform/http/problem-details.ts. This ' +
         'does not stop a module from throwing an unlogged 5xx ProblemException. ' +
         'Module tests are exempt from the chain check only (an existing adapter test under ' +
         'infrastructure/ boots the whole app); direct imports stay forbidden below.',
@@ -382,7 +382,7 @@ export const apiGate: Gate = {
       name: 'api-queue-health-platform-only',
       comment:
         "The queue's health view (QueueHealth and its provider) is platform-only: no chain of " +
-        'imports leads a business module to it; modules use the JobQueues port (Issue #70). ' +
+        'imports leads a business module to it; modules use the JobQueues port. ' +
         'Module tests are exempt from the chain check only; direct imports stay forbidden below.',
       severity: 'error',
       from: { path: '^src/modules/', pathNot: TESTS },
@@ -393,7 +393,7 @@ export const apiGate: Gate = {
       comment:
         'No file under src/modules/, tests included, imports HandledServerErrorException or the ' +
         "queue's health view directly; the two reachable rules above cover production code " +
-        'through any chain (Issue #70).',
+        'through any chain.',
       severity: 'error',
       from: { path: '^src/modules/' },
       to: {
