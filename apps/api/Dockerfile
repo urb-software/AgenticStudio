@@ -44,8 +44,10 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
 
 FROM ${NODE_IMAGE} AS runtime
 # git and an SSH client: Repository features (clone, fetch, verify) run the system git.
+# util-linux (already in the base image, named here on purpose) provides prlimit, which bounds
+# the memory of every Git and ssh process.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates git openssh-client openssl \
+  && apt-get install -y --no-install-recommends ca-certificates git openssh-client openssl util-linux \
   && rm -rf /var/lib/apt/lists/* \
   && groupadd --gid 10001 studio \
   && useradd --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin studio

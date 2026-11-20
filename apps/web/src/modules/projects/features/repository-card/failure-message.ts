@@ -52,7 +52,7 @@ export function failureMessage(
     case 'timeout':
       return `The Git host took too long, so the ${operation} was stopped.`;
     case 'size_limit':
-      return 'The repository is larger than the 2 GB limit, so Studio stopped and kept no clone.';
+      return 'The repository is larger than the 2 GB limit, or needs more memory than Studio allows, so Studio stopped and kept no clone.';
     case 'auth_failed':
       if (ssh) {
         return operation === 'fetch'

@@ -1,7 +1,7 @@
 import { environmentFilePathProblem } from '@agentic-studio/contracts';
 import { Logger, type OnModuleInit } from '@nestjs/common';
 import { lstat, mkdir, mkdtemp, readdir, rename, rm, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { type AppConfig, SHELL_SAFE_PATH } from '../../../../../platform/config/config.js';
 import { parseSshHostKey } from '../../../../../platform/config/ssh-known-hosts.js';
 import {
@@ -19,7 +19,7 @@ import {
   InvalidIntegrationBranchError,
 } from '../../../domain/value-objects/integration-branch.js';
 import { ClonePaths } from './clone-paths.js';
-import { classifyGitFailure, redactGitOutput } from './git-output.js';
+import { classifyGitFailure, isOutOfMemory, redactGitOutput } from './git-output.js';
 import { diskUsage, GitProcessInterrupted, runGitProcess, type SizeWatch } from './git-process.js';
 import { checkedAddresses, type ResolveHost, systemResolveHost } from './remote-host.js';
 import {
@@ -41,6 +41,11 @@ export const PRODUCTION_GIT_LIMITS = {
   cloneTimeoutMs: 10 * 60 * 1000,
   fetchTimeoutMs: 2 * 60 * 1000,
   maxCloneBytes: 2 * 1024 ** 3,
+  /**
+   * Address space (`RLIMIT_AS`) of each Git, ssh and ssh-keyscan process. A normal clone stays
+   * well below 2 GiB with {@link MEMORY_SETTINGS}; the rest is reserved address space.
+   */
+  maxProcessMemoryBytes: 2 * 1024 ** 3,
 } as const;
 
 export const PRODUCTION_TRANSPORTS: readonly GitTransport[] = ['ssh', 'https'];
@@ -51,6 +56,8 @@ export interface SystemGitSettings {
   cloneTimeoutMs: number;
   fetchTimeoutMs: number;
   maxCloneBytes: number;
+  /** The per-process memory bound; see {@link PRODUCTION_GIT_LIMITS}. */
+  maxProcessMemoryBytes: number;
   /** How often a running clone or fetch measures the Clone's disk usage. Default 1 s. */
   sizePollIntervalMs?: number;
   platform?: NodeJS.Platform;
@@ -58,6 +65,8 @@ export interface SystemGitSettings {
   sshBinary?: string;
   /** Default `ssh-keyscan` from `PATH` (part of the OpenSSH client). */
   keyscanBinary?: string;
+  /** Default `prlimit` from `PATH` (util-linux), which applies the memory bound. */
+  prlimitBinary?: string;
   /**
    * Where per-operation private directories (`studio-git-*`: SSH key, known hosts) go.
    * Default `<dataDir>/tmp`, created owner-only; never inside a Clone.
@@ -118,8 +127,31 @@ function hardeningArgs(transports: readonly GitTransport[]): string[] {
     // Packfile URIs (protocol v2) would let the server point Git at another host; Git offers
     // none unless configured, and this keeps it that way explicitly (defence in depth).
     'fetch.uriProtocols=',
+    ...MEMORY_SETTINGS,
   ].flatMap((setting) => ['-c', setting]);
 }
+
+/**
+ * Git's own memory settings, so that normal operations stay far below the hard bound
+ * ({@link PRODUCTION_GIT_LIMITS}'s `maxProcessMemoryBytes`). Git alone is no bound (`index-pack`
+ * and ssh can still grow); these keep legitimate work from reaching it.
+ */
+const MEMORY_SETTINGS = [
+  // Pack windows are memory-mapped, and mapped address space counts against RLIMIT_AS: a
+  // small window and a total cap (the 64-bit defaults are 1 GiB and 32 GiB).
+  'core.packedGitWindowSize=32m',
+  'core.packedGitLimit=256m',
+  // Cache of delta bases while unpacking (default 96 MiB).
+  'core.deltaBaseCacheLimit=64m',
+  // Delta search window and delta cache of pack-objects (default unlimited / 256 MiB).
+  'pack.windowMemory=128m',
+  'pack.deltaCacheSize=64m',
+  // Blobs above this are stored whole, never delta-compressed (default 512 MiB).
+  'core.bigFileThreshold=64m',
+  // Each thread reserves a stack and a malloc arena; two keep index-pack and pack-objects
+  // fast enough and the reserved address space small (default: one per CPU).
+  'pack.threads=2',
+];
 
 /**
  * A remote whose host was checked against the address policy: Git and ssh
@@ -210,6 +242,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
   private readonly gitBinary: string;
   private readonly sshBinary: string;
   private readonly keyscanBinary: string;
+  private readonly prlimitBinary: string;
   private readonly resolveHost: ResolveHost;
   private readonly tempRoot: string;
   private readonly sizePollIntervalMs: number;
@@ -224,6 +257,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     this.gitBinary = settings.gitBinary ?? 'git';
     this.sshBinary = settings.sshBinary ?? 'ssh';
     this.keyscanBinary = settings.keyscanBinary ?? 'ssh-keyscan';
+    this.prlimitBinary = settings.prlimitBinary ?? 'prlimit';
     this.resolveHost = settings.resolveHost ?? systemResolveHost;
     this.tempRoot = settings.tempRoot ?? join(settings.dataDir, 'tmp');
     this.ownsTempRoot = settings.tempRoot === undefined;
@@ -233,11 +267,13 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
   }
 
   /**
-   * Start-up on Linux: `git` must be installed at {@link MIN_GIT_VERSION} or later, and
+   * Start-up on Linux: `prlimit` must work (it applies the memory bound), `git` must be installed
+   * at {@link MIN_GIT_VERSION} or later, and
    * leftovers of operations a crash interrupted are removed.
    */
   async onModuleInit(): Promise<void> {
     if (this.platform !== 'linux') return;
+    await this.verifyPrlimit();
     await this.verifyGitVersion();
     await this.sweepStaleLeftovers();
   }
@@ -283,12 +319,37 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     }
   }
 
+  /** Every process runs under `prlimit`; without it nothing could run, so start-up refuses. */
+  async verifyPrlimit(): Promise<void> {
+    try {
+      const result = await this.withOperation(this.settings.fetchTimeoutMs, {}, (context) =>
+        runGitProcess({
+          binary: this.prlimitBinary,
+          args: ['--version'],
+          cwd: context.dir,
+          env: context.env,
+          deadline: context.deadline,
+          signal: context.signal,
+        }),
+      );
+      if (result.exitCode !== 0) throw new Error('prlimit failed');
+    } catch (error) {
+      throw new Error(
+        `Repository features need prlimit (util-linux) to bound the memory of Git processes, but it could not be run (${
+          (error as Error).name
+        }). Install util-linux, or check PATH.`,
+      );
+    }
+  }
+
   async verifyGitVersion(): Promise<string> {
     let output: string;
     try {
       const result = await this.withOperation(this.settings.fetchTimeoutMs, {}, (context) =>
         this.git(context, ['--version']),
       );
+      // Under prlimit a missing binary is the exit status of prlimit, not a spawn error.
+      if (result.exitCode !== 0) throw new Error('git failed');
       output = result.stdout.trim();
     } catch (error) {
       throw new Error(
@@ -718,6 +779,8 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
   private environment(dir: string): Record<string, string> {
     return {
       PATH: process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin',
+      // glibc arenas count against the address space bound; two are enough for two threads.
+      MALLOC_ARENA_MAX: '2',
       HOME: dir,
       LC_ALL: 'C',
       LANG: 'C',
@@ -889,7 +952,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
 
   private async run(context: OperationContext, binary: string, args: string[], watch?: SizeWatch) {
     try {
-      return await runGitProcess({
+      const result = await runGitProcess({
         binary,
         args,
         cwd: context.dir,
@@ -897,7 +960,17 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
         deadline: context.deadline,
         signal: context.signal,
         watch,
+        memoryBound: {
+          bytes: this.settings.maxProcessMemoryBytes,
+          prlimitBinary: this.prlimitBinary,
+        },
       });
+      if (result.exitCode !== 0 && isOutOfMemory(result.stderr)) {
+        // The process hit its memory bound: the repository is too large for Studio's limits.
+        this.log(`${basename(binary)} ran out of memory: ${redactGitOutput(result.stderr)}`);
+        throw new GitOperationError('size_limit');
+      }
+      return result;
     } catch (error) {
       if (error instanceof GitProcessInterrupted) {
         if (error.reason === 'aborted') throw abortError();

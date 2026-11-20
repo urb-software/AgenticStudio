@@ -1,7 +1,8 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { lstat, mkdir, mkdtemp, readdir, readFile, rm, writeFile, chmod } from 'node:fs/promises';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createServer as createHttpsServer, type Server as HttpsServer } from 'node:https';
 import { type AddressInfo, createServer, type Server, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -13,11 +14,77 @@ import {
   GitRequestRejectedError,
   type GitFailureReason,
 } from '../../../../application/ports/repository-git.js';
-import { SystemGitAdapter, type SystemGitSettings } from '../system-git-adapter.js';
+import {
+  PRODUCTION_GIT_LIMITS,
+  SystemGitAdapter,
+  type SystemGitSettings,
+} from '../system-git-adapter.js';
 import { addCommit, createFixture, headOf, type Fixture } from './fixtures/fixture-repos.js';
 
 const PROJECT_ID = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const OTHER_PROJECT_ID = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
+
+/**
+ * Serves the bare repositories under `root` over smart HTTP with `git http-backend`, in the
+ * test's own process tree: the server is not under the adapter's memory bound.
+ */
+function serveGitOverHttp(
+  root: string,
+  request: IncomingMessage,
+  response: ServerResponse,
+  pathInfo: string,
+): void {
+  const chunks: Buffer[] = [];
+  request.on('data', (chunk: Buffer) => chunks.push(chunk));
+  request.on('end', () => {
+    const body = Buffer.concat(chunks);
+    const query = (request.url ?? '').split('?')[1] ?? '';
+    const cgi = spawn('git', ['http-backend'], {
+      env: {
+        PATH: process.env.PATH ?? '/usr/bin:/bin',
+        HOME: root,
+        GIT_CONFIG_NOSYSTEM: '1',
+        GIT_CONFIG_GLOBAL: '/dev/null',
+        GIT_PROJECT_ROOT: root,
+        GIT_HTTP_EXPORT_ALL: '1',
+        PATH_INFO: pathInfo,
+        QUERY_STRING: query,
+        REQUEST_METHOD: request.method ?? 'GET',
+        CONTENT_TYPE: request.headers['content-type'] ?? '',
+        CONTENT_LENGTH: String(body.length),
+        ...(request.headers['content-encoding']
+          ? { HTTP_CONTENT_ENCODING: request.headers['content-encoding'] }
+          : {}),
+        REMOTE_ADDR: '127.0.0.1',
+      },
+    });
+    cgi.stdin.end(body);
+    let head = Buffer.alloc(0);
+    let headersSent = false;
+    cgi.stdout.on('data', (chunk: Buffer) => {
+      if (headersSent) {
+        response.write(chunk);
+        return;
+      }
+      head = Buffer.concat([head, chunk]);
+      const split = head.indexOf('\r\n\r\n');
+      if (split < 0) return;
+      const headers: Record<string, string> = {};
+      let status = 200;
+      for (const line of head.subarray(0, split).toString('latin1').split('\r\n')) {
+        const colon = line.indexOf(':');
+        const name = line.slice(0, colon).toLowerCase();
+        const value = line.slice(colon + 1).trim();
+        if (name === 'status') status = parseInt(value, 10);
+        else headers[name] = value;
+      }
+      response.writeHead(status, headers);
+      response.write(head.subarray(split + 4));
+      headersSent = true;
+    });
+    cgi.on('close', () => response.end());
+  });
+}
 
 /**
  * Integration tests of the Git adapter against the real `git` binary and bare fixture
@@ -38,6 +105,7 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
       cloneTimeoutMs: 60_000,
       fetchTimeoutMs: 60_000,
       maxCloneBytes: 50 * 1024 * 1024,
+      maxProcessMemoryBytes: 2 * 1024 ** 3,
       tempRoot,
       log: (message) => logs.push(message),
       // The network fixtures listen on 127.0.0.1: an explicit opt-in.
@@ -454,6 +522,11 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
       server = createHttpsServer(
         { key: await readFile(keyFile), cert: await readFile(caFile) },
         (request, response) => {
+          if (request.url?.startsWith('/git/')) {
+            const [path] = request.url.split('?');
+            serveGitOverHttp(fixtures, request, response, path!.slice('/git'.length));
+            return;
+          }
           requests.push({ host: request.headers.host, url: request.url });
           if (request.url?.startsWith('/moved/')) {
             response.writeHead(301, { Location: `https://${HOST}:${port}/owner/repo.git` });
@@ -493,6 +566,44 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
       expect(requests).toEqual([
         { host: `${HOST}:${port}`, url: '/owner/repo.git/info/refs?service=git-upload-pack' },
       ]);
+    });
+
+    describe('memory bound (real git under prlimit, unbounded HTTP server)', () => {
+      // One incompressible 60 MB blob: the local unpack must hold it in memory, which a 64 MiB
+      // address space cannot do. The server is outside the bound, so the failure is the local
+      // process's own, never a `remote:` line; the production bound (2 GiB) clones it fine.
+      const BLOB = 60_000_000;
+      const bounded = { maxCloneBytes: 500 * 1024 * 1024, maxProcessMemoryBytes: 64 * 1024 * 1024 };
+      const heavyUrl = () => `https://${HOST}:${port}/git/heavy.git`;
+
+      it('fails a clone that needs more memory than the bound with size_limit, and keeps no Clone', async () => {
+        createFixture(fixtures, 'heavy', { 'blob.bin': randomBytes(BLOB) });
+        await expectReason(
+          fixtureAdapter(bounded).clone(PROJECT_ID, heavyUrl(), 'main'),
+          'size_limit',
+        );
+        expect(await cloneEntries()).toEqual([]);
+        expect(logs.some((line) => line.includes('ran out of memory'))).toBe(true);
+      });
+
+      it('removes the Clone when a fetch needs more memory than the bound', async () => {
+        const fixture = createFixture(fixtures, 'heavy', { 'small.txt': 'small\n' });
+        const git = fixtureAdapter(bounded);
+        await git.clone(PROJECT_ID, heavyUrl(), 'main');
+        addCommit(fixture, { 'blob.bin': randomBytes(BLOB) });
+        await expectReason(git.fetch(PROJECT_ID, heavyUrl(), 'main'), 'size_limit');
+        expect(await cloneEntries()).toEqual([]);
+      });
+
+      it('clones the same repository under the production bound', async () => {
+        const fixture = createFixture(fixtures, 'heavy', { 'blob.bin': randomBytes(BLOB) });
+        await expect(
+          fixtureAdapter({
+            maxCloneBytes: bounded.maxCloneBytes,
+            maxProcessMemoryBytes: PRODUCTION_GIT_LIMITS.maxProcessMemoryBytes,
+          }).clone(PROJECT_ID, heavyUrl(), 'main'),
+        ).resolves.toEqual({ commit: headOf(fixture) });
+      });
     });
 
     it('fails with redirect_refused and never follows the redirect', async () => {

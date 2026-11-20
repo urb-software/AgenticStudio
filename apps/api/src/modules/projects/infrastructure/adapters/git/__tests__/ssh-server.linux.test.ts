@@ -91,6 +91,7 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter over SSH (contain
       cloneTimeoutMs: 60_000,
       fetchTimeoutMs: 60_000,
       maxCloneBytes: 50 * 1024 * 1024,
+      maxProcessMemoryBytes: 2 * 1024 ** 3,
       tempRoot,
       log: () => {},
       // The container's port is published on the Docker host's loopback: an explicit opt-in.

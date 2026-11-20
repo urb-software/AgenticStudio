@@ -55,7 +55,7 @@ export const zProjectDetailOutput = z.object({
 });
 
 /**
- * The fixed failure reason codes. remote_not_allowed: the remote host is or resolves to an address Studio does not connect to; redirect_refused: the remote answered with an HTTP redirect, which Studio does not follow; interrupted: the operation was cut off by a crash or a restart of Studio, not by the repository. Later versions may add values; treat an unknown value as a generic failure.
+ * The fixed failure reason codes. size_limit: the Clone exceeded Studio's disk or memory limit; remote_not_allowed: the remote host is or resolves to an address Studio does not connect to; redirect_refused: the remote answered with an HTTP redirect, which Studio does not follow; interrupted: the operation was cut off by a crash or a restart of Studio, not by the repository. Later versions may add values; treat an unknown value as a generic failure.
  */
 export const zRepositoryFailureCodeOutput = z.enum([
     'auth_failed',
