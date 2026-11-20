@@ -1,7 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RepositoryConnection } from '../../domain/entities/repository-connection.js';
-import { InMemoryProjectRepository } from '../../domain/repositories/__tests__/in-memory-project-repository.js';
 import { InMemoryRepositoryConnectionRepository } from '../../domain/repositories/__tests__/in-memory-repository-connection-repository.js';
 import { FakeRepositoryGit } from '../ports/__tests__/fake-repository-git.js';
 import { RepositoryCleanup } from '../repository-cleanup.js';
@@ -16,14 +15,12 @@ const B = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
 describe('RepositoryCleanup finishing a disconnect', () => {
   let secrets: InMemorySecretStore;
   let deployKeys: InMemoryDeployKeys;
-  let projects: InMemoryProjectRepository;
   let connections: InMemoryRepositoryConnectionRepository;
   let git: FakeRepositoryGit;
   let logs: string[];
   let cleanup: RepositoryCleanup;
 
   async function connect(projectId: string, name: string) {
-    projects.addProject(projectId, name);
     await connections.connect({
       projectId,
       url: `https://github.com/acme/${name}.git`,
@@ -39,7 +36,6 @@ describe('RepositoryCleanup finishing a disconnect', () => {
   beforeEach(() => {
     secrets = new InMemorySecretStore();
     deployKeys = new InMemoryDeployKeys(secrets);
-    projects = new InMemoryProjectRepository();
     connections = new InMemoryRepositoryConnectionRepository();
     git = new FakeRepositoryGit();
     logs = [];
@@ -70,6 +66,22 @@ describe('RepositoryCleanup finishing a disconnect', () => {
     },
   );
 
+  it('reports nothing left when a concurrent cleanup deleted the record before the final delete', async () => {
+    await connect(A, 'a');
+    await connections.change(A, (r) => {
+      r.startDisconnect();
+    });
+    git.removeClone.mockImplementation(async (projectId) => {
+      await connections.change(projectId, (r) => {
+        r.finishDisconnect();
+      });
+    });
+
+    await expect(cleanup.finish(A)).resolves.toBe(true);
+    expect(await connections.find(A)).toBeNull();
+    expect(logs).toEqual([]);
+  });
+
   it('never deletes a Repository that is not disconnecting', async () => {
     await connect(A, 'a');
 
@@ -80,7 +92,6 @@ describe('RepositoryCleanup finishing a disconnect', () => {
 
   describe('an SSH Repository', () => {
     async function connectOverSsh(projectId: string) {
-      projects.addProject(projectId, 'ssh');
       const deployKey = await deployKeys.create('ssh');
       await connections.connect({
         projectId,
