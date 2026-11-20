@@ -63,7 +63,10 @@ const mark = (name) => join(marks, name);
 const ran = (name) => existsSync(mark(name));
 
 const git = new GitRunner();
-const identity = ['-c', 'user.name=Studio Smoke', '-c', 'user.email=smoke@example.test'];
+const identity = [
+  ['user.name', 'Studio Smoke'],
+  ['user.email', 'smoke@example.test'],
+];
 const local = { cwd: repoDir, timeoutMs: 60_000 };
 const put = (path, text) => {
   mkdirSync(join(repoDir, path, '..'), { recursive: true });
@@ -104,7 +107,7 @@ put(
 );
 await git.run(['init', '--quiet', '--initial-branch=main'], local);
 await git.run(['add', '--all'], local);
-await git.run([...identity, 'commit', '--quiet', '-m', 'Initial commit'], local);
+await git.run(['commit', '--quiet', '-m', 'Initial commit'], { ...local, config: identity });
 const startCommit = (await git.run(['rev-parse', 'HEAD'], local)).trim();
 
 try {
