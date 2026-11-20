@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -171,6 +172,8 @@ describe.skipIf(process.platform !== 'linux')('ClaudeCodeRunner with the stub CL
       join(runDir, 'instructions.md'),
       '--json-schema',
       AGENT_RESULT_JSON_SCHEMA,
+      '--plugin-dir',
+      join(runDir, 'repo-plugin'),
     ]);
     expect(call!.cwd).toBe(repoDir);
     expect(call!.stdin).toBe('closed (0 bytes)');
@@ -239,6 +242,11 @@ describe.skipIf(process.platform !== 'linux')('ClaudeCodeRunner with the stub CL
     ]) {
       expect(instructions).not.toContain(hostile);
     }
+    // The plugin holds the repository's skill and agent only: no commands, settings or MCP file.
+    const plugin = join(runDir, 'repo-plugin');
+    expect(readdirSync(plugin).sort()).toEqual(['.claude-plugin', 'agents', 'skills']);
+    expect(readdirSync(join(plugin, 'skills'))).toEqual(['evil']);
+    expect(readdirSync(join(plugin, 'agents'))).toEqual(['evil.md']);
     expect(events).toContainEqual({
       type: 'notice',
       text: 'Skipped the import @../escape.md in CLAUDE.md: outside the repository.',

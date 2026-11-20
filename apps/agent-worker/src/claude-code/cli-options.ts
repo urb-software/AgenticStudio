@@ -98,6 +98,8 @@ export interface ClaudeArgumentsInput {
   jsonSchema: string;
   /** A resumed step: the session to continue. */
   sessionRef?: string;
+  /** The sanitized plugin of the repository's skills and subagents; absent when it is empty. */
+  pluginDir?: string;
 }
 
 /**
@@ -130,6 +132,7 @@ export function claudeArguments(input: ClaudeArgumentsInput): string[] {
     input.instructionsFile,
     '--json-schema',
     input.jsonSchema,
+    ...(input.pluginDir === undefined ? [] : ['--plugin-dir', input.pluginDir]),
   ];
 }
 
@@ -151,6 +154,7 @@ export function claudeStepFiles(runDir: string) {
   return {
     settingsFile: posix.join(runDir, 'claude-settings.json'),
     instructionsFile: posix.join(runDir, 'instructions.md'),
+    pluginDir: posix.join(runDir, 'repo-plugin'),
     tmpDir: posix.join(runDir, 'tmp'),
   };
 }
