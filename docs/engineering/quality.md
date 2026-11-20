@@ -61,6 +61,7 @@ The module layout and the thirteen structure rules are canonical in [Backend](..
 - Nothing under `application/` imports the worker protocol package (`@agentic-studio/contracts`) or a file under `entry-points/`; a limit the application needs is the domain value's own constant, pinned to the protocol's by a test. Tests are not checked (rule 10).
 - A handler's input type refers to no class exported under `domain/entities/` or `domain/value-objects/`: directly, through an import alias, through a type declared in the same file, by extending it, or by combining it with another type at the `execute` parameter. Lists of allowed values and plain types are allowed. The check is syntactic: a type declared in another file is not followed (rule 10).
 - No public method of a handler returns an entity class (also behind a local type alias, a namespace import `ns.Entity` or an import type), every public method declares its return type, and every handler file exports its input type (when it takes input) and its result type (when it returns something) (rule 10).
+- A `<Name>Handler` class in a feature's `handler.ts` has exactly one public method, named `execute` (rule 2): private, protected and `#private` members, the constructor, accessors and static members are not counted, an overload of `execute` counts once, and a public property holding an arrow function or a function expression counts as a method.
 - Each repository interface refers to exactly one file in `domain/entities/`, and no companion file (`-data`, `-facts`) and no type under `domain/value-objects/` is the main type a repository returns, except a value object that the entity (or its root's pinned child entity) holds as a readonly field, such as the `RunDiffState` of a Run diff (any other value object, one the entity only imports included, still fails). The read shapes of one repository contract (for example `RunStateView`, `RunDiffView`, `ClaimedLookup`) are declared in that repository's file (rule 11). A property typed as a function counts as a method, and a qualified name (`ns.Type`) is followed to its file. A root's child entities, pinned in the check (the Run step of the Run), belong to its aggregate and do not count as another entity file.
 - No entity file imports another entity file except for an id type, or a root's own pinned child entity (rule 12).
 - The four checks above apply to every module, including one with no `domain/entities/` directory: a repository interface there refers to no entity file and fails, since anything with its own repository is a root in `domain/entities/`. The fixtures use a module name the app does not have (`billing`).
@@ -160,6 +161,8 @@ Positive and negative fixtures prove the rules catch violations:
 | A test under `application/` imports an entry point (tests are not checked) | PASS |
 | A handler input holds plain data: primitives, lists of allowed values and nested shapes it declares | PASS |
 | A handler input refers to a class from `domain/`, directly, through an alias, by extending it or at the `execute` parameter | FAIL |
+| A handler has one public method, `execute` | PASS |
+| A handler has a second public method, or its one public method is not named `execute` | FAIL |
 | A repository interface refers to one entity file | PASS |
 | A repository interface refers to two entity files, or its main type is under `domain/value-objects/` | FAIL |
 | Nothing under `domain/value-objects/` or `domain/errors/` imports from `domain/entities/` | PASS |
@@ -224,7 +227,7 @@ One row per rule of [Backend](../architecture/backend.md) §3. A rule cannot be 
 | # | Rule | Enforcement |
 | --- | --- | --- |
 | 1 | Features are independent | Gate check: no import between feature folders, in every module |
-| 2 | Entry points call handlers; handlers never call each other | Gate checks: `application/` imports no HTTP, schema, queue or scheduler API, and `entry-points/` imports no repository, port or infrastructure file; handlers never call each other, through the check of rule 1, and `application/` imports nothing from `platform/queue/`. Review only: that an entry point holds no business rule, and that a handler has one public method `execute` (until the gate check of #243) |
+| 2 | Entry points call handlers; handlers never call each other | Gate checks: `application/` imports no HTTP, schema, queue or scheduler API, and `entry-points/` imports no repository, port or infrastructure file; handlers never call each other, through the check of rule 1, `application/` imports nothing from `platform/queue/`, and a handler class has exactly one public method, named `execute`. Review only: that an entry point holds no business rule |
 | 3 | Shared application logic is the exception | Gate check: no shared, common, utils or helpers directory, collaborators never import features; pinned test: the list of application collaborators; the six-step order is review only |
 | 4 | Behaviour lives on the object it is about | Gate check: entity files export a class with a non-public constructor, in every module; where a rule sits is review only |
 | 5 | There is no `domain/services/` | Gate check: no `domain/services/` directory |

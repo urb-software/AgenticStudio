@@ -20,6 +20,7 @@ export const AGGREGATE_RULES = [
   'api-entry-points-no-entity-classes',
   'api-handlers-return-plain-data',
   'api-handler-input-plain-data',
+  'api-handler-single-execute',
   'api-repository-refers-to-one-entity',
   'api-entities-do-not-import-entities',
 ];
@@ -62,6 +63,9 @@ export function aggregateViolations(baseDir: string): Violation[] {
       ...files
         .filter((path) => HANDLER_FILE.test(path))
         .flatMap((path) => handlerInputViolations(baseDir, path, domainClasses)),
+      ...files
+        .filter((path) => HANDLER_FILE.test(path))
+        .flatMap((path) => handlerSingleExecuteViolations(baseDir, path)),
       ...files
         .filter((path) => REPOSITORY_FILE.test(path))
         .flatMap((path) => repositoryViolations(baseDir, path)),
@@ -362,6 +366,46 @@ function handlerViolations(
     }
     return found;
   });
+}
+
+/**
+ * A handler class has one public method, `execute` (rule 2): a second entry would make the
+ * handler a service, and a call from another module goes through an entry point's own class.
+ * The constructor, accessors and static members are not counted.
+ */
+function handlerSingleExecuteViolations(baseDir: string, path: string): Violation[] {
+  const source = parse(baseDir, path);
+  return source.statements
+    .filter(ts.isClassDeclaration)
+    .filter((declaration) => declaration.name && HANDLER_SUFFIX.test(declaration.name.text))
+    .flatMap((handler) => {
+      const isPublic = (member: ts.ClassElement): boolean =>
+        !(ts.getModifiers(member as ts.HasModifiers) ?? []).some(
+          (modifier) =>
+            modifier.kind === ts.SyntaxKind.PrivateKeyword ||
+            modifier.kind === ts.SyntaxKind.ProtectedKeyword ||
+            modifier.kind === ts.SyntaxKind.StaticKeyword,
+        ) && !member.name?.getText().startsWith('#');
+      const members = handler.members.filter(
+        (member) =>
+          isPublic(member) &&
+          ((ts.isMethodDeclaration(member) && member.body !== undefined) ||
+            (ts.isPropertyDeclaration(member) &&
+              member.initializer !== undefined &&
+              (ts.isArrowFunction(member.initializer) ||
+                ts.isFunctionExpression(member.initializer)))),
+      );
+      const methods = members as (ts.MethodDeclaration | ts.PropertyDeclaration)[];
+      const names = methods.map((method) => method.name.getText());
+      if (names.length === 1 && names[0] === 'execute') return [];
+      return [
+        {
+          rule: 'api-handler-single-execute',
+          from: path,
+          to: `${handler.name!.text} has the public methods ${names.length ? names.join(', ') : '(none)'}, not only execute`,
+        },
+      ];
+    });
 }
 
 /** `import { X as N }` → `N → X`, for the names a file renames on import. */

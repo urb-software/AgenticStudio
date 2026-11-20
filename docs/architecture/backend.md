@@ -40,6 +40,7 @@ modules/{module}/
       shared/              response shapes and problems used by several endpoints
       <caller>/            endpoints with their schemas, grouped by who calls them
     jobs/  schedulers/  startup/  consumers/
+    contracts/             the driving adapter behind another module's `contracts/` interface: maps the call to a handler
   infrastructure/
     adapters/  repositories/
   contracts/

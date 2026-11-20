@@ -87,7 +87,7 @@ describe('Environment file handlers', () => {
 
     expect(info.path).toBe('config/test.env');
     expect([...secrets.values.values()]).toEqual(['X=test-only-3\n']);
-    await expect(snapshot.forProject(PROJECT)).resolves.toEqual({
+    await expect(snapshot.execute({ projectId: PROJECT })).resolves.toEqual({
       path: 'config/test.env',
       content: 'X=test-only-3\n',
     });
@@ -101,7 +101,7 @@ describe('Environment file handlers', () => {
 
     expect(secrets.values.size).toBe(0);
     await expect(get.execute({ projectId: PROJECT })).resolves.toBeNull();
-    await expect(snapshot.forProject(PROJECT)).resolves.toBeNull();
+    await expect(snapshot.execute({ projectId: PROJECT })).resolves.toBeNull();
   });
 
   it('answers unknown projects with ProjectNotFoundError, storing nothing', async () => {

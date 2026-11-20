@@ -1,5 +1,4 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { RunEnvironmentFiles } from '../../../contracts/index.js';
 import {
   ENVIRONMENT_FILE_REPOSITORY,
   type EnvironmentFileRepository,
@@ -20,15 +19,11 @@ export type GetRunEnvironmentFileResult = { path: string; content: string } | nu
  * Returns the content (a secret): for `executions` only, never an operator endpoint.
  */
 @Injectable()
-export class GetRunEnvironmentFileHandler implements RunEnvironmentFiles {
+export class GetRunEnvironmentFileHandler {
   constructor(
     @Inject(ENVIRONMENT_FILE_REPOSITORY) private readonly files: EnvironmentFileRepository,
     @Inject(ENVIRONMENT_FILE_CONTENTS) private readonly contents: EnvironmentFileContents,
   ) {}
-
-  forProject(projectId: string): Promise<GetRunEnvironmentFileResult> {
-    return this.execute({ projectId });
-  }
 
   async execute(input: GetRunEnvironmentFileInput): Promise<GetRunEnvironmentFileResult> {
     const { projectId } = input;

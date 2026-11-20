@@ -33,7 +33,7 @@ describe('GetRunStartPointHandler', () => {
       r.completeClone({ headSha: HEAD, fetchedAt: new Date() });
     });
 
-    expect(await handler.forProject(PROJECT)).toEqual({
+    expect(await handler.execute({ projectId: PROJECT })).toEqual({
       status: 'ready',
       startCommit: HEAD,
       remoteUrl: 'https://github.com/acme/shop.git',
@@ -42,19 +42,23 @@ describe('GetRunStartPointHandler', () => {
   });
 
   it('names an unknown project, also for an id that is not a UUID', async () => {
-    expect(await handler.forProject(PROJECT)).toEqual({ status: 'project_not_found' });
-    expect(await handler.forProject('not-a-uuid')).toEqual({ status: 'project_not_found' });
+    expect(await handler.execute({ projectId: PROJECT })).toEqual({ status: 'project_not_found' });
+    expect(await handler.execute({ projectId: 'not-a-uuid' })).toEqual({
+      status: 'project_not_found',
+    });
   });
 
   it('names a project without a Repository', async () => {
     projects.addProject(PROJECT, 'Shop');
 
-    expect(await handler.forProject(PROJECT)).toEqual({ status: 'no_repository' });
+    expect(await handler.execute({ projectId: PROJECT })).toEqual({ status: 'no_repository' });
   });
 
   it('refuses a Repository that is not ready, even one being fetched', async () => {
     await connect();
-    expect(await handler.forProject(PROJECT)).toEqual({ status: 'repository_not_ready' });
+    expect(await handler.execute({ projectId: PROJECT })).toEqual({
+      status: 'repository_not_ready',
+    });
 
     await connections.change(PROJECT, (r) => {
       r.completeClone({ headSha: HEAD, fetchedAt: new Date() });
@@ -62,6 +66,8 @@ describe('GetRunStartPointHandler', () => {
     await connections.change(PROJECT, (r) => {
       r.startFetch();
     });
-    expect(await handler.forProject(PROJECT)).toEqual({ status: 'repository_not_ready' });
+    expect(await handler.execute({ projectId: PROJECT })).toEqual({
+      status: 'repository_not_ready',
+    });
   });
 });
