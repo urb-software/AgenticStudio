@@ -16,7 +16,7 @@ const ROW_SECRET_MODEL =
 const ROW_SECRETS_KEY =
   'A module reads `secretsKey` outside `platform/config` and `platform/secrets` (property, destructuring, element access)' as const;
 const ROW_REACHABLE_CLIENT =
-  '`domain/`, `application/ports/` or `contracts/` reaches the ORM or a concrete client through a re-export chain' as const;
+  '`domain/`, `application/ports/` or `contracts/` reaches the ORM, a concrete client or (`domain/`) a framework, runtime module or `platform/` through a re-export chain' as const;
 const ROW_HANDLER_FAIL =
   'A handler returns an entity class, does not export its result type, or has a public method with no declared return type' as const;
 
@@ -63,7 +63,7 @@ describeGate('api', apiGate, 'apps/api', [
   },
   {
     fixture: 'domain-imports-nestjs',
-    expected: ['api-domain-independent'],
+    expected: ['api-domain-independent', 'api-domain-no-reachable-clients'],
     qualityRow: 'Domain imports ORM/NestJS',
   },
   {
@@ -142,7 +142,11 @@ describeGate('api', apiGate, 'apps/api', [
   },
   {
     fixture: 'domain-imports-file-system',
-    expected: ['api-domain-independent', 'api-domain-no-runtime-modules'],
+    expected: [
+      'api-domain-independent',
+      'api-domain-no-runtime-modules',
+      'api-domain-no-reachable-clients',
+    ],
   },
   {
     fixture: 'module-root-file-reexports-adapter',
@@ -173,7 +177,11 @@ describeGate('api', apiGate, 'apps/api', [
   },
   {
     fixture: 'contracts-reexport-database-client',
-    expected: ['api-features-no-reachable-adapters', 'api-contracts-no-reachable-clients'],
+    expected: [
+      'api-features-no-reachable-adapters',
+      'api-contracts-no-reachable-clients',
+      'api-contracts-self-contained',
+    ],
   },
   {
     fixture: 'events-versioned-and-publisher-owned',
@@ -341,14 +349,35 @@ describeGate('api', apiGate, 'apps/api', [
     qualityRow: ROW_REACHABLE_CLIENT,
   },
   {
+    fixture: 'contracts-reach-foreign-contracts-through-shared',
+    expected: ['api-contracts-self-contained'],
+    qualityRow:
+      'A `contracts/` file imports `shared/` or `platform/`, or the `contracts/` of another module',
+  },
+  {
+    fixture: 'domain-reaches-nestjs-through-shared',
+    expected: ['api-domain-no-reachable-clients'],
+    qualityRow: ROW_REACHABLE_CLIENT,
+  },
+  {
+    fixture: 'domain-reaches-child-process-through-shared',
+    expected: ['api-domain-no-reachable-clients'],
+    qualityRow: ROW_REACHABLE_CLIENT,
+  },
+  {
+    fixture: 'event-file-uses-require',
+    expected: ['api-event-file-imports-zod-only'],
+    qualityRow: 'An event file imports a module other than `zod` (import, export from, require)',
+  },
+  {
     fixture: 'contracts-import-foreign-contracts',
     expected: ['api-contracts-no-foreign-contracts'],
     qualityRow: 'A `contracts/` file imports the `contracts/` of another module',
   },
   {
     fixture: 'event-file-imports-non-zod-module',
-    expected: ['api-event-file-imports-zod-only'],
-    qualityRow: 'An event file imports a module other than `zod`',
+    expected: ['api-event-file-imports-zod-only', 'api-contracts-self-contained'],
+    qualityRow: 'An event file imports a module other than `zod` (import, export from, require)',
   },
   {
     fixture: 'entry-point-imports-port-token-through-port-export-star',

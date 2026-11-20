@@ -42,7 +42,7 @@ The module layout and the thirteen structure rules are canonical in [Backend](..
 - Feature handlers depend on interfaces/ports, not concrete adapters/repository implementations.
 - Domain repository contracts live in `domain/repositories/`; read ports and other service interfaces in `ports/` (naming convention in [Backend](../architecture/backend.md) §4).
 - No prohibited cycles between modules or layers.
-- No chain of imports, through `shared/`, `platform/` or a workspace package, leads `domain/`, `application/ports/` or `contracts/` to the ORM, a concrete client, the database client or `infrastructure/` (`api-domain-no-reachable-clients`, `api-ports-no-reachable-clients`, `api-contracts-no-reachable-clients`); a module's `contracts/` imports no other module's `contracts/` (`api-contracts-no-foreign-contracts`).
+- No chain of imports, through `shared/`, `platform/` or a workspace package, leads `domain/`, `application/ports/` or `contracts/` to the ORM, a concrete client, the database client or `infrastructure/` (`api-domain-no-reachable-clients`, `api-ports-no-reachable-clients`, `api-contracts-no-reachable-clients`); a module's `contracts/` imports no other module's `contracts/` (`api-contracts-no-foreign-contracts`) and nothing from `shared/` or `platform/` (`api-contracts-self-contained`). For `domain/` the chain check also covers the framework and infrastructure packages, the Node runtime modules `domain/` never imports and `platform/`.
 - Event consumers use the owning module's public contract and do not bypass module boundaries.
 - Composition-root DI wiring exceptions are narrowly scoped and explicitly tested, not broad allowlists.
 - `application/` imports no HTTP, schema, OpenAPI, queue or scheduler API: no `nestjs-zod`, `@nestjs/swagger`, `class-validator`, `class-transformer`, `express`, `@nestjs/platform-express`, `bullmq`, `@nestjs/bullmq`, `@nestjs/schedule`, `node-cron`, `cron`, Node `http`/`https`/`http2`, and no controller, route or parameter decorator from `@nestjs/common` (`Controller`, `Get`, `Body`, `UseGuards`, …). Plain `zod` stays allowed for now. `application/` also imports nothing from `platform/queue/`: a job is started and cancelled through a port whose adapter lives in `infrastructure/`, and its events reach a handler through an entry point. The tests of `application/` (`__tests__/`) are not checked: they may import the queue's error classes to make a fake adapter fail the way the real one does.
@@ -219,10 +219,11 @@ Positive and negative fixtures prove the rules catch violations:
 | Repository methods and application collaborators match the pinned lists | PASS |
 | A repository method or application collaborator is added, renamed or removed without updating its pinned list | FAIL |
 | The reference module fixture (the complete approved layout) | PASS |
-| `domain/`, `application/ports/` or `contracts/` reaches the ORM or a concrete client through a re-export chain | FAIL |
+| `domain/`, `application/ports/` or `contracts/` reaches the ORM, a concrete client or (`domain/`) a framework, runtime module or `platform/` through a re-export chain | FAIL |
+| A `contracts/` file imports `shared/` or `platform/`, or the `contracts/` of another module | FAIL |
 | A `contracts/` file imports the `contracts/` of another module | FAIL |
 | An event file imports only `zod` | PASS |
-| An event file imports a module other than `zod` | FAIL |
+| An event file imports a module other than `zod` (import, export from, require) | FAIL |
 | A module uses the `secret` model or runs raw SQL on `secrets` (any statement, quoted or qualified) | FAIL |
 | A module reads `secretsKey` outside `platform/config` and `platform/secrets` (property, destructuring, element access) | FAIL |
 | `packages/contracts` exports no name shaped like an event version | PASS |

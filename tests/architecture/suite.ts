@@ -23,7 +23,12 @@ export const QUALITY_TABLE = [
     gate: 'api',
   },
   {
-    row: '`domain/`, `application/ports/` or `contracts/` reaches the ORM or a concrete client through a re-export chain',
+    row: '`domain/`, `application/ports/` or `contracts/` reaches the ORM, a concrete client or (`domain/`) a framework, runtime module or `platform/` through a re-export chain',
+    expected: 'FAIL',
+    gate: 'api',
+  },
+  {
+    row: 'A `contracts/` file imports `shared/` or `platform/`, or the `contracts/` of another module',
     expected: 'FAIL',
     gate: 'api',
   },
@@ -38,7 +43,7 @@ export const QUALITY_TABLE = [
     gate: 'api',
   },
   {
-    row: 'An event file imports a module other than `zod`',
+    row: 'An event file imports a module other than `zod` (import, export from, require)',
     expected: 'FAIL',
     gate: 'api',
   },

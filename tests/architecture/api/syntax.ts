@@ -29,9 +29,9 @@ export interface ModuleImport {
 }
 
 /**
- * Every way a file reaches another module (type-only ones included): `import … from`,
- * `export … from`, side-effect imports (`import './x.js'`), `import x = require('./x.js')`,
- * dynamic `import('./x.js')` and import types (`type T = import('./x.js').T`), at any depth.
+ * Every way a file reaches another module (type-only ones included): `import`, `export … from`,
+ * side-effect imports, `import x = require()`, bare `require()`, dynamic `import()` and import
+ * types, at any depth.
  */
 export function moduleImports(baseDir: string, path: string): ModuleImport[] {
   const source = parse(baseDir, path);
@@ -72,6 +72,14 @@ export function moduleImports(baseDir: string, path: string): ModuleImport[] {
     } else if (
       ts.isCallExpression(node) &&
       node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+      node.arguments[0] &&
+      ts.isStringLiteralLike(node.arguments[0])
+    ) {
+      found.push({ specifier: node.arguments[0].text, names: ['*'] });
+    } else if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'require' &&
       node.arguments[0] &&
       ts.isStringLiteralLike(node.arguments[0])
     ) {

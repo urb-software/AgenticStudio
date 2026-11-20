@@ -35,17 +35,37 @@ const TESTS = '(^|/)__tests__/';
 // Workspace packages resolve to their source (`../../packages/database/src/` from apps/api).
 const ORM = [npmPackages(...ORM_PACKAGES), '(^|/)packages/database/'];
 
+/** Node core modules `domain/` never imports, directly or through a chain. */
+const DOMAIN_CORE_MODULES = coreModules(
+  'http',
+  'https',
+  'http2',
+  'net',
+  'tls',
+  'dgram',
+  'child_process',
+  'cluster',
+  'worker_threads',
+  'fs',
+  'fs/promises',
+);
+
 /**
  * The re-export counterpart of a layer's direct bans: no chain of imports from `directory` of a
  * module leads to the ORM, a concrete client, the database client or infrastructure/.
  */
-function reachableClientsRule(name: string, directory: string, layer: string) {
+function reachableClientsRule(
+  name: string,
+  directory: string,
+  layer: string,
+  extra: string[] = [],
+) {
   return {
     name,
     comment:
       `No chain of imports (through shared/, platform/ or a workspace package) leads ${layer} ` +
-      'to the ORM, a concrete client, the database client or infrastructure/: the direct bans ' +
-      'cover one import, this rule a re-export.',
+      'to the ORM, a concrete client, the database client or infrastructure/, nor, for the ' +
+      'extra targets a layer adds, to more: the direct bans cover one import, this rule a re-export.',
     severity: 'error' as const,
     from: { path: `^src/modules/[^/]+/${directory}` },
     to: {
@@ -54,6 +74,7 @@ function reachableClientsRule(name: string, directory: string, layer: string) {
         '^src/platform/database/',
         ...ORM,
         CONCRETE_CLIENTS,
+        ...extra,
       ],
       reachable: true,
     },
@@ -133,19 +154,7 @@ export const apiGate: Gate = {
           npmPackages(...INFRASTRUCTURE_PACKAGES),
           CONCRETE_CLIENTS,
           '(^|/)packages/database/',
-          coreModules(
-            'http',
-            'https',
-            'http2',
-            'net',
-            'tls',
-            'dgram',
-            'child_process',
-            'cluster',
-            'worker_threads',
-            'fs',
-            'fs/promises',
-          ),
+          DOMAIN_CORE_MODULES,
           '^src/platform/',
           '^src/modules/[^/]+/(application/(?!ports/)|entry-points/|infrastructure/)',
           MODULE_FILE,
@@ -206,12 +215,15 @@ export const apiGate: Gate = {
       comment:
         'A public contracts/ (publisher-owned event schemas and public exports, system.md §6) is ' +
         "self-contained: it never imports or re-exports its own module's domain/, application/, " +
-        'entry-points/ or infrastructure/, nor the ORM or concrete clients.',
+        'entry-points/ or infrastructure/, nor shared/ or platform/ (a chain through them could ' +
+        'republish a foreign contract), nor the ORM or concrete clients. It imports only its ' +
+        "own module's contracts/, workspace packages and zod.",
       severity: 'error',
       from: { path: '^src/modules/([^/]+)/contracts/' },
       to: {
         path: [
           '^src/modules/$1/(domain|application|entry-points|infrastructure)/',
+          '^src/(shared|platform)/',
           ...ORM,
           CONCRETE_CLIENTS,
         ],
@@ -261,7 +273,11 @@ export const apiGate: Gate = {
         reachable: true,
       },
     },
-    reachableClientsRule('api-domain-no-reachable-clients', 'domain/', 'domain/'),
+    reachableClientsRule('api-domain-no-reachable-clients', 'domain/', 'domain/', [
+      npmPackages(...INFRASTRUCTURE_PACKAGES),
+      DOMAIN_CORE_MODULES,
+      '^src/platform/',
+    ]),
     reachableClientsRule(
       'api-ports-no-reachable-clients',
       'application/ports/',
