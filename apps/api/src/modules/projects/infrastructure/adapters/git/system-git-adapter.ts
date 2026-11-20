@@ -42,10 +42,8 @@ export const PRODUCTION_GIT_LIMITS = {
   fetchTimeoutMs: 2 * 60 * 1000,
   maxCloneBytes: 2 * 1024 ** 3,
   /**
-   * Address space (`RLIMIT_AS`) of every Git, ssh and ssh-keyscan process, each on its own.
-   * 2 GiB leaves a normal clone far below the bound: Git's own memory settings (see
-   * {@link memoryArgs}) keep it to a few hundred MiB; the rest is address space that glibc,
-   * thread stacks and shared libraries reserve without using.
+   * Address space (`RLIMIT_AS`) of each Git, ssh and ssh-keyscan process. A normal clone stays
+   * well below 2 GiB with {@link MEMORY_SETTINGS}; the rest is reserved address space.
    */
   maxProcessMemoryBytes: 2 * 1024 ** 3,
 } as const;
