@@ -20,10 +20,10 @@ describe('RepositoryStartupRecovery', () => {
     const projects = new InMemoryProjectRepository();
     const connections = new InMemoryRepositoryConnectionRepository();
     const git = new FakeRepositoryGit();
-    const clone = new FailInterruptedClonesHandler(connections);
-    const fetchClone = new FailInterruptedFetchesHandler(connections);
-    vi.spyOn(clone, 'execute');
-    vi.spyOn(fetchClone, 'execute');
+    const failInterruptedClones = new FailInterruptedClonesHandler(connections);
+    const failInterruptedFetches = new FailInterruptedFetchesHandler(connections);
+    vi.spyOn(failInterruptedClones, 'execute');
+    vi.spyOn(failInterruptedFetches, 'execute');
     const cleanup = new DisconnectRepositoryHandler(
       projects,
       connections,
@@ -42,8 +42,8 @@ describe('RepositoryStartupRecovery', () => {
     );
     vi.spyOn(orphanedFiles, 'execute');
     const recovery = new RepositoryStartupRecovery(
-      clone,
-      fetchClone,
+      failInterruptedClones,
+      failInterruptedFetches,
       cleanup,
       orphanedKeys,
       orphanedFiles,
@@ -51,14 +51,16 @@ describe('RepositoryStartupRecovery', () => {
 
     await recovery.run();
 
-    expect(clone.execute).toHaveBeenCalledOnce();
-    expect(fetchClone.execute).toHaveBeenCalledOnce();
+    expect(failInterruptedClones.execute).toHaveBeenCalledOnce();
+    expect(failInterruptedFetches.execute).toHaveBeenCalledOnce();
     expect(cleanup.resumeAll).toHaveBeenCalledOnce();
     expect(orphanedKeys.execute).toHaveBeenCalledOnce();
     expect(orphanedFiles.execute).toHaveBeenCalledOnce();
     const order = (spy: unknown) => vi.mocked(spy as () => unknown).mock.invocationCallOrder[0]!;
-    expect(order(fetchClone.execute)).toBeGreaterThan(order(clone.execute));
-    expect(order(cleanup.resumeAll)).toBeGreaterThan(order(fetchClone.execute));
+    expect(order(failInterruptedFetches.execute)).toBeGreaterThan(
+      order(failInterruptedClones.execute),
+    );
+    expect(order(cleanup.resumeAll)).toBeGreaterThan(order(failInterruptedFetches.execute));
     expect(order(orphanedKeys.execute)).toBeGreaterThan(order(cleanup.resumeAll));
     expect(order(orphanedFiles.execute)).toBeGreaterThan(order(orphanedKeys.execute));
   });

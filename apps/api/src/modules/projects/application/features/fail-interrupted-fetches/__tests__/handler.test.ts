@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { InMemoryProjectRepository } from '../../../../domain/repositories/__tests__/in-memory-project-repository.js';
 import { InMemoryRepositoryConnectionRepository } from '../../../../domain/repositories/__tests__/in-memory-repository-connection-repository.js';
 import { FailInterruptedFetchesHandler } from '../handler.js';
 
@@ -29,9 +28,7 @@ describe('FailInterruptedFetchesHandler', () => {
   }
 
   beforeEach(() => {
-    const projects = new InMemoryProjectRepository();
     connections = new InMemoryRepositoryConnectionRepository();
-    projects.addProject(PROJECT, 'Shop');
     handler = new FailInterruptedFetchesHandler(connections);
   });
 

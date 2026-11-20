@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { InMemoryProjectRepository } from '../../../../domain/repositories/__tests__/in-memory-project-repository.js';
 import { InMemoryRepositoryConnectionRepository } from '../../../../domain/repositories/__tests__/in-memory-repository-connection-repository.js';
 import { FailInterruptedClonesHandler } from '../handler.js';
 
@@ -8,14 +7,11 @@ const URL = 'https://github.com/acme/shop.git';
 const COMMIT = 'b'.repeat(40);
 
 describe('FailInterruptedClonesHandler', () => {
-  let projects: InMemoryProjectRepository;
   let connections: InMemoryRepositoryConnectionRepository;
   let handler: FailInterruptedClonesHandler;
 
   beforeEach(() => {
-    projects = new InMemoryProjectRepository();
     connections = new InMemoryRepositoryConnectionRepository();
-    projects.addProject(PROJECT, 'Shop');
     handler = new FailInterruptedClonesHandler(connections);
   });
 
@@ -27,7 +23,6 @@ describe('FailInterruptedClonesHandler', () => {
       integrationBranch: 'dev',
     });
     const other = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
-    projects.addProject(other, 'Ready one');
     await connections.connect({
       projectId: other,
       url: 'https://github.com/acme/ready.git',
