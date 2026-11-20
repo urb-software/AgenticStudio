@@ -29,6 +29,7 @@
     "contracts:check": "node scripts/contracts-check.mjs",
     "e2e:smoke": "node tests/e2e/run-smoke.mjs",
     "design:serve": "node design-system/serve.mjs",
+    "guards:check": "node scripts/check-repo-guards.mjs",
     "design:test": "node --test design-system/serve.test.mjs"
   },
   "devDependencies": {
