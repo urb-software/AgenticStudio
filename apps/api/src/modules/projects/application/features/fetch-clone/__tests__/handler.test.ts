@@ -10,10 +10,8 @@ import {
 } from '../../../ports/repository-git.js';
 import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.js';
 import { CLONE_MISSING_DETAIL, FetchCloneHandler } from '../handler.js';
-import {
-  HOST_KEY_CHANGED_DETAIL,
-  UNEXPECTED_FAILURE_DETAIL,
-} from '../../../../domain/value-objects/repository-failure.js';
+import { RecordUnfinishedFetchHandler } from '../../record-unfinished-fetch/handler.js';
+import { HOST_KEY_CHANGED_DETAIL } from '../../../../domain/value-objects/repository-failure.js';
 import { testDeployKey } from '../../../../domain/value-objects/__tests__/test-deploy-key.js';
 import { NO_TRUSTED_HOST_KEY_DETAIL } from '../../../../domain/value-objects/repository-failure.js';
 import { InMemoryDeployKeys } from '../../../ports/__tests__/in-memory-deploy-keys.js';
@@ -185,7 +183,7 @@ describe('FetchCloneHandler', () => {
     expect(git.calls).toEqual([]);
   });
 
-  it('lets an abort during the fetch propagate and leaves the failure to onFailed', async () => {
+  it('lets an abort during the fetch propagate and leaves the failure to the unfinished-job recording', async () => {
     await fetching();
     const controller = new AbortController();
     git.fetch.mockImplementationOnce(() => {
@@ -196,7 +194,10 @@ describe('FetchCloneHandler', () => {
     await expect(run(controller.signal)).rejects.toThrow('aborted');
     expect((await stored())?.state).toBe('fetching');
 
-    await handler.onFailed(PROJECT, { reason: 'timeout' });
+    await new RecordUnfinishedFetchHandler(connections).execute({
+      projectId: PROJECT,
+      failure: { reason: 'timeout' },
+    });
     expect(await stored()).toMatchObject({
       state: 'failed',
       hasClone: true,
@@ -220,48 +221,11 @@ describe('FetchCloneHandler', () => {
     });
   });
 
-  it('rethrows an unexpected error, so onFailed stores unknown', async () => {
+  it('rethrows an unexpected error, so the unfinished-job recording stores unknown', async () => {
     await fetching();
     git.fetch.mockRejectedValueOnce(new GitRequestRejectedError('Invalid remote URL.'));
 
     await expect(run()).rejects.toBeInstanceOf(GitRequestRejectedError);
-  });
-
-  it.each([
-    ['stalled', { code: 'interrupted', detail: '' }],
-    ['shutdown', { code: 'interrupted', detail: '' }],
-    ['cancelled', { code: 'unknown', detail: 'Cancelled' }],
-    ['timeout', { code: 'timeout', detail: 'The fetch took too long and was stopped.' }],
-    ['error', { code: 'unknown', detail: UNEXPECTED_FAILURE_DETAIL }],
-  ] as const)('onFailed stores %s as %j and keeps the Clone', async (reason, failure) => {
-    await fetching();
-
-    await handler.onFailed(
-      PROJECT,
-      reason === 'error' ? { reason, error: new Error('db down') } : { reason },
-    );
-
-    expect(await stored()).toMatchObject({
-      state: 'failed',
-      hasClone: true,
-      headSha: OLD,
-      lastFetchedAt: FETCHED_AT,
-      failure,
-    });
-  });
-
-  it('reconcile fails every fetching Repository as interrupted with its Clone kept, idempotently', async () => {
-    await fetching();
-
-    await handler.reconcile();
-    await handler.reconcile();
-
-    expect(await stored()).toMatchObject({
-      state: 'failed',
-      hasClone: true,
-      headSha: OLD,
-      failure: { code: 'interrupted', detail: '', remoteDefaultBranch: null },
-    });
   });
 
   describe('an SSH Repository', () => {

@@ -6,6 +6,8 @@ import { InMemoryDeployKeys } from '../../../application/ports/__tests__/in-memo
 import { InMemorySecretStore } from '../../../application/ports/__tests__/in-memory-secret-store.js';
 import { CloneRepositoryHandler } from '../../../application/features/clone-repository/handler.js';
 import { FetchCloneHandler } from '../../../application/features/fetch-clone/handler.js';
+import { RecordUnfinishedCloneHandler } from '../../../application/features/record-unfinished-clone/handler.js';
+import { RecordUnfinishedFetchHandler } from '../../../application/features/record-unfinished-fetch/handler.js';
 import { GetRepositoryOperationHandler } from '../../../application/features/get-repository-operation/handler.js';
 import type { RepositoryStartupRecovery } from '../../startup/repository-startup-recovery.js';
 import { RepositoryJobProcessor } from '../repository-job-processor.js';
@@ -18,6 +20,8 @@ describe('RepositoryJobProcessor', () => {
   let connections: InMemoryRepositoryConnectionRepository;
   let clone: CloneRepositoryHandler;
   let fetchClone: FetchCloneHandler;
+  let recordUnfinishedClone: RecordUnfinishedCloneHandler;
+  let recordUnfinishedFetch: RecordUnfinishedFetchHandler;
   let recovery: { run: ReturnType<typeof vi.fn> };
   let processor: RepositoryJobProcessor;
 
@@ -50,15 +54,20 @@ describe('RepositoryJobProcessor', () => {
     const git = new FakeRepositoryGit();
     clone = new CloneRepositoryHandler(connections, git, deployKeys);
     fetchClone = new FetchCloneHandler(connections, git, deployKeys);
+    recordUnfinishedClone = new RecordUnfinishedCloneHandler(connections);
+    recordUnfinishedFetch = new RecordUnfinishedFetchHandler(connections);
     for (const target of [clone, fetchClone]) {
       vi.spyOn(target, 'execute').mockResolvedValue();
-      vi.spyOn(target, 'onFailed');
     }
+    vi.spyOn(recordUnfinishedClone, 'execute');
+    vi.spyOn(recordUnfinishedFetch, 'execute');
     recovery = { run: vi.fn().mockResolvedValue(undefined) };
     processor = new RepositoryJobProcessor(
       new GetRepositoryOperationHandler(connections),
       clone,
       fetchClone,
+      recordUnfinishedClone,
+      recordUnfinishedFetch,
       recovery as unknown as RepositoryStartupRecovery,
     );
   });
@@ -110,8 +119,11 @@ describe('RepositoryJobProcessor', () => {
 
     await processor.onFailed(PROJECT, { reason: 'timeout' });
 
-    expect(fetchClone.onFailed).toHaveBeenCalledWith(PROJECT, { reason: 'timeout' });
-    expect(clone.onFailed).not.toHaveBeenCalled();
+    expect(recordUnfinishedFetch.execute).toHaveBeenCalledWith({
+      projectId: PROJECT,
+      failure: { reason: 'timeout' },
+    });
+    expect(recordUnfinishedClone.execute).not.toHaveBeenCalled();
     expect((await connections.find(PROJECT))?.failure?.code).toBe('timeout');
   });
 
@@ -120,8 +132,11 @@ describe('RepositoryJobProcessor', () => {
 
     await processor.onFailed(PROJECT, { reason: 'stalled' });
 
-    expect(clone.onFailed).toHaveBeenCalledWith(PROJECT, { reason: 'stalled' });
-    expect(fetchClone.onFailed).not.toHaveBeenCalled();
+    expect(recordUnfinishedClone.execute).toHaveBeenCalledWith({
+      projectId: PROJECT,
+      failure: { reason: 'stalled' },
+    });
+    expect(recordUnfinishedFetch.execute).not.toHaveBeenCalled();
   });
 
   it('does nothing for a job of a disconnecting Repository: not run, no failure written', async () => {
@@ -135,8 +150,8 @@ describe('RepositoryJobProcessor', () => {
 
     expect(clone.execute).not.toHaveBeenCalled();
     expect(fetchClone.execute).not.toHaveBeenCalled();
-    expect(clone.onFailed).not.toHaveBeenCalled();
-    expect(fetchClone.onFailed).not.toHaveBeenCalled();
+    expect(recordUnfinishedClone.execute).not.toHaveBeenCalled();
+    expect(recordUnfinishedFetch.execute).not.toHaveBeenCalled();
     expect((await connections.find(PROJECT))?.state).toBe('disconnecting');
   });
 

@@ -224,7 +224,7 @@ One row per rule of [Backend](../architecture/backend.md) §3. A rule cannot be 
 | # | Rule | Enforcement |
 | --- | --- | --- |
 | 1 | Features are independent | Gate check: no import between feature folders, in every module |
-| 2 | Entry points call handlers; handlers never call each other | Gate checks: `application/` imports no HTTP, schema, queue or scheduler API, and `entry-points/` imports no repository, port or infrastructure file; handlers never call each other, through the check of rule 1, and `application/` imports nothing from `platform/queue/`. Review only: that an entry point holds no business rule |
+| 2 | Entry points call handlers; handlers never call each other | Gate checks: `application/` imports no HTTP, schema, queue or scheduler API, and `entry-points/` imports no repository, port or infrastructure file; handlers never call each other, through the check of rule 1, and `application/` imports nothing from `platform/queue/`. Review only: that an entry point holds no business rule, and that a handler has one public method `execute` (until the gate check of #243) |
 | 3 | Shared application logic is the exception | Gate check: no shared, common, utils or helpers directory, collaborators never import features; pinned test: the list of application collaborators; the six-step order is review only |
 | 4 | Behaviour lives on the object it is about | Gate check: entity files export a class with a non-public constructor, in every module; where a rule sits is review only |
 | 5 | There is no `domain/services/` | Gate check: no `domain/services/` directory |

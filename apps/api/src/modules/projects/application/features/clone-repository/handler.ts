@@ -1,8 +1,6 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
-import { redactSecrets } from '../../../../../platform/http/redact.js';
+import { Inject, Injectable } from '@nestjs/common';
 import { NoTrustedHostKeyError } from '../../../domain/errors/repository-connection-errors.js';
 import { RepositoryFailure } from '../../../domain/value-objects/repository-failure.js';
-import { type UnfinishedJob } from '../../../domain/value-objects/unfinished-job.js';
 import {
   REPOSITORY_CONNECTION_REPOSITORY,
   type RepositoryConnectionRepository,
@@ -34,8 +32,6 @@ export interface CloneRepositoryInput {
 
 @Injectable()
 export class CloneRepositoryHandler {
-  private readonly logger = new Logger('CloneRepository');
-
   constructor(
     @Inject(REPOSITORY_CONNECTION_REPOSITORY)
     private readonly repositories: RepositoryConnectionRepository,
@@ -43,7 +39,7 @@ export class CloneRepositoryHandler {
     @Inject(DEPLOY_KEYS) private readonly deployKeys: DeployKeys,
   ) {}
 
-  /** Runs one clone. Aborts propagate, so the queue reports them through `onFailed`. */
+  /** Runs one clone. Aborts propagate, so the queue reports them to the unfinished-job recording. */
   async execute(input: CloneRepositoryInput): Promise<void> {
     const { projectId, signal } = input;
     signal.throwIfAborted();
@@ -76,30 +72,8 @@ export class CloneRepositoryHandler {
         await this.fail(projectId, failure);
         return;
       }
-      // Unexpected (a rejected request, the database): `onFailed` stores `unknown`.
+      // Unexpected (a rejected request, the database): the unfinished-job recording stores `unknown`.
       throw error;
-    }
-  }
-
-  async onFailed(projectId: string, failure: UnfinishedJob): Promise<void> {
-    if (failure.reason === 'error') {
-      this.logger.error(
-        `Clone of project ${projectId} failed unexpectedly: ${redactSecrets(String(failure.error))}`,
-      );
-    }
-    await this.fail(projectId, RepositoryFailure.fromUnfinishedJob('clone', failure));
-  }
-
-  /** Idempotent: failing what is already failed changes nothing. */
-  async reconcile(): Promise<void> {
-    let failed = 0;
-    for (const projectId of await this.repositories.listIdsInState('connecting')) {
-      await this.repositories.change(projectId, (stored) => {
-        if (stored.failClone(RepositoryFailure.interrupted())) failed += 1;
-      });
-    }
-    if (failed > 0) {
-      this.logger.warn(`Marked ${failed} interrupted repository connection(s) as failed.`);
     }
   }
 
