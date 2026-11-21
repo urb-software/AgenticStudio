@@ -19,6 +19,7 @@ import {
   type ReviewFetch,
   type SshCredentials,
 } from '../../../application/ports/repository-git.js';
+import { ReviewRefs } from '../../../domain/value-objects/review-refs.js';
 import {
   InvalidReviewedRunBranchError,
   ReviewedRunBranch,
@@ -553,6 +554,9 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     const remote = this.parseRemote(remoteUrl, options);
     this.assertBranch(integrationBranch);
     this.assertBranch(runBranch);
+    if (runBranch === integrationBranch) {
+      throw new GitRequestRejectedError('The Run branch is the Integration branch.');
+    }
     let branch: ReviewedRunBranch;
     try {
       branch = ReviewedRunBranch.of(runId, runBranch);
@@ -569,30 +573,34 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
           throw new GitCloneMissingError();
         }
         await removeStaleLocks(clone);
+        const refs = ReviewRefs.of(runId);
         try {
           return await this.withOperation(
             this.settings.fetchTimeoutMs,
             options,
             async (context) => {
               const checked = await this.checkRemote(context, remote);
+              // The Clone's own Integration branch stays as the Repository's fetch left it.
               await this.fetchRefs(
                 context,
                 clone,
                 checked,
                 [
-                  `+refs/heads/${integrationBranch}:refs/heads/${integrationBranch}`,
-                  `+refs/heads/${branch.name}:${branch.reviewRef}`,
+                  `+refs/heads/${integrationBranch}:${refs.base}`,
+                  `+refs/heads/${branch.name}:${refs.run}`,
                 ],
                 options.ssh,
               );
               return {
-                runCommit: await this.revParseRef(context, clone, branch.reviewRef),
-                integrationCommit: await this.revParse(context, clone, integrationBranch),
+                runCommit: await this.revParseRef(context, clone, refs.run),
+                integrationCommit: await this.revParseRef(context, clone, refs.base),
               };
             },
           );
         } catch (error) {
-          await cleanUpFailedFetch(clone, error);
+          // A review never removes the Clone: the Repository still reads ready.
+          await this.deleteReviewRefs(clone, refs);
+          await removeTemporaryObjects(clone);
           throw error;
         }
       }),
@@ -601,6 +609,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
 
   async mergeDiff(
     projectId: string,
+    runId: string,
     runCommit: string,
     integrationCommit: string,
     limits: MergeDiffLimits,
@@ -609,6 +618,12 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     this.assertSupportedPlatform();
     if (!COMMIT_ID.test(runCommit) || !COMMIT_ID.test(integrationCommit)) {
       throw new GitRequestRejectedError('The commit id is not a full commit id.');
+    }
+    let refs: ReviewRefs;
+    try {
+      refs = ReviewRefs.of(runId);
+    } catch {
+      throw new GitRequestRejectedError('The Run id is not a UUID.');
     }
     this.paths.clone(projectId);
     return this.guarded('merge-tree', () =>
@@ -645,9 +660,22 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
             throw new GitOperationError('unknown', detail);
           }
           return this.diffOf(context, clone, integrationCommit, tree, limits);
-        });
+        }).finally(() => this.deleteReviewRefs(clone, refs));
       }),
     );
+  }
+
+  /** The review is over: its refs go (the objects stay until Git prunes them). Best effort. */
+  private async deleteReviewRefs(clone: string, refs: ReviewRefs): Promise<void> {
+    try {
+      await this.withOperation(this.settings.fetchTimeoutMs, {}, async (context) => {
+        for (const ref of [refs.run, refs.base]) {
+          await this.git(context, [`--git-dir=${clone}`, 'update-ref', '-d', ref]);
+        }
+      });
+    } catch (error) {
+      this.log(`review refs were not removed: ${redactGitOutput(String(error))}`);
+    }
   }
 
   /**
@@ -967,6 +995,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
       GIT_ALLOW_PROTOCOL: this.settings.allowedTransports.join(':'),
       GIT_LFS_SKIP_SMUDGE: '1',
       GIT_NO_REPLACE_OBJECTS: '1',
+      GIT_ATTR_NOSYSTEM: '1',
       SSH_ASKPASS_REQUIRE: 'never',
     };
   }

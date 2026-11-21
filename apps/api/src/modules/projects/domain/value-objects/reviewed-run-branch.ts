@@ -1,3 +1,5 @@
+import { ReviewRefs } from './review-refs.js';
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export class InvalidReviewedRunBranchError extends Error {
@@ -29,6 +31,6 @@ export class ReviewedRunBranch {
 
   /** Where a review fetch puts the branch; never a branch the Clone checks out. */
   get reviewRef(): string {
-    return `refs/studio/review/${this.runId}`;
+    return ReviewRefs.of(this.runId).run;
   }
 }

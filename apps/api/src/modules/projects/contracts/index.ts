@@ -81,9 +81,10 @@ export interface RunBranchReviews {
     runBranch: string,
   ): Promise<RunBranchFetchResult>;
 
-  /** The merge result's changes against `integrationCommit`, under `limits`. */
+  /** The merge result's changes against `integrationCommit`, under `limits`; ends the Run's review refs. */
   mergeDiff(
     projectId: string,
+    runId: string,
     runCommit: string,
     integrationCommit: string,
     limits: MergeDiffLimits,

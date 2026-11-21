@@ -72,6 +72,21 @@ describe('FetchForReviewHandler', () => {
     expect(git.fetchForReview).not.toHaveBeenCalled();
   });
 
+  it('refuses a Run branch that is the Integration branch', async () => {
+    await connections.connect({
+      projectId: PROJECT,
+      url: 'https://github.com/acme/shop.git',
+      identity: 'github.com/acme/shop',
+      integrationBranch: BRANCH,
+    });
+    await connections.change(PROJECT, (r) => {
+      r.completeClone({ headSha: HEAD, fetchedAt: new Date() });
+    });
+
+    expect(await execute()).toMatchObject({ status: 'failed' });
+    expect(git.fetchForReview).not.toHaveBeenCalled();
+  });
+
   it('is not ready without a Repository, or while it is not ready', async () => {
     expect(await execute()).toEqual({ status: 'repository_not_ready' });
     await connections.connect({

@@ -9,6 +9,7 @@ import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.
 import { MergeDiffHandler } from '../handler.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
+const RUN = '0b8e5c2d-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const LIMITS = { filesMax: 10, filePatchMaxBytes: 1000, patchMaxBytes: 5000 };
 
 describe('MergeDiffHandler', () => {
@@ -18,6 +19,7 @@ describe('MergeDiffHandler', () => {
   const execute = (projectId = PROJECT) =>
     handler.execute({
       projectId,
+      runId: RUN,
       runCommit: 'b'.repeat(40),
       integrationCommit: 'a'.repeat(40),
       limits: LIMITS,
@@ -40,7 +42,13 @@ describe('MergeDiffHandler', () => {
       files: [{ path: 'a.txt', status: 'added', patch: '+x', cut: false }],
       truncated: false,
     });
-    expect(git.mergeDiff).toHaveBeenCalledWith(PROJECT, 'b'.repeat(40), 'a'.repeat(40), LIMITS);
+    expect(git.mergeDiff).toHaveBeenCalledWith(
+      PROJECT,
+      RUN,
+      'b'.repeat(40),
+      'a'.repeat(40),
+      LIMITS,
+    );
   });
 
   it('answers a conflict', async () => {

@@ -54,6 +54,7 @@ describe('PrepareMergeReviewHandler', () => {
     );
     expect(branchReviews.mergeDiff).toHaveBeenCalledWith(
       expect.any(String),
+      runId,
       'b'.repeat(40),
       'a'.repeat(40),
       expect.objectContaining({ filesMax: 1000, filePatchMaxBytes: 512 * 1024 }),

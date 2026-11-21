@@ -69,7 +69,9 @@ export class PrepareMergeReviewHandler {
       redaction = LogRedaction.of(await this.secrets.forRun(runId));
       await this.reviews.finish(await this.prepare(run, review, redaction));
     } catch (error) {
-      this.logger.error(`The merge review of run ${runId} failed: ${(error as Error).name}`);
+      this.logger.error(
+        `The merge review of run ${runId} failed: ${error instanceof Error ? error.name : 'unknown'}`,
+      );
       const stored = await this.reviews.find(runId).catch(() => null);
       if (
         stored?.storedState === 'preparing' &&
@@ -96,6 +98,7 @@ export class PrepareMergeReviewHandler {
     }
     const merged = await this.branchReviews.mergeDiff(
       run.projectId,
+      run.id,
       fetched.runCommit,
       fetched.integrationCommit,
       this.limits,

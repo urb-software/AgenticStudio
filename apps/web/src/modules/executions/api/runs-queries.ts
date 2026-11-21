@@ -420,11 +420,11 @@ export function useRunDiff(run: RunOutput, scope: RunDiffOutput['scope']) {
 /** Where a changed file's patch is read from: a Run's reported diff, or Studio's merge review. */
 export type PatchSource =
   | { kind: 'diff'; runId: string; scope: RunDiffOutput['scope'] }
-  | { kind: 'merge-review'; runId: string };
+  | { kind: 'merge-review'; runId: string; runCommit?: string };
 
 const mergeReviewKey = (runId: string) => ['runs', 'merge-review', runId] as const;
-const mergeReviewFileKey = (runId: string, path: string) =>
-  ['runs', 'merge-review', runId, 'file', path] as const;
+const mergeReviewFileKey = (runId: string, runCommit: string | undefined, path: string) =>
+  ['runs', 'merge-review', runId, 'file', runCommit ?? '', path] as const;
 
 /**
  * One file's patch from either source, loaded only once the file is expanded (`enabled`), so a
@@ -435,7 +435,7 @@ export function useFilePatch(source: PatchSource, path: string, enabled: boolean
     queryKey:
       source.kind === 'diff'
         ? runDiffFileKey(source.runId, source.scope, path)
-        : mergeReviewFileKey(source.runId, path),
+        : mergeReviewFileKey(source.runId, source.runCommit, path),
     queryFn: () =>
       source.kind === 'diff'
         ? api.getRunDiffFile(source.runId, source.scope, path)

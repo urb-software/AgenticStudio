@@ -88,7 +88,7 @@ describe.runIf(process.platform === 'linux')('merge review on Linux (real git)',
       RUN_ID,
       RUN_BRANCH,
     );
-    return git.mergeDiff(PROJECT_ID, runCommit, integrationCommit, limits);
+    return git.mergeDiff(PROJECT_ID, RUN_ID, runCommit, integrationCommit, limits);
   }
 
   async function computed(limits?: MergeDiffLimits) {
@@ -125,8 +125,37 @@ describe.runIf(process.platform === 'linux')('merge review on Linux (real git)',
       await expect(
         git.fetchForReview(PROJECT_ID, fixture.url, INTEGRATION, RUN_ID, RUN_BRANCH),
       ).resolves.toEqual({ runCommit, integrationCommit: headOf('main') });
-      expect(refsOfClone()).toBe(`refs/heads/main\nrefs/studio/review/${RUN_ID}`);
+      expect(refsOfClone()).toBe(
+        `refs/heads/main\nrefs/studio/review-base/${RUN_ID}\nrefs/studio/review/${RUN_ID}`,
+      );
       expect(existsSync(join(clonePath(), 'src'))).toBe(false);
+    });
+
+    it('leaves the Clone’s Integration branch where the Repository’s fetch put it', async () => {
+      commitOn(RUN_BRANCH, 'main', (work) => write(work, 'src/new.txt', 'new\n'));
+      const git = await cloned();
+      const before = headOf('main');
+      const moved = commitOn('main', 'main', (work) => write(work, 'src/other.txt', 'o\n'));
+
+      const fetched = await git.fetchForReview(
+        PROJECT_ID,
+        fixture.url,
+        INTEGRATION,
+        RUN_ID,
+        RUN_BRANCH,
+      );
+
+      expect(fetched.integrationCommit).toBe(moved);
+      await expect(git.readBranchCommit(PROJECT_ID, 'main')).resolves.toEqual({ commit: before });
+    });
+
+    it('removes both review refs once the merge diff is done, also when it conflicts', async () => {
+      commitOn(RUN_BRANCH, 'main', (work) => write(work, 'src/keep.txt', 'one\nrun\nthree\n'));
+      commitOn('main', 'main', (work) => write(work, 'src/keep.txt', 'one\nmain\nthree\n'));
+
+      await expect(diff()).resolves.toEqual({ status: 'conflicting' });
+
+      expect(refsOfClone()).toBe('refs/heads/main');
     });
 
     it('follows the Run branch and the Integration branch when they move', async () => {
@@ -148,6 +177,7 @@ describe.runIf(process.platform === 'linux')('merge review on Linux (real git)',
       const git = await cloned();
 
       for (const wrong of ['agent/add-feature-rdeadbeef', 'main', 'feature/x-r0b8e5c2d']) {
+        // `main` is both the Integration branch and not the Run's own branch.
         await expect(
           git.fetchForReview(PROJECT_ID, fixture.url, INTEGRATION, RUN_ID, wrong),
         ).rejects.toBeInstanceOf(GitRequestRejectedError);
@@ -272,9 +302,9 @@ describe.runIf(process.platform === 'linux')('merge review on Linux (real git)',
     it('rejects a malformed commit id before touching the Clone', async () => {
       const git = await cloned();
 
-      await expect(git.mergeDiff(PROJECT_ID, 'main', headOf('main'), ROOMY)).rejects.toBeInstanceOf(
-        GitRequestRejectedError,
-      );
+      await expect(
+        git.mergeDiff(PROJECT_ID, RUN_ID, 'main', headOf('main'), ROOMY),
+      ).rejects.toBeInstanceOf(GitRequestRejectedError);
     });
   });
 
@@ -324,7 +354,7 @@ describe.runIf(process.platform === 'linux')('merge review on Linux (real git)',
         RUN_ID,
         RUN_BRANCH,
       );
-      const outcome = await git.mergeDiff(PROJECT_ID, runCommit, integrationCommit, ROOMY);
+      const outcome = await git.mergeDiff(PROJECT_ID, RUN_ID, runCommit, integrationCommit, ROOMY);
 
       expect(outcome.status).toBe('computed');
       expect(existsSync(marker)).toBe(false);

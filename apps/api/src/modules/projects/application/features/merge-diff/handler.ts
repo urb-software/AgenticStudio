@@ -11,6 +11,7 @@ import {
 
 export interface MergeDiffInput {
   projectId: string;
+  runId: string;
   runCommit: string;
   integrationCommit: string;
   limits: { filesMax: number; filePatchMaxBytes: number; patchMaxBytes: number };
@@ -36,10 +37,10 @@ export class MergeDiffHandler {
   constructor(@Inject(REPOSITORY_GIT) private readonly git: RepositoryGit) {}
 
   async execute(input: MergeDiffInput): Promise<MergeDiffResult> {
-    const { projectId, runCommit, integrationCommit, limits } = input;
+    const { projectId, runId, runCommit, integrationCommit, limits } = input;
     if (!isProjectId(projectId)) return { status: 'repository_not_ready' };
     try {
-      return await this.git.mergeDiff(projectId, runCommit, integrationCommit, limits);
+      return await this.git.mergeDiff(projectId, runId, runCommit, integrationCommit, limits);
     } catch (error) {
       if (error instanceof GitUnsupportedPlatformError) return { status: 'unsupported_platform' };
       if (error instanceof GitCloneMissingError) return { status: 'repository_not_ready' };

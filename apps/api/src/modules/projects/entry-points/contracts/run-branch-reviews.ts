@@ -35,10 +35,11 @@ export class ProjectRunBranchReviews implements RunBranchReviews {
 
   mergeDiff(
     projectId: string,
+    runId: string,
     runCommit: string,
     integrationCommit: string,
     limits: MergeDiffLimits,
   ): Promise<MergeDiffResult> {
-    return this.diffHandler.execute({ projectId, runCommit, integrationCommit, limits });
+    return this.diffHandler.execute({ projectId, runId, runCommit, integrationCommit, limits });
   }
 }

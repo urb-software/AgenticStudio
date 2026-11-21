@@ -129,12 +129,13 @@ export interface RepositoryGit {
   ): Promise<ReviewFetch>;
 
   /**
-   * What merging `runCommit` into `integrationCommit` would add: the merge result's tree against
-   * `integrationCommit`. Needs both commits in the Clone; runs no filter, hook or diff driver.
-   * Throws {@link GitRequestRejectedError} for a malformed commit id.
+   * What merging `runCommit` into `integrationCommit` would add; runs no filter, hook or diff
+   * driver. Removes the Run's review refs afterwards. Throws {@link GitRequestRejectedError}
+   * for a malformed commit or Run id.
    */
   mergeDiff(
     projectId: string,
+    runId: string,
     runCommit: string,
     integrationCommit: string,
     limits: MergeDiffLimits,

@@ -16,6 +16,7 @@ import { failedRequest } from '../../components/failed-request';
 import { type ChangedFile, ChangedFiles } from '../run-changes/run-changes';
 
 const READ_REQUEST = 'GET /api/runs/{runId}/merge-review';
+const REQUEST_REVIEW = 'POST /api/runs/{runId}/merge-review';
 
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
 
@@ -79,9 +80,10 @@ function PullRequestReview({ run }: { run: RunOutput }) {
           The pull request is {run.pullRequest?.state}: there is nothing left to review for merge.
         </Banner>
       ) : null}
-      {request.error instanceof ApiError ? (
+      {request.error ? (
         <Banner tone="danger" title="Couldn't start the review.">
-          {request.error.problem?.detail ?? failedRequest(`POST ${READ_REQUEST}`, request.error)}
+          {(request.error instanceof ApiError ? request.error.problem?.detail : undefined) ??
+            failedRequest(REQUEST_REVIEW, request.error)}
         </Banner>
       ) : null}
       <ReviewBody run={run} data={data} loading={review.isPending} error={review.error} />
@@ -125,7 +127,7 @@ function ReviewBody({
         <p className="m-0 text-small text-text-muted">
           No review yet. Studio fetches the Run branch, merges it with the Integration branch in its
           own clone and shows what the Integration branch would gain. The agent worker’s changes
-          above are its own account and are not what you approve.
+          below are its own account and are not what you approve.
         </p>
       );
     case 'preparing':
@@ -181,7 +183,7 @@ function ReviewFiles({ run, data }: { run: RunOutput; data: MergeReviewOutput })
         </p>
       ) : (
         <ChangedFiles
-          source={{ kind: 'merge-review', runId: run.id }}
+          source={{ kind: 'merge-review', runId: run.id, runCommit: data.runCommit }}
           files={files}
           truncated={data.truncated}
           pullRequest={undefined}

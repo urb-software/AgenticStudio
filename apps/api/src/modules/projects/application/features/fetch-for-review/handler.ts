@@ -58,6 +58,9 @@ export class FetchForReviewHandler {
     }
     const repository = isProjectId(projectId) ? await this.repositories.find(projectId) : null;
     if (!repository || repository.state !== 'ready') return { status: 'repository_not_ready' };
+    if (repository.integrationBranch === branch.name) {
+      return { status: 'failed', detail: 'The Run branch is the Integration branch.' };
+    }
     try {
       const ssh = await this.deployKeys.credentials(repository);
       const fetched = await this.git.fetchForReview(
