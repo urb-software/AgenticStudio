@@ -153,6 +153,7 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
       expect(response.body).toEqual({
         id,
         name: 'Detail',
+        mergeMethod: 'squash',
         createdAt: expect.stringMatching(ISO_8601),
         repository: null,
       });
