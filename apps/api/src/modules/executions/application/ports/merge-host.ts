@@ -40,6 +40,9 @@ export interface HostPullRequest {
   /** `null` while the host has not computed it yet. */
   mergeable: boolean | null;
   mergeableState: string;
+  title: string;
+  /** The description; empty when there is none. */
+  body: string;
 }
 
 export interface HostCheck {
@@ -74,8 +77,11 @@ export interface MergeHost {
   /** An approving review pinned to `sha`. */
   approve(scope: PullRequestScope, sha: string): Promise<MergeHostResult>;
 
-  /** Sends `sha`, so the host refuses when the head moved. */
-  merge(scope: PullRequestScope, request: HostMergeRequest): Promise<MergeHostResult>;
+  /** Sends `sha`, so the host refuses when the head moved. `mergedCommit` is the commit it created. */
+  merge(
+    scope: PullRequestScope,
+    request: HostMergeRequest,
+  ): Promise<MergeHostResult<{ mergedCommit: string }>>;
 
   /** Closes the pull request without merging. */
   close(scope: PullRequestScope): Promise<MergeHostResult>;

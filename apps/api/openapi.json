@@ -1602,6 +1602,87 @@
         ]
       }
     },
+    "/api/runs/{runId}/merge": {
+      "post": {
+        "operationId": "mergeRun",
+        "parameters": [
+          {
+            "name": "runId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MergeRunRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MergeRunResponse_Output"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown run (urn:agentic-studio:problem:run-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Refused: urn:agentic-studio:problem:merge-checks-failing, urn:agentic-studio:problem:merge-checks-running, urn:agentic-studio:problem:merge-conflicting, urn:agentic-studio:problem:merge-run-active, urn:agentic-studio:problem:merge-commit-moved, urn:agentic-studio:problem:merge-review-out-of-date, urn:agentic-studio:problem:merge-pull-request-not-open, urn:agentic-studio:problem:merge-unavailable, urn:agentic-studio:problem:merge-host-refused or urn:agentic-studio:problem:merge-in-progress",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request body (field errors)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
     "/api/runs/{runId}/pull-request/failing-checks/prepare": {
       "post": {
         "operationId": "prepareRunFailingChecks",
@@ -2992,6 +3073,12 @@
           "merge": {
             "$ref": "#/components/schemas/RunMergeAvailability_Output"
           },
+          "integrationBranch": {
+            "type": "string"
+          },
+          "latestMergeApproval": {
+            "$ref": "#/components/schemas/MergeApproval_Output"
+          },
           "cancelRequestedAt": {
             "type": "string",
             "format": "date-time",
@@ -3192,6 +3279,124 @@
             "additionalProperties": false
           }
         ]
+      },
+      "MergeApproval_Output": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "approvedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "approvedBy": {
+            "type": "string",
+            "const": "operator"
+          },
+          "commit": {
+            "type": "string"
+          },
+          "integrationBranch": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "squash"
+            ]
+          },
+          "checksSeen": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "success",
+                    "failure",
+                    "pending",
+                    "neutral"
+                  ]
+                }
+              },
+              "required": [
+                "name",
+                "state"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "carried_out",
+              "not_carried_out"
+            ]
+          },
+          "refusal": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "checks_failing",
+                  "checks_running",
+                  "conflicting",
+                  "run_active",
+                  "commit_moved",
+                  "review_out_of_date",
+                  "pull_request_not_open",
+                  "merge_unavailable",
+                  "host_refused",
+                  "merge_in_progress",
+                  "interrupted"
+                ]
+              },
+              "reason": {
+                "type": "string",
+                "maxLength": 500
+              }
+            },
+            "required": [
+              "code",
+              "reason"
+            ],
+            "additionalProperties": false
+          },
+          "mergedCommit": {
+            "type": "string"
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "cloneFetchStartedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          }
+        },
+        "required": [
+          "id",
+          "approvedAt",
+          "approvedBy",
+          "commit",
+          "integrationBranch",
+          "method",
+          "checksSeen",
+          "result"
+        ],
+        "additionalProperties": false
       },
       "RunPullRequest_Output": {
         "type": "object",
@@ -3610,6 +3815,146 @@
         "required": [
           "closedFromStudioAt",
           "state"
+        ],
+        "additionalProperties": false
+      },
+      "MergeRunRequest": {
+        "type": "object",
+        "properties": {
+          "commit": {
+            "type": "string",
+            "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+          }
+        },
+        "required": [
+          "commit"
+        ],
+        "additionalProperties": false
+      },
+      "MergeRunResponse_Output": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "approvedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "approvedBy": {
+            "type": "string",
+            "const": "operator"
+          },
+          "commit": {
+            "type": "string"
+          },
+          "integrationBranch": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "squash"
+            ]
+          },
+          "checksSeen": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "success",
+                    "failure",
+                    "pending",
+                    "neutral"
+                  ]
+                }
+              },
+              "required": [
+                "name",
+                "state"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "carried_out",
+              "not_carried_out"
+            ]
+          },
+          "refusal": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "checks_failing",
+                  "checks_running",
+                  "conflicting",
+                  "run_active",
+                  "commit_moved",
+                  "review_out_of_date",
+                  "pull_request_not_open",
+                  "merge_unavailable",
+                  "host_refused",
+                  "merge_in_progress",
+                  "interrupted"
+                ]
+              },
+              "reason": {
+                "type": "string",
+                "maxLength": 500
+              }
+            },
+            "required": [
+              "code",
+              "reason"
+            ],
+            "additionalProperties": false
+          },
+          "mergedCommit": {
+            "type": "string"
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "cloneFetchStartedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "runBranchDeletedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "runBranchDeletionFailure": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "id",
+          "approvedAt",
+          "approvedBy",
+          "commit",
+          "integrationBranch",
+          "method",
+          "checksSeen",
+          "result"
         ],
         "additionalProperties": false
       },

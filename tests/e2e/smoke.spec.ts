@@ -1257,4 +1257,119 @@ test(RUN_TEST, async ({ page }, testInfo) => {
   await expect(heading).toHaveText('Rejected change [fake:commit]');
   await expect(pullRequestCard).toContainText('Closed from Studio');
   await expect(pullRequestCard).toContainText('The Run branch was deleted');
+
+  // Story #262: a Run the operator accepts. A new Run delivers a draft pull request; Studio reads
+  // the Run branch into its own clone (the merge review), the operator approves and merges that
+  // commit. The stub of GitHub saw the draft marked ready, the approving review and the merge,
+  // all made with the Merge credential and pinned to the reviewed commit; the page and a reload
+  // show who merged, when and at which commit. The stub does not change the file:// remote, so
+  // what the Clone fetch finds is not asserted.
+  await main.getByRole('button', { name: 'Run again' }).click();
+  await dialog.getByLabel('Task').fill('Accepted change [fake:commit]');
+  await dialog.getByRole('button', { name: 'Start run' }).click();
+  await expect(heading).toHaveText('Accepted change [fake:commit]');
+  await expect(pill).toHaveText('Succeeded', { timeout: 30_000 });
+  await expect(pullRequestCard.getByText('Draft', { exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
+  const acceptedHref =
+    (await pullRequestCard.getByRole('link', { name: /#\d+/ }).getAttribute('href')) ?? '';
+  const [, acceptedOwner, acceptedRepository, acceptedNumber] =
+    /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)$/.exec(acceptedHref) ?? [];
+  const acceptedRunId = page.url().split('/').pop() ?? '';
+  const readRun = async () =>
+    (await (await page.request.get(`/api/runs/${acceptedRunId}`)).json()) as {
+      commits?: { id: string }[];
+      pullRequest?: { checksCommit?: string };
+      latestMergeApproval?: { result: string; mergedCommit?: string };
+    };
+  const reviewedCommit = (await readRun()).commits?.at(-1)?.id ?? '';
+  expect(reviewedCommit).toMatch(/^[0-9a-f]{40}$/);
+  // GitHub's head is the commit the worker pushed, and no check is failing or running.
+  expect(
+    (
+      await fetch(
+        `${stub}/__control/pulls/${acceptedOwner}/${acceptedRepository}/${acceptedNumber}`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ headSha: reviewedCommit, checkRuns: [], statuses: [] }),
+        },
+      )
+    ).status,
+  ).toBe(200);
+  await pullRequestCard.getByRole('button', { name: 'Refresh' }).click();
+  await expect
+    .poll(async () => (await readRun()).pullRequest?.checksCommit, { timeout: 30_000 })
+    .toBe(reviewedCommit);
+
+  await main.getByRole('tab', { name: 'Changes' }).click();
+  const mergeReview = main.getByRole('region', { name: 'Merge review, computed by Studio' });
+  await expect(mergeReview.getByRole('button', { name: 'Approve and merge' })).toHaveCount(0);
+  await mergeReview.getByRole('button', { name: 'Review for merge' }).click();
+  const approveAndMerge = mergeReview.getByRole('button', { name: 'Approve and merge' });
+  await expect(approveAndMerge).toBeVisible({ timeout: 90_000 });
+  await expect(mergeReview).toContainText('would change');
+  await expectNoHorizontalScroll(page);
+  await expectInBothThemes(page, mergeReview);
+  await approveAndMerge.click();
+  const mergeDialog = page.getByRole('alertdialog', { name: 'Approve and merge' });
+  await expect(mergeDialog).toContainText(reviewedCommit.slice(0, 12));
+  await expect(mergeDialog).toContainText('Squash');
+  await expect(mergeDialog).toContainText('Studio reads them again before it merges.');
+  await expectNoHorizontalScroll(page);
+  await expectNoAxeViolations(page);
+  await mergeDialog.getByRole('button', { name: 'Approve and merge' }).click();
+  await expect(pullRequestCard).toContainText('Merged from Studio', { timeout: 30_000 });
+  await expect(pullRequestCard).toContainText('by the operator');
+  await expect(pullRequestCard).toContainText(`approved at ${reviewedCommit.slice(0, 12)}`);
+  await expect(pullRequestCard).toContainText('The Run branch was deleted');
+  await expect(pullRequestCard.getByText('Merged', { exact: true })).toBeVisible();
+  await expect(approveAndMerge).toHaveCount(0);
+  await expectInBothThemes(page, pullRequestCard);
+
+  const merged = (await (await fetch(`${stub}/__control/audit`)).json()) as {
+    accepted: { method: string; path: string; role: string }[];
+    deletedBranches: string[];
+    markedReady: { repo: string; number: number }[];
+    approvals: { repo: string; number: number; event: string; commit: string }[];
+    merges: { repo: string; number: number; sha: string; method: string }[];
+  };
+  const mergedNumber = Number(acceptedNumber);
+  const ours = (entry: { repo: string; number: number }) =>
+    entry.repo === `${acceptedOwner}/${acceptedRepository}` && entry.number === mergedNumber;
+  const mergedPath = `/repos/${acceptedOwner}/${acceptedRepository}/pulls/${acceptedNumber}`;
+  const acceptedBranch = (await pullRequestCard.getByText(/^agent\//).textContent()) ?? '';
+  expect(merged.markedReady.filter(ours)).toEqual([
+    { repo: `${acceptedOwner}/${acceptedRepository}`, number: mergedNumber },
+  ]);
+  expect(merged.approvals.filter(ours)).toEqual([
+    {
+      repo: `${acceptedOwner}/${acceptedRepository}`,
+      number: mergedNumber,
+      event: 'APPROVE',
+      commit: reviewedCommit,
+    },
+  ]);
+  expect(merged.merges.filter(ours)).toEqual([
+    {
+      repo: `${acceptedOwner}/${acceptedRepository}`,
+      number: mergedNumber,
+      sha: reviewedCommit,
+      method: 'squash',
+      title: expect.any(String),
+    },
+  ]);
+  expect(
+    merged.accepted
+      .filter((entry) => entry.path.startsWith(`${mergedPath}/`) && entry.role === 'merge')
+      .map((entry) => `${entry.method} ${entry.path.slice(mergedPath.length)}`),
+  ).toEqual(['POST /reviews', 'PUT /merge']);
+  expect(merged.deletedBranches.filter((name) => name === acceptedBranch)).toEqual([
+    acceptedBranch,
+  ]);
+  await page.reload();
+  await expect(heading).toHaveText('Accepted change [fake:commit]');
+  await expect(pullRequestCard).toContainText('Merged from Studio');
+  await expect(pullRequestCard).toContainText('The Run branch was deleted');
+  await expect.poll(async () => (await readRun()).latestMergeApproval?.result).toBe('carried_out');
 });

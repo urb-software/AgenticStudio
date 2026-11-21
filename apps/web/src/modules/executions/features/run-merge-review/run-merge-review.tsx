@@ -1,7 +1,7 @@
 'use client';
 
 import { GitMergeIcon, RefreshCwIcon } from 'lucide-react';
-import { useId } from 'react';
+import { useId, useState } from 'react';
 import { Banner } from '@/shared/components/banner';
 import { Button } from '@/shared/ui/button';
 import { Skeleton } from '@/shared/ui/skeleton';
@@ -13,6 +13,8 @@ import {
 } from '../../../../platform/api';
 import { useMergeReview, useRequestMergeReview } from '../../api/runs-queries';
 import { failedRequest } from '../../components/failed-request';
+import { FINAL_STATES } from '../../components/run-states';
+import { MergeRunDialog } from '../merge-run/merge-run-dialog';
 import { type ChangedFile, ChangedFiles } from '../run-changes/run-changes';
 
 const READ_REQUEST = 'GET /api/runs/{runId}/merge-review';
@@ -41,6 +43,20 @@ function pullRequestIsOver(run: RunOutput): boolean {
   return state === 'merged' || state === 'closed' || state === 'missing';
 }
 
+/** Whether the Run's pull request can be merged now, as far as the page knows; the API decides. */
+function canApproveAndMerge(run: RunOutput, data: MergeReviewOutput | undefined): boolean {
+  const state = run.pullRequest?.state;
+  return (
+    data?.state === 'ready' &&
+    data.runCommit !== undefined &&
+    run.merge?.available === true &&
+    FINAL_STATES.includes(run.state) &&
+    (state === 'draft' || state === 'open') &&
+    run.latestMergeApproval?.result !== 'carried_out' &&
+    run.latestMergeApproval?.result !== 'pending'
+  );
+}
+
 /**
  * What the Integration branch would gain from the Run's branch, computed by Studio from its own
  * clone (not the agent worker's account of the changes). Its files are shown with the same file
@@ -57,24 +73,49 @@ function PullRequestReview({ run }: { run: RunOutput }) {
   const data = review.data;
   const preparing = data?.state === 'preparing' || request.isPending;
   const over = pullRequestIsOver(run);
+  const [confirming, setConfirming] = useState(false);
+  const mergeable = canApproveAndMerge(run, data);
   return (
     <section aria-labelledby={titleId} className="flex min-w-0 flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 id={titleId} className="m-0 text-body font-semibold text-text">
           Merge review, computed by Studio
         </h2>
-        {data ? (
-          <Button
-            icon={data.state === 'none' ? GitMergeIcon : RefreshCwIcon}
-            variant={data.state === 'none' ? 'primary' : 'secondary'}
-            loading={preparing}
-            disabled={over}
-            onClick={() => request.mutate()}
-          >
-            {data.state === 'none' ? 'Review for merge' : 'Review again'}
-          </Button>
-        ) : null}
+        <div className="flex flex-wrap items-center gap-2">
+          {data ? (
+            <Button
+              icon={data.state === 'none' ? GitMergeIcon : RefreshCwIcon}
+              variant={data.state === 'none' ? 'primary' : 'secondary'}
+              loading={preparing}
+              disabled={over}
+              onClick={() => request.mutate()}
+            >
+              {data.state === 'none' ? 'Review for merge' : 'Review again'}
+            </Button>
+          ) : null}
+          {mergeable ? (
+            <Button variant="primary" icon={GitMergeIcon} onClick={() => setConfirming(true)}>
+              Approve and merge
+            </Button>
+          ) : null}
+        </div>
       </div>
+      {data?.state === 'ready' && run.merge?.available === false && !over ? (
+        <p className="m-0 text-small text-text-muted">
+          Merging from Studio is off:{' '}
+          {run.merge.reason === 'not_configured'
+            ? "Studio's Merge credential is not configured."
+            : "this run's Git host is not supported."}
+        </p>
+      ) : null}
+      {mergeable && data?.runCommit ? (
+        <MergeRunDialog
+          run={run}
+          commit={data.runCommit}
+          open={confirming}
+          onOpenChange={setConfirming}
+        />
+      ) : null}
       {over ? (
         <Banner tone="info">
           The pull request is {run.pullRequest?.state}: there is nothing left to review for merge.

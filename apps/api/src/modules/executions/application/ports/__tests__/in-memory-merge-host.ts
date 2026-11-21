@@ -33,7 +33,12 @@ const OPEN_PULL_REQUEST: HostPullRequest = {
   baseRef: 'dev',
   mergeable: true,
   mergeableState: 'clean',
+  title: 'Add a health check',
+  body: 'Adds GET /health.',
 };
+
+/** The commit a successful merge creates, unless a test sets another. */
+export const MERGED_COMMIT = 'f'.repeat(40);
 
 /** A MergeHost for unit and integration tests: set what it answers, then read what it was asked. */
 export class InMemoryMergeHost implements MergeHost {
@@ -92,12 +97,12 @@ export class InMemoryMergeHost implements MergeHost {
       'merge',
       scope,
       { sha: request.sha, merge: request },
-      (): MergeHostResult => {
+      (): MergeHostResult<{ mergedCommit: string }> => {
         if (request.sha !== this.pullRequest.headSha) {
           return { ok: false, failure: { code: 'refused', message: 'Head branch was modified.' } };
         }
         this.pullRequest = { ...this.pullRequest, state: 'merged' };
-        return { ok: true };
+        return { ok: true, mergedCommit: MERGED_COMMIT };
       },
     );
   }

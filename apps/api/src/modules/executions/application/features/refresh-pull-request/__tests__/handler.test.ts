@@ -9,6 +9,7 @@ import {
 } from '../../../../domain/repositories/__tests__/delivered-run.js';
 import type { WorkerStatusData } from '../../../../domain/value-objects/worker-status-data.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
+import { InMemoryMergeApprovalRepository } from '../../../../domain/repositories/__tests__/in-memory-merge-approval-repository.js';
 import { RetentionPolicy } from '../../../../domain/value-objects/retention-policy.js';
 import { LookupHandOutRule } from '../../../../domain/value-objects/lookup-hand-out-rule.js';
 import { ReportLookupResultHandler } from '../../report-lookup-result/handler.js';
@@ -65,6 +66,7 @@ describe('RefreshPullRequestHandler', () => {
         hoursAfterPullRequestEnd: 24,
       }),
       { configured: false, allowFileRemotes: false },
+      new InMemoryMergeApprovalRepository(),
     );
   });
 

@@ -277,6 +277,8 @@ model Run {
   reviewCommentSet              RunReviewCommentSet?
   /// The merge review Studio computed for the Run (at most one, replaced by each new review).
   mergeReview                   RunMergeReview?
+  /// Every Merge approval of the Run, kept whatever came of it.
+  mergeApprovals                MergeApproval[]
   /// Issue #143: when a lookup first reported the pull request merged, closed or missing; cleared
   /// when a later one reports it open or draft again. Set only with such a pr_state.
   prEndedAt                     DateTime?            @map("pr_ended_at") @db.Timestamptz(6)
@@ -429,6 +431,39 @@ model RunMergeReview {
   completedAt       DateTime? @map("completed_at") @db.Timestamptz(6)
 
   @@map("run_merge_reviews")
+}
+
+/// What the operator approved when pressing "Approve and merge", stored before the merge and kept
+/// whatever came of it. The migration adds CHECK constraints and the partial unique index
+/// `merge_approvals_one_pending_per_run_key` (UNIQUE (run_id) WHERE result = 'pending'), which
+/// Prisma does not model: it makes two simultaneous merges of a Run one. Never drop it.
+model MergeApproval {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  runId               String    @map("run_id") @db.Uuid
+  run                 Run       @relation(fields: [runId], references: [id], onDelete: Cascade)
+  approvedAt          DateTime  @map("approved_at") @db.Timestamptz(6)
+  /// Who approved; today only `operator`.
+  approvedBy          String    @map("approved_by") @db.VarChar(16)
+  /// The commit the operator approved and the merge was pinned to.
+  commit              String    @db.VarChar(64)
+  integrationBranch   String    @map("integration_branch") @db.VarChar(255)
+  /// squash.
+  method              String    @db.VarChar(16)
+  /// `[{ name, state }]`: the pull request's checks as Studio read them before the merge.
+  checksSeen          Json      @map("checks_seen")
+  /// pending | carried_out | not_carried_out.
+  result              String    @db.VarChar(16)
+  /// Why a merge was not carried out: a refusal code and the Git host's redacted words.
+  refusalCode         String?   @map("refusal_code") @db.VarChar(32)
+  refusalReason       String?   @map("refusal_reason") @db.VarChar(500)
+  /// The commit the host created on the Integration branch.
+  mergedCommit        String?   @map("merged_commit") @db.VarChar(64)
+  completedAt         DateTime? @map("completed_at") @db.Timestamptz(6)
+  /// When the Project's Clone fetch after the merge started; null until it did.
+  cloneFetchStartedAt DateTime? @map("clone_fetch_started_at") @db.Timestamptz(6)
+
+  @@index([runId, approvedAt], map: "merge_approvals_run_id_approved_at_idx")
+  @@map("merge_approvals")
 }
 
 /// A question for the Git host that only an agent worker can answer (Issue #142), e.g. the state

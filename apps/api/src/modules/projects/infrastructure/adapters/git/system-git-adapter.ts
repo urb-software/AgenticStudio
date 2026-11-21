@@ -665,7 +665,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     );
   }
 
-  /** The review is over: its refs go (the objects stay until Git prunes them). Best effort. */
+  /** The review is over: its refs go. The objects stay, since `gc.auto=0` means nothing prunes them. Best effort. */
   private async deleteReviewRefs(clone: string, refs: ReviewRefs): Promise<void> {
     try {
       await this.withOperation(this.settings.fetchTimeoutMs, {}, async (context) => {
