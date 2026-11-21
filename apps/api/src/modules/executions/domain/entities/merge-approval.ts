@@ -101,7 +101,7 @@ export class MergeApproval {
 
   /**
    * Not carried out, yet the host's merge may have succeeded: the call was made and its outcome is
-   * unknown (it was cut off, or the request ended after it started). A refusal never is.
+   * unknown (it was cut off, or the request ended after it started); a refusal by the host is not.
    */
   get mergeOutcomeUnknown(): boolean {
     return (

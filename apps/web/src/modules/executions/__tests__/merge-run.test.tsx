@@ -207,7 +207,12 @@ describe('Run page: Approve and merge', () => {
   };
 
   it('offers to record a merge that may have gone through unseen, and shows the record afterwards', async () => {
-    const api = await openChanges(delivered({ latestMergeApproval: UNKNOWN }));
+    const api = await openChanges(
+      delivered({
+        pullRequest: { ...PULL_REQUEST, state: 'merged' },
+        latestMergeApproval: UNKNOWN,
+      }),
+    );
 
     expect(within(card()).getByText(/GitHub did not answer the merge/)).toBeTruthy();
     await userEvent.click(within(card()).getByRole('button', { name: 'Record the merge' }));
@@ -217,7 +222,12 @@ describe('Run page: Approve and merge', () => {
   });
 
   it('shows why when the request to record the merge is refused', async () => {
-    const api = await openChanges(delivered({ latestMergeApproval: UNKNOWN }));
+    const api = await openChanges(
+      delivered({
+        pullRequest: { ...PULL_REQUEST, state: 'merged' },
+        latestMergeApproval: UNKNOWN,
+      }),
+    );
     api.respondNext(
       'mergeRun',
       409,
@@ -230,6 +240,13 @@ describe('Run page: Approve and merge', () => {
       await within(card()).findByText('The pull request is merged, closed or gone.'),
     ).toBeTruthy();
     expect(within(card()).queryByText('Merged from Studio')).toBeNull();
+  });
+
+  it('offers the normal approval, not a recording, while the pull request is still open', async () => {
+    await openChanges(delivered({ latestMergeApproval: UNKNOWN }));
+
+    expect(within(card()).queryByRole('button', { name: 'Record the merge' })).toBeNull();
+    expect(mergeButton()).toBeTruthy();
   });
 
   it('offers no recording for a merge that was refused or never reached the host', async () => {

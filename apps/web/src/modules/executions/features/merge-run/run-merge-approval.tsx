@@ -72,7 +72,7 @@ function StepsLeft({
   );
 }
 
-/** The merge call got no answer, so GitHub may have merged: the same request looks and repairs the record. */
+/** The pull request is merged but the merge call got no answer: the same request repairs the record. */
 function RecordMerged({ run, approval }: { run: RunOutput; approval: MergeApprovalOutput }) {
   const record = useMergeRun(run.id);
   const problem = record.error instanceof ApiError ? record.error.problem : undefined;
@@ -117,7 +117,10 @@ export function RunMergeApproval({ run }: { run: RunOutput }) {
   }
 
   if (approval.result === 'not_carried_out') {
-    const mergedAnyway = approval.mergeOutcomeUnknown === true && run.merge?.available === true;
+    const mergedAnyway =
+      approval.mergeOutcomeUnknown === true &&
+      run.pullRequest?.state === 'merged' &&
+      run.merge?.available === true;
     return (
       <div
         data-slot="run-merge-not-carried-out"
