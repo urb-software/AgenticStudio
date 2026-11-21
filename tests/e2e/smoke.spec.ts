@@ -1228,13 +1228,15 @@ test(RUN_TEST, async ({ page }, testInfo) => {
   await expectInBothThemes(page, pullRequestCard);
 
   // The stub saw the close and the deletion, both made with the Merge credential, and the two
-  // refused writes made with the Agent token; the page and a reload agree.
+  // refused writes made with the Agent token (this repository's only; the stub serves every
+  // Playwright project); the page and a reload agree.
   const audit = (await (await fetch(`${stub}/__control/audit`)).json()) as {
     accepted: { method: string; path: string; role: string }[];
-    refused: { role: string }[];
+    refused: { path: string; role: string }[];
     deletedBranches: string[];
   };
-  expect(audit.accepted).toEqual([
+  const mine = (path: string) => path.startsWith(`/repos/${rejectedOwner}/${rejectedRepository}/`);
+  expect(audit.accepted.filter((entry) => mine(entry.path))).toEqual([
     {
       method: 'PATCH',
       path: `/repos/${rejectedOwner}/${rejectedRepository}/pulls/${rejectedNumber}`,
@@ -1246,8 +1248,11 @@ test(RUN_TEST, async ({ page }, testInfo) => {
       role: 'merge',
     },
   ]);
-  expect(audit.refused.map((entry) => entry.role)).toEqual(['agent', 'agent']);
-  expect(audit.deletedBranches).toEqual([rejectedBranch]);
+  expect(audit.refused.filter((entry) => mine(entry.path)).map((entry) => entry.role)).toEqual([
+    'agent',
+    'agent',
+  ]);
+  expect(audit.deletedBranches.filter((name) => name === rejectedBranch)).toEqual([rejectedBranch]);
   await page.reload();
   await expect(heading).toHaveText('Rejected change [fake:commit]');
   await expect(pullRequestCard).toContainText('Closed from Studio');
