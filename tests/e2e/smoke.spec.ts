@@ -1173,6 +1173,8 @@ test(RUN_TEST, async ({ page }, testInfo) => {
   // Story #263: a Run the operator rejects. A new Run delivers a draft pull request. The stub of
   // GitHub refuses a close or a branch deletion made with the Agent token; "Close without merging"
   // closes it with Studio's Merge credential and deletes the Run branch there, and the card says so.
+  await deliveredRow.getByRole('link').first().click();
+  await expect(heading).toHaveText('Change a file [fake:checks-failed]');
   await main.getByRole('button', { name: 'Run again' }).click();
   await dialog.getByLabel('Task').fill('Rejected change [fake:commit]');
   await dialog.getByRole('button', { name: 'Start run' }).click();
