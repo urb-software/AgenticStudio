@@ -11,6 +11,14 @@
         "kind": "atomic",
         "reason": "One UPDATE that stores an outcome only while the row is still pending, so a request that was taken over as interrupted never overwrites the takeover."
       },
+      "requestMerge": {
+        "kind": "atomic",
+        "reason": "One UPDATE that records the merge request only while the row is still pending, so a request taken over never goes on to merge."
+      },
+      "requestMerge": {
+        "kind": "atomic",
+        "reason": "One UPDATE that records the merge request only while the row is still pending, so a request taken over never goes on to merge."
+      },
       "save": { "kind": "save" }
     },
     "executions/PreparedFollowUpRepository": {

@@ -16,6 +16,7 @@ export function toMergeApprovalResponse(approval: MergeApprovalView): MergeAppro
     result: approval.result,
     ...(approval.refusal === null ? {} : { refusal: approval.refusal }),
     ...(approval.mergedCommit === null ? {} : { mergedCommit: approval.mergedCommit }),
+    ...(approval.mergeOutcomeUnknown ? { mergeOutcomeUnknown: true as const } : {}),
     ...(approval.completedAt === null ? {} : { completedAt: approval.completedAt.toISOString() }),
     ...(approval.cloneFetchStartedAt === null
       ? {}

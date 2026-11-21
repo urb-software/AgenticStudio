@@ -367,8 +367,8 @@ describe('MergeRunHandler', () => {
         'carried_out',
       ]);
       expect(approvals.approvals[0]!.refusal).toEqual({
-        code: 'host_refused',
-        reason: 'GitHub could not be reached.',
+        code: 'interrupted',
+        reason: 'GitHub could not be reached. The merge may have gone through.',
       });
     });
 
@@ -597,23 +597,39 @@ describe('MergeRunHandler', () => {
           checksSeen: [{ name: 'ci', state: 'success' }],
         },
         T0,
-      );
+      ).mergeRequested(T0);
       await approvals.add(pending);
       await approvals.finish(pending.notCarriedOut(code, 'GitHub could not be reached.', T0));
     };
+    const hostMergedLater = () => {
+      host.refuse('markReady', null);
+      host.refuse('approve', null);
+      host.refuse('merge', null);
+      host.setPullRequest({
+        state: 'merged',
+        mergedCommit: 'd'.repeat(40),
+        draft: false,
+        headSha: COMMIT,
+      });
+      host.calls.length = 0;
+    };
 
-    it('is recorded as carried out with the commit the host created, and the missing steps run', async () => {
-      await failedApproval('host_refused');
-      host.setPullRequest({ state: 'merged', mergedCommit: 'd'.repeat(40), draft: false });
+    it('is recorded as carried out when the merge call was cut off, and the missing steps run', async () => {
+      host.refuse('merge', { code: 'unavailable' });
+      const first = await refusal(handler.execute({ runId: RUN_ID, commit: COMMIT }));
+      expect(first.reason).toBe('host_refused');
+      expect(approvals.approvals[0]).toMatchObject({ result: 'not_carried_out' });
+      expect(approvals.approvals[0]!.mergeOutcomeUnknown).toBe(true);
+      hostMergedLater();
 
       const result = await handler.execute({ runId: RUN_ID, commit: COMMIT });
 
       expect(result.approval).toMatchObject({
-        id: 'e0000000-0000-4000-8000-000000000002',
+        id: approvals.approvals[0]!.id,
         result: 'carried_out',
         refusal: null,
         mergedCommit: 'd'.repeat(40),
-        checksSeen: [{ name: 'ci', state: 'success' }],
+        mergeOutcomeUnknown: false,
       });
       expect(methods()).toEqual(['readPullRequest', 'deleteRunBranch']);
       expect(fetched).toEqual([PROJECT]);
@@ -621,7 +637,7 @@ describe('MergeRunHandler', () => {
       expect((await stored()).retentionFacts()).toMatchObject({ pullRequestState: 'merged' });
     });
 
-    it('also repairs an approval that was taken over as interrupted', async () => {
+    it('also repairs an approval taken over as interrupted after its merge call started', async () => {
       await failedApproval('interrupted');
       host.setPullRequest({ state: 'merged', mergedCommit: 'd'.repeat(40) });
 
@@ -635,12 +651,60 @@ describe('MergeRunHandler', () => {
       ['the host names no merge commit', { mergedCommit: null }],
       ['the pull request was only closed', { state: 'closed' as const }],
     ])('stays refused when %s', async (_name, change) => {
-      await failedApproval('host_refused');
+      await failedApproval('interrupted');
       host.setPullRequest({ state: 'merged', mergedCommit: 'd'.repeat(40), ...change });
 
       await refused('pull_request_not_open');
 
       expect(approvals.approvals[0]!.result).toBe('not_carried_out');
+    });
+
+    describe('is never recorded as merged by Studio when its merge call did not go out or was refused', () => {
+      const staysNotCarriedOut = async () => {
+        hostMergedLater();
+        await refused('pull_request_not_open');
+        expect(approvals.approvals).toHaveLength(1);
+        expect(approvals.approvals[0]).toMatchObject({
+          result: 'not_carried_out',
+          mergedCommit: null,
+        });
+        expect(approvals.approvals[0]!.mergeOutcomeUnknown).toBe(false);
+        expect(methods()).toEqual(['readPullRequest', 'readChecks']);
+      };
+
+      it.each(['markReady', 'approve'] as const)('after a refusal at %s', async (step) => {
+        host.refuse(step, { code: 'unavailable' });
+        await refused('host_refused');
+
+        await staysNotCarriedOut();
+      });
+
+      it('after the step deadline, which stops the request before the merge call', async () => {
+        const release = host.hold('markReady');
+        const running = refusal(handler.execute({ runId: RUN_ID, commit: COMMIT }));
+        for (let spins = 0; !methods().includes('markReady') && spins < 50; spins += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+        now = new Date(NOW.getTime() + 560_000);
+        release();
+        await running;
+        now = NOW;
+
+        await staysNotCarriedOut();
+      });
+
+      it.each([
+        { code: 'refused' as const, message: 'Required status check is expected.' },
+        { code: 'rate_limited' as const, retryAfterSeconds: 30 },
+        { code: 'scope_mismatch' as const },
+        { code: 'not_found' as const },
+      ])('after a definitive refusal of the merge itself (%j)', async (failure) => {
+        host.refuse('merge', failure);
+        await refused('host_refused');
+        expect(approvals.approvals[0]!.mergeOutcomeUnknown).toBe(false);
+
+        await staysNotCarriedOut();
+      });
     });
   });
 });

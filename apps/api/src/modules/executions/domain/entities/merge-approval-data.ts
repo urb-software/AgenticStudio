@@ -17,5 +17,6 @@ export interface MergeApprovalData {
   readonly refusal: { readonly code: MergeApprovalRefusalCode; readonly reason: string } | null;
   readonly mergedCommit: string | null;
   readonly completedAt: Date | null;
+  readonly mergeRequestedAt: Date | null;
   readonly cloneFetchStartedAt: Date | null;
 }

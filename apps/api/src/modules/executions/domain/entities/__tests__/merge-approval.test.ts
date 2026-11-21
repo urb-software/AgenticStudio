@@ -75,6 +75,26 @@ describe('MergeApproval', () => {
     expect(stale.refusal).toEqual({ code: 'interrupted', reason: MergeApproval.INTERRUPTED });
   });
 
+  it('may have merged unseen only when the merge call went out and its outcome is unknown', () => {
+    const requested = pending().mergeRequested(APPROVED);
+
+    expect(requested.mergeOutcomeUnknown).toBe(false);
+    expect(requested.notCarriedOut('interrupted', 'Cut off.', LATER).mergeOutcomeUnknown).toBe(
+      true,
+    );
+    expect(requested.notCarriedOut('host_refused', 'No.', LATER).mergeOutcomeUnknown).toBe(false);
+    expect(pending().notCarriedOut('interrupted', 'Gone.', LATER).mergeOutcomeUnknown).toBe(false);
+    expect(requested.carriedOut('f'.repeat(40), LATER).mergeOutcomeUnknown).toBe(false);
+  });
+
+  it('reads a pending approval whose merge call went out as unknown once it is stale', () => {
+    const stale = pending()
+      .mergeRequested(APPROVED)
+      .asOf(new Date(APPROVED.getTime() + MergeApprovalLease.SECONDS * 1000 + 1));
+
+    expect(stale.mergeOutcomeUnknown).toBe(true);
+  });
+
   it('never reads a finished approval as interrupted', () => {
     const done = pending().carriedOut('f'.repeat(40), LATER);
 

@@ -458,6 +458,8 @@ model MergeApproval {
   /// The commit the host created on the Integration branch.
   mergedCommit        String?   @map("merged_commit") @db.VarChar(64)
   completedAt         DateTime? @map("completed_at") @db.Timestamptz(6)
+  /// When Studio was about to call the host's merge; null if it never got that far.
+  mergeRequestedAt    DateTime? @map("merge_requested_at") @db.Timestamptz(6)
   /// When the Project's Clone fetch after the merge started; null until it did.
   cloneFetchStartedAt DateTime? @map("clone_fetch_started_at") @db.Timestamptz(6)
 

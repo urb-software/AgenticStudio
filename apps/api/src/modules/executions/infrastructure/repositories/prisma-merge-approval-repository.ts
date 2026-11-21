@@ -33,6 +33,7 @@ function toApproval(row: Row): MergeApproval {
         : { code: refusalCodeSchema.parse(row.refusalCode), reason: row.refusalReason ?? '' },
     mergedCommit: row.mergedCommit,
     completedAt: row.completedAt,
+    mergeRequestedAt: row.mergeRequestedAt,
     cloneFetchStartedAt: row.cloneFetchStartedAt,
   });
 }
@@ -81,6 +82,14 @@ export class PrismaMergeApprovalRepository implements MergeApprovalRepository {
     return count === 1;
   }
 
+  async requestMerge(approval: MergeApproval): Promise<boolean> {
+    const { count } = await this.db.mergeApproval.updateMany({
+      where: { id: approval.id, result: 'pending' },
+      data: { mergeRequestedAt: approval.mergeRequestedAt },
+    });
+    return count === 1;
+  }
+
   async save(approval: MergeApproval): Promise<void> {
     await this.db.mergeApproval.update({
       where: { id: approval.id },
@@ -90,6 +99,7 @@ export class PrismaMergeApprovalRepository implements MergeApprovalRepository {
         refusalReason: approval.refusal?.reason ?? null,
         mergedCommit: approval.mergedCommit,
         completedAt: approval.completedAt,
+        mergeRequestedAt: approval.mergeRequestedAt,
         cloneFetchStartedAt: approval.cloneFetchStartedAt,
       },
     });

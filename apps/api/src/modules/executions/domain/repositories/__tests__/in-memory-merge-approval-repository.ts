@@ -33,6 +33,13 @@ export class InMemoryMergeApprovalRepository implements MergeApprovalRepository 
     return Promise.resolve(true);
   }
 
+  requestMerge(approval: MergeApproval): Promise<boolean> {
+    const index = this.approvals.findIndex((stored) => stored.id === approval.id);
+    if (index === -1 || !this.approvals[index]!.isPending) return Promise.resolve(false);
+    this.approvals[index] = approval;
+    return Promise.resolve(true);
+  }
+
   save(approval: MergeApproval): Promise<void> {
     const index = this.approvals.findIndex((stored) => stored.id === approval.id);
     if (index === -1) return Promise.reject(new Error('No such approval.'));

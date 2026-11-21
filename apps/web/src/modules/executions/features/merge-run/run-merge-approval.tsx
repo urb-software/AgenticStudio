@@ -72,18 +72,30 @@ function StepsLeft({
   );
 }
 
-/** The pull request is merged on GitHub although the record says otherwise: the same request repairs it. */
+/** The merge call got no answer, so GitHub may have merged: the same request looks and repairs the record. */
 function RecordMerged({ run, approval }: { run: RunOutput; approval: MergeApprovalOutput }) {
   const record = useMergeRun(run.id);
+  const problem = record.error instanceof ApiError ? record.error.problem : undefined;
   return (
-    <div>
-      <Button
-        icon={GitMergeIcon}
-        loading={record.isPending}
-        onClick={() => record.mutate(approval.commit)}
-      >
-        Record the merge
-      </Button>
+    <div className="flex flex-col gap-1">
+      <p className="m-0 text-small text-text-muted">
+        GitHub did not answer the merge, so it may have gone through. Studio asks GitHub again and
+        records the merge if it did.
+      </p>
+      {record.error ? (
+        <p className="m-0 text-small break-words text-text-muted">
+          {problem?.detail || 'Could not check the merge. Try again.'}
+        </p>
+      ) : null}
+      <div>
+        <Button
+          icon={GitMergeIcon}
+          loading={record.isPending}
+          onClick={() => record.mutate(approval.commit)}
+        >
+          Record the merge
+        </Button>
+      </div>
     </div>
   );
 }
@@ -105,7 +117,7 @@ export function RunMergeApproval({ run }: { run: RunOutput }) {
   }
 
   if (approval.result === 'not_carried_out') {
-    const mergedAnyway = run.pullRequest?.state === 'merged' && run.merge?.available === true;
+    const mergedAnyway = approval.mergeOutcomeUnknown === true && run.merge?.available === true;
     return (
       <div
         data-slot="run-merge-not-carried-out"

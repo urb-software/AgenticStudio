@@ -67,6 +67,8 @@ export const mergeApprovalSchema = z.strictObject({
     .optional(),
   mergedCommit: z.string().optional(),
   completedAt: z.iso.datetime().optional(),
+  /** Present when the merge may have been carried out although the record says it was not. */
+  mergeOutcomeUnknown: z.literal(true).optional(),
   /** Absent until the Project's Clone fetch started after the merge. */
   cloneFetchStartedAt: z.iso.datetime().optional(),
 });

@@ -111,6 +111,21 @@ describe('Merge approvals in the store (PostgreSQL + Redis via Testcontainers)',
     });
   });
 
+  it('records the merge request only while the approval is pending, and keeps it through the outcome', async () => {
+    const runId = await run();
+    const first = approval(runId);
+    await approvals().add(first);
+
+    expect(await approvals().requestMerge(first.mergeRequested(T))).toBe(true);
+    const unknown = first.mergeRequested(T).notCarriedOut('interrupted', 'Cut off.', T);
+    expect(await approvals().finish(unknown)).toBe(true);
+
+    expect((await approvals().findLatest(runId))?.mergeOutcomeUnknown).toBe(true);
+    expect(await approvals().requestMerge(first.mergeRequested(new Date(T.getTime() + 1)))).toBe(
+      false,
+    );
+  });
+
   it('keeps the commit, the checks seen and the fetch start through a round trip', async () => {
     const runId = await run();
     const first = approval(runId);

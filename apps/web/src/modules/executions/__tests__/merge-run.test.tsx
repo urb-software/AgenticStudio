@@ -195,22 +195,57 @@ describe('Run page: Approve and merge', () => {
     expect(mergeButton()).toBeTruthy();
   });
 
-  it('offers to record a merge that GitHub carried out although the record says it was not', async () => {
-    const run = delivered({
-      pullRequest: { ...PULL_REQUEST, state: 'merged' },
-      latestMergeApproval: {
-        ...APPROVAL,
-        result: 'not_carried_out',
-        mergedCommit: undefined,
-        refusal: { code: 'host_refused', reason: 'GitHub could not be reached.' },
-      },
-    });
-    const api = await openChanges(run);
+  const UNKNOWN: MergeApprovalOutput = {
+    ...APPROVAL,
+    result: 'not_carried_out',
+    mergedCommit: undefined,
+    mergeOutcomeUnknown: true,
+    refusal: {
+      code: 'interrupted',
+      reason: 'GitHub could not be reached. The merge may have gone through.',
+    },
+  };
 
+  it('offers to record a merge that may have gone through unseen, and shows the record afterwards', async () => {
+    const api = await openChanges(delivered({ latestMergeApproval: UNKNOWN }));
+
+    expect(within(card()).getByText(/GitHub did not answer the merge/)).toBeTruthy();
     await userEvent.click(within(card()).getByRole('button', { name: 'Record the merge' }));
 
     expect(await within(card()).findByText('Merged from Studio')).toBeTruthy();
     expect(api.calls('mergeRun')).toEqual([expect.objectContaining({ body: { commit: COMMIT } })]);
+  });
+
+  it('shows why when the request to record the merge is refused', async () => {
+    const api = await openChanges(delivered({ latestMergeApproval: UNKNOWN }));
+    api.respondNext(
+      'mergeRun',
+      409,
+      problem(409, 'The pull request is not open', 'The pull request is merged, closed or gone.'),
+    );
+
+    await userEvent.click(within(card()).getByRole('button', { name: 'Record the merge' }));
+
+    expect(
+      await within(card()).findByText('The pull request is merged, closed or gone.'),
+    ).toBeTruthy();
+    expect(within(card()).queryByText('Merged from Studio')).toBeNull();
+  });
+
+  it('offers no recording for a merge that was refused or never reached the host', async () => {
+    await openChanges(
+      delivered({
+        pullRequest: { ...PULL_REQUEST, state: 'merged' },
+        latestMergeApproval: {
+          ...UNKNOWN,
+          mergeOutcomeUnknown: undefined,
+          refusal: { code: 'host_refused', reason: 'Required status check is expected.' },
+        },
+      }),
+    );
+
+    expect(within(card()).getByText('The last merge was not carried out.')).toBeTruthy();
+    expect(within(card()).queryByRole('button', { name: 'Record the merge' })).toBeNull();
   });
 
   it('says a merge is under way while the approval is pending', async () => {

@@ -25,6 +25,7 @@ export class MergeApproval {
     readonly refusal: { readonly code: MergeApprovalRefusalCode; readonly reason: string } | null,
     readonly mergedCommit: string | null,
     readonly completedAt: Date | null,
+    readonly mergeRequestedAt: Date | null,
     readonly cloneFetchStartedAt: Date | null,
   ) {}
 
@@ -40,6 +41,7 @@ export class MergeApproval {
       facts.method,
       facts.checksSeen.map((check) => ({ name: check.name, state: check.state })),
       'pending',
+      null,
       null,
       null,
       null,
@@ -61,6 +63,7 @@ export class MergeApproval {
       data.refusal,
       data.mergedCommit,
       data.completedAt,
+      data.mergeRequestedAt,
       data.cloneFetchStartedAt,
     );
   }
@@ -89,6 +92,23 @@ export class MergeApproval {
   /** Also for an approval recorded as not carried out whose merge the host did carry out. */
   carriedOut(mergedCommit: string, now: Date): MergeApproval {
     return this.with({ result: 'carried_out', refusal: null, mergedCommit, completedAt: now });
+  }
+
+  /** Studio is about to call the host's merge: from here on the host may merge without Studio knowing. */
+  mergeRequested(now: Date): MergeApproval {
+    return this.with({ mergeRequestedAt: now });
+  }
+
+  /**
+   * Not carried out, yet the host's merge may have succeeded: the call was made and its outcome is
+   * unknown (it was cut off, or the request ended after it started). A refusal never is.
+   */
+  get mergeOutcomeUnknown(): boolean {
+    return (
+      this.result === 'not_carried_out' &&
+      this.mergeRequestedAt !== null &&
+      this.refusal?.code === 'interrupted'
+    );
   }
 
   /** Whether the Clone fetch after the merge has not started yet. */
@@ -121,6 +141,7 @@ export class MergeApproval {
       refusal: this.refusal,
       mergedCommit: this.mergedCommit,
       completedAt: this.completedAt,
+      mergeRequestedAt: this.mergeRequestedAt,
       cloneFetchStartedAt: this.cloneFetchStartedAt,
       ...patch,
     });

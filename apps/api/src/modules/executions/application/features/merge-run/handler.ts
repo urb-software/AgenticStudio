@@ -82,7 +82,7 @@ export class MergeRunHandler {
     this.requireAvailable(run);
 
     const scope = this.scopeOf(run);
-    if (latest?.isNotCarriedOut && scope !== null) {
+    if (latest?.mergeOutcomeUnknown && scope !== null) {
       const reconciled = await this.reconcile(scope, latest);
       if (reconciled) return this.finishAfterMerge((await this.runs.findById(runId))!, reconciled);
     }
@@ -132,7 +132,7 @@ export class MergeRunHandler {
     return this.finishAfterMerge((await this.runs.findById(runId))!, merged);
   }
 
-  /** An approval recorded as not carried out, whose commit the host did merge, becomes carried out. */
+  /** An approval whose merge call may have succeeded unseen becomes carried out if the host merged it. */
   private async reconcile(
     scope: PullRequestScope,
     approval: MergeApproval,
@@ -167,14 +167,23 @@ export class MergeRunHandler {
     const approved = await this.host.approve(scope, commit);
     if (!approved.ok) throw await this.refusedAfter(approval, approved.failure);
     await this.requireTimeFor(approval);
+    // From here the host may merge without Studio hearing of it: a record made from now on says so.
+    const requested = approval.mergeRequested(this.clock.now());
+    if (!(await this.approvals.requestMerge(requested))) return null;
     const merged = await this.host.merge(scope, {
       sha: commit,
       method: approval.method,
       title: pullRequest.title,
       ...(pullRequest.body === '' ? {} : { message: pullRequest.body }),
     });
-    if (!merged.ok) throw await this.refusedAfter(approval, merged.failure);
-    const done = approval.carriedOut(merged.mergedCommit, this.clock.now());
+    if (!merged.ok) {
+      throw await this.refusedAfter(
+        requested,
+        merged.failure,
+        merged.failure.code === 'unavailable',
+      );
+    }
+    const done = requested.carriedOut(merged.mergedCommit, this.clock.now());
     const stored = await this.approvals.finish(done);
     await this.observe(approval.runId, 'merged');
     return stored ? done : null;
@@ -275,11 +284,18 @@ export class MergeRunHandler {
   private async refusedAfter(
     approval: MergeApproval,
     failure: MergeHostFailure,
+    outcomeUnknown = false,
   ): Promise<MergeRefusedError> {
     const { error, code } = refusalOf(failure);
-    await this.approvals.finish(
-      approval.notCarriedOut(code, error.detail ?? failureText(failure), this.clock.now()),
-    );
+    const reason = error.detail ?? failureText(failure);
+    const recorded = outcomeUnknown
+      ? approval.notCarriedOut(
+          'interrupted',
+          `${reason} The merge may have gone through.`,
+          this.clock.now(),
+        )
+      : approval.notCarriedOut(code, reason, this.clock.now());
+    await this.approvals.finish(recorded);
     return error;
   }
 }

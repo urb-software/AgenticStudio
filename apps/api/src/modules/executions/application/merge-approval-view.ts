@@ -13,6 +13,7 @@ export interface MergeApprovalView {
   refusal: MergeApproval['refusal'];
   mergedCommit: string | null;
   completedAt: Date | null;
+  mergeOutcomeUnknown: boolean;
   cloneFetchStartedAt: Date | null;
 }
 
@@ -29,6 +30,7 @@ export function mergeApprovalView(approval: MergeApproval): MergeApprovalView {
     refusal: approval.refusal === null ? null : { ...approval.refusal },
     mergedCommit: approval.mergedCommit,
     completedAt: approval.completedAt,
+    mergeOutcomeUnknown: approval.mergeOutcomeUnknown,
     cloneFetchStartedAt: approval.cloneFetchStartedAt,
   };
 }

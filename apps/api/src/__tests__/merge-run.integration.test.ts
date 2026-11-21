@@ -27,6 +27,8 @@ const PULL_REQUEST = { url: 'https://github.com/acme/shop/pull/7', number: 7 };
 const LIMITS = { stepMinutes: 60, maxSteps: 5, waitingDays: 14, maxTotalSteps: 20 };
 const COMMIT = 'c'.repeat(40);
 const MERGED_COMMIT = 'e'.repeat(40);
+/** A refusal text that the fake host answers as a call that never got an answer. */
+const UNREACHABLE = 'unreachable';
 const PROBLEM = (code: string) => `urn:agentic-studio:problem:merge-${code}`;
 
 type FakeHost = NonNullable<
@@ -51,9 +53,14 @@ function fakeHost() {
   const answer = (method: string) => {
     calls.push(method);
     const message = refusals.get(method);
-    return message === undefined
-      ? { ok: true as const }
-      : { ok: false as const, failure: { code: 'refused' as const, message } };
+    if (message === undefined) return { ok: true as const };
+    return {
+      ok: false as const,
+      failure:
+        message === UNREACHABLE
+          ? { code: 'unavailable' as const }
+          : { code: 'refused' as const, message },
+    };
   };
   const host = {
     readPullRequest: () => {
@@ -417,10 +424,11 @@ describe('approve and merge API (PostgreSQL + Redis via Testcontainers)', () => 
       },
     );
 
-    it('a merge the host carried out although the record says otherwise is recorded by the next request', async () => {
+    it('a merge call that got no answer, but went through, is recorded by the next request', async () => {
       const { runId } = await deliveredRun();
-      git.refusals.set('merge', 'GitHub could not be reached.');
+      git.refusals.set('merge', UNREACHABLE);
       expectProblem(await merge(runId), 409, PROBLEM('host-refused'));
+      expect((await getRun(runId)).body.latestMergeApproval.mergeOutcomeUnknown).toBe(true);
       git.refusals.clear();
       git.pullRequest.state = 'merged';
       git.pullRequest.mergedCommit = MERGED_COMMIT;
@@ -430,12 +438,34 @@ describe('approve and merge API (PostgreSQL + Redis via Testcontainers)', () => 
 
       expect(recorded.status).toBe(200);
       expect(recorded.body).toMatchObject({ result: 'carried_out', mergedCommit: MERGED_COMMIT });
+      expect(recorded.body).not.toHaveProperty('mergeOutcomeUnknown');
       expect(git.calls).toEqual(['readPullRequest', 'deleteRunBranch']);
       expect(await approvalRows(runId)).toEqual([
         { result: 'carried_out', refusal_code: null, merged_commit: MERGED_COMMIT },
       ]);
       expect((await getRun(runId)).body.pullRequest.state).toBe('merged');
     });
+
+    it.each(['markReady', 'approve', 'merge'] as const)(
+      'a refusal at %s is never recorded as a merge by Studio, even if the pull request is merged outside it',
+      async (step) => {
+        const { runId } = await deliveredRun();
+        git.refusals.set(step, 'Required status check is expected.');
+        expectProblem(await merge(runId), 409, PROBLEM('host-refused'));
+        expect((await getRun(runId)).body.latestMergeApproval).not.toHaveProperty(
+          'mergeOutcomeUnknown',
+        );
+        git.refusals.clear();
+        git.pullRequest.state = 'merged';
+        git.pullRequest.mergedCommit = MERGED_COMMIT;
+
+        expectProblem(await merge(runId), 409, PROBLEM('pull-request-not-open'));
+
+        expect(await approvalRows(runId)).toEqual([
+          { result: 'not_carried_out', refusal_code: 'host_refused', merged_commit: null },
+        ]);
+      },
+    );
 
     it('is a 404 for an unknown run and a 422 for a commit that is not a full commit id', async () => {
       const { runId } = await deliveredRun();

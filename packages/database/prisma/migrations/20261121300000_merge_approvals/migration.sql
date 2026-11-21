@@ -18,6 +18,7 @@ CREATE TABLE "merge_approvals" (
     "refusal_reason" VARCHAR(500),
     "merged_commit" VARCHAR(64),
     "completed_at" TIMESTAMPTZ(6),
+    "merge_requested_at" TIMESTAMPTZ(6),
     "clone_fetch_started_at" TIMESTAMPTZ(6),
 
     CONSTRAINT "merge_approvals_pkey" PRIMARY KEY ("id")

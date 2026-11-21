@@ -196,6 +196,7 @@ export type MergeApprovalOutput = {
     };
     mergedCommit?: string;
     completedAt?: string;
+    mergeOutcomeUnknown?: true;
     cloneFetchStartedAt?: string;
 };
 
@@ -316,6 +317,7 @@ export type MergeRunResponseOutput = {
     };
     mergedCommit?: string;
     completedAt?: string;
+    mergeOutcomeUnknown?: true;
     cloneFetchStartedAt?: string;
     runBranchDeletedAt?: string;
     runBranchDeletionFailure?: string;

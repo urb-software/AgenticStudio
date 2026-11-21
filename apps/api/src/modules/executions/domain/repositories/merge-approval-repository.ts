@@ -19,6 +19,12 @@ export interface MergeApprovalRepository {
    */
   finish(approval: MergeApproval): Promise<boolean>;
 
+  /**
+   * Records that the merge is about to be requested, only while the stored approval is still
+   * pending. `false` when it is not: another request took it over.
+   */
+  requestMerge(approval: MergeApproval): Promise<boolean>;
+
   /** Replaces the stored approval with the same id: a reconciled outcome or a started fetch. */
   save(approval: MergeApproval): Promise<void>;
 }
