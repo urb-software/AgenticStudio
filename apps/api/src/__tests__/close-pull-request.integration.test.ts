@@ -163,6 +163,13 @@ describe('close without merging API (PostgreSQL + Redis via Testcontainers)', ()
     await db().$executeRaw`TRUNCATE TABLE projects CASCADE`;
     git.calls.length = 0;
     git.refusals.clear();
+    // The worker reports itself with every poll: Runs can only start once it has.
+    const status = await asWorker('status', {
+      workerId: WORKER,
+      runner: 'cli',
+      providers: { claude_code: true, codex: true },
+    });
+    expect(status.status).toBe(204);
   });
 
   it('closes the pull request, deletes the branch, and the Run shows both', async () => {
