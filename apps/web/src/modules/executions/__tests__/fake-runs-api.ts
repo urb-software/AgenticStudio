@@ -117,6 +117,7 @@ export interface FakeStream {
 export const PROJECT: ProjectOutput = {
   id: '00000000-0000-4000-8000-0000000000a1',
   name: 'Acme Shop',
+  mergeMethod: 'squash',
   createdAt: '2026-11-12T09:00:00.000Z',
 };
 

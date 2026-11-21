@@ -23,6 +23,10 @@ export type CreateProjectRequest = {
 export type ProjectOutput = {
     id: string;
     name: string;
+    /**
+     * How the project's Runs are merged: `squash` (the default) or `merge_commit`.
+     */
+    mergeMethod: 'squash' | 'merge_commit';
     createdAt: string;
 };
 
@@ -44,6 +48,10 @@ export type RepositoryStateOutput = 'awaiting_key' | 'awaiting_host_key' | 'conn
 export type ProjectDetailOutput = {
     id: string;
     name: string;
+    /**
+     * How the project's Runs are merged: `squash` (the default) or `merge_commit`.
+     */
+    mergeMethod: 'squash' | 'merge_commit';
     createdAt: string;
     repository: RepositorySummaryOutput | null;
 };
@@ -98,6 +106,10 @@ export type EnvironmentFileInfoOutput = {
     path: string;
     sizeBytes: number;
     updatedAt: string;
+};
+
+export type SetMergeMethodRequest = {
+    mergeMethod: 'squash' | 'merge_commit';
 };
 
 export type StartRunRequest = {
@@ -184,7 +196,7 @@ export type MergeApprovalOutput = {
     approvedBy: 'operator';
     commit: string;
     integrationBranch: string;
-    method: 'squash';
+    method: 'squash' | 'merge_commit';
     checksSeen: Array<{
         name: string;
         state: 'success' | 'failure' | 'pending' | 'neutral';
@@ -305,7 +317,7 @@ export type MergeRunResponseOutput = {
     approvedBy: 'operator';
     commit: string;
     integrationBranch: string;
-    method: 'squash';
+    method: 'squash' | 'merge_commit';
     checksSeen: Array<{
         name: string;
         state: 'success' | 'failure' | 'pending' | 'neutral';
@@ -938,6 +950,34 @@ export type SetEnvironmentFileResponses = {
 };
 
 export type SetEnvironmentFileResponse = SetEnvironmentFileResponses[keyof SetEnvironmentFileResponses];
+
+export type SetMergeMethodData = {
+    body: SetMergeMethodRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/projects/{id}/merge-method';
+};
+
+export type SetMergeMethodErrors = {
+    /**
+     * Unknown project (urn:agentic-studio:problem:project-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type SetMergeMethodError = SetMergeMethodErrors[keyof SetMergeMethodErrors];
+
+export type SetMergeMethodResponses = {
+    200: ProjectOutput;
+};
+
+export type SetMergeMethodResponse = SetMergeMethodResponses[keyof SetMergeMethodResponses];
 
 export type ListProjectRunsData = {
     body?: never;

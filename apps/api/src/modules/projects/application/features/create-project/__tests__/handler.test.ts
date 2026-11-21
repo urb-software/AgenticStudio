@@ -23,6 +23,7 @@ class InMemoryProjectRepository implements ProjectRepository {
       Project.restore({
         id: `id-${this.stored.length}`,
         name: name.value,
+        mergeMethod: 'squash',
         createdAt: new Date('2026-11-12T10:00:00.000Z'),
       }),
     );
@@ -33,6 +34,8 @@ class InMemoryProjectRepository implements ProjectRepository {
   }
 
   findById = notUsed;
+
+  save = notUsed;
 }
 
 function notUsed(): Promise<never> {

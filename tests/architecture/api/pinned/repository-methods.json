@@ -124,7 +124,8 @@
         "reason": "The unique index on the normalized name decides a simultaneous create, because there is no row to lock before it exists."
       },
       "listNewestFirst": { "kind": "query" },
-      "findById": { "kind": "load" }
+      "findById": { "kind": "load" },
+      "save": { "kind": "save" }
     },
     "projects/RepositoryConnectionRepository": {
       "find": { "kind": "load" },

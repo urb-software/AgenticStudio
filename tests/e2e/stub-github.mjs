@@ -32,6 +32,11 @@
 // (`PUT .../pulls/<n>/merge`, which honours `sha` and answers 409 when the head moved). Like the
 // two writes above, they accept only the Merge credential.
 //
+// Story #264: a repository can disallow a merge method, as its settings do on GitHub: the merge
+// route then answers 405 and merges nothing. `POST /__control/repos/<owner>/<repo>` with
+// `{ "disallowedMergeMethods": ["merge"] }` (GitHub's words: `squash`, `merge`, `rebase`) sets it
+// for that repository.
+//
 // Like GitHub, it checks what the smoke must prove end to end (Issue #115): every call carries
 // the Agent token (`Authorization: Bearer $STUB_GITHUB_TOKEN`, else 401), and a new pull
 // request is a draft against the integration branch (`draft: true`, `base` =
@@ -70,6 +75,9 @@ const audit = {
   merges: [],
 };
 
+/** Story #264: `owner/repo` to the merge methods its settings disallow. */
+const disallowedMergeMethods = new Map();
+
 /** The commit a merge creates on the base branch. */
 const MERGE_COMMIT = 'e'.repeat(40);
 
@@ -94,6 +102,22 @@ const server = createServer((request, response) => {
   };
   if (url.pathname === '/health') return send(200, { status: 'ok' });
   if (url.pathname === '/__control/audit' && request.method === 'GET') return send(200, audit);
+  const repoControl = /^\/__control\/repos\/([^/]+)\/([^/]+)$/.exec(url.pathname);
+  if (repoControl && request.method === 'POST') {
+    let text = '';
+    request.on('data', (chunk) => (text += chunk));
+    request.on('end', () => {
+      const body = JSON.parse(text || '{}');
+      if (Array.isArray(body.disallowedMergeMethods)) {
+        disallowedMergeMethods.set(
+          `${repoControl[1]}/${repoControl[2]}`,
+          body.disallowedMergeMethods,
+        );
+      }
+      send(200, { disallowedMergeMethods: [...disallowedMergeMethods.entries()] });
+    });
+    return;
+  }
   // Issue #142: the smoke changes a pull request's state, as the operator would on GitHub.
   const control = /^\/__control\/pulls\/([^/]+)\/([^/]+)\/(\d+)$/.exec(url.pathname);
   if (control && request.method === 'POST') {
@@ -221,6 +245,12 @@ const server = createServer((request, response) => {
         return send(405, { message: 'Pull Request is not mergeable' });
       }
       if (pr.draft) return send(405, { message: 'Draft pull requests cannot be merged' });
+      if ((disallowedMergeMethods.get(pr.repo) ?? []).includes(body.merge_method)) {
+        console.log(
+          `[stub-github] refused merge of #${pr.number}: ${body.merge_method} is disallowed`,
+        );
+        return send(405, { message: 'This merge method is not allowed on this repository.' });
+      }
       if (body.sha !== (pr.headSha ?? 'c'.repeat(40))) {
         console.log(
           `[stub-github] refused merge of #${pr.number}: head is ${pr.headSha}, got ${body.sha}`,

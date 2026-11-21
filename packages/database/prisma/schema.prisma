@@ -22,6 +22,8 @@ model Project {
   nameNormalized  String           @unique(map: "projects_name_normalized_key") @map("name_normalized")
   /// Set by PostgreSQL (microsecond precision), not by the client, so ordering uses one clock.
   createdAt       DateTime         @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz(6)
+  /// How Studio merges this project's Runs: squash | merge_commit (a CHECK constraint holds the list).
+  mergeMethod     String           @default("squash") @map("merge_method") @db.VarChar(16)
   /// The connected Repository (Story #60): at most one per project.
   repository      Repository?
   /// The project's Runs (`executions` module, Issue #96).
@@ -446,7 +448,7 @@ model MergeApproval {
   /// The commit the operator approved and the merge was pinned to.
   commit              String    @db.VarChar(64)
   integrationBranch   String    @map("integration_branch") @db.VarChar(255)
-  /// squash.
+  /// squash | merge_commit.
   method              String    @db.VarChar(16)
   /// `[{ name, state }]`: the pull request's checks as Studio read them before the merge.
   checksSeen          Json      @map("checks_seen")

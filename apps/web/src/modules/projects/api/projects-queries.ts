@@ -9,8 +9,10 @@ import {
   type CreateProjectRequest,
   type EnvironmentFileInfoOutput,
   type ProjectDetailOutput,
+  type ProjectOutput,
   type RepositoryOutput,
   type SetEnvironmentFileRequest,
+  type SetMergeMethodRequest,
   type VerifyRepositoryRequest,
 } from '../../../platform/api';
 
@@ -220,6 +222,23 @@ export function useRemoveEnvironmentFile(projectId: string) {
     mutationFn: () => api.removeEnvironmentFile(projectId),
     onSuccess: () => {
       queryClient.setQueryData(environmentFileKey(projectId), null);
+    },
+  });
+}
+
+/**
+ * Sets how the project's Runs are merged. The answer is the project, so the detail and the list
+ * take it at once; a Run page reads the setting again when it opens.
+ */
+export function useSetMergeMethod(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: SetMergeMethodRequest) => api.setMergeMethod(projectId, request),
+    onSuccess: async (project: ProjectOutput) => {
+      queryClient.setQueryData<ProjectDetailOutput>(projectKey(projectId), (detail) =>
+        detail ? { ...detail, mergeMethod: project.mergeMethod } : detail,
+      );
+      await queryClient.invalidateQueries({ queryKey: PROJECTS_QUERY_KEY, exact: true });
     },
   });
 }

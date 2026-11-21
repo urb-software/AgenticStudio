@@ -1,4 +1,4 @@
-import type { EnvironmentFile } from '@agentic-studio/contracts';
+import type { EnvironmentFile, MergeMethod } from '@agentic-studio/contracts';
 
 export const RUN_START_POINTS = Symbol('RUN_START_POINTS');
 
@@ -102,4 +102,12 @@ export type IntegrationFetchResult = { status: 'started' } | { status: 'not_star
 export interface RunIntegrationFetches {
   /** Never throws for a project that cannot fetch (unknown, no Repository, busy, not Linux). */
   fetchIntegrationBranch(projectId: string): Promise<IntegrationFetchResult>;
+}
+
+export const RUN_MERGE_METHODS = Symbol('RUN_MERGE_METHODS');
+
+/** How a Project's Runs are merged: the setting `executions` reads when an operator approves a merge. */
+export interface RunMergeMethods {
+  /** The Project's current merge method. Throws when the project does not exist. */
+  mergeMethodFor(projectId: string): Promise<MergeMethod>;
 }

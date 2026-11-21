@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { pullRequestClosureSchema } from './close-pull-request.js';
+import { mergeMethodSchema } from './merge-method.js';
 
 /** Why Studio refused an "Approve and merge": the `reason` of a 409 on the merge route. */
 export const MERGE_REFUSALS = [
@@ -24,10 +25,6 @@ export type MergeApprovalRefusalCode = (typeof MERGE_APPROVAL_REFUSAL_CODES)[num
 export const MERGE_APPROVAL_RESULTS = ['pending', 'carried_out', 'not_carried_out'] as const;
 export const mergeApprovalResultSchema = z.enum(MERGE_APPROVAL_RESULTS);
 export type MergeApprovalResult = z.infer<typeof mergeApprovalResultSchema>;
-
-export const MERGE_METHODS = ['squash'] as const;
-export const mergeMethodSchema = z.enum(MERGE_METHODS);
-export type MergeMethod = z.infer<typeof mergeMethodSchema>;
 
 export const MERGE_CHECK_STATES = ['success', 'failure', 'pending', 'neutral'] as const;
 

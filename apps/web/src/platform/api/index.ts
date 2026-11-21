@@ -34,6 +34,7 @@ import type {
   RunStepListOutput,
   SessionResponseOutput,
   SetEnvironmentFileRequest,
+  SetMergeMethodRequest,
   StartRunRequest,
   StartRunResponseOutput,
   VerifyRepositoryRequest,
@@ -94,6 +95,7 @@ export type {
   RunStepOutput,
   SessionResponseOutput,
   SetEnvironmentFileRequest,
+  SetMergeMethodRequest,
   StartRunRequest,
   StartRunResponseOutput,
   VerifyRepositoryRequest,
@@ -241,6 +243,9 @@ export const api = {
     body: SetEnvironmentFileRequest,
   ): Promise<EnvironmentFileInfoOutput> =>
     unwrap(sdk.setEnvironmentFile({ path: { id: projectId }, body })),
+  /** Sets how the project's Runs are merged (200: the project). */
+  setMergeMethod: (projectId: string, body: SetMergeMethodRequest): Promise<ProjectOutput> =>
+    unwrap(sdk.setMergeMethod({ path: { id: projectId }, body })),
   /** Removes the project's Environment file (204, also when none was set). */
   removeEnvironmentFile: async (projectId: string): Promise<void> => {
     await unwrap(sdk.removeEnvironmentFile({ path: { id: projectId } }));

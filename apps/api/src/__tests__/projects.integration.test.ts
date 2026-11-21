@@ -1,3 +1,4 @@
+import { createHash, createSecretKey, randomBytes, randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -15,6 +16,9 @@ import {
 // building the whole app reaches the database client, which architecture:api forbids there.
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+// A throwaway worker token generated per run; none is committed.
+const WORKER_TOKEN = randomBytes(32).toString('base64');
+const WORKER_TOKEN_DIGEST = createSecretKey(createHash('sha256').update(WORKER_TOKEN).digest());
 const ISO_8601 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
 function expectProblem(response: request.Response, status: number) {
@@ -45,7 +49,7 @@ describe('projects API (PostgreSQL + Redis via Testcontainers)', () => {
 
   beforeAll(async () => {
     services = await startStudioServices();
-    app = await startStudioApp(services.config);
+    app = await startStudioApp({ ...services.config, workerToken: WORKER_TOKEN_DIGEST });
     cookie = await signIn(app);
   });
 
@@ -104,6 +108,7 @@ describe('projects API (PostgreSQL + Redis via Testcontainers)', () => {
       expect(response.body).toEqual({
         id: expect.stringMatching(UUID),
         name: 'Agentic Studio',
+        mergeMethod: 'squash',
         createdAt: expect.stringMatching(ISO_8601),
       });
       expect(await listedNames()).toEqual(['Agentic Studio']);
@@ -219,6 +224,84 @@ describe('projects API (PostgreSQL + Redis via Testcontainers)', () => {
 
       expect(responses.map((response) => response.status).sort()).toEqual([201, 409]);
       expect(await listedNames()).toHaveLength(1);
+    });
+  });
+
+  describe('PUT /api/projects/:id/merge-method', () => {
+    const setMergeMethod = (projectId: string, body: unknown, headers: object = {}) =>
+      request(app.getHttpServer())
+        .put(`/api/projects/${projectId}/merge-method`)
+        .set({ Origin: STUDIO_ORIGIN, Cookie: cookie, ...headers })
+        .send(body as object);
+    const getProject = (projectId: string) =>
+      request(app.getHttpServer()).get(`/api/projects/${projectId}`).set('Cookie', cookie);
+
+    it('changes the method of the project, answers the project, and shows it on the page and the list', async () => {
+      const created = await createProject({ name: 'Mergeable' });
+      expect(created.body.mergeMethod).toBe('squash');
+
+      const changed = await setMergeMethod(created.body.id as string, {
+        mergeMethod: 'merge_commit',
+      });
+
+      expect(changed.status).toBe(200);
+      expect(changed.body).toEqual({ ...created.body, mergeMethod: 'merge_commit' });
+      expect((await getProject(created.body.id as string)).body.mergeMethod).toBe('merge_commit');
+      expect((await listProjects()).body.items[0].mergeMethod).toBe('merge_commit');
+      const back = await setMergeMethod(created.body.id as string, { mergeMethod: 'squash' });
+      expect(back.body.mergeMethod).toBe('squash');
+    });
+
+    it('does not take the method when a project is created', async () => {
+      const response = await createProject({ name: 'Chosen', mergeMethod: 'merge_commit' });
+
+      expectProblem(response, 400);
+      expect(await listedNames()).toEqual([]);
+    });
+
+    it.each([
+      ['an unknown value', { mergeMethod: 'rebase' }],
+      ['a missing value', {}],
+      ['an unknown field', { mergeMethod: 'squash', extra: true }],
+    ])('refuses %s with 400 and keeps the method', async (_name, body) => {
+      const created = await createProject({ name: 'Strict' });
+
+      const response = await setMergeMethod(created.body.id as string, body);
+
+      expectProblem(response, 400);
+      expect((await getProject(created.body.id as string)).body.mergeMethod).toBe('squash');
+    });
+
+    it('answers 404 for an unknown project and for an id that is not a UUID', async () => {
+      const unknown = await setMergeMethod(randomUUID(), { mergeMethod: 'squash' });
+      const malformed = await setMergeMethod('not-a-uuid', { mergeMethod: 'squash' });
+
+      expectProblem(unknown, 404);
+      expectProblem(malformed, 404);
+    });
+
+    it('is an operator route: no session, a foreign origin and the worker token are refused', async () => {
+      const created = await createProject({ name: 'Guarded' });
+      const id = created.body.id as string;
+
+      expectProblem(await setMergeMethod(id, { mergeMethod: 'merge_commit' }, { Cookie: '' }), 401);
+      expectProblem(
+        await setMergeMethod(
+          id,
+          { mergeMethod: 'merge_commit' },
+          { Origin: 'http://evil.example' },
+        ),
+        403,
+      );
+      expectProblem(
+        await setMergeMethod(
+          id,
+          { mergeMethod: 'merge_commit' },
+          { Cookie: '', Authorization: `Bearer ${WORKER_TOKEN}` },
+        ),
+        401,
+      );
+      expect((await getProject(id)).body.mergeMethod).toBe('squash');
     });
   });
 
