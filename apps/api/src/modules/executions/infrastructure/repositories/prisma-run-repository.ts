@@ -96,6 +96,10 @@ const LIST_FIELDS = {
   prPrepareRequestedAt: true,
   prPrepareError: true,
   prEndedAt: true,
+  closeClaimedAt: true,
+  pullRequestClosedFromStudioAt: true,
+  runBranchDeletedAt: true,
+  runBranchDeletionFailure: true,
   lastActivityAt: true,
   _count: { select: { steps: true } },
 } as const;
@@ -179,6 +183,10 @@ interface RunRow {
   prPrepareRequestedAt: Date | null;
   prPrepareError: string | null;
   prEndedAt: Date | null;
+  closeClaimedAt: Date | null;
+  pullRequestClosedFromStudioAt: Date | null;
+  runBranchDeletedAt: Date | null;
+  runBranchDeletionFailure: string | null;
   lastActivityAt: Date;
   _count: { steps: number };
   messages?: {
@@ -357,6 +365,10 @@ function toRun(row: RunRow): Run {
       prepareRequestedAt: row.prPrepareRequestedAt,
       prepareError: row.prPrepareError,
       endedAt: row.prEndedAt,
+      closeClaimedAt: row.closeClaimedAt,
+      closedFromStudioAt: row.pullRequestClosedFromStudioAt,
+      runBranchDeletedAt: row.runBranchDeletedAt,
+      runBranchDeletionFailure: row.runBranchDeletionFailure,
     },
     lastActivityAt: row.lastActivityAt,
   });
@@ -460,6 +472,10 @@ const CHANGED_COLUMNS: {
     prPrepareRequestedAt: status!.prepareRequestedAt,
     prPrepareError: status!.prepareError,
     prEndedAt: status!.endedAt,
+    closeClaimedAt: status!.closeClaimedAt,
+    pullRequestClosedFromStudioAt: status!.closedFromStudioAt,
+    runBranchDeletedAt: status!.runBranchDeletedAt,
+    runBranchDeletionFailure: status!.runBranchDeletionFailure,
   }),
   // Counted from the stored Run steps, not a column.
   stepCount: () => ({}),

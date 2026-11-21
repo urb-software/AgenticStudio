@@ -19,6 +19,9 @@ const NO_PULL_REQUEST_STATUS: Parameters<typeof toRunResponse>[0]['pullRequestSt
   checksOnOtherCommit: false,
   preparation: null,
   prepareError: null,
+  closedFromStudioAt: null,
+  runBranchDeletedAt: null,
+  runBranchDeletionFailure: null,
 };
 
 const T0 = new Date('2026-11-15T12:00:00.000Z');
@@ -243,6 +246,36 @@ describe('Run response: pull request state', () => {
       url: 'https://github.com/acme/shop/pull/7',
       number: 7,
     });
+  });
+
+  it('shows when Studio closed the pull request, and what is left of the Run branch', () => {
+    const closed = new Date('2026-11-21T12:00:00.000Z');
+    const done = runResponseSchema.parse(
+      toRunResponse(
+        withPullRequest({
+          state: 'closed',
+          closedFromStudioAt: closed,
+          runBranchDeletedAt: closed,
+        }),
+      ),
+    );
+    expect(done.pullRequest).toMatchObject({
+      state: 'closed',
+      closedFromStudioAt: closed.toISOString(),
+      runBranchDeletedAt: closed.toISOString(),
+    });
+
+    const left = runResponseSchema.parse(
+      toRunResponse(
+        withPullRequest({
+          state: 'closed',
+          closedFromStudioAt: closed,
+          runBranchDeletionFailure: 'Branch is protected.',
+        }),
+      ),
+    );
+    expect(left.pullRequest).toMatchObject({ runBranchDeletionFailure: 'Branch is protected.' });
+    expect(left.pullRequest).not.toHaveProperty('runBranchDeletedAt');
   });
 
   it('shows the state, the branch position, the merge verdict and when it was read', () => {

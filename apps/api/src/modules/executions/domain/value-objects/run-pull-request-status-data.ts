@@ -22,4 +22,11 @@ export interface RunPullRequestStatusData {
    * `null` while it is not over (a reopened one is cleared). Working copy retention counts from it.
    */
   endedAt: Date | null;
+  /** Held while one request closes the pull request or deletes the Run branch. */
+  closeClaimedAt: Date | null;
+  /** Set once Studio closed the pull request with the Merge credential. */
+  closedFromStudioAt: Date | null;
+  runBranchDeletedAt: Date | null;
+  /** Redacted, at most 500 characters; cleared by a successful deletion. */
+  runBranchDeletionFailure: string | null;
 }

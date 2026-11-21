@@ -285,6 +285,10 @@ async function main() {
   const operatorPassword = randomBytes(24).toString('base64url');
   // The agent worker's token for this run only (at least 32 characters); never stored.
   const workerToken = randomBytes(32).toString('base64url');
+  // The Merge credential (the API's) and the Agent account's token (the worker's, set below):
+  // the stub of GitHub tells them apart, and lets only the first close a pull request.
+  const mergeToken = randomBytes(24).toString('base64url');
+  let githubAgentToken = '';
   const serverEnv = {
     // The fixture-remote setting below is accepted only under NODE_ENV=test (#59).
     NODE_ENV: 'test',
@@ -304,7 +308,7 @@ async function main() {
     STUDIO_OPERATOR_GITHUB_LOGIN: 'Smoke-Operator',
     // The Merge credential for this run only, and the GitHub stub as the merge adapter's API
     // (accepted only under NODE_ENV=test).
-    STUDIO_MERGE_TOKEN: randomBytes(24).toString('base64url'),
+    STUDIO_MERGE_TOKEN: mergeToken,
     STUDIO_MERGE_GITHUB_API_URL: `http://127.0.0.1:${GITHUB_STUB_PORT}`,
   };
 
@@ -319,9 +323,11 @@ async function main() {
     // Issue #102: a throwaway Agent account token, for the stub of GitHub only; the stub
     // accepts only this token, a draft and the smoke Runs' integration branch (Issue #115).
     const githubToken = `ghp_${randomBytes(18).toString('hex')}`;
+    githubAgentToken = githubToken;
     startServer('stub-github', process.execPath, ['tests/e2e/stub-github.mjs'], {
       STUB_GITHUB_PORT: String(GITHUB_STUB_PORT),
       STUB_GITHUB_TOKEN: githubToken,
+      STUB_GITHUB_MERGE_TOKEN: mergeToken,
       STUB_GITHUB_BASE: 'dev',
     });
     const githubApi = `http://127.0.0.1:${GITHUB_STUB_PORT}`;
@@ -384,6 +390,8 @@ async function main() {
       E2E_FIXTURE_REPO_BASE: fixtureBase,
       // Issue #142: the smoke changes a pull request's state on the stub of GitHub.
       E2E_GITHUB_STUB_PORT: String(GITHUB_STUB_PORT),
+      // Story #263: the smoke tries a write with the Agent token, which the stub refuses.
+      E2E_GITHUB_AGENT_TOKEN: githubAgentToken,
       PLAYWRIGHT_JSON_OUTPUT_NAME: reportPath,
     },
   );

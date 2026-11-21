@@ -51,6 +51,9 @@ export interface RunView {
     checksOnOtherCommit: boolean;
     preparation: FailingChecksPreparationOutcome;
     prepareError: string | null;
+    closedFromStudioAt: Date | null;
+    runBranchDeletedAt: Date | null;
+    runBranchDeletionFailure: string | null;
   };
   failingChecks: readonly string[];
   resumable: boolean;
@@ -107,6 +110,9 @@ export function runView(run: Run, facts: RunViewFacts): RunView {
       checksOnOtherCommit: status.checksOnOtherCommit(delivery.pushedCommit),
       preparation: status.preparationOutcome(facts.workerConnected, facts.preparedFollowUp),
       prepareError: status.prepareError,
+      closedFromStudioAt: status.closedFromStudioAt,
+      runBranchDeletedAt: status.runBranchDeletedAt,
+      runBranchDeletionFailure: status.runBranchDeletionFailure,
     },
     failingChecks: [...run.failingChecks],
     resumable: run.resumable,

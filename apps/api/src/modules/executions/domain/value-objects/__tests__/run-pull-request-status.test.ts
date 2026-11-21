@@ -234,3 +234,53 @@ describe('RunPullRequestStatus.checksOnOtherCommit', () => {
     expect(status({ checks: { unavailable: true } }).checksOnOtherCommit(COMMIT)).toBe(false);
   });
 });
+
+describe('RunPullRequestStatus closing from Studio', () => {
+  it('claims the close, and refuses a second claim until the first goes stale', () => {
+    const claimed = status({ state: 'open' }).closeClaimed(NOW);
+    expect(claimed.closeClaimedAt).toEqual(NOW);
+    expect(claimed.isCloseClaimed(later(119))).toBe(true);
+    expect(claimed.isCloseClaimed(later(120))).toBe(false);
+    expect(claimed.closeReleased().closeClaimedAt).toBeNull();
+  });
+
+  it('records the close as a fresh closed state that starts retention, keeping the claim', () => {
+    const closed = status({ state: 'open', mergeable: true, closeClaimedAt: NOW }).closedFromStudio(
+      later(5),
+    );
+    expect(closed).toMatchObject({
+      state: 'closed',
+      refreshedAt: later(5),
+      endedAt: later(5),
+      closedFromStudioAt: later(5),
+      mergeable: null,
+      closeClaimedAt: NOW,
+    });
+  });
+
+  it('goes from not closed, to the branch pending, to complete', () => {
+    const closed = status({ state: 'open' }).closedFromStudio(NOW);
+    expect(status({ state: 'open' }).closeProgress).toBe('not_closed');
+    expect(closed.closeProgress).toBe('branch_pending');
+    expect(closed.branchDeleted(later(1)).closeProgress).toBe('complete');
+  });
+
+  it('clears the claim and an earlier failure when the branch is deleted', () => {
+    const failed = status({ closeClaimedAt: NOW, runBranchDeletionFailure: 'Earlier.' });
+    expect(failed.branchDeleted(later(1))).toMatchObject({
+      runBranchDeletedAt: later(1),
+      runBranchDeletionFailure: null,
+      closeClaimedAt: null,
+    });
+  });
+
+  it('keeps the close and a redacted failure of at most 500 characters when the deletion fails', () => {
+    const failed = status({ closedFromStudioAt: NOW, closeClaimedAt: NOW }).branchDeletionFailed(
+      'x'.repeat(600),
+    );
+    expect(failed.closedFromStudioAt).toEqual(NOW);
+    expect(failed.closeClaimedAt).toBeNull();
+    expect(failed.runBranchDeletionFailure).toHaveLength(500);
+    expect(failed.closeProgress).toBe('branch_pending');
+  });
+});

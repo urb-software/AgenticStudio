@@ -35,6 +35,7 @@ type Route =
   | 'followUp'
   | 'bringUp'
   | 'refresh'
+  | 'closePullRequest'
   | 'prepare'
   | 'prepared'
   | 'discardPrepared'
@@ -67,6 +68,7 @@ const ROUTES: readonly [RegExp, (method: string) => Route][] = [
   [/^\/api\/runs\/([^/]+)\/follow-up$/, () => 'followUp'],
   [/^\/api\/runs\/([^/]+)\/bring-up-to-date$/, () => 'bringUp'],
   [/^\/api\/runs\/([^/]+)\/pull-request\/refresh$/, () => 'refresh'],
+  [/^\/api\/runs\/([^/]+)\/pull-request\/close$/, () => 'closePullRequest'],
   [/^\/api\/runs\/([^/]+)\/pull-request\/failing-checks\/prepare$/, () => 'prepare'],
   [
     /^\/api\/runs\/([^/]+)\/pull-request\/failing-checks\/prepared$/,
@@ -172,6 +174,7 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     followUp: [],
     bringUp: [],
     refresh: [],
+    closePullRequest: [],
     prepare: [],
     prepared: [],
     discardPrepared: [],
@@ -448,6 +451,26 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
           return json(409, problem(409, 'No pull request to refresh'));
         }
         return json(202, run);
+      }
+      case 'closePullRequest': {
+        // The API's rules, in short: the close and the deletion both succeed.
+        const index = runs.findIndex((candidate) => candidate.id === id);
+        const run = runs[index];
+        if (!run) return json(404, problem(404, 'Run not found'));
+        if (!run.pullRequest || !['draft', 'open'].includes(run.pullRequest.state ?? '')) {
+          return json(409, problem(409, 'The pull request is not open'));
+        }
+        const at = new Date().toISOString();
+        runs[index] = {
+          ...run,
+          pullRequest: {
+            ...run.pullRequest,
+            state: 'closed',
+            closedFromStudioAt: at,
+            runBranchDeletedAt: at,
+          },
+        };
+        return json(200, { state: 'closed', closedFromStudioAt: at, runBranchDeletedAt: at });
       }
       case 'prepare': {
         // The API only records a request; the Run comes back as it is. Tests move it on with

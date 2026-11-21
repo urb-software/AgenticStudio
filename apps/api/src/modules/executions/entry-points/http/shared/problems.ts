@@ -1,4 +1,5 @@
 import { HttpStatus } from '@nestjs/common';
+import type { ClosePullRequestRefusal } from '@agentic-studio/contracts';
 import type { z } from 'zod';
 import { ProblemException } from '../../../../../platform/http/problem-details.js';
 import type { MergeReviewRefusal } from '../../../domain/value-objects/merge-review-refusal.js';
@@ -34,6 +35,11 @@ export const EXECUTIONS_PROBLEM_TYPES = {
   reviewInProgress: 'urn:agentic-studio:problem:review-in-progress',
   unsupportedPlatform: 'urn:agentic-studio:problem:unsupported-platform',
   mergeReviewFileNotFound: 'urn:agentic-studio:problem:merge-review-file-not-found',
+  closeRunActive: 'urn:agentic-studio:problem:close-run-active',
+  closePullRequestNotOpen: 'urn:agentic-studio:problem:close-pull-request-not-open',
+  closeMergeUnavailable: 'urn:agentic-studio:problem:close-merge-unavailable',
+  closeHostRefused: 'urn:agentic-studio:problem:close-host-refused',
+  closeInProgress: 'urn:agentic-studio:problem:close-in-progress',
 } as const;
 
 const MERGE_REVIEW_REFUSALS: Record<
@@ -116,6 +122,51 @@ export function pullRequestNotRefreshable(): ProblemException {
     type: EXECUTIONS_PROBLEM_TYPES.pullRequestNotRefreshable,
     title: 'No pull request to refresh',
     detail: 'The run has no pull request yet, so there is no state to refresh.',
+  });
+}
+
+const CLOSE_REFUSALS: Record<
+  Exclude<ClosePullRequestRefusal, 'host_refused'>,
+  { type: string; title: string; detail: string }
+> = {
+  run_active: {
+    type: EXECUTIONS_PROBLEM_TYPES.closeRunActive,
+    title: 'The run is still active',
+    detail: 'The run is still working or waiting. Close its pull request once it has ended.',
+  },
+  pull_request_not_open: {
+    type: EXECUTIONS_PROBLEM_TYPES.closePullRequestNotOpen,
+    title: 'The pull request is not open',
+    detail:
+      'The pull request is already merged, closed or gone, or the run has none. There is nothing to close.',
+  },
+  merge_unavailable: {
+    type: EXECUTIONS_PROBLEM_TYPES.closeMergeUnavailable,
+    title: 'Closing is switched off',
+    detail:
+      "Studio cannot close pull requests: the Merge credential is not set, or the run's Git host is not supported.",
+  },
+};
+
+export function closePullRequestRefused(
+  reason: ClosePullRequestRefusal,
+  hostReason?: string,
+): ProblemException {
+  if (reason === 'host_refused') {
+    return new ProblemException(HttpStatus.CONFLICT, {
+      type: EXECUTIONS_PROBLEM_TYPES.closeHostRefused,
+      title: 'The Git host refused',
+      detail: hostReason ? `GitHub refused: ${hostReason}` : 'GitHub refused the request.',
+    });
+  }
+  return new ProblemException(HttpStatus.CONFLICT, CLOSE_REFUSALS[reason]);
+}
+
+export function closeInProgress(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: EXECUTIONS_PROBLEM_TYPES.closeInProgress,
+    title: 'Closing is under way',
+    detail: 'Another request is closing this pull request. Wait a moment and try again.',
   });
 }
 

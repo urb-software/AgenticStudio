@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { PullRequestScope } from '../../../application/ports/merge-host.js';
-import { InMemoryMergeHost } from '../in-memory-merge-host.js';
+import type { PullRequestScope } from '../merge-host.js';
+import { InMemoryMergeHost } from './in-memory-merge-host.js';
 
 const SCOPE: PullRequestScope = {
   remoteUrl: 'https://github.com/acme/shop.git',

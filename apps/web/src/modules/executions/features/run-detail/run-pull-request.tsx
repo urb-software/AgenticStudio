@@ -13,6 +13,7 @@ import { failedRequest } from '../../components/failed-request';
 import { isGitHubPullRequestUrl } from '../../components/github-links';
 import { PULL_REQUEST_STATE_VIEW, summarizeChecks } from '../../components/run-presentation';
 import { BringUpToDateDialog } from '../bring-up-to-date/bring-up-to-date-dialog';
+import { RunClosePullRequest } from './run-close-pull-request';
 import { RunFailingChecks } from './run-failing-checks';
 import { RunReviewComments } from './run-review-comments';
 import { RunPullRequestChecks } from './run-pull-request-checks';
@@ -231,6 +232,7 @@ export function RunPullRequest({ run, pullRequest }: { run: RunOutput; pullReque
           </Fact>
         </dl>
         <BringUpToDate run={run} pullRequest={pullRequest} />
+        <RunClosePullRequest run={run} pullRequest={pullRequest} />
         {pullRequest.state === 'missing' ? (
           <p className="m-0 text-small text-text-muted">
             The pull request, or the Run branch it came from, was not found on GitHub: it may be

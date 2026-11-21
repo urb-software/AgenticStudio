@@ -21,6 +21,12 @@
 // query), set through the same control endpoint (`reviews`, `inlineComments`, `issueComments`,
 // `reviewThreads`).
 //
+// Story #263: the writes Studio's Merge adapter makes to close a pull request (`PATCH .../pulls/<n>`
+// with `state: closed`) and to delete a Run branch (`DELETE .../git/refs/heads/<branch>`). They
+// accept only the Merge credential (`STUB_GITHUB_MERGE_TOKEN`), never the Agent token (403), and
+// the Merge credential reads pull requests too. `GET /__control/audit` lists the writes it
+// accepted and refused, by who made them, for the smoke to check.
+//
 // Like GitHub, it checks what the smoke must prove end to end (Issue #115): every call carries
 // the Agent token (`Authorization: Bearer $STUB_GITHUB_TOKEN`, else 401), and a new pull
 // request is a draft against the integration branch (`draft: true`, `base` =
@@ -34,8 +40,13 @@ if (!Number.isInteger(port) || port <= 0) {
 }
 const token = process.env.STUB_GITHUB_TOKEN ?? '';
 const base = process.env.STUB_GITHUB_BASE ?? '';
+const mergeToken = process.env.STUB_GITHUB_MERGE_TOKEN ?? '';
 if (!token || !base) {
   console.error('STUB_GITHUB_TOKEN and STUB_GITHUB_BASE must be set');
+  process.exit(1);
+}
+if (!mergeToken || mergeToken === token) {
+  console.error('STUB_GITHUB_MERGE_TOKEN must be set, and differ from STUB_GITHUB_TOKEN');
   process.exit(1);
 }
 
@@ -43,6 +54,9 @@ if (!token || !base) {
 const AGENT_LOGIN = 'studio-agent';
 
 const pulls = [];
+
+/** Story #263: the writes it accepted and refused, as `{ method, path, role }`. */
+const audit = { accepted: [], refused: [], deletedBranches: [] };
 
 /** Issue #145: what the checks routes answer, as GitHub words them; set through the control endpoint. */
 let checkRuns = [];
@@ -64,6 +78,7 @@ const server = createServer((request, response) => {
     response.end(JSON.stringify(body));
   };
   if (url.pathname === '/health') return send(200, { status: 'ok' });
+  if (url.pathname === '/__control/audit' && request.method === 'GET') return send(200, audit);
   // Issue #142: the smoke changes a pull request's state, as the operator would on GitHub.
   const control = /^\/__control\/pulls\/([^/]+)\/([^/]+)\/(\d+)$/.exec(url.pathname);
   if (control && request.method === 'POST') {
@@ -117,6 +132,7 @@ const server = createServer((request, response) => {
     /^\/repos\/([^/]+)\/([^/]+)\/pulls\/\d+\/(reviews|comments)$/.exec(url.pathname) ??
     /^\/repos\/([^/]+)\/([^/]+)\/(issues)\/\d+\/comments$/.exec(url.pathname);
   const graphql = url.pathname === '/graphql';
+  const refsRoute = /^\/repos\/([^/]+)\/([^/]+)\/git\/refs\/heads\/(.+)$/.exec(url.pathname);
   if (
     !match &&
     !compare &&
@@ -125,12 +141,52 @@ const server = createServer((request, response) => {
     !logRoute &&
     !commentsRoute &&
     !graphql &&
+    !refsRoute &&
     url.pathname !== '/user'
   )
     return send(404, { message: 'Not Found' });
-  if (request.headers.authorization !== `Bearer ${token}`) {
-    console.log(`[stub-github] refused ${request.method} ${url.pathname}: not the Agent token`);
+  const role =
+    request.headers.authorization === `Bearer ${token}`
+      ? 'agent'
+      : request.headers.authorization === `Bearer ${mergeToken}`
+        ? 'merge'
+        : null;
+  if (role === null) {
+    console.log(`[stub-github] refused ${request.method} ${url.pathname}: unknown token`);
     return send(401, { message: 'Bad credentials' });
+  }
+  /** A write only the Merge credential may make. */
+  const mergeWrite = (method, path) => {
+    if (role === 'merge') {
+      audit.accepted.push({ method, path, role });
+      return true;
+    }
+    audit.refused.push({ method, path, role });
+    console.log(
+      `[stub-github] refused ${method} ${path}: the ${role} credential cannot write this`,
+    );
+    send(403, { message: 'Resource not accessible by this token' });
+    return false;
+  };
+  if (refsRoute && request.method === 'DELETE') {
+    if (!mergeWrite('DELETE', url.pathname)) return;
+    const name = decodeURIComponent(refsRoute[3]);
+    const pr = pulls.find(
+      (candidate) =>
+        candidate.repo === `${refsRoute[1]}/${refsRoute[2]}` &&
+        candidate.branch === name &&
+        !candidate.branchDeleted,
+    );
+    if (!pr) return send(422, { message: 'Reference does not exist' });
+    pr.branchDeleted = true;
+    audit.deletedBranches.push(name);
+    console.log(`[stub-github] deleted branch ${name} in ${pr.repo}`);
+    return response.writeHead(204).end();
+  }
+  if (refsRoute) return send(405, { message: 'Method not allowed' });
+  if (role === 'merge' && request.method !== 'GET' && !(match && request.method === 'PATCH')) {
+    audit.refused.push({ method: request.method, path: url.pathname, role });
+    return send(403, { message: 'The Merge credential cannot write this' });
   }
   if (checksRoute && request.method === 'GET') {
     return checksRoute[3] === 'check-runs'
@@ -185,7 +241,9 @@ const server = createServer((request, response) => {
     const name = decodeURIComponent(branchRoute[3]);
     const known = pulls.some(
       (candidate) =>
-        candidate.repo === `${branchRoute[1]}/${branchRoute[2]}` && candidate.branch === name,
+        candidate.repo === `${branchRoute[1]}/${branchRoute[2]}` &&
+        candidate.branch === name &&
+        !candidate.branchDeleted,
     );
     return known ? send(200, { name }) : send(404, { message: 'Not Found' });
   }
@@ -212,6 +270,7 @@ const server = createServer((request, response) => {
     if (!pr) return send(404, { message: 'Not Found' });
     const full = () => ({
       ...view(pr),
+      node_id: `PR_stub_${pr.number}`,
       state: pr.state,
       merged: pr.merged,
       draft: pr.draft,
@@ -221,7 +280,7 @@ const server = createServer((request, response) => {
         sha: pr.headSha ?? 'c'.repeat(40),
         repo: { full_name: `${owner}/${repo}` },
       },
-      base: { ref: base },
+      base: { ref: base, repo: { full_name: `${owner}/${repo}` } },
       user: { login: AGENT_LOGIN },
       title: pr.title,
       body: pr.body,
@@ -232,6 +291,16 @@ const server = createServer((request, response) => {
     request.on('data', (chunk) => (text += chunk));
     request.on('end', () => {
       const body = JSON.parse(text || '{}');
+      if (body.state !== undefined) {
+        if (!mergeWrite('PATCH', url.pathname)) return;
+        if (body.state === 'closed') pr.state = 'closed';
+        console.log(`[stub-github] closed pull request #${pr.number} in ${owner}/${repo}`);
+        return send(200, full());
+      }
+      if (role !== 'agent') {
+        audit.refused.push({ method: 'PATCH', path: url.pathname, role });
+        return send(403, { message: 'Resource not accessible by this token' });
+      }
       if (typeof body.title === 'string') pr.title = body.title;
       if (typeof body.body === 'string') pr.body = body.body;
       console.log(`[stub-github] updated pull request #${pr.number} in ${owner}/${repo}`);

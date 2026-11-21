@@ -6,8 +6,8 @@ import type {
   MergeHostFailure,
   MergeHostResult,
   PullRequestScope,
-} from '../../application/ports/merge-host.js';
-import { RunBranchRule } from '../../domain/value-objects/run-branch-rule.js';
+} from '../merge-host.js';
+import { RunBranchRule } from '../../../domain/value-objects/run-branch-rule.js';
 
 export type MergeHostMethod =
   | 'readPullRequest'
