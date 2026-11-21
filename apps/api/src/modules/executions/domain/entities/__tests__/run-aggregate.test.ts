@@ -144,6 +144,10 @@ describe('restoring a Run from its flat record and giving it back', () => {
       prepareRequestedAt: T0,
       prepareError: 'The log could not be read.',
       endedAt: T2,
+      closeClaimedAt: T0,
+      closedFromStudioAt: T1,
+      runBranchDeletedAt: null,
+      runBranchDeletionFailure: 'The host refused.',
     },
     messages: [
       { kind: 'question', question: { text: 'Which?', options: ['a', 'b'] }, at: T0 },

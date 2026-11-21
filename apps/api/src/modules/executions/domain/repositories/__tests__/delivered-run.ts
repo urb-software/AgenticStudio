@@ -16,9 +16,10 @@ const WORKING_COPY = {
  */
 export async function deliveredRun(
   runs: InMemoryRunRepository,
-  options: { delivered?: boolean } = {},
+  options: { delivered?: boolean; id?: string } = {},
 ): Promise<Run> {
   const added = await runs.start({
+    ...(options.id === undefined ? {} : { id: options.id }),
     projectId: PROJECT,
     provider: 'claude_code',
     task: 'Add a health check',

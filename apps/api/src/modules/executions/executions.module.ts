@@ -25,6 +25,8 @@ import { PrismaRunMergeReviewRepository } from './infrastructure/repositories/pr
 import { AnswerRunEndpoint } from './entry-points/http/operator/answer-run/endpoint.js';
 import { AnswerRunHandler } from './application/features/answer-run/handler.js';
 import { CancelLongWaitingRunsHandler } from './application/features/cancel-long-waiting-runs/handler.js';
+import { ClosePullRequestEndpoint } from './entry-points/http/operator/close-pull-request/endpoint.js';
+import { ClosePullRequestHandler } from './application/features/close-pull-request/handler.js';
 import { CancelRunEndpoint } from './entry-points/http/operator/cancel-run/endpoint.js';
 import { CancelRunHandler } from './application/features/cancel-run/handler.js';
 import { AppendRunEventsEndpoint } from './entry-points/http/agent-worker/append-run-events/endpoint.js';
@@ -183,6 +185,7 @@ export class ExecutionsModule {
         FollowUpRunEndpoint,
         BringUpToDateEndpoint,
         RefreshPullRequestEndpoint,
+        ClosePullRequestEndpoint,
         PrepareFailingChecksEndpoint,
         GetPreparedFollowUpEndpoint,
         LoadReviewCommentsEndpoint,
@@ -298,6 +301,7 @@ export class ExecutionsModule {
         ResumeRunHandler,
         FollowUpRunHandler,
         RefreshPullRequestHandler,
+        ClosePullRequestHandler,
         PrepareFailingChecksHandler,
         GetPreparedFollowUpHandler,
         LoadReviewCommentsHandler,

@@ -8,11 +8,14 @@ import type { RunPullRequestChecks } from './run-pull-request-checks.js';
 import type { PullRequestRefreshOutcome } from './pull-request-refresh-outcome.js';
 import type { FailingChecksPreparationOutcome } from './failing-checks-preparation-outcome.js';
 import type { PullRequestStateResult } from './pull-request-state-result.js';
+import type { CloseProgress } from './close-progress.js';
 import type { RunPullRequestStatusData } from './run-pull-request-status-data.js';
 
 export type FailingChecksPreparation = 'preparing' | 'ready' | 'failed';
 
 const PAGE_REFRESH_MIN_AGE_SECONDS = 60;
+const CLOSE_CLAIM_SECONDS = 120;
+const DELETION_FAILURE_MAX_LENGTH = 500;
 
 export class RunPullRequestStatus {
   static readonly ENDED_REFUSALS = {
@@ -34,6 +37,10 @@ export class RunPullRequestStatus {
   readonly prepareRequestedAt: Date | null;
   readonly prepareError: string | null;
   readonly endedAt: Date | null;
+  readonly closeClaimedAt: Date | null;
+  readonly closedFromStudioAt: Date | null;
+  readonly runBranchDeletedAt: Date | null;
+  readonly runBranchDeletionFailure: string | null;
 
   private constructor(stored: RunPullRequestStatusData) {
     this.state = stored.state;
@@ -49,6 +56,10 @@ export class RunPullRequestStatus {
     this.prepareRequestedAt = stored.prepareRequestedAt;
     this.prepareError = stored.prepareError;
     this.endedAt = stored.endedAt;
+    this.closeClaimedAt = stored.closeClaimedAt;
+    this.closedFromStudioAt = stored.closedFromStudioAt;
+    this.runBranchDeletedAt = stored.runBranchDeletedAt;
+    this.runBranchDeletionFailure = stored.runBranchDeletionFailure;
   }
 
   static none(): RunPullRequestStatus {
@@ -66,6 +77,10 @@ export class RunPullRequestStatus {
       prepareRequestedAt: null,
       prepareError: null,
       endedAt: null,
+      closeClaimedAt: null,
+      closedFromStudioAt: null,
+      runBranchDeletedAt: null,
+      runBranchDeletionFailure: null,
     });
   }
 
@@ -88,6 +103,10 @@ export class RunPullRequestStatus {
       prepareRequestedAt: this.prepareRequestedAt,
       prepareError: this.prepareError,
       endedAt: this.endedAt,
+      closeClaimedAt: this.closeClaimedAt,
+      closedFromStudioAt: this.closedFromStudioAt,
+      runBranchDeletedAt: this.runBranchDeletedAt,
+      runBranchDeletionFailure: this.runBranchDeletionFailure,
     };
   }
 
@@ -168,6 +187,9 @@ export class RunPullRequestStatus {
    * position, a closed one no merge verdict, and only an open one has checks.
    */
   read(result: PullRequestStateResult, now: Date): RunPullRequestStatus {
+    if (this.closedFromStudioAt !== null && !isEndedPullRequestState(result.state)) {
+      return this.staleReadAfterClose(now);
+    }
     return this.with({
       state: result.state,
       behindBy: result.behindBy ?? null,
@@ -184,6 +206,16 @@ export class RunPullRequestStatus {
             ? { commit: result.checksCommit, checks: result.checks }
             : null,
       endedAt: this.endedAtFor(result.state, now),
+    });
+  }
+
+  /** A close from Studio is final for Studio: a read of it as open again only ends the refresh. */
+  private staleReadAfterClose(now: Date): RunPullRequestStatus {
+    return this.with({
+      refreshedAt: now,
+      refreshError: null,
+      retryAt: null,
+      refreshRequestedAt: null,
     });
   }
 
@@ -215,6 +247,7 @@ export class RunPullRequestStatus {
    * keeping: those are cleared with the state (a closed one keeps its branch position).
    */
   observed(state: PullRequestState, now: Date): RunPullRequestStatus {
+    if (this.closedFromStudioAt !== null && !isEndedPullRequestState(state)) return this;
     const gone = state === 'merged' || state === 'missing';
     const over = gone || state === 'closed';
     return this.with({
@@ -227,6 +260,50 @@ export class RunPullRequestStatus {
       mergeable: over ? null : this.mergeable,
       checks: over ? null : this.checks,
       endedAt: this.endedAtFor(state, now),
+    });
+  }
+
+  get closeProgress(): CloseProgress {
+    if (this.closedFromStudioAt === null) return 'not_closed';
+    return this.runBranchDeletedAt === null ? 'branch_pending' : 'complete';
+  }
+
+  /** A claim older than its lease is stale: its request is taken to have died. */
+  isCloseClaimed(now: Date): boolean {
+    return (
+      this.closeClaimedAt !== null &&
+      now.getTime() - this.closeClaimedAt.getTime() < CLOSE_CLAIM_SECONDS * 1000
+    );
+  }
+
+  closeClaimed(now: Date): RunPullRequestStatus {
+    return this.with({ closeClaimedAt: now });
+  }
+
+  closeReleased(): RunPullRequestStatus {
+    return this.with({ closeClaimedAt: null });
+  }
+
+  /** Reads as a fresh closed state, so retention counts from now; the claim stays for the deletion. */
+  closedFromStudio(now: Date): RunPullRequestStatus {
+    return new RunPullRequestStatus({
+      ...this.observed('closed', now).toData(),
+      closedFromStudioAt: now,
+    });
+  }
+
+  branchDeleted(now: Date): RunPullRequestStatus {
+    return this.with({
+      runBranchDeletedAt: now,
+      runBranchDeletionFailure: null,
+      closeClaimedAt: null,
+    });
+  }
+
+  branchDeletionFailed(reason: string): RunPullRequestStatus {
+    return this.with({
+      runBranchDeletionFailure: reason.slice(0, DELETION_FAILURE_MAX_LENGTH),
+      closeClaimedAt: null,
     });
   }
 }

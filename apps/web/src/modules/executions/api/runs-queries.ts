@@ -249,6 +249,23 @@ export function useRefreshPullRequest(runId: string) {
   });
 }
 
+/**
+ * "Close without merging" and its retry of a failed branch deletion. Any answer reads the Run
+ * again at once: a refusal (409) means the Run is no longer as the page showed it.
+ */
+export function useCloseRunPullRequest(runId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.closeRunPullRequest(runId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: RUNS_KEY }),
+    onError: async (error: unknown) => {
+      if (error instanceof ApiError && error.status === 409) {
+        await queryClient.invalidateQueries({ queryKey: runKey(runId) });
+      }
+    },
+  });
+}
+
 const reviewCommentsKey = (runId: string) => ['review-comments', runId] as const;
 
 /**

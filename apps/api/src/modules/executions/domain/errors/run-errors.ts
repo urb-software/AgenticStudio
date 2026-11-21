@@ -1,3 +1,4 @@
+import type { ClosePullRequestRefusal } from '@agentic-studio/contracts';
 import type { FollowUpRefusal } from '../value-objects/follow-up-refusal.js';
 import type { Provider } from '../value-objects/provider.js';
 import type { RunState } from '../value-objects/run-state.js';
@@ -145,5 +146,23 @@ export class ProviderUnavailableError extends Error {
   ) {
     super(reason);
     this.name = 'ProviderUnavailableError';
+  }
+}
+
+/** `detail` is the Git host's redacted reason, for `host_refused` only. */
+export class ClosePullRequestRefusedError extends Error {
+  constructor(
+    readonly reason: ClosePullRequestRefusal,
+    readonly detail?: string,
+  ) {
+    super(`The pull request cannot be closed from Studio (${reason}).`);
+    this.name = 'ClosePullRequestRefusedError';
+  }
+}
+
+export class CloseInProgressError extends Error {
+  constructor() {
+    super('Another request is closing this pull request.');
+    this.name = 'CloseInProgressError';
   }
 }

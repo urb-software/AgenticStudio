@@ -90,3 +90,16 @@ export interface RunBranchReviews {
     limits: MergeDiffLimits,
   ): Promise<MergeDiffResult>;
 }
+
+export const RUN_INTEGRATION_FETCHES = Symbol('RUN_INTEGRATION_FETCHES');
+
+/**
+ * `started`: the Repository fetches the Integration branch into the Clone (its record, not this
+ * answer, tells how that ended). `not_started`: no fetch could be scheduled.
+ */
+export type IntegrationFetchResult = { status: 'started' } | { status: 'not_started' };
+
+export interface RunIntegrationFetches {
+  /** Never throws for a project that cannot fetch (unknown, no Repository, busy, not Linux). */
+  fetchIntegrationBranch(projectId: string): Promise<IntegrationFetchResult>;
+}

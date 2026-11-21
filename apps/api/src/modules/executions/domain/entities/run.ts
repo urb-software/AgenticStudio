@@ -10,6 +10,8 @@ import type { RunData } from './run-data.js';
 import { EarlierResult } from '../value-objects/earlier-result.js';
 import { RunDelivery } from '../value-objects/run-delivery.js';
 import {
+  CloseInProgressError,
+  ClosePullRequestRefusedError,
   DeliveryNotRetryableError,
   FollowUpNotAllowedError,
   IllegalRunTransitionError,
@@ -273,6 +275,25 @@ export class Run {
 
   resumeMessage(): RunResume | null {
     return this.conversation.resumeMessage(this.claim.hasSession);
+  }
+
+  /** What names the pull request on the Git host; `null` while the pull request or the Run branch is unknown. */
+  get hostPullRequest(): { runBranch: string; pullRequestNumber: number } | null {
+    if (this.delivery.pullRequest === null || this.workingCopy === null) return null;
+    return {
+      runBranch: this.workingCopy.runBranch,
+      pullRequestNumber: this.delivery.pullRequest.number,
+    };
+  }
+
+  /** Working, waiting, or about to work again: nothing may be closed under it. */
+  get isActive(): boolean {
+    return (
+      !this.lifecycle.isFinal ||
+      this.claim.isHeld ||
+      this.delivery.requested ||
+      this.progress.followUpQueued
+    );
   }
 
   /** The lookup is limited to the Run branch, so it must be known. */
@@ -855,6 +876,41 @@ export class Run {
     } else if (kind === 'failing_check_logs') {
       this.updateStatus(this.pullRequestStatus.preparationFailed(error, retryAt, requestedAt));
     }
+  }
+
+  /**
+   * Claims the close or the deletion after it (`done`: none). `resume_close`: an earlier attempt
+   * died holding the claim. Throws {@link ClosePullRequestRefusedError} or {@link CloseInProgressError}.
+   */
+  claimClose(now: Date): 'close' | 'resume_close' | 'delete_branch' | 'done' {
+    if (this.isActive) throw new ClosePullRequestRefusedError('run_active');
+    if (this.hostPullRequest === null) {
+      throw new ClosePullRequestRefusedError('pull_request_not_open');
+    }
+    const status = this.pullRequestStatus;
+    const progress = status.closeProgress;
+    if (progress === 'complete') return 'done';
+    if (status.isCloseClaimed(now)) throw new CloseInProgressError();
+    this.updateStatus(status.closeClaimed(now));
+    if (progress === 'branch_pending') return 'delete_branch';
+    return status.closeClaimedAt === null ? 'close' : 'resume_close';
+  }
+
+  releaseCloseClaim(): void {
+    this.updateStatus(this.pullRequestStatus.closeReleased());
+  }
+
+  recordClosedFromStudio(now: Date): void {
+    this.updateStatus(this.pullRequestStatus.closedFromStudio(now));
+  }
+
+  recordBranchDeleted(now: Date): void {
+    this.updateStatus(this.pullRequestStatus.branchDeleted(now));
+  }
+
+  /** `reason` is the host's, redacted. */
+  recordBranchDeletionFailed(reason: string): void {
+    this.updateStatus(this.pullRequestStatus.branchDeletionFailed(reason));
   }
 
   /** A Run without a pull request is left alone. */

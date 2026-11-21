@@ -1,4 +1,4 @@
-import { mergeAvailabilitySchema } from '@agentic-studio/contracts';
+import { mergeAvailabilitySchema, pullRequestClosureSchema } from '@agentic-studio/contracts';
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
@@ -174,6 +174,7 @@ export const runResponseSchema = z
          * else pushed.
          */
         checksOtherCommit: z.literal(true).optional(),
+        ...pullRequestClosureSchema.shape,
         failingChecksPreparation: z
           .object({
             state: failingChecksPreparationSchema,
@@ -259,6 +260,9 @@ export function toRunResponse(
       checksOnOtherCommit: boolean;
       preparation: 'preparing' | 'no_worker' | 'failed' | 'ready' | null;
       prepareError: string | null;
+      closedFromStudioAt: Date | null;
+      runBranchDeletedAt: Date | null;
+      runBranchDeletionFailure: string | null;
     };
     failingChecks: readonly string[];
     resumable: boolean;
@@ -437,6 +441,25 @@ function toPullRequestResponse(
     ...(status.refresh === 'refreshing' ? { refreshing: true as const } : {}),
     ...checksResponse(status),
     ...preparationResponse(status),
+    ...closureResponse(status),
+  };
+}
+
+export function closureResponse(status: {
+  closedFromStudioAt: Date | null;
+  runBranchDeletedAt: Date | null;
+  runBranchDeletionFailure: string | null;
+}) {
+  return {
+    ...(status.closedFromStudioAt
+      ? { closedFromStudioAt: status.closedFromStudioAt.toISOString() }
+      : {}),
+    ...(status.runBranchDeletedAt
+      ? { runBranchDeletedAt: status.runBranchDeletedAt.toISOString() }
+      : {}),
+    ...(status.runBranchDeletionFailure
+      ? { runBranchDeletionFailure: status.runBranchDeletionFailure }
+      : {}),
   };
 }
 

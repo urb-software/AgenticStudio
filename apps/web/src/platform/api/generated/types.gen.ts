@@ -191,6 +191,9 @@ export type RunPullRequestOutput = {
     checksCommit?: string;
     checksUnavailable?: true;
     checksOtherCommit?: true;
+    closedFromStudioAt?: string;
+    runBranchDeletedAt?: string;
+    runBranchDeletionFailure?: string;
     failingChecksPreparation?: FailingChecksPreparationOutput;
 };
 
@@ -259,6 +262,13 @@ export type BringUpToDateRequest = {
 
 export type RefreshPullRequestRequest = {
     onOpen?: boolean;
+};
+
+export type ClosePullRequestResponseOutput = {
+    closedFromStudioAt: string;
+    runBranchDeletedAt?: string;
+    runBranchDeletionFailure?: string;
+    state: 'draft' | 'open' | 'merged' | 'closed' | 'missing';
 };
 
 export type PreparedFollowUpCheckOutput = {
@@ -1257,6 +1267,38 @@ export type RefreshRunPullRequestResponses = {
 };
 
 export type RefreshRunPullRequestResponse = RefreshRunPullRequestResponses[keyof RefreshRunPullRequestResponses];
+
+export type CloseRunPullRequestData = {
+    body?: never;
+    path: {
+        runId: string;
+    };
+    query?: never;
+    url: '/api/runs/{runId}/pull-request/close';
+};
+
+export type CloseRunPullRequestErrors = {
+    /**
+     * Unknown run (urn:agentic-studio:problem:run-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * Refused: urn:agentic-studio:problem:close-run-active, urn:agentic-studio:problem:close-pull-request-not-open, urn:agentic-studio:problem:close-merge-unavailable, urn:agentic-studio:problem:close-host-refused or urn:agentic-studio:problem:close-in-progress
+     */
+    409: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type CloseRunPullRequestError = CloseRunPullRequestErrors[keyof CloseRunPullRequestErrors];
+
+export type CloseRunPullRequestResponses = {
+    200: ClosePullRequestResponseOutput;
+};
+
+export type CloseRunPullRequestResponse = CloseRunPullRequestResponses[keyof CloseRunPullRequestResponses];
 
 export type PrepareRunFailingChecksData = {
     body?: never;

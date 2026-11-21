@@ -129,6 +129,10 @@ describe('lookups: claim and result', () => {
       checks: null,
       prepareRequestedAt: null,
       prepareError: null,
+      closeClaimedAt: null,
+      closedFromStudioAt: null,
+      runBranchDeletedAt: null,
+      runBranchDeletionFailure: null,
     });
   });
 

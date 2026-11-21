@@ -6,6 +6,7 @@ import type {
   AnswerRunRequest,
   BringUpToDateRequest,
   CancelRunResponseOutput,
+  ClosePullRequestResponseOutput,
   ConnectRepositoryRequest,
   CreateProjectRequest,
   EnvironmentFileInfoOutput,
@@ -51,6 +52,7 @@ export type {
   AnswerRunRequest,
   BringUpToDateRequest,
   CancelRunResponseOutput,
+  ClosePullRequestResponseOutput,
   ConnectRepositoryRequest,
   CreateProjectRequest,
   EnvironmentFileInfoOutput,
@@ -306,6 +308,12 @@ export const api = {
    * Asks the agent worker to read the logs of the pull request's failing checks. Nothing is sent
    * to an agent.
    */
+  /**
+   * Closes the Run's pull request without merging and deletes its Run branch (200). Repeating it
+   * after a failed deletion retries only the deletion.
+   */
+  closeRunPullRequest: (runId: string): Promise<ClosePullRequestResponseOutput> =>
+    unwrap(sdk.closeRunPullRequest({ path: { runId } })),
   prepareRunFailingChecks: (runId: string): Promise<RunOutput> =>
     unwrap(sdk.prepareRunFailingChecks({ path: { runId } })),
   /** The Follow-up prepared from the failing checks, for review; 404 when none. */

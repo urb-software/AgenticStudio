@@ -1169,4 +1169,92 @@ test(RUN_TEST, async ({ page }, testInfo) => {
   await expect(page).toHaveURL(/\/executions$/);
   await expect(deliveredRow).toContainText('Pull request #1');
   await expect(deliveredRow).toContainText('Merged');
+
+  // Story #263: a Run the operator rejects. A new Run delivers a draft pull request. The stub of
+  // GitHub refuses a close or a branch deletion made with the Agent token; "Close without merging"
+  // closes it with Studio's Merge credential and deletes the Run branch there, and the card says so.
+  await deliveredRow.getByRole('link').first().click();
+  await expect(heading).toHaveText('Change a file [fake:checks-failed]');
+  await main.getByRole('button', { name: 'Run again' }).click();
+  await dialog.getByLabel('Task').fill('Rejected change [fake:commit]');
+  await dialog.getByRole('button', { name: 'Start run' }).click();
+  await expect(heading).toHaveText('Rejected change [fake:commit]');
+  await expect(pill).toHaveText('Succeeded', { timeout: 30_000 });
+  await expect(main.getByText('Draft pull request opened.')).toBeVisible();
+  await expect(pullRequestCard.getByText('Draft', { exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
+  const rejectedHref =
+    (await pullRequestCard.getByRole('link', { name: /#\d+/ }).getAttribute('href')) ?? '';
+  const [, rejectedOwner, rejectedRepository, rejectedNumber] =
+    /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)$/.exec(rejectedHref) ?? [];
+  const rejectedBranch = (await pullRequestCard.getByText(/^agent\//).textContent()) ?? '';
+  const stub = `http://127.0.0.1:${process.env.E2E_GITHUB_STUB_PORT}`;
+  const asAgent = { Authorization: `Bearer ${process.env.E2E_GITHUB_AGENT_TOKEN}` };
+  expect(
+    (
+      await fetch(`${stub}/repos/${rejectedOwner}/${rejectedRepository}/pulls/${rejectedNumber}`, {
+        method: 'PATCH',
+        headers: asAgent,
+        body: JSON.stringify({ state: 'closed' }),
+      })
+    ).status,
+  ).toBe(403);
+  expect(
+    (
+      await fetch(
+        `${stub}/repos/${rejectedOwner}/${rejectedRepository}/git/refs/heads/${rejectedBranch}`,
+        { method: 'DELETE', headers: asAgent },
+      )
+    ).status,
+  ).toBe(403);
+
+  const closeWithoutMerging = pullRequestCard.getByRole('button', {
+    name: 'Close without merging',
+  });
+  await expect(closeWithoutMerging).toBeVisible();
+  await expectInBothThemes(page, pullRequestCard);
+  await closeWithoutMerging.click();
+  const closeDialog = page.getByRole('alertdialog', { name: 'Close without merging' });
+  await expect(closeDialog).toContainText('The Run branch is deleted on GitHub');
+  await expect(closeDialog).toContainText('The run takes no more Follow-ups.');
+  await expectNoHorizontalScroll(page);
+  await expectNoAxeViolations(page);
+  await closeDialog.getByRole('button', { name: 'Close without merging' }).click();
+  await expect(pullRequestCard).toContainText('Closed from Studio', { timeout: 30_000 });
+  await expect(pullRequestCard).toContainText('The Run branch was deleted');
+  await expect(pullRequestCard.getByText('Closed', { exact: true })).toBeVisible();
+  await expect(closeWithoutMerging).toHaveCount(0);
+  await expectInBothThemes(page, pullRequestCard);
+
+  // The stub saw the close and the deletion, both made with the Merge credential, and the two
+  // refused writes made with the Agent token (this repository's only; the stub serves every
+  // Playwright project); the page and a reload agree.
+  const audit = (await (await fetch(`${stub}/__control/audit`)).json()) as {
+    accepted: { method: string; path: string; role: string }[];
+    refused: { path: string; role: string }[];
+    deletedBranches: string[];
+  };
+  const mine = (path: string) => path.startsWith(`/repos/${rejectedOwner}/${rejectedRepository}/`);
+  expect(audit.accepted.filter((entry) => mine(entry.path))).toEqual([
+    {
+      method: 'PATCH',
+      path: `/repos/${rejectedOwner}/${rejectedRepository}/pulls/${rejectedNumber}`,
+      role: 'merge',
+    },
+    {
+      method: 'DELETE',
+      path: `/repos/${rejectedOwner}/${rejectedRepository}/git/refs/heads/${rejectedBranch}`,
+      role: 'merge',
+    },
+  ]);
+  expect(audit.refused.filter((entry) => mine(entry.path)).map((entry) => entry.role)).toEqual([
+    'agent',
+    'agent',
+  ]);
+  expect(audit.deletedBranches.filter((name) => name === rejectedBranch)).toEqual([rejectedBranch]);
+  await page.reload();
+  await expect(heading).toHaveText('Rejected change [fake:commit]');
+  await expect(pullRequestCard).toContainText('Closed from Studio');
+  await expect(pullRequestCard).toContainText('The Run branch was deleted');
 });
