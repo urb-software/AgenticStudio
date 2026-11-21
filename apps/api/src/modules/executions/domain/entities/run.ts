@@ -39,7 +39,10 @@ import type { RunStepOutcome, RunStepRecord } from './run-step-facts.js';
 import { RunLifecycle } from '../value-objects/run-lifecycle.js';
 import { RunProgress } from '../value-objects/run-progress.js';
 import { RunPullRequestStatus } from '../value-objects/run-pull-request-status.js';
-import { type PullRequestState } from '../value-objects/pull-request-state.js';
+import {
+  isEndedPullRequestState,
+  type PullRequestState,
+} from '../value-objects/pull-request-state.js';
 import { type PullRequestStateResult } from '../value-objects/pull-request-state-result.js';
 import type { RunResume } from '../value-objects/run-resume.js';
 import { isClaimedRunState, isFinalRunState, type RunState } from '../value-objects/run-state.js';
@@ -275,6 +278,35 @@ export class Run {
   /** The lookup is limited to the Run branch, so it must be known. */
   canRefreshPullRequest(): boolean {
     return this.delivery.hasPullRequest && this.workingCopy !== null;
+  }
+
+  /** The Run branch a merge review fetches: known once an agent worker reported the Working copy. */
+  get runBranch(): string | null {
+    return this.workingCopy?.runBranch ?? null;
+  }
+
+  /**
+   * A merge review needs a pull request and a known Run branch, and a pull request that is not
+   * merged, closed or missing (a draft one is fine, and so is one not read yet).
+   */
+  mergeReviewRefusal(): 'no_pull_request' | 'pull_request_not_open' | null {
+    if (!this.delivery.hasPullRequest || this.runBranch === null) return 'no_pull_request';
+    return isEndedPullRequestState(this.pullRequestStatus.state) ? 'pull_request_not_open' : null;
+  }
+
+  /**
+   * The newest commit of the Run branch Studio knows of: the one the Run pushed, or the pull
+   * request's head from the latest lookup when that was read after the Run last finished.
+   */
+  latestKnownHead(): string | null {
+    const pushed = this.delivery.pushedCommit;
+    const { checks, refreshedAt } = this.pullRequestStatus;
+    const looked = checks === null || checks.unavailable ? null : checks.commit;
+    if (looked === null || refreshedAt === null) return pushed;
+    if (pushed === null) return looked;
+    const finishedAt = this.lifecycle.finishedAt;
+    const lookupIsNewer = finishedAt === null || refreshedAt.getTime() >= finishedAt.getTime();
+    return lookupIsNewer ? looked : pushed;
   }
 
   get resumable(): boolean {

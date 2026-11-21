@@ -14,6 +14,8 @@ import type {
   ProjectDetailOutput,
   ProjectListOutput,
   LoadReviewCommentsRequest,
+  MergeReviewFileOutput,
+  MergeReviewOutput,
   ProjectOutput,
   PreparedFollowUpOutput,
   ProviderListOutput,
@@ -59,6 +61,9 @@ export type {
   ProjectListOutput,
   ProjectOutput,
   LoadReviewCommentsRequest,
+  MergeReviewFileOutput,
+  MergeReviewFileSummaryOutput,
+  MergeReviewOutput,
   PreparedFollowUpCheckOutput,
   PreparedFollowUpOutput,
   ProviderAvailabilityOutput,
@@ -340,6 +345,18 @@ export const api = {
     path: string,
   ): Promise<RunDiffFileOutput> =>
     unwrap(sdk.getRunDiffFile({ path: { runId }, query: { scope, path } })),
+
+  /** The merge review Studio computed for a Run (`none` until one is requested). */
+  getRunMergeReview: (runId: string): Promise<MergeReviewOutput> =>
+    unwrap(sdk.getRunMergeReview({ path: { runId } })),
+
+  /** Starts a merge review (202, no body: it is prepared in the background). */
+  requestRunMergeReview: async (runId: string): Promise<void> => {
+    await unwrap(sdk.requestRunMergeReview({ path: { runId } }));
+  },
+
+  getRunMergeReviewFile: (runId: string, path: string): Promise<MergeReviewFileOutput> =>
+    unwrap(sdk.getRunMergeReviewFile({ path: { runId }, query: { path } })),
 };
 
 /**

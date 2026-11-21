@@ -16,6 +16,9 @@
     "executions/RunLookup": {
       "reason": "Its own id and repository; a lookup is claimed and answered by a worker in its own transaction; refers to the Run by id."
     },
+    "executions/RunMergeReview": {
+      "reason": "Its own repository, one review per Run, claimed and finished by conditional writes of its own; refers to the Run by id and no rule spans it and the Run."
+    },
     "projects/EnvironmentFile": {
       "reason": "Its own repository; it outlives disconnecting the Repository and holds only the secret store reference; refers to the Project by id."
     },

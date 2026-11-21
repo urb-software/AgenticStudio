@@ -38,12 +38,18 @@ export interface RunOptions {
   signal?: AbortSignal;
   watch?: SizeWatch;
   memoryBound?: MemoryBound;
+  /**
+   * Keeps the first bytes of stdout instead of the last, and ends the process once more than
+   * this many arrive (`stdoutCut` is then true). For output whose start matters, such as a patch.
+   */
+  stdoutLimitBytes?: number;
 }
 
 export interface RunResult {
   exitCode: number | null;
   stdout: string;
   stderr: string;
+  stdoutCut: boolean;
 }
 
 /** Kept per stream; Git's useful messages are at the end. */
@@ -80,24 +86,40 @@ export function runGitProcess(options: RunOptions): Promise<RunResult> {
     });
     let stdout = '';
     let stderr = '';
+    let stdoutBytes = 0;
+    let stdoutCut = false;
     let interrupted: InterruptReason | null = null;
     let spawnError: Error | null = null;
+    const stdoutLimit = options.stdoutLimitBytes;
     child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
-      stdout = appendCapped(stdout, chunk);
+      if (stdoutLimit === undefined) {
+        stdout = appendCapped(stdout, chunk);
+        return;
+      }
+      if (stdoutCut) return;
+      stdoutBytes += Buffer.byteLength(chunk);
+      stdout += chunk;
+      if (stdoutBytes > stdoutLimit) {
+        stdoutCut = true;
+        endGroup();
+      }
     });
     child.stderr.setEncoding('utf8').on('data', (chunk: string) => {
       stderr = appendCapped(stderr, chunk);
     });
 
-    const killTree = (reason: InterruptReason) => {
-      if (interrupted) return;
-      interrupted = reason;
+    const endGroup = () => {
       if (child.pid === undefined) return;
       try {
         process.kill(-child.pid, 'SIGKILL');
       } catch {
         // The group is already gone.
       }
+    };
+    const killTree = (reason: InterruptReason) => {
+      if (interrupted) return;
+      interrupted = reason;
+      endGroup();
     };
 
     const timer = setTimeout(() => killTree('timeout'), Math.max(0, options.deadline - Date.now()));
@@ -141,7 +163,7 @@ export function runGitProcess(options: RunOptions): Promise<RunResult> {
       } else if (spawnError) {
         reject(spawnError);
       } else {
-        resolve({ exitCode, stdout, stderr });
+        resolve({ exitCode, stdout, stderr, stdoutCut });
       }
     });
   });

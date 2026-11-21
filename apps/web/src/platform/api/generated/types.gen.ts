@@ -362,6 +362,32 @@ export type RunDiffFileOutput = {
     binary?: true;
 };
 
+export type MergeReviewFileSummaryOutput = {
+    path: string;
+    previousPath?: string;
+    status: 'added' | 'modified' | 'deleted' | 'renamed';
+    binary?: true;
+    cut: boolean;
+};
+
+export type MergeReviewOutput = {
+    state: 'none' | 'preparing' | 'ready' | 'failed' | 'out_of_date';
+    runCommit?: string;
+    integrationCommit?: string;
+    files: Array<MergeReviewFileSummaryOutput>;
+    truncated: boolean;
+    failure?: string;
+};
+
+export type MergeReviewFileOutput = {
+    path: string;
+    previousPath?: string;
+    status: 'added' | 'modified' | 'deleted' | 'renamed';
+    binary?: true;
+    cut: boolean;
+    patch?: string;
+};
+
 export type ProviderAvailabilityOutput = {
     id: 'claude_code' | 'codex';
     name: string;
@@ -1565,6 +1591,101 @@ export type GetRunDiffFileResponses = {
 };
 
 export type GetRunDiffFileResponse = GetRunDiffFileResponses[keyof GetRunDiffFileResponses];
+
+export type GetRunMergeReviewData = {
+    body?: never;
+    path: {
+        runId: string;
+    };
+    query?: never;
+    url: '/api/runs/{runId}/merge-review';
+};
+
+export type GetRunMergeReviewErrors = {
+    /**
+     * Unknown run (urn:agentic-studio:problem:run-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type GetRunMergeReviewError = GetRunMergeReviewErrors[keyof GetRunMergeReviewErrors];
+
+export type GetRunMergeReviewResponses = {
+    200: MergeReviewOutput;
+};
+
+export type GetRunMergeReviewResponse = GetRunMergeReviewResponses[keyof GetRunMergeReviewResponses];
+
+export type RequestRunMergeReviewData = {
+    body?: never;
+    path: {
+        runId: string;
+    };
+    query?: never;
+    url: '/api/runs/{runId}/merge-review';
+};
+
+export type RequestRunMergeReviewErrors = {
+    /**
+     * Unknown run (urn:agentic-studio:problem:run-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * No pull request (urn:agentic-studio:problem:no-pull-request), pull request not open (urn:agentic-studio:problem:pull-request-not-open), repository not ready (urn:agentic-studio:problem:repository-not-ready), review in progress (urn:agentic-studio:problem:review-in-progress) or not on Linux (urn:agentic-studio:problem:unsupported-platform)
+     */
+    409: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type RequestRunMergeReviewError = RequestRunMergeReviewErrors[keyof RequestRunMergeReviewErrors];
+
+export type RequestRunMergeReviewResponses = {
+    /**
+     * The review is being prepared in the background.
+     */
+    202: unknown;
+};
+
+export type GetRunMergeReviewFileData = {
+    body?: never;
+    path: {
+        runId: string;
+    };
+    query: {
+        path: string;
+    };
+    url: '/api/runs/{runId}/merge-review/file';
+};
+
+export type GetRunMergeReviewFileErrors = {
+    /**
+     * Invalid path
+     */
+    400: ProblemDetails;
+    /**
+     * Unknown run (urn:agentic-studio:problem:run-not-found) or file not in the review (urn:agentic-studio:problem:merge-review-file-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type GetRunMergeReviewFileError = GetRunMergeReviewFileErrors[keyof GetRunMergeReviewFileErrors];
+
+export type GetRunMergeReviewFileResponses = {
+    200: MergeReviewFileOutput;
+};
+
+export type GetRunMergeReviewFileResponse = GetRunMergeReviewFileResponses[keyof GetRunMergeReviewFileResponses];
 
 export type ListProvidersData = {
     body?: never;

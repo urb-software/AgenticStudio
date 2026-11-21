@@ -39,6 +39,7 @@ import { CancelRunDialog } from '../cancel-run/cancel-run-dialog';
 import { NewRunDialog } from '../new-run/new-run-dialog';
 import { RunChanges } from '../run-changes/run-changes';
 import { RunLog, type RunLogHandle } from '../run-log/run-log';
+import { RunMergeReview } from '../run-merge-review/run-merge-review';
 import { AnswerQuestion, RunConversation } from './run-conversation';
 import { RunCommits, RunDelivery } from './run-delivery';
 import { RunFollowUp } from './run-follow-up';
@@ -474,7 +475,15 @@ export function RunDetail({ runId }: { runId: string }) {
           <RunLog key={`${run.id}-${run.followUps}`} ref={log} run={run} />
         </TabPanel>
         <TabPanel value="changes">
-          <RunChanges key={`${run.id}-${run.followUps}`} run={run} />
+          <div className="flex min-w-0 flex-col gap-8">
+            <RunMergeReview run={run} />
+            <section aria-labelledby="run-diff-title" className="flex min-w-0 flex-col gap-3">
+              <h2 id="run-diff-title" className="m-0 text-body font-semibold text-text">
+                Run diff, reported by the agent worker
+              </h2>
+              <RunChanges key={`${run.id}-${run.followUps}`} run={run} />
+            </section>
+          </div>
         </TabPanel>
       </Tabs>
     </div>

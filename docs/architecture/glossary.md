@@ -106,6 +106,10 @@ _Avoid_: Approval (alone), sign-off, review approval
 The operator's action that closes a Run's pull request without merging it, when the Run's work is rejected. Studio then deletes the Run branch, fetches the Project's Clone and refreshes the Pull request state.
 _Avoid_: Reject, abandon, discard
 
+**Merge review**:
+What the Integration branch would gain from a Run's branch, computed on Studio's side: Studio fetches the Run branch into the Project's Clone with the Project's own credentials, merges it with the Integration branch in the Clone (no working tree) and shows the result's changes, redacted. It is the diff the operator reviews before a Merge; the Run diff is the agent worker's account and is not the basis of an approval. A review is of one commit and reads as out of date once the Run branch has another.
+_Avoid_: Preview (a different, later concept), PR diff
+
 **Merge credential**:
 The token on Studio's side that a Merge or a Close without merging uses on the Git host: a fine-grained token of the operator's Git host account, limited to the managed Repositories, with write access to pull requests and contents. It is never given to the agent side. While it is unset, merging and closing are switched off.
 _Avoid_: Merge token (for the concept), operator token, Agent account

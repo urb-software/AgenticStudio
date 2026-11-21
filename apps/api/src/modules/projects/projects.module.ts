@@ -2,7 +2,7 @@ import { type DynamicModule, Module } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config.js';
 import { DatabaseModule } from '../../platform/database/database.module.js';
 import { SecretsModule } from '../../platform/secrets/secrets.module.js';
-import { RUN_ENVIRONMENT_FILES, RUN_START_POINTS } from './contracts/index.js';
+import { RUN_BRANCH_REVIEWS, RUN_ENVIRONMENT_FILES, RUN_START_POINTS } from './contracts/index.js';
 import { ENVIRONMENT_FILE_REPOSITORY } from './domain/repositories/environment-file-repository.js';
 import { PROJECT_REPOSITORY } from './domain/repositories/project-repository.js';
 import { REPOSITORY_CONNECTION_REPOSITORY } from './domain/repositories/repository-connection-repository.js';
@@ -34,7 +34,11 @@ import { SetEnvironmentFileEndpoint } from './entry-points/http/operator/set-env
 import { SetEnvironmentFileHandler } from './application/features/set-environment-file/handler.js';
 import { SweepOrphanedEnvironmentFilesHandler } from './application/features/sweep-orphaned-environment-files/handler.js';
 import { ProjectRunEnvironmentFiles } from './entry-points/contracts/run-environment-files.js';
+import { ProjectRunBranchReviews } from './entry-points/contracts/run-branch-reviews.js';
 import { ProjectRunStartPoints } from './entry-points/contracts/run-start-points.js';
+import { FetchForReviewHandler } from './application/features/fetch-for-review/handler.js';
+import { MergeDiffHandler } from './application/features/merge-diff/handler.js';
+import { GetReviewSupportHandler } from './application/features/get-review-support/handler.js';
 import { GetRunStartPointHandler } from './application/features/get-run-start-point/handler.js';
 import { ListProjectsEndpoint } from './entry-points/http/operator/list-projects/endpoint.js';
 import { ListProjectsHandler } from './application/features/list-projects/handler.js';
@@ -92,7 +96,7 @@ export interface ProjectsModuleOptions {
 
 /**
  * `projects` business module: projects, their Repository (Git adapter, background jobs) and
- * Environment file. Other modules reach it through {@link RUN_START_POINTS} and {@link RUN_ENVIRONMENT_FILES}.
+ * Environment file. Other modules reach it through {@link RUN_START_POINTS}, {@link RUN_ENVIRONMENT_FILES} and {@link RUN_BRANCH_REVIEWS}.
  */
 @Module({})
 export class ProjectsModule {
@@ -188,8 +192,12 @@ export class ProjectsModule {
         SweepOrphanedEnvironmentFilesHandler,
         GetRunEnvironmentFileHandler,
         { provide: RUN_ENVIRONMENT_FILES, useClass: ProjectRunEnvironmentFiles },
+        FetchForReviewHandler,
+        MergeDiffHandler,
+        GetReviewSupportHandler,
+        { provide: RUN_BRANCH_REVIEWS, useClass: ProjectRunBranchReviews },
       ],
-      exports: [RUN_START_POINTS, RUN_ENVIRONMENT_FILES],
+      exports: [RUN_START_POINTS, RUN_ENVIRONMENT_FILES, RUN_BRANCH_REVIEWS],
     };
   }
 }

@@ -1,6 +1,7 @@
 import { HttpStatus } from '@nestjs/common';
 import type { z } from 'zod';
 import { ProblemException } from '../../../../../platform/http/problem-details.js';
+import type { MergeReviewRefusal } from '../../../domain/value-objects/merge-review-refusal.js';
 import type { followUpRefusalSchema } from './run-response.js';
 
 export const EXECUTIONS_PROBLEM_TYPES = {
@@ -28,7 +29,56 @@ export const EXECUTIONS_PROBLEM_TYPES = {
   lookupNotFound: 'urn:agentic-studio:problem:lookup-not-found',
   lookupNotHeld: 'urn:agentic-studio:problem:lookup-not-held',
   lookupKindMismatch: 'urn:agentic-studio:problem:lookup-kind-mismatch',
+  noPullRequest: 'urn:agentic-studio:problem:no-pull-request',
+  pullRequestNotOpen: 'urn:agentic-studio:problem:pull-request-not-open',
+  reviewInProgress: 'urn:agentic-studio:problem:review-in-progress',
+  unsupportedPlatform: 'urn:agentic-studio:problem:unsupported-platform',
+  mergeReviewFileNotFound: 'urn:agentic-studio:problem:merge-review-file-not-found',
 } as const;
+
+const MERGE_REVIEW_REFUSALS: Record<
+  MergeReviewRefusal,
+  { type: string; title: string; detail: string }
+> = {
+  no_pull_request: {
+    type: EXECUTIONS_PROBLEM_TYPES.noPullRequest,
+    title: 'No pull request',
+    detail: 'The run has no pull request, or no known run branch, so there is nothing to review.',
+  },
+  pull_request_not_open: {
+    type: EXECUTIONS_PROBLEM_TYPES.pullRequestNotOpen,
+    title: 'Pull request not open',
+    detail:
+      "The run's pull request is merged, closed or gone, so there is nothing left to merge. Refresh its state or start a new run.",
+  },
+  repository_not_ready: {
+    type: EXECUTIONS_PROBLEM_TYPES.repositoryNotReady,
+    title: 'Repository not ready',
+    detail: "The project's repository is not ready. Fetch it, then request the review again.",
+  },
+  review_in_progress: {
+    type: EXECUTIONS_PROBLEM_TYPES.reviewInProgress,
+    title: 'Review in progress',
+    detail: 'A review of this run is already being prepared. Wait for it to finish.',
+  },
+  unsupported_platform: {
+    type: EXECUTIONS_PROBLEM_TYPES.unsupportedPlatform,
+    title: 'Reviews need Linux',
+    detail: 'Studio computes the review with Git on Linux, and this API does not run on Linux.',
+  },
+};
+
+export function mergeReviewRefused(reason: MergeReviewRefusal): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, MERGE_REVIEW_REFUSALS[reason]);
+}
+
+export function mergeReviewFileNotFound(): ProblemException {
+  return new ProblemException(HttpStatus.NOT_FOUND, {
+    type: EXECUTIONS_PROBLEM_TYPES.mergeReviewFileNotFound,
+    title: 'File not in the review',
+    detail: "The run's merge review lists no file at this path.",
+  });
+}
 
 const FOLLOW_UP_REFUSAL_DETAILS: Record<z.infer<typeof followUpRefusalSchema>, string> = {
   pull_request_merged:

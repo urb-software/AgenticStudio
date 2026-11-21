@@ -10,10 +10,20 @@ import {
   GitOperationError,
   GitRequestRejectedError,
   GitUnsupportedPlatformError,
+  type MergeDiffFile,
+  type MergeDiffFileStatus,
+  type MergeDiffLimits,
+  type MergeDiffOutcome,
   type RemoteInspection,
   type RepositoryGit,
+  type ReviewFetch,
   type SshCredentials,
 } from '../../../application/ports/repository-git.js';
+import { ReviewRefs } from '../../../domain/value-objects/review-refs.js';
+import {
+  InvalidReviewedRunBranchError,
+  ReviewedRunBranch,
+} from '../../../domain/value-objects/reviewed-run-branch.js';
 import {
   IntegrationBranch,
   InvalidIntegrationBranchError,
@@ -33,9 +43,9 @@ import {
 /**
  * The lowest Git with every mechanism the adapter relies on: `http.curloptResolve` (2.37, pins
  * HTTPS to the checked address), `GIT_CONFIG_GLOBAL` (2.32, isolates the host's Git
- * configuration) and `--no-write-fetch-head` (2.29).
+ * configuration), `--no-write-fetch-head` (2.29) and `merge-tree --write-tree` (2.38).
  */
-export const MIN_GIT_VERSION = '2.37.0';
+export const MIN_GIT_VERSION = '2.38.0';
 
 export const PRODUCTION_GIT_LIMITS = {
   cloneTimeoutMs: 10 * 60 * 1000,
@@ -195,6 +205,9 @@ const STALE_MARGIN_MS = 5 * 60 * 1000;
 const TOP_LEVEL_LOCK = /\.lock$/;
 
 const COMMIT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+
+/** Enough for a thousand long paths; a longer file list is cut. */
+const LIST_OUTPUT_LIMIT_BYTES = 2 * 1024 * 1024;
 
 /** The domain rule, applied to the branch exactly as given (the domain parse trims). */
 function isIntegrationBranch(branch: string): boolean {
@@ -521,17 +534,208 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
             },
           );
         } catch (error) {
-          if (error instanceof GitOperationError && error.reason === 'size_limit') {
-            // Killed mid-transfer or finished past the limit: no usable Clone remains.
-            await rm(clone, { recursive: true, force: true });
-          } else {
-            // A killed fetch leaves Git's temporary packs; the refs are unchanged.
-            await removeTemporaryObjects(clone);
-          }
+          await cleanUpFailedFetch(clone, error);
           throw error;
         }
       }),
     );
+  }
+
+  async fetchForReview(
+    projectId: string,
+    remoteUrl: string,
+    integrationBranch: string,
+    runId: string,
+    runBranch: string,
+    options: GitOperationOptions = {},
+  ): Promise<ReviewFetch> {
+    this.assertSupportedPlatform();
+    this.paths.clone(projectId);
+    const remote = this.parseRemote(remoteUrl, options);
+    this.assertBranch(integrationBranch);
+    this.assertBranch(runBranch);
+    if (runBranch === integrationBranch) {
+      throw new GitRequestRejectedError('The Run branch is the Integration branch.');
+    }
+    let branch: ReviewedRunBranch;
+    try {
+      branch = ReviewedRunBranch.of(runId, runBranch);
+    } catch (error) {
+      if (error instanceof InvalidReviewedRunBranchError) {
+        throw new GitRequestRejectedError(error.message);
+      }
+      throw error;
+    }
+    return this.guarded('fetch', () =>
+      this.queued(projectId, this.settings.fetchTimeoutMs, options, async (options) => {
+        const clone = await this.paths.existingClone(projectId);
+        if (!clone) {
+          throw new GitCloneMissingError();
+        }
+        await removeStaleLocks(clone);
+        const refs = ReviewRefs.of(runId);
+        try {
+          return await this.withOperation(
+            this.settings.fetchTimeoutMs,
+            options,
+            async (context) => {
+              const checked = await this.checkRemote(context, remote);
+              // The Clone's own Integration branch stays as the Repository's fetch left it.
+              await this.fetchRefs(
+                context,
+                clone,
+                checked,
+                [
+                  `+refs/heads/${integrationBranch}:${refs.base}`,
+                  `+refs/heads/${branch.name}:${refs.run}`,
+                ],
+                options.ssh,
+              );
+              return {
+                runCommit: await this.revParseRef(context, clone, refs.run),
+                integrationCommit: await this.revParseRef(context, clone, refs.base),
+              };
+            },
+          );
+        } catch (error) {
+          // A review never removes the Clone: the Repository still reads ready.
+          await this.deleteReviewRefs(clone, refs);
+          await removeTemporaryObjects(clone);
+          throw error;
+        }
+      }),
+    );
+  }
+
+  async mergeDiff(
+    projectId: string,
+    runId: string,
+    runCommit: string,
+    integrationCommit: string,
+    limits: MergeDiffLimits,
+    options: GitOperationOptions = {},
+  ): Promise<MergeDiffOutcome> {
+    this.assertSupportedPlatform();
+    if (!COMMIT_ID.test(runCommit) || !COMMIT_ID.test(integrationCommit)) {
+      throw new GitRequestRejectedError('The commit id is not a full commit id.');
+    }
+    let refs: ReviewRefs;
+    try {
+      refs = ReviewRefs.of(runId);
+    } catch {
+      throw new GitRequestRejectedError('The Run id is not a UUID.');
+    }
+    this.paths.clone(projectId);
+    return this.guarded('merge-tree', () =>
+      this.queued(projectId, this.settings.fetchTimeoutMs, options, async (options) => {
+        const clone = await this.paths.existingClone(projectId);
+        if (!clone) {
+          throw new GitCloneMissingError();
+        }
+        return this.withOperation(this.settings.fetchTimeoutMs, options, async (context) => {
+          const gitDir = `--git-dir=${clone}`;
+          for (const commit of [integrationCommit, runCommit]) {
+            const known = await this.git(context, [
+              gitDir,
+              'rev-parse',
+              '--verify',
+              '--quiet',
+              `${commit}^{commit}`,
+            ]);
+            if (known.exitCode !== 0) throw new GitOperationError('unknown');
+          }
+          const merged = await this.git(context, [
+            gitDir,
+            'merge-tree',
+            '--write-tree',
+            '--no-messages',
+            integrationCommit,
+            runCommit,
+          ]);
+          if (merged.exitCode === 1) return { status: 'conflicting' as const };
+          const tree = merged.stdout.split('\n')[0]?.trim() ?? '';
+          if (merged.exitCode !== 0 || !COMMIT_ID.test(tree)) {
+            const detail = redactGitOutput(merged.stderr);
+            this.log(`git merge-tree failed (unknown): ${detail}`);
+            throw new GitOperationError('unknown', detail);
+          }
+          return this.diffOf(context, clone, integrationCommit, tree, limits);
+        }).finally(() => this.deleteReviewRefs(clone, refs));
+      }),
+    );
+  }
+
+  /** The review is over: its refs go (the objects stay until Git prunes them). Best effort. */
+  private async deleteReviewRefs(clone: string, refs: ReviewRefs): Promise<void> {
+    try {
+      await this.withOperation(this.settings.fetchTimeoutMs, {}, async (context) => {
+        for (const ref of [refs.run, refs.base]) {
+          await this.git(context, [`--git-dir=${clone}`, 'update-ref', '-d', ref]);
+        }
+      });
+    } catch (error) {
+      this.log(`review refs were not removed: ${redactGitOutput(String(error))}`);
+    }
+  }
+
+  /**
+   * The files that differ between two trees and, file by file, their patches under the limits.
+   * Each patch is its own process whose output is cut at the file limit, so one huge file never
+   * starves the others and never has to be held whole.
+   */
+  private async diffOf(
+    context: OperationContext,
+    clone: string,
+    integrationCommit: string,
+    tree: string,
+    limits: MergeDiffLimits,
+  ): Promise<MergeDiffOutcome> {
+    const gitDir = `--git-dir=${clone}`;
+    const flags = ['--no-ext-diff', '--no-textconv', '--no-color', '-M'];
+    const listed = await this.git(
+      context,
+      [gitDir, 'diff', ...flags, '-z', '--name-status', integrationCommit, tree],
+      undefined,
+      LIST_OUTPUT_LIMIT_BYTES,
+    );
+    if (listed.exitCode !== 0 && !listed.stdoutCut) {
+      throw new GitOperationError('unknown', redactGitOutput(listed.stderr));
+    }
+    const entries = parseNameStatus(listed.stdout, listed.stdoutCut);
+    let truncated = listed.stdoutCut || entries.length > limits.filesMax;
+    const files: MergeDiffFile[] = [];
+    let patchBytes = 0;
+    for (const entry of entries.slice(0, limits.filesMax)) {
+      const file: MergeDiffFile = { ...entry, cut: false };
+      files.push(file);
+      if (patchBytes >= limits.patchMaxBytes) {
+        file.cut = true;
+        truncated = true;
+        continue;
+      }
+      const paths = entry.previousPath ? [entry.previousPath, entry.path] : [entry.path];
+      const shown = await this.git(
+        context,
+        ['--literal-pathspecs', gitDir, 'diff', ...flags, integrationCommit, tree, '--', ...paths],
+        undefined,
+        limits.filePatchMaxBytes,
+      );
+      if (shown.exitCode !== 0 && !shown.stdoutCut) {
+        throw new GitOperationError('unknown', redactGitOutput(shown.stderr));
+      }
+      if (shown.stdoutCut) {
+        file.cut = true;
+      } else if (isBinaryPatch(shown.stdout)) {
+        file.binary = true;
+      } else if (patchBytes + Buffer.byteLength(shown.stdout) > limits.patchMaxBytes) {
+        file.cut = true;
+        truncated = true;
+      } else {
+        file.patch = shown.stdout;
+        patchBytes += Buffer.byteLength(shown.stdout);
+      }
+    }
+    return { status: 'computed', files, truncated };
   }
 
   async readBranchCommit(
@@ -791,6 +995,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
       GIT_ALLOW_PROTOCOL: this.settings.allowedTransports.join(':'),
       GIT_LFS_SKIP_SMUDGE: '1',
       GIT_NO_REPLACE_OBJECTS: '1',
+      GIT_ATTR_NOSYSTEM: '1',
       SSH_ASKPASS_REQUIRE: 'never',
     };
   }
@@ -863,6 +1068,22 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     branch: string,
     ssh: SshCredentials | undefined,
   ): Promise<void> {
+    await this.fetchRefs(
+      context,
+      gitDir,
+      remote,
+      [`+refs/heads/${branch}:refs/heads/${branch}`],
+      ssh,
+    );
+  }
+
+  private async fetchRefs(
+    context: OperationContext,
+    gitDir: string,
+    remote: CheckedRemote,
+    refspecs: readonly string[],
+    ssh: SshCredentials | undefined,
+  ): Promise<void> {
     const watch: SizeWatch = {
       path: gitDir,
       maxBytes: this.settings.maxCloneBytes,
@@ -879,7 +1100,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
         '--no-recurse-submodules',
         '--',
         remote.url,
-        `+refs/heads/${branch}:refs/heads/${branch}`,
+        ...refspecs,
       ],
       remote,
       ssh,
@@ -895,12 +1116,20 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     gitDir: string,
     branch: string,
   ): Promise<string> {
+    return this.revParseRef(context, gitDir, `refs/heads/${branch}`);
+  }
+
+  private async revParseRef(
+    context: OperationContext,
+    gitDir: string,
+    ref: string,
+  ): Promise<string> {
     const result = await this.git(context, [
       `--git-dir=${gitDir}`,
       'rev-parse',
       '--verify',
       '--quiet',
-      `refs/heads/${branch}^{commit}`,
+      `${ref}^{commit}`,
     ]);
     const commit = result.stdout.trim();
     if (result.exitCode !== 0 || !/^[\da-f]{40,64}$/.test(commit)) {
@@ -938,7 +1167,12 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     return result;
   }
 
-  private git(context: OperationContext, args: string[], watch?: SizeWatch) {
+  private git(
+    context: OperationContext,
+    args: string[],
+    watch?: SizeWatch,
+    stdoutLimitBytes?: number,
+  ) {
     const caFile = this.settings.httpsCaFile
       ? ['-c', `http.sslCAInfo=${this.settings.httpsCaFile}`]
       : [];
@@ -947,10 +1181,17 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
       this.gitBinary,
       [...hardeningArgs(this.settings.allowedTransports), ...caFile, ...args],
       watch,
+      stdoutLimitBytes,
     );
   }
 
-  private async run(context: OperationContext, binary: string, args: string[], watch?: SizeWatch) {
+  private async run(
+    context: OperationContext,
+    binary: string,
+    args: string[],
+    watch?: SizeWatch,
+    stdoutLimitBytes?: number,
+  ) {
     try {
       const result = await runGitProcess({
         binary,
@@ -960,6 +1201,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
         deadline: context.deadline,
         signal: context.signal,
         watch,
+        stdoutLimitBytes,
         memoryBound: {
           bytes: this.settings.maxProcessMemoryBytes,
           prlimitBinary: this.prlimitBinary,
@@ -1005,6 +1247,58 @@ async function removeStaleLocks(gitDir: string): Promise<void> {
   };
   await removeIn(gitDir, false);
   await removeIn(join(gitDir, 'refs'), true);
+}
+
+/** A failed or killed fetch leaves Git's temporary packs, or no usable Clone at all. */
+async function cleanUpFailedFetch(clone: string, error: unknown): Promise<void> {
+  if (error instanceof GitOperationError && error.reason === 'size_limit') {
+    // Killed mid-transfer or finished past the limit: no usable Clone remains.
+    await rm(clone, { recursive: true, force: true });
+  } else {
+    // A killed fetch leaves Git's temporary packs; the refs are unchanged.
+    await removeTemporaryObjects(clone);
+  }
+}
+
+const NAME_STATUS: Record<string, MergeDiffFileStatus> = {
+  A: 'added',
+  M: 'modified',
+  T: 'modified',
+  D: 'deleted',
+  R: 'renamed',
+};
+
+/** `git diff -z --name-status -M`: `<status>\0<path>\0`, a rename `R<score>\0<old>\0<new>\0`. */
+function parseNameStatus(
+  output: string,
+  cut: boolean,
+): { path: string; previousPath?: string; status: MergeDiffFileStatus }[] {
+  const fields = output.split('\0');
+  // The last field is empty after a complete output; a cut one ends inside an entry.
+  fields.pop();
+  const entries: { path: string; previousPath?: string; status: MergeDiffFileStatus }[] = [];
+  let at = 0;
+  while (at < fields.length) {
+    const status = NAME_STATUS[fields[at]?.[0] ?? ''];
+    const paths = status === 'renamed' ? 2 : 1;
+    const named = fields.slice(at + 1, at + 1 + paths);
+    if (!status || named.length < paths) {
+      if (cut) break;
+      throw new GitOperationError('unknown');
+    }
+    entries.push(
+      status === 'renamed'
+        ? { previousPath: named[0]!, path: named[1]!, status }
+        : { path: named[0]!, status },
+    );
+    at += 1 + paths;
+  }
+  return entries;
+}
+
+/** A binary file's diff holds no hunk, only a line saying the files differ. */
+function isBinaryPatch(patch: string): boolean {
+  return /^Binary files .* differ$/m.test(patch) && !/^@@ /m.test(patch);
 }
 
 async function removeTemporaryObjects(gitDir: string): Promise<void> {

@@ -1,3 +1,9 @@
+import {
+  RUN_DIFF_FILE_PATCH_MAX_BYTES,
+  RUN_DIFF_FILES_MAX,
+  RUN_DIFF_MAX_BYTES,
+  RUN_DIFF_PATCH_MAX_BYTES,
+} from '@agentic-studio/contracts';
 import { type DynamicModule, Module } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config.js';
 import { AuthModule } from '../../platform/auth/auth.module.js';
@@ -8,6 +14,14 @@ import { PREPARED_FOLLOW_UP_REPOSITORY } from './domain/repositories/prepared-fo
 import { REVIEW_COMMENT_REPOSITORY } from './domain/repositories/review-comment-repository.js';
 import { RUN_LOOKUP_REPOSITORY } from './domain/repositories/run-lookup-repository.js';
 import { RUN_REPOSITORY } from './domain/repositories/run-repository.js';
+import { RUN_MERGE_REVIEW_REPOSITORY } from './domain/repositories/run-merge-review-repository.js';
+import { GetMergeReviewEndpoint } from './entry-points/http/operator/get-merge-review/endpoint.js';
+import { GetMergeReviewHandler } from './application/features/get-merge-review/handler.js';
+import { GetMergeReviewFileHandler } from './application/features/get-merge-review-file/handler.js';
+import { PrepareMergeReviewHandler } from './application/features/prepare-merge-review/handler.js';
+import { RequestMergeReviewEndpoint } from './entry-points/http/operator/request-merge-review/endpoint.js';
+import { RequestMergeReviewHandler } from './application/features/request-merge-review/handler.js';
+import { PrismaRunMergeReviewRepository } from './infrastructure/repositories/prisma-run-merge-review-repository.js';
 import { AnswerRunEndpoint } from './entry-points/http/operator/answer-run/endpoint.js';
 import { AnswerRunHandler } from './application/features/answer-run/handler.js';
 import { CancelLongWaitingRunsHandler } from './application/features/cancel-long-waiting-runs/handler.js';
@@ -114,6 +128,10 @@ import { PrismaRunRepository } from './infrastructure/repositories/prisma-run-re
 import { CLOCK, type Clock } from './application/ports/clock.js';
 import { OPERATOR_LOGIN, type OperatorLogin } from './application/ports/operator-login.js';
 import { RUN_LIMITS, type RunLimitsSetting } from './application/ports/run-limits.js';
+import {
+  MERGE_REVIEW_LIMITS,
+  type MergeReviewLimitsSetting,
+} from './application/ports/merge-review-limits.js';
 import { OPERATOR_SESSIONS } from './application/ports/operator-sessions.js';
 import { MERGE_HOST, type MergeHost } from './application/ports/merge-host.js';
 import { MERGE_SETTINGS, type MergeSettings } from './application/ports/merge-settings.js';
@@ -182,6 +200,8 @@ export class ExecutionsModule {
         ListRunStepsEndpoint,
         GetRunDiffEndpoint,
         ReportRunDiffEndpoint,
+        RequestMergeReviewEndpoint,
+        GetMergeReviewEndpoint,
         GetRunStatesEndpoint,
         ReportWorkerStatusEndpoint,
         ListProvidersEndpoint,
@@ -193,6 +213,7 @@ export class ExecutionsModule {
         { provide: RUN_TRANSACTIONS, useClass: PrismaRunTransactions },
         RunLookupRequests,
         { provide: RUN_DIFF_REPOSITORY, useClass: PrismaRunDiffRepository },
+        { provide: RUN_MERGE_REVIEW_REPOSITORY, useClass: PrismaRunMergeReviewRepository },
         { provide: RUN_LOOKUP_REPOSITORY, useClass: PrismaRunLookupRepository },
         { provide: PREPARED_FOLLOW_UP_REPOSITORY, useClass: PrismaPreparedFollowUpRepository },
         { provide: REVIEW_COMMENT_REPOSITORY, useClass: PrismaReviewCommentRepository },
@@ -256,6 +277,15 @@ export class ExecutionsModule {
           useFactory: (config: AppConfig): RunLimitsSetting => ({ ...config.runLimits }),
           inject: [APP_CONFIG],
         },
+        {
+          provide: MERGE_REVIEW_LIMITS,
+          useValue: {
+            filesMax: RUN_DIFF_FILES_MAX,
+            filePatchMaxBytes: RUN_DIFF_FILE_PATCH_MAX_BYTES,
+            patchMaxBytes: RUN_DIFF_PATCH_MAX_BYTES,
+            totalMaxBytes: RUN_DIFF_MAX_BYTES,
+          } satisfies MergeReviewLimitsSetting,
+        },
         StartRunHandler,
         ListProjectRunsHandler,
         ListRunsHandler,
@@ -288,6 +318,10 @@ export class ExecutionsModule {
         GetRunDiffHandler,
         GetRunDiffFileHandler,
         ReportRunDiffHandler,
+        RequestMergeReviewHandler,
+        PrepareMergeReviewHandler,
+        GetMergeReviewHandler,
+        GetMergeReviewFileHandler,
         GetRunStatesHandler,
         ReportWorkerStatusHandler,
         ListProvidersHandler,

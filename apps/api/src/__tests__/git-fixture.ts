@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 /**
@@ -94,6 +94,27 @@ export function pushCommit(
   git(fixture.work, ['add', '--all']);
   git(fixture.work, ['commit', '--quiet', '-m', name]);
   git(fixture.work, ['push', '--quiet', fixture.bare, `${branch}:${branch}`]);
+  return git(fixture.work, ['rev-parse', 'HEAD']);
+}
+
+/**
+ * Pushes `branch`, started at the current `base`, with one commit that writes `files`;
+ * returns its id. Pushing to an existing branch moves it.
+ */
+export function pushFiles(
+  fixture: GitFixture,
+  branch: string,
+  base: string,
+  files: Record<string, string>,
+): string {
+  git(fixture.work, ['checkout', '--quiet', '-B', branch, base]);
+  for (const [path, content] of Object.entries(files)) {
+    mkdirSync(dirname(join(fixture.work, path)), { recursive: true });
+    writeFileSync(join(fixture.work, path), content);
+  }
+  git(fixture.work, ['add', '--all']);
+  git(fixture.work, ['commit', '--quiet', '-m', `change ${branch}`]);
+  git(fixture.work, ['push', '--quiet', '--force', fixture.bare, `${branch}:${branch}`]);
   return git(fixture.work, ['rev-parse', 'HEAD']);
 }
 

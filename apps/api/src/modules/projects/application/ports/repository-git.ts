@@ -36,6 +36,33 @@ export interface RemoteInspection {
   branchExists: boolean;
 }
 
+export interface ReviewFetch {
+  /** The Run branch's commit, read from the review ref the fetch wrote. */
+  runCommit: string;
+  integrationCommit: string;
+}
+
+export interface MergeDiffLimits {
+  filesMax: number;
+  filePatchMaxBytes: number;
+  patchMaxBytes: number;
+}
+
+export type MergeDiffFileStatus = 'added' | 'modified' | 'deleted' | 'renamed';
+
+export interface MergeDiffFile {
+  path: string;
+  previousPath?: string;
+  status: MergeDiffFileStatus;
+  binary?: true;
+  /** Absent for a binary file and for a file whose patch a limit left out (`cut`). */
+  patch?: string;
+  cut: boolean;
+}
+
+export type MergeDiffOutcome =
+  { status: 'computed'; files: MergeDiffFile[]; truncated: boolean } | { status: 'conflicting' };
+
 export type GitFailureReason = Exclude<RepositoryFailureCode, 'interrupted'>;
 
 export const GIT_FAILURE_REASONS: readonly GitFailureReason[] = REPOSITORY_FAILURE_CODES.filter(
@@ -86,6 +113,34 @@ export interface RepositoryGit {
     branch: string,
     options?: GitOperationOptions,
   ): Promise<{ commit: string }>;
+
+  /**
+   * One fetch of the Integration branch and of `runBranch` into `refs/studio/review/<runId>`,
+   * never checked out. Throws {@link GitRequestRejectedError} before Git starts unless `runBranch`
+   * is the Run's own branch, {@link GitCloneMissingError} without a Clone, `branch_not_found`.
+   */
+  fetchForReview(
+    projectId: string,
+    remoteUrl: string,
+    integrationBranch: string,
+    runId: string,
+    runBranch: string,
+    options?: GitOperationOptions,
+  ): Promise<ReviewFetch>;
+
+  /**
+   * What merging `runCommit` into `integrationCommit` would add; runs no filter, hook or diff
+   * driver. Removes the Run's review refs afterwards. Throws {@link GitRequestRejectedError}
+   * for a malformed commit or Run id.
+   */
+  mergeDiff(
+    projectId: string,
+    runId: string,
+    runCommit: string,
+    integrationCommit: string,
+    limits: MergeDiffLimits,
+    options?: GitOperationOptions,
+  ): Promise<MergeDiffOutcome>;
 
   /** The commit id of `branch` in the Project's Clone. */
   readBranchCommit(

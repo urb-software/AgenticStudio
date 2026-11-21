@@ -3,6 +3,8 @@ import type {
   PreparedFollowUpOutput,
   ReviewCommentsOutput,
   AgentWorkerOutput,
+  MergeReviewFileOutput,
+  MergeReviewOutput,
   ProblemDetails,
   ProjectOutput,
   ProviderAvailabilityOutput,
@@ -39,7 +41,10 @@ type Route =
   | 'loadComments'
   | 'comments'
   | 'diff'
-  | 'diffFile';
+  | 'diffFile'
+  | 'mergeReview'
+  | 'requestMergeReview'
+  | 'mergeReviewFile';
 
 interface ScriptedResponse {
   status: number;
@@ -74,11 +79,21 @@ const ROUTES: readonly [RegExp, (method: string) => Route][] = [
   [/^\/api\/runs\/([^/]+)\/events\/stream$/, () => 'stream'],
   [/^\/api\/runs\/([^/]+)\/diff$/, () => 'diff'],
   [/^\/api\/runs\/([^/]+)\/diff\/file$/, () => 'diffFile'],
+  [
+    /^\/api\/runs\/([^/]+)\/merge-review$/,
+    (method) => (method === 'POST' ? 'requestMergeReview' : 'mergeReview'),
+  ],
+  [/^\/api\/runs\/([^/]+)\/merge-review\/file$/, () => 'mergeReviewFile'],
 ];
 
 /** A Run's stored diff of one scope as the fake holds it: the file list with each file's patch. */
 export type FakeDiff = Omit<RunDiffOutput, 'scope' | 'files'> & {
   files: (RunDiffOutput['files'][number] & { patch?: string })[];
+};
+
+/** A Run's merge review as the fake holds it: the file list with each file's patch. */
+export type FakeMergeReview = Omit<MergeReviewOutput, 'files'> & {
+  files: (MergeReviewOutput['files'][number] & { patch?: string })[];
 };
 
 /** One open live log connection of the fake: the test pushes events, ends or drops it. */
@@ -167,6 +182,9 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     stream: [],
     diff: [],
     diffFile: [],
+    mergeReview: [],
+    requestMergeReview: [],
+    mergeReviewFile: [],
   };
   const calls: { route: Route; body?: unknown; query?: URLSearchParams }[] = [];
   /** What `GET /api/agent-worker` answers: no worker connected by default. */
@@ -181,6 +199,8 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
   const reviewComments = new Map<string, ReviewCommentsOutput>();
   /** Each Run's stored diffs by scope. */
   const diffs = new Map<string, Partial<Record<RunDiffOutput['scope'], FakeDiff>>>();
+  /** Each Run's merge review with each file's patch; none until a test sets one or requests it. */
+  const reviews = new Map<string, FakeMergeReview>();
 
   function openStream(runId: string, after: number, signal: AbortSignal): Response {
     const encoder = new TextEncoder();
@@ -525,6 +545,27 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
         void deletions;
         return json(200, shown satisfies RunDiffFileOutput);
       }
+      case 'mergeReview': {
+        const review = reviews.get(id!);
+        if (!review) return json(200, { state: 'none', files: [], truncated: false });
+        return json(200, {
+          ...review,
+          files: review.files.map(({ patch, ...file }) => {
+            void patch;
+            return file;
+          }),
+        } satisfies MergeReviewOutput);
+      }
+      case 'requestMergeReview':
+        reviews.set(id!, { state: 'preparing', files: [], truncated: false });
+        return new Response(null, { status: 202 });
+      case 'mergeReviewFile': {
+        const file = reviews
+          .get(id!)
+          ?.files.find((candidate) => candidate.path === searchParams.get('path'));
+        if (!file) return json(404, problem(404, 'File not in the review'));
+        return json(200, file satisfies MergeReviewFileOutput);
+      }
       case 'stream':
         return openStream(id!, Number(searchParams.get('after') ?? 0), request.signal);
       case 'start': {
@@ -567,6 +608,10 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     /** Sets a Run's stored diff of a scope. */
     setDiff(runId: string, scope: RunDiffOutput['scope'], diff: FakeDiff) {
       diffs.set(runId, { ...diffs.get(runId), [scope]: diff });
+    },
+    /** Sets a Run's merge review as the server would hold it. */
+    setMergeReview(runId: string, review: FakeMergeReview) {
+      reviews.set(runId, review);
     },
     /** Sets a Run's prepared Follow-up of its failing checks. */
     setPrepared(runId: string, draft: PreparedFollowUpOutput) {
