@@ -283,7 +283,9 @@ const server = createServer((request, response) => {
     return readJson((body) => {
       if (String(body.query).includes('markPullRequestReadyForReview')) {
         if (!mergeWrite('POST', url.pathname)) return;
-        const pr = pulls.find((candidate) => `PR_stub_${candidate.number}` === body.variables?.id);
+        const pr = pulls.find(
+          (candidate) => `PR_stub_${candidate.repo}_${candidate.number}` === body.variables?.id,
+        );
         if (!pr) return send(200, { errors: [{ message: 'Could not resolve to a node.' }] });
         pr.draft = false;
         audit.markedReady.push({ repo: pr.repo, number: pr.number });
@@ -355,7 +357,7 @@ const server = createServer((request, response) => {
     if (!pr) return send(404, { message: 'Not Found' });
     const full = () => ({
       ...view(pr),
-      node_id: `PR_stub_${pr.number}`,
+      node_id: `PR_stub_${pr.repo}_${pr.number}`,
       state: pr.state,
       merged: pr.merged,
       draft: pr.draft,
