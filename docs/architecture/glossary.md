@@ -95,7 +95,7 @@ _Avoid_: PR status, sync
 Studio's request to the agent worker to read something from the Git host, such as a Run's Pull request state. Any connected agent worker answers it with read access only; it needs no Working copy and starts no agent.
 
 **Merge**:
-The operator's action that lands a Run's pull request in the Integration branch from Studio. It is one confirmed action, "Approve and merge", pinned to the approved commit, and uses the Project's merge method (squash by default, or merge commit; rebase is not offered). Studio refuses it with a failing or running Pull request check, a conflict with the Integration branch, an active Run or a Run branch that moved after the operator looked; there is no override. Afterwards Studio deletes the Run branch and fetches the Clone. The Agent account never merges.
+The operator's action that lands a Run's pull request in the Integration branch from Studio. It is one confirmed action, "Approve and merge", pinned to the approved commit, and uses the Project's merge method (squash by default, or merge commit; rebase is not offered). Studio refuses it with a failing or running Pull request check, a conflict with the Integration branch, an active Run or a Run branch that moved after the operator looked; there is no override. Afterwards Studio deletes the Run branch, fetches the Project's Clone and refreshes the Pull request state. The Agent account never merges.
 _Avoid_: Approve (for the whole action), land, ship
 
 **Merge approval**:
@@ -103,7 +103,7 @@ The record stored first when the operator presses "Approve and merge": who, when
 _Avoid_: Approval (alone), sign-off, review approval
 
 **Close without merging**:
-The operator's action that closes a Run's pull request without merging it, when the Run's work is rejected. Studio then deletes the Run branch and refreshes the Pull request state.
+The operator's action that closes a Run's pull request without merging it, when the Run's work is rejected. Studio then deletes the Run branch, fetches the Project's Clone and refreshes the Pull request state.
 _Avoid_: Reject, abandon, discard
 
 **Merge credential**:
