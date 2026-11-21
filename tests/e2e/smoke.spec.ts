@@ -1310,7 +1310,7 @@ test(RUN_TEST, async ({ page }, testInfo) => {
   await expect(approveAndMerge).toBeVisible({ timeout: 90_000 });
   await expect(mergeReview).toContainText('would change');
   await expectNoHorizontalScroll(page);
-  await expectInBothThemes(page, mergeReview);
+  await expectNoAxeViolations(page);
   await approveAndMerge.click();
   const mergeDialog = page.getByRole('alertdialog', { name: 'Approve and merge' });
   await expect(mergeDialog).toContainText(reviewedCommit.slice(0, 12));
