@@ -194,6 +194,7 @@ describe.runIf(process.platform === 'linux')(
         GIT_ALLOW_PROTOCOL: 'ssh:https',
         GIT_LFS_SKIP_SMUDGE: '1',
         GIT_NO_REPLACE_OBJECTS: '1',
+        GIT_ATTR_NOSYSTEM: '1',
         SSH_ASKPASS_REQUIRE: 'never',
       });
       // A private per-operation directory outside the data directory, deleted afterwards.
