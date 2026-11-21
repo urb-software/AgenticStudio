@@ -45,10 +45,10 @@ Conceptual diagram. The exact network, queue, auth, and deployment boundaries mu
 
 | Module | Owns | Does not own |
 | --- | --- | --- |
-| `projects` | Project lifecycle, repository connection, Git branches, diff, approval and merge | Agent definitions, raw Docker privilege |
+| `projects` | Project lifecycle, repository connection, the Clone and its fetch, Git branches, the merge method setting | Agent definitions, raw Docker privilege, the pull request, its review and merge |
 | `agents` | `AgentDefinition`, `SkillDefinition`, assignment, native-file definitions, validation and publishing | Task queue execution |
 | `workflows` | Workflow definitions, step dependencies, ordering, conditions, human approval semantics | Individual worker/process execution plumbing |
-| `executions` | Runs, their working copies, state transitions, queue scheduling, progress/log/result records | Direct Docker host control or unrelated project Git internals |
+| `executions` | Runs, their working copies, state transitions, queue scheduling, progress/log/result records, the pull request, its review diff, the Merge approval and the merge | Direct Docker host control or unrelated project Git internals |
 | `environments` | Project environment lifecycle, Compose stack abstraction, health/logs, shared Preview | CLI agent definitions |
 | `mcp` | Reusable MCP server definitions, bindings, validation/connection checks, CLI tool configuration | Project repository internals or a full gateway in MVP |
 
@@ -90,10 +90,10 @@ logging/    # Structured logs, correlation/tracing
 ## 7. Git and project collaboration
 
 - Each run gets its own working copy: a clone made from a per-project cache, at the exact commit Studio recorded, on a branch named for the run ([ADR 0002](adr/0002-agent-run-isolation.md)).
-- The agent worker pushes run branches and opens draft pull requests through the agent account ([ADR 0002](adr/0002-agent-run-isolation.md)), whose token is limited to the managed repositories; branch protection keeps protected branches under the operator's approval. Studio's own Git operations use its Git adapter and the Project's Deploy key, which never reaches the agent ([Security](../engineering/security.md) §4).
+- The agent worker pushes run branches and opens draft pull requests through the agent account ([ADR 0002](adr/0002-agent-run-isolation.md)), whose token is limited to the managed repositories; branch protection keeps protected branches under the operator's approval. Studio's own Git operations use its Git adapter and the Project's Deploy key, which never reaches the agent ([Security](../engineering/security.md) §4). An operator's merge or close of a Run's pull request is the one use of Studio's Merge credential, a token limited to the managed repositories ([ADR 0002](adr/0002-agent-run-isolation.md#merge-decisions-2026-11-21)).
 - Outputs are examined as diffs, tested and reviewed before a controlled merge to the project's integration branch (default `dev`).
 - Each project has **one shared default Preview** reflecting the project's integration branch (default `dev`) after approved merges; **not** a Preview per agent.
-- Merge and production deployment are protected operations, never direct worker privileges.
+- Merge and production deployment are protected operations, never direct worker privileges. The operator merges from Studio with the Merge credential; the Agent account never merges.
 
 ## 8. Deployment and trust boundaries
 
