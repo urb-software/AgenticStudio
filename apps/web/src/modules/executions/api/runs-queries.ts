@@ -417,20 +417,53 @@ export function useRunDiff(run: RunOutput, scope: RunDiffOutput['scope']) {
   });
 }
 
+/** Where a changed file's patch is read from: a Run's reported diff, or Studio's merge review. */
+export type PatchSource =
+  | { kind: 'diff'; runId: string; scope: RunDiffOutput['scope'] }
+  | { kind: 'merge-review'; runId: string };
+
+const mergeReviewKey = (runId: string) => ['runs', 'merge-review', runId] as const;
+const mergeReviewFileKey = (runId: string, path: string) =>
+  ['runs', 'merge-review', runId, 'file', path] as const;
+
 /**
- * One file of a Run's diff with its patch, loaded only once the file is expanded (`enabled`), so
- * a large diff loads per file.
+ * One file's patch from either source, loaded only once the file is expanded (`enabled`), so a
+ * large diff loads per file.
  */
-export function useRunDiffFile(
-  runId: string,
-  scope: RunDiffOutput['scope'],
-  path: string,
-  enabled: boolean,
-) {
-  return useQuery({
-    queryKey: runDiffFileKey(runId, scope, path),
-    queryFn: () => api.getRunDiffFile(runId, scope, path),
+export function useFilePatch(source: PatchSource, path: string, enabled: boolean) {
+  return useQuery<{ patch?: string }>({
+    queryKey:
+      source.kind === 'diff'
+        ? runDiffFileKey(source.runId, source.scope, path)
+        : mergeReviewFileKey(source.runId, path),
+    queryFn: () =>
+      source.kind === 'diff'
+        ? api.getRunDiffFile(source.runId, source.scope, path)
+        : api.getRunMergeReviewFile(source.runId, path),
     enabled,
+  });
+}
+
+/**
+ * The merge review Studio computed for a Run. Read again at the active rate while it is being
+ * prepared, and with the Run while the Run is active (its branch may move).
+ */
+export function useMergeReview(run: RunOutput) {
+  return useQuery({
+    queryKey: mergeReviewKey(run.id),
+    queryFn: () => api.getRunMergeReview(run.id),
+    refetchInterval: (query) =>
+      query.state.data?.state === 'preparing' ? ACTIVE_POLL_MS : pollIntervalFor([run]),
+    refetchIntervalInBackground: false,
+  });
+}
+
+/** A refusal (409) reads the review again at once: it may be in progress already. */
+export function useRequestMergeReview(runId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.requestRunMergeReview(runId),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: mergeReviewKey(runId) }),
   });
 }
 

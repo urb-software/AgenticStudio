@@ -25,7 +25,12 @@ import {
   type RunDiffOutput,
   type RunOutput,
 } from '../../../../platform/api';
-import { useRefreshRunDiffFiles, useRunDiff, useRunDiffFile } from '../../api/runs-queries';
+import {
+  type PatchSource,
+  useFilePatch,
+  useRefreshRunDiffFiles,
+  useRunDiff,
+} from '../../api/runs-queries';
 import { failedRequest } from '../../components/failed-request';
 import { FINAL_STATES } from '../../components/run-states';
 import { patchLines } from './patch-lines';
@@ -44,6 +49,7 @@ export const EXPANDED_FILES = 5;
 /** The requests the tab makes (generated `getRunDiff`, `getRunDiffFile`), shown when they fail. */
 const DIFF_REQUEST = 'GET /api/runs/{runId}/diff';
 const FILE_REQUEST = 'GET /api/runs/{runId}/diff/file';
+const REVIEW_FILE_REQUEST = 'GET /api/runs/{runId}/merge-review/file';
 
 const STATUS_LABEL: Record<RunDiffFileSummaryOutput['status'], string> = {
   added: 'Added',
@@ -51,6 +57,21 @@ const STATUS_LABEL: Record<RunDiffFileSummaryOutput['status'], string> = {
   deleted: 'Deleted',
   renamed: 'Renamed',
 };
+
+/**
+ * What the file list and the file sections need of a changed file, from either source: the
+ * agent worker's reported diff, or Studio's merge review (which has no line counts).
+ */
+export interface ChangedFile {
+  path: string;
+  previousPath?: string;
+  status: RunDiffFileSummaryOutput['status'];
+  additions?: number;
+  deletions?: number;
+  binary?: true;
+  /** A limit left the patch out. */
+  tooLarge?: true;
+}
 
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
 
@@ -169,7 +190,24 @@ function ScopeChanges({ run, scope }: { run: RunOutput; scope: Scope }) {
       />
     );
   }
-  return <ChangedFiles run={run} scope={scope} diff={data} />;
+  return (
+    <div className="flex min-w-0 flex-col gap-4">
+      <Summary diff={data} scope={scope} />
+      {data.truncated ? (
+        <Banner tone="warning" title="Not every change is shown.">
+          This diff reached its size limit: some files are listed without their content, or not
+          listed at all.
+        </Banner>
+      ) : null}
+      <ChangedFiles
+        source={{ kind: 'diff', runId: run.id, scope }}
+        files={data.files}
+        truncated={data.truncated}
+        // A link to the file in the pull request only when every change shown there is pushed.
+        pullRequest={data.includesUnpushed === false ? run.pullRequest : undefined}
+      />
+    </div>
+  );
 }
 
 /** The summary line: files changed, lines added and removed, where the diff starts, pushed or not. */
@@ -213,14 +251,22 @@ function Summary({ diff, scope }: { diff: RunDiffOutput; scope: Scope }) {
  * {@link EXPANDED_FILES} files expanded; selecting a file expands it and scrolls to it. On a
  * phone the list is a step of its own: selecting a file shows only its diff, with a way back.
  */
-function ChangedFiles({ run, scope, diff }: { run: RunOutput; scope: Scope; diff: RunDiffOutput }) {
+export function ChangedFiles({
+  source,
+  files,
+  truncated,
+  pullRequest,
+}: {
+  source: PatchSource;
+  files: readonly ChangedFile[];
+  truncated: boolean;
+  pullRequest: { url: string; number: number } | undefined;
+}) {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(
-    () => new Set(diff.files.slice(0, EXPANDED_FILES).map((file) => file.path)),
+    () => new Set(files.slice(0, EXPANDED_FILES).map((file) => file.path)),
   );
   const [selected, setSelected] = useState<string | null>(null);
   const sections = useRef(new Map<string, HTMLElement>());
-  // A link to the file in the pull request only when every change shown there is pushed.
-  const pullRequest = diff.includesUnpushed === false ? run.pullRequest : undefined;
 
   const toggle = (path: string) =>
     setExpanded((current) => {
@@ -243,20 +289,13 @@ function ChangedFiles({ run, scope, diff }: { run: RunOutput; scope: Scope; diff
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <Summary diff={diff} scope={scope} />
-      {diff.truncated ? (
-        <Banner tone="warning" title="Not every change is shown.">
-          This diff reached its size limit: some files are listed without their content, or not
-          listed at all.
-        </Banner>
-      ) : null}
       <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-[minmax(0,16rem)_minmax(0,1fr)] md:items-start">
         <nav
           aria-label="Changed files"
           className={cn('min-w-0 md:sticky md:top-16', selected !== null && 'max-md:hidden')}
         >
           <ul className="m-0 flex list-none flex-col gap-0.5 rounded-lg border border-border bg-surface p-1">
-            {diff.files.map((file) => (
+            {files.map((file) => (
               <li key={file.path} className="min-w-0">
                 <button
                   type="button"
@@ -275,7 +314,9 @@ function ChangedFiles({ run, scope, diff }: { run: RunOutput; scope: Scope; diff
                     {file.path}
                   </span>
                   <span className="sr-only">{STATUS_LABEL[file.status]},</span>
-                  <Counts additions={file.additions} deletions={file.deletions} />
+                  {file.additions !== undefined && file.deletions !== undefined ? (
+                    <Counts additions={file.additions} deletions={file.deletions} />
+                  ) : null}
                 </button>
               </li>
             ))}
@@ -293,17 +334,16 @@ function ChangedFiles({ run, scope, diff }: { run: RunOutput; scope: Scope; diff
               All files
             </Button>
           ) : null}
-          {diff.files.map((file) => (
+          {files.map((file) => (
             <FileChanges
               key={file.path}
               ref={(element) => {
                 if (element) sections.current.set(file.path, element);
                 else sections.current.delete(file.path);
               }}
-              runId={run.id}
-              scope={scope}
+              source={source}
               file={file}
-              truncated={diff.truncated}
+              truncated={truncated}
               open={expanded.has(file.path)}
               onToggle={() => toggle(file.path)}
               pullRequest={pullRequest}
@@ -345,8 +385,7 @@ function PullRequestFileLink({
 /** One file: a header that collapses and expands it, and its diff, loaded once it is open. */
 function FileChanges({
   ref,
-  runId,
-  scope,
+  source,
   file,
   truncated,
   open,
@@ -355,16 +394,15 @@ function FileChanges({
   className,
 }: {
   ref: (element: HTMLElement | null) => void;
-  runId: string;
-  scope: Scope;
-  file: RunDiffFileSummaryOutput;
+  source: PatchSource;
+  file: ChangedFile;
   truncated: boolean;
   open: boolean;
   onToggle: () => void;
   pullRequest: { url: string; number: number } | undefined;
   className?: string;
 }) {
-  const bodyId = `diff-${scope}-${encodeURIComponent(file.path)}`;
+  const bodyId = `diff-${source.kind === 'diff' ? source.scope : source.kind}-${encodeURIComponent(file.path)}`;
   const Chevron = open ? ChevronDownIcon : ChevronRightIcon;
   return (
     <section
@@ -397,11 +435,13 @@ function FileChanges({
             </span>
           ) : null}
         </span>
-        <Counts additions={file.additions} deletions={file.deletions} />
+        {file.additions !== undefined && file.deletions !== undefined ? (
+          <Counts additions={file.additions} deletions={file.deletions} />
+        ) : null}
         {pullRequest ? <PullRequestFileLink pullRequest={pullRequest} path={file.path} /> : null}
       </div>
       <div id={bodyId} hidden={!open} className="border-t border-border">
-        {open ? <FileBody runId={runId} scope={scope} file={file} truncated={truncated} /> : null}
+        {open ? <FileBody source={source} file={file} truncated={truncated} /> : null}
       </div>
     </section>
   );
@@ -413,25 +453,25 @@ function Note({ children }: { children: ReactNode }) {
 
 /** The file's diff: loaded per file; binary, too large and left-out files say why instead. */
 function FileBody({
-  runId,
-  scope,
+  source,
   file,
   truncated,
 }: {
-  runId: string;
-  scope: Scope;
-  file: RunDiffFileSummaryOutput;
+  source: PatchSource;
+  file: ChangedFile;
   truncated: boolean;
 }) {
   const needsPatch = !file.binary && !file.tooLarge;
-  const query = useRunDiffFile(runId, scope, file.path, needsPatch);
+  const query = useFilePatch(source, file.path, needsPatch);
   if (file.binary) return <Note>Binary file: its content is not shown.</Note>;
   if (file.tooLarge) {
-    return (
+    return file.additions !== undefined && file.deletions !== undefined ? (
       <Note>
         Too large to show: {plural(file.additions, 'line', 'lines')} added,{' '}
         {plural(file.deletions, 'line', 'lines')} removed.
       </Note>
+    ) : (
+      <Note>Too large to show: its changes are over the size limit.</Note>
     );
   }
   if (query.isPending) {
@@ -453,7 +493,12 @@ function FileBody({
             </Button>
           }
         >
-          <span className="font-mono text-small">{failedRequest(FILE_REQUEST, query.error)}</span>
+          <span className="font-mono text-small">
+            {failedRequest(
+              source.kind === 'diff' ? FILE_REQUEST : REVIEW_FILE_REQUEST,
+              query.error,
+            )}
+          </span>
         </Banner>
       </div>
     );
