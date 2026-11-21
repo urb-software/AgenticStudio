@@ -88,11 +88,27 @@ What a Run changed in its Working copy, uncommitted changes included, computed b
 _Avoid_: Patch (one file's part of it), changeset, PR diff (the pull request is GitHub's)
 
 **Pull request state**:
-Where a Run's pull request stands on the Git host: draft, open, merged, closed or missing (the pull request or its Run branch was not found: gone, or not visible to the Agent account), with the Run branch's position behind and ahead of the Integration branch and whether the host reports it mergeable. Only the agent worker reads it, through the Agent account, when Studio asks (a Lookup); Studio keeps the last known state and when it was read. A Follow-up is refused for a merged, closed or missing pull request, and allowed while the state is unknown.
+Where a Run's pull request stands on the Git host: draft, open, merged, closed or missing (the pull request or its Run branch was not found: gone, or not visible to the Agent account), with the Run branch's position behind and ahead of the Integration branch and whether the host reports it mergeable. The agent worker reads it, through the Agent account, when Studio asks (a Lookup); at merge or close time the API reads the pull request and its checks itself, with the Merge credential. Studio keeps the last known state and when it was read. A Follow-up is refused for a merged, closed or missing pull request, and allowed while the state is unknown.
 _Avoid_: PR status, sync
 
 **Lookup**:
 Studio's request to the agent worker to read something from the Git host, such as a Run's Pull request state. Any connected agent worker answers it with read access only; it needs no Working copy and starts no agent.
+
+**Merge**:
+The operator's action that lands a Run's pull request in the Integration branch from Studio. It is one confirmed action, "Approve and merge", pinned to the approved commit, and uses the Project's merge method (squash by default, or merge commit; rebase is not offered). Studio refuses it with a failing or running Pull request check, a conflict with the Integration branch, an active Run or a Run branch that moved after the operator looked; there is no override. Afterwards Studio deletes the Run branch, fetches the Project's Clone and refreshes the Pull request state. The Agent account never merges.
+_Avoid_: Approve (for the whole action), land, ship
+
+**Merge approval**:
+The record stored first when the operator presses "Approve and merge": who, when, the commit approved and the Pull request checks seen. A merge the Git host refuses leaves it in place, marked as not carried out. The operator's review of the Studio-side diff of that commit is the independent review, because the author is the agent.
+_Avoid_: Approval (alone), sign-off, review approval
+
+**Close without merging**:
+The operator's action that closes a Run's pull request without merging it, when the Run's work is rejected. Studio then deletes the Run branch, fetches the Project's Clone and refreshes the Pull request state.
+_Avoid_: Reject, abandon, discard
+
+**Merge credential**:
+The token on Studio's side that a Merge or a Close without merging uses on the Git host: a fine-grained token of the operator's Git host account, limited to the managed Repositories, with write access to pull requests and contents. It is never given to the agent side. While it is unset, merging and closing are switched off.
+_Avoid_: Merge token (for the concept), operator token, Agent account
 
 **Working copy**:
 A Run's own clone of the Repository, on its Run branch. It is not the Project's Clone.
@@ -173,5 +189,5 @@ The process that carries out Runs by driving the agent CLIs, on the agents' side
 _Avoid_: Executor, agent host
 
 **Agent account**:
-The separate Git host account through which Run branches are pushed, draft pull requests opened, and a pull request's state, Pull request checks and Review comments read; it is not the operator's account.
+The separate Git host account through which Run branches are pushed, draft pull requests opened, and a pull request's state, Pull request checks and Review comments read; it is not the operator's account. It never merges or closes: that uses the Merge credential on Studio's side.
 _Avoid_: Bot account, machine user, operator account
