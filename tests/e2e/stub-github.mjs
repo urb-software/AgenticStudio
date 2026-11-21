@@ -217,10 +217,14 @@ const server = createServer((request, response) => {
       const pr = pullOf(mergeRoute[1], mergeRoute[2], mergeRoute[3]);
       if (!pr) return send(404, { message: 'Not Found' });
       if (pr.merged || pr.state !== 'open') {
+        console.log(`[stub-github] refused merge of #${pr.number}: ${pr.state}`);
         return send(405, { message: 'Pull Request is not mergeable' });
       }
       if (pr.draft) return send(405, { message: 'Draft pull requests cannot be merged' });
       if (body.sha !== (pr.headSha ?? 'c'.repeat(40))) {
+        console.log(
+          `[stub-github] refused merge of #${pr.number}: head is ${pr.headSha}, got ${body.sha}`,
+        );
         return send(409, { message: 'Head branch was modified. Review and try the merge again.' });
       }
       pr.merged = true;

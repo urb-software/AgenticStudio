@@ -137,10 +137,7 @@ export function RunMergeApproval({ run }: { run: RunOutput }) {
       ) : (
         <p className="m-0 text-small text-text-muted">
           The Project&apos;s Repository was asked to fetch the merge. If that failed, the{' '}
-          <Link
-            href={`/projects/${run.projectId}`}
-            className="text-brand no-underline hover:underline"
-          >
+          <Link href={`/projects/${run.projectId}`} className="text-brand underline">
             Repository
           </Link>{' '}
           shows why.

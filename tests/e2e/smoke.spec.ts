@@ -1319,7 +1319,20 @@ test(RUN_TEST, async ({ page }, testInfo) => {
   await expectNoHorizontalScroll(page);
   await expectNoAxeViolations(page);
   await mergeDialog.getByRole('button', { name: 'Approve and merge' }).click();
-  await expect(pullRequestCard).toContainText('Merged from Studio', { timeout: 30_000 });
+  // A refusal stays in the dialog: say what it was instead of waiting for a card that is hidden.
+  const outcome = await Promise.race([
+    page
+      .getByText('Merged from Studio')
+      .waitFor({ timeout: 30_000 })
+      .then(() => 'merged'),
+    mergeDialog
+      .locator('[data-slot="banner"]')
+      .waitFor({ timeout: 30_000 })
+      .then(() => 'refused'),
+  ]);
+  if (outcome === 'refused')
+    throw new Error(`The merge was refused: ${await mergeDialog.innerText()}`);
+  await expect(pullRequestCard).toContainText('Merged from Studio');
   await expect(pullRequestCard).toContainText('by the operator');
   await expect(pullRequestCard).toContainText(`approved at ${reviewedCommit.slice(0, 12)}`);
   await expect(pullRequestCard).toContainText('The Run branch was deleted');
