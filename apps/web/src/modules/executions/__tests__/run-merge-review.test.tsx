@@ -128,7 +128,9 @@ describe('Run page: merge review', () => {
   it('lists a ready review’s files and shows a file’s patch as a diff, reusing the Run diff view', async () => {
     const { user } = await openReview({}, READY);
 
-    const files = await within(reviewSection()).findByRole('navigation', { name: 'Changed files' });
+    const files = await within(reviewSection()).findByRole('navigation', {
+      name: 'Changed files in the merge review',
+    });
     expect(
       within(files)
         .getAllByRole('button')
@@ -137,8 +139,8 @@ describe('Run page: merge review', () => {
     expect(within(reviewSection()).getByText('3 files would change')).toBeTruthy();
     expect(within(reviewSection()).getByText(RUN_COMMIT.slice(0, 12))).toBeTruthy();
     const diff = await within(
-      within(reviewSection()).getByRole('region', { name: 'src/app.ts' }),
-    ).findByRole('region', { name: 'Diff of src/app.ts' });
+      within(reviewSection()).getByRole('region', { name: 'src/app.ts in the merge review' }),
+    ).findByRole('region', { name: 'Diff of src/app.ts in the merge review' });
     expect(within(diff).getByText('const b = 3;')).toBeTruthy();
     await user.click(within(files).getByRole('button', { name: /logo\.png/ }));
     expect(await within(reviewSection()).findByText(/Binary file/)).toBeTruthy();
