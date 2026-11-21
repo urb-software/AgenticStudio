@@ -243,7 +243,7 @@ export class ExecutionsModule {
               provide: MERGE_HOST,
               useFactory: (config: AppConfig): MergeHost =>
                 new GitHubMergeHost({
-                  token: config.mergeCredential?.reveal() ?? null,
+                  credential: config.mergeCredential,
                   ...(config.mergeGithubApiUrl === null
                     ? {}
                     : { apiUrl: config.mergeGithubApiUrl }),

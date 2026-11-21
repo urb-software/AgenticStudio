@@ -4,6 +4,8 @@ import { InMemoryMergeHost } from '../in-memory-merge-host.js';
 
 const SCOPE: PullRequestScope = {
   remoteUrl: 'https://github.com/acme/shop.git',
+  runId: '0b8e5c2d-0000-4000-8000-000000000000',
+  integrationBranch: 'dev',
   runBranch: 'agent/x-r0b8e5c2d',
   pullRequestNumber: 7,
 };
@@ -52,6 +54,14 @@ describe('InMemoryMergeHost', () => {
     await host.close(SCOPE);
     await host.deleteRunBranch(SCOPE);
     expect(host.runBranchDeleted).toBe(true);
+  });
+
+  it('answers scope_mismatch for the branch of another Run or a pull request head that is not the Run branch', async () => {
+    const host = new InMemoryMergeHost();
+    const other = { ...SCOPE, runBranch: 'agent/x-r99999999' };
+    expect(await host.close(other)).toEqual({ ok: false, failure: { code: 'scope_mismatch' } });
+    host.setPullRequest({ headRef: 'agent/y-r0b8e5c2d' });
+    expect(await host.close(SCOPE)).toEqual({ ok: false, failure: { code: 'scope_mismatch' } });
   });
 
   it('answers a failure set for a method, until it is removed', async () => {

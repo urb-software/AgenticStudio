@@ -2,10 +2,13 @@ export const MERGE_HOST = Symbol('MERGE_HOST');
 
 /**
  * The pull request a call is about. The host answers `scope_mismatch`, and writes nothing, unless
- * the pull request's head is `runBranch` in the repository `remoteUrl` names.
+ * `runBranch` is the Run's own branch and the pull request's head is that branch in the
+ * repository `remoteUrl` names.
  */
 export interface PullRequestScope {
   remoteUrl: string;
+  runId: string;
+  integrationBranch: string;
   runBranch: string;
   pullRequestNumber: number;
 }

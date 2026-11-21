@@ -7,6 +7,7 @@ import type {
   MergeHostResult,
   PullRequestScope,
 } from '../../application/ports/merge-host.js';
+import { RunBranchRule } from '../../domain/value-objects/run-branch-rule.js';
 
 export type MergeHostMethod =
   | 'readPullRequest'
@@ -28,7 +29,7 @@ const OPEN_PULL_REQUEST: HostPullRequest = {
   state: 'open',
   draft: false,
   headSha: 'a'.repeat(40),
-  headRef: 'agent/task-r00000000',
+  headRef: '',
   baseRef: 'dev',
   mergeable: true,
   mergeableState: 'clean',
@@ -37,6 +38,7 @@ const OPEN_PULL_REQUEST: HostPullRequest = {
 /** A MergeHost for unit and integration tests: set what it answers, then read what it was asked. */
 export class InMemoryMergeHost implements MergeHost {
   readonly calls: MergeHostCall[] = [];
+  /** An empty `headRef` means the pull request's head is the Run branch of the scope. */
   private pullRequest: HostPullRequest = { ...OPEN_PULL_REQUEST };
   private checks: HostCheck[] = [];
   private readonly refusals = new Map<MergeHostMethod, MergeHostFailure>();
@@ -63,7 +65,7 @@ export class InMemoryMergeHost implements MergeHost {
   async readPullRequest(scope: PullRequestScope) {
     return this.answer('readPullRequest', scope, {}, () => ({
       ok: true as const,
-      pullRequest: { ...this.pullRequest },
+      pullRequest: { ...this.pullRequest, headRef: this.pullRequest.headRef || scope.runBranch },
     }));
   }
 
@@ -121,6 +123,15 @@ export class InMemoryMergeHost implements MergeHost {
     succeed: () => MergeHostResult<T>,
   ): MergeHostResult<T> {
     this.calls.push({ method, scope, ...details });
+    const ownBranch = RunBranchRule.of(scope.runId, scope.integrationBranch).accepts(
+      scope.runBranch,
+    );
+    if (
+      !ownBranch ||
+      (this.pullRequest.headRef !== '' && this.pullRequest.headRef !== scope.runBranch)
+    ) {
+      return { ok: false, failure: { code: 'scope_mismatch' } };
+    }
     const failure = this.refusals.get(method);
     return failure ? { ok: false, failure } : succeed();
   }

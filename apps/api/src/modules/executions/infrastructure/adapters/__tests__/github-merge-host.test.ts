@@ -1,5 +1,7 @@
 import { randomBytes } from 'node:crypto';
+import { inspect } from 'node:util';
 import { describe, expect, it, vi } from 'vitest';
+import { MergeCredential } from '../../../../../platform/config/merge-credential.js';
 import type { PullRequestScope } from '../../../application/ports/merge-host.js';
 import { GitHubMergeHost } from '../github-merge-host.js';
 
@@ -9,6 +11,8 @@ const BRANCH = 'agent/add-login-r1a2b3c4d';
 const SHA = 'b'.repeat(40);
 const SCOPE: PullRequestScope = {
   remoteUrl: 'https://github.com/acme/shop.git',
+  runId: '1a2b3c4d-0000-4000-8000-000000000000',
+  integrationBranch: 'dev',
   runBranch: BRANCH,
   pullRequestNumber: 7,
 };
@@ -72,7 +76,7 @@ function fakeHost(routes: Record<string, Reply | Reply[]>) {
 function hostWith(routes: Record<string, Reply | Reply[]>, token: string | null = TOKEN) {
   const fake = fakeHost(routes);
   const host = new GitHubMergeHost({
-    token,
+    credential: token === null ? null : MergeCredential.of(token),
     apiUrl: API,
     fetch: fake.fetch,
     now: () => Date.UTC(2026, 10, 21, 12, 0, 0),
@@ -208,6 +212,32 @@ describe('GitHubMergeHost', () => {
       });
     });
 
+    it('answers rate_limited for a secondary rate limit: a 403 that names the rate limit without headers', async () => {
+      const { host } = hostWith({
+        [PULL]: {
+          status: 403,
+          body: { message: 'You have exceeded a secondary rate limit. Please wait.' },
+        },
+      });
+      expect(await host.readPullRequest(SCOPE)).toEqual({
+        ok: false,
+        failure: { code: 'rate_limited', retryAfterSeconds: 60 },
+      });
+    });
+
+    it('answers unavailable for an answer larger than 1 MiB', async () => {
+      const big = new GitHubMergeHost({
+        credential: MergeCredential.of(TOKEN),
+        apiUrl: API,
+        fetch: (async () =>
+          new Response('x'.repeat(1024 * 1024 + 1), { status: 200 })) as typeof fetch,
+      });
+      expect(await big.readPullRequest(SCOPE)).toEqual({
+        ok: false,
+        failure: { code: 'unavailable' },
+      });
+    });
+
     it('answers refused, not rate_limited, for a 403 without rate-limit headers', async () => {
       const { host } = hostWith({
         [PULL]: {
@@ -307,6 +337,26 @@ describe('GitHubMergeHost', () => {
         expect(requests).toEqual([]);
       },
     );
+
+    it('answers scope_mismatch without a call for the well-formed branch of another Run', async () => {
+      const { host, requests } = hostWith({});
+      const other = { ...SCOPE, runBranch: 'agent/add-login-r99999999' };
+      for (const call of [
+        () => host.close(other),
+        () => host.deleteRunBranch(other),
+        () => host.merge(other, { sha: SHA, method: 'squash' }),
+      ]) {
+        expect(await call()).toEqual({ ok: false, failure: { code: 'scope_mismatch' } });
+      }
+      expect(requests).toEqual([]);
+    });
+
+    it('answers scope_mismatch without a call when the Run branch is the integration branch', async () => {
+      const { host, requests } = hostWith({});
+      const scope = { ...SCOPE, integrationBranch: BRANCH };
+      expect(await host.close(scope)).toEqual({ ok: false, failure: { code: 'scope_mismatch' } });
+      expect(requests).toEqual([]);
+    });
 
     it('compares the repository name ignoring case', async () => {
       const { host } = hostWith({
@@ -413,6 +463,30 @@ describe('GitHubMergeHost', () => {
         ok: false,
         failure: { code: 'refused' },
       });
+    });
+
+    it.each(['abc1234', 'b'.repeat(39), 'b'.repeat(41), 'g'.repeat(40)])(
+      'refuses the short or malformed commit id %s for every pinned call',
+      async (sha) => {
+        const { host, requests } = hostWith({ [PULL]: OPEN });
+        for (const call of [
+          () => host.approve(SCOPE, sha),
+          () => host.merge(SCOPE, { sha, method: 'squash' }),
+          () => host.readChecks(SCOPE, sha),
+        ]) {
+          expect(await call()).toMatchObject({ ok: false, failure: { code: 'refused' } });
+        }
+        expect(requests.every((request) => request.method === 'GET')).toBe(true);
+      },
+    );
+
+    it('accepts a full 64-digit commit id', async () => {
+      const long = 'b'.repeat(64);
+      const { host } = hostWith({
+        [PULL]: OPEN,
+        'POST /repos/acme/shop/pulls/7/reviews': { status: 200, body: {} },
+      });
+      expect(await host.approve(SCOPE, long)).toEqual({ ok: true });
     });
 
     it('refuses a commit that is not a commit id without writing', async () => {
@@ -600,7 +674,7 @@ describe('GitHubMergeHost', () => {
         },
       });
       const plain = new GitHubMergeHost({
-        token: TOKEN,
+        credential: MergeCredential.of(TOKEN),
         apiUrl: API,
         fetch: (async () =>
           new Response(`oops Authorization: Bearer ${TOKEN} and ${TOKEN}`, {
@@ -637,6 +711,12 @@ describe('GitHubMergeHost', () => {
         error.mockRestore();
       }
       expect(written.join('')).not.toContain(TOKEN);
+    });
+
+    it('does not print the token when the adapter itself is inspected or serialized', () => {
+      const { host } = hostWith({});
+      expect(inspect(host, { depth: null, showHidden: true })).not.toContain(TOKEN);
+      expect(JSON.stringify(host)).not.toContain(TOKEN);
     });
 
     it('cuts a refusal message to 500 characters', async () => {

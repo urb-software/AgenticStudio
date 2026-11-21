@@ -12,7 +12,8 @@
 //    README.md, "Web /api proxy").
 //    The API gets a throwaway data directory (STUDIO_DATA_DIR) in the OS temp directory.
 //    The API runs with NODE_ENV=test and STUDIO_GIT_ALLOW_FILE_REMOTES=true: the Git adapter's
-//    test-only fixture-remote setting, which the API accepts only under NODE_ENV=test (#59).
+//    test-only fixture-remote setting, which the API accepts only under NODE_ENV=test (#59),
+//    and STUDIO_MERGE_GITHUB_API_URL, the merge adapter's test-only API base, gated the same way.
 //    Nothing else in the API reads NODE_ENV (Story #60, clarification 7).
 // 4. On Linux, creates throwaway bare fixture Repositories with a `dev` branch (two per
 //    Playwright project: one for the repository test, one for the Run test, since a remote

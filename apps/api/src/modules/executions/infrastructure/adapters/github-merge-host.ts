@@ -10,13 +10,15 @@ import {
   type MergeHostResult,
   type PullRequestScope,
 } from '../../application/ports/merge-host.js';
+import { RunBranchRule } from '../../domain/value-objects/run-branch-rule.js';
+import { MergeCredential } from '../../../../platform/config/merge-credential.js';
 import { GitHubRepository } from '../../domain/value-objects/git-hub-repository.js';
 
 export const GITHUB_API_URL = 'https://api.github.com';
 
 export interface GitHubMergeHostOptions {
   /** `null`: every call answers `not_configured`. */
-  token: string | null;
+  credential: MergeCredential | null;
   /** The only host the token is sent to. */
   apiUrl?: string;
   allowFileRemotes?: boolean;
@@ -31,8 +33,8 @@ const MAX_RETRY_SECONDS = 3600;
 const PAGE_SIZE = 100;
 const MAX_PAGES = 20;
 const MESSAGE_MAX_LENGTH = 500;
-const RUN_BRANCH = /^agent\/[a-z0-9]+(?:-[a-z0-9]+)*-r[0-9a-f]{8}$/;
-const COMMIT_SHA = /^[0-9a-f]{7,64}$/i;
+const COMMIT_SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
+const BODY_MAX_BYTES = 1024 * 1024;
 
 const repositoryRef = z.object({ full_name: z.string() }).nullable();
 const pullRequestSchema = z.object({
@@ -77,8 +79,10 @@ export class GitHubMergeHost implements MergeHost {
   private readonly timeoutMs: number;
   private readonly send: typeof fetch;
   private readonly now: () => number;
+  readonly #credential: MergeCredential | null;
 
   constructor(private readonly options: GitHubMergeHostOptions) {
+    this.#credential = options.credential;
     this.apiUrl = (options.apiUrl ?? GITHUB_API_URL).replace(/\/+$/, '');
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.send = options.fetch ?? fetch;
@@ -198,7 +202,7 @@ export class GitHubMergeHost implements MergeHost {
   private repositoryOf(
     scope: PullRequestScope,
   ): { ok: true; repository: GitHubRepository } | Failed {
-    if (this.options.token === null) return notConfigured();
+    if (this.#credential === null) return notConfigured();
     const repository = GitHubRepository.fromRemote(scope.remoteUrl, {
       allowFileRemotes: this.options.allowFileRemotes ?? false,
     });
@@ -211,7 +215,7 @@ export class GitHubMergeHost implements MergeHost {
     if (!resolved.ok) return resolved;
     const { repository } = resolved;
     if (
-      !RUN_BRANCH.test(scope.runBranch) ||
+      !RunBranchRule.of(scope.runId, scope.integrationBranch).accepts(scope.runBranch) ||
       !Number.isSafeInteger(scope.pullRequestNumber) ||
       scope.pullRequestNumber < 1
     ) {
@@ -269,8 +273,7 @@ export class GitHubMergeHost implements MergeHost {
   }
 
   private async call(method: string, path: string, body?: unknown): Promise<Answer> {
-    const { token } = this.options;
-    if (token === null) return notConfigured();
+    if (this.#credential === null) return notConfigured();
     let response: Response;
     try {
       response = await this.send(`${this.apiUrl}${path}`, {
@@ -278,7 +281,7 @@ export class GitHubMergeHost implements MergeHost {
         redirect: 'manual',
         signal: AbortSignal.timeout(this.timeoutMs),
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${this.#credential.reveal()}`,
           Accept: 'application/vnd.github+json',
           'X-GitHub-Api-Version': '2022-11-28',
           'User-Agent': 'agentic-studio',
@@ -290,7 +293,8 @@ export class GitHubMergeHost implements MergeHost {
       return unavailable();
     }
     if (response.ok) {
-      const text = await response.text().catch(() => '');
+      const text = await readCapped(response);
+      if (text === null) return unavailable();
       try {
         return { ok: true, json: text === '' ? null : JSON.parse(text) };
       } catch {
@@ -309,11 +313,12 @@ export class GitHubMergeHost implements MergeHost {
       (status === 403 &&
         (response.headers.get('x-ratelimit-remaining') === '0' ||
           response.headers.has('retry-after')));
-    if (limited) return { code: 'rate_limited', retryAfterSeconds: this.retryAfter(response) };
-    return {
-      code: 'refused',
-      message: this.hostMessage(await response.text().catch(() => '')),
-    };
+    const body = (await readCapped(response)) ?? '';
+    const message = this.hostMessage(body);
+    if (limited || (status === 403 && /rate limit/i.test(message))) {
+      return { code: 'rate_limited', retryAfterSeconds: this.retryAfter(response) };
+    }
+    return { code: 'refused', message };
   }
 
   private retryAfter(response: Response): number {
@@ -351,11 +356,34 @@ export class GitHubMergeHost implements MergeHost {
 
   /** Removes the token itself, then credential-looking text; at most 500 characters. */
   private redact(text: string): string {
-    const { token } = this.options;
+    const token = this.#credential?.reveal();
     const withoutToken = token ? text.split(token).join('[redacted]') : text;
     const flat = redactSecrets(withoutToken).replace(/\s+/g, ' ').trim();
     return flat.length > MESSAGE_MAX_LENGTH ? `${flat.slice(0, MESSAGE_MAX_LENGTH - 1)}…` : flat;
   }
+}
+
+/** The body as text, or `null` when it is larger than the cap or cannot be read. */
+async function readCapped(response: Response): Promise<string | null> {
+  const reader = response.body?.getReader();
+  if (!reader) return '';
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > BODY_MAX_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        return null;
+      }
+      chunks.push(value);
+    }
+  } catch {
+    return null;
+  }
+  return Buffer.concat(chunks).toString('utf8');
 }
 
 function notConfigured(): Failed {

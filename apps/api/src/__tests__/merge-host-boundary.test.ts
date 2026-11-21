@@ -49,6 +49,7 @@ function reachableFrom(root: Type, providers: Provider[]): Set<Token> {
       const provider = byToken.get(token);
       if (provider === undefined) continue;
       if (typeof provider === 'function') visit(injectedTokens(provider as Type));
+      else if ('useExisting' in provider) visit([provider.useExisting]);
       else if ('useClass' in provider) visit(injectedTokens(provider.useClass as Type));
       else if ('useFactory' in provider) visit((provider.inject ?? []) as Token[]);
     }
