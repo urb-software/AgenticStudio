@@ -131,7 +131,7 @@ The agent worker starts a provider's CLI only when that provider's switch in its
 
 ### Repository features (Linux only)
 
-Connected Repositories (Epic #55) run the system `git` binary and an SSH client under the hardening baseline of [Security](docs/engineering/security.md) §4. They work on **Linux only** (containers, CI, a VPS). On Linux the API checks at start-up that `git` 2.37.0 or later is installed and refuses to start otherwise. On other platforms, including native Windows, the API starts and everything else works; Git operations report an unsupported platform. `STUDIO_DATA_DIR` is required everywhere, so the configuration is the same on every platform.
+Connected Repositories (Epic #55) run the system `git` binary and an SSH client under the hardening baseline of [Security](docs/engineering/security.md) §4. They work on **Linux only** (containers, CI, a VPS). On Linux the API checks at start-up that `git` 2.38.0 or later is installed and refuses to start otherwise. On other platforms, including native Windows, the API starts and everything else works; Git operations report an unsupported platform. `STUDIO_DATA_DIR` is required everywhere, so the configuration is the same on every platform.
 
 ### Remote address policy
 

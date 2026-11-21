@@ -9,6 +9,8 @@ const OPERATIONS = [
   'readBranchCommit',
   'scanHostKey',
   'isPathTracked',
+  'fetchForReview',
+  'mergeDiff',
 ] as const;
 
 /**
@@ -35,6 +37,12 @@ export class FakeRepositoryGit implements RepositoryGit {
   );
 
   isPathTracked = vi.fn<RepositoryGit['isPathTracked']>(() => Promise.resolve(false));
+
+  fetchForReview = vi.fn<RepositoryGit['fetchForReview']>(() =>
+    Promise.reject(new Error('not used')),
+  );
+
+  mergeDiff = vi.fn<RepositoryGit['mergeDiff']>(() => Promise.reject(new Error('not used')));
 
   removeClone = vi.fn<RepositoryGit['removeClone']>(() => Promise.resolve());
 

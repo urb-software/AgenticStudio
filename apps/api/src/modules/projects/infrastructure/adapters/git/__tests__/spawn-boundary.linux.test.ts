@@ -481,16 +481,16 @@ describe.runIf(process.platform === 'linux')(
     });
 
     describe('start-up version check', () => {
-      // 2.37 is the first Git with http.curloptResolve, which pins HTTPS to the checked address.
-      it.each(['2.37.0', '2.43.0', '3.0.1'])('accepts git %s', async (version) => {
+      // 2.38 is the first Git with merge-tree --write-tree, which the merge review needs.
+      it.each(['2.38.0', '2.43.0', '3.0.1'])('accepts git %s', async (version) => {
         await expect((await adapter({ version })).verifyGitVersion()).resolves.toBe(version);
       });
 
-      it.each(['2.36.9', '2.32.0', '2.9.5', '1.9.0'])(
+      it.each(['2.37.9', '2.36.9', '2.32.0', '2.9.5', '1.9.0'])(
         'refuses git %s with a clear error',
         async (version) => {
           await expect((await adapter({ version })).onModuleInit()).rejects.toThrow(
-            /need git 2\.37\.0 or later; found "git version /,
+            /need git 2\.38\.0 or later; found "git version /,
           );
         },
       );
@@ -498,7 +498,7 @@ describe.runIf(process.platform === 'linux')(
       it('refuses a missing git with a clear error', async () => {
         await expect(
           (await adapter('real', { gitBinary: join(root, 'no-such-git') })).onModuleInit(),
-        ).rejects.toThrow(/need git 2\.37\.0 or later, but git could not be run/);
+        ).rejects.toThrow(/need git 2\.38\.0 or later, but git could not be run/);
       });
     });
 
