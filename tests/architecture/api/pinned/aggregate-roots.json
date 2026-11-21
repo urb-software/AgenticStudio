@@ -1,6 +1,9 @@
 {
   "description": "The aggregate roots of each module (backend.md section 3 rule 11: anything with its own repository is a root, in its own file in domain/entities/). Each entry is '<module>/<RootClass>' with the one-line reason it is a root. Child entities (pinned in aggregate-rules.ts, for example the Run step of the Run) are not roots. Adding or removing a root fails tests/architecture/api/pinned.test.ts until this file is updated in the same pull request.",
   "roots": {
+    "executions/MergeApproval": {
+      "reason": "Its own repository and table, many per Run and every one kept; stored before the merge and finished by conditional writes of its own; refers to the Run by id and no rule spans it and the Run."
+    },
     "executions/PreparedFollowUp": {
       "reason": "Its own repository, one per Run, stored by a lookup answer and replaced or discarded in its own transaction; refers to the Run by id."
     },

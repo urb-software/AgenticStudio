@@ -1,6 +1,26 @@
 {
   "description": "Every method of every repository interface in domain/repositories/ (backend.md section 3 rule 6: business rules live on the domain object, never in the database adapter). Kinds: load (reads one aggregate), save (persists or removes one), query (reads plain data), atomic (one conditional, locked or index-decided step that load, call and save cannot express) and set-wide (one statement over many aggregates). Each atomic or set-wide method has a one-line reason. Compared with the source by tests/architecture/api/pinned.test.ts: a method added, renamed or removed fails it until this file is updated in the same pull request.",
   "repositories": {
+    "executions/MergeApprovalRepository": {
+      "findLatest": { "kind": "load" },
+      "add": {
+        "kind": "atomic",
+        "reason": "One INSERT whose partial unique index refuses a second pending approval of a Run, so two simultaneous merges are one; load, call and save would race."
+      },
+      "finish": {
+        "kind": "atomic",
+        "reason": "One UPDATE that stores an outcome only while the row is still pending, so a request that was taken over as interrupted never overwrites the takeover."
+      },
+      "requestMerge": {
+        "kind": "atomic",
+        "reason": "One UPDATE that records the merge request only while the row is still pending, so a request taken over never goes on to merge."
+      },
+      "requestMerge": {
+        "kind": "atomic",
+        "reason": "One UPDATE that records the merge request only while the row is still pending, so a request taken over never goes on to merge."
+      },
+      "save": { "kind": "save" }
+    },
     "executions/PreparedFollowUpRepository": {
       "find": { "kind": "load" },
       "findRunIdsAmong": { "kind": "query" },

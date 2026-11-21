@@ -15,6 +15,7 @@ import {
   GetPreparedFollowUpHandler,
   PreparedFollowUpNotFoundError,
 } from '../../get-prepared-follow-up/handler.js';
+import { InMemoryMergeApprovalRepository } from '../../../../domain/repositories/__tests__/in-memory-merge-approval-repository.js';
 import { RetentionPolicy } from '../../../../domain/value-objects/retention-policy.js';
 import { GetRunHandler } from '../../get-run/handler.js';
 import { NoFailingChecksError, PrepareFailingChecksHandler } from '../handler.js';
@@ -66,6 +67,7 @@ describe('preparing a Follow-up from failing checks', () => {
         hoursAfterPullRequestEnd: 24,
       }),
       { configured: false, allowFileRemotes: false },
+      new InMemoryMergeApprovalRepository(),
     );
   });
 

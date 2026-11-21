@@ -214,16 +214,25 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         followUp: { allowed: false, reason: 'not_finished' },
         // No Merge credential is set in this app, and the page learns why.
         merge: { available: false, reason: 'not_configured' },
+        // The merge confirmation names the branch the pull request merges into.
+        integrationBranch: 'dev',
       });
       const projectRuns = await http()
         .get(`/api/projects/${project.id}/runs`)
         .set('Cookie', cookie);
       expect(projectRuns.status).toBe(200);
       // Lists leave the conversation out.
-      const { messages: _messages, followUp: _followUp, merge: _merge, ...listed } = read;
+      const {
+        messages: _messages,
+        followUp: _followUp,
+        merge: _merge,
+        integrationBranch: _integrationBranch,
+        ...listed
+      } = read;
       void _messages;
       void _followUp;
       void _merge;
+      void _integrationBranch;
       expect(projectRuns.body).toEqual([listed]);
       expect((await http().get('/api/runs').set('Cookie', cookie)).body).toEqual([listed]);
     });

@@ -36,6 +36,7 @@ type Route =
   | 'bringUp'
   | 'refresh'
   | 'closePullRequest'
+  | 'mergeRun'
   | 'prepare'
   | 'prepared'
   | 'discardPrepared'
@@ -69,6 +70,7 @@ const ROUTES: readonly [RegExp, (method: string) => Route][] = [
   [/^\/api\/runs\/([^/]+)\/bring-up-to-date$/, () => 'bringUp'],
   [/^\/api\/runs\/([^/]+)\/pull-request\/refresh$/, () => 'refresh'],
   [/^\/api\/runs\/([^/]+)\/pull-request\/close$/, () => 'closePullRequest'],
+  [/^\/api\/runs\/([^/]+)\/merge$/, () => 'mergeRun'],
   [/^\/api\/runs\/([^/]+)\/pull-request\/failing-checks\/prepare$/, () => 'prepare'],
   [
     /^\/api\/runs\/([^/]+)\/pull-request\/failing-checks\/prepared$/,
@@ -175,6 +177,7 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     bringUp: [],
     refresh: [],
     closePullRequest: [],
+    mergeRun: [],
     prepare: [],
     prepared: [],
     discardPrepared: [],
@@ -264,6 +267,7 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
       route === 'answer' ||
       route === 'followUp' ||
       route === 'bringUp' ||
+      route === 'mergeRun' ||
       route === 'loadComments'
         ? await request.json()
         : route === 'refresh'
@@ -471,6 +475,35 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
           },
         };
         return json(200, { state: 'closed', closedFromStudioAt: at, runBranchDeletedAt: at });
+      }
+      case 'mergeRun': {
+        // The API's rules, in short: the merge and the steps after it all succeed.
+        const index = runs.findIndex((candidate) => candidate.id === id);
+        const run = runs[index];
+        if (!run?.pullRequest) return json(404, problem(404, 'Run not found'));
+        const at = new Date().toISOString();
+        const { commit } = body as { commit: string };
+        const earlier = run.latestMergeApproval;
+        const approval = (earlier?.result === 'carried_out' ? earlier : undefined) ?? {
+          id: '00000000-0000-4000-8000-0000000000e1',
+          approvedAt: at,
+          approvedBy: 'operator' as const,
+          commit,
+          integrationBranch: 'dev',
+          method: 'squash' as const,
+          checksSeen: [],
+          result: 'carried_out' as const,
+          mergedCommit: 'f'.repeat(40),
+          completedAt: at,
+        };
+        const done = { ...approval, cloneFetchStartedAt: approval.cloneFetchStartedAt ?? at };
+        const runBranchDeletedAt = run.pullRequest.runBranchDeletedAt ?? at;
+        runs[index] = {
+          ...run,
+          pullRequest: { ...run.pullRequest, state: 'merged', runBranchDeletedAt },
+          latestMergeApproval: done,
+        };
+        return json(200, { ...done, runBranchDeletedAt });
       }
       case 'prepare': {
         // The API only records a request; the Run comes back as it is. Tests move it on with

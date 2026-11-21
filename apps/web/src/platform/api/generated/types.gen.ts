@@ -136,6 +136,8 @@ export type RunOutput = {
     followUps: number;
     followUp?: RunFollowUpEligibilityOutput;
     merge?: RunMergeAvailabilityOutput;
+    integrationBranch?: string;
+    latestMergeApproval?: MergeApprovalOutput;
     cancelRequestedAt?: string;
     cancellation?: {
         by: 'operator' | 'system';
@@ -174,6 +176,28 @@ export type RunMergeAvailabilityOutput = {
 } | {
     available: false;
     reason: 'not_configured' | 'unsupported_host';
+};
+
+export type MergeApprovalOutput = {
+    id: string;
+    approvedAt: string;
+    approvedBy: 'operator';
+    commit: string;
+    integrationBranch: string;
+    method: 'squash';
+    checksSeen: Array<{
+        name: string;
+        state: 'success' | 'failure' | 'pending' | 'neutral';
+    }>;
+    result: 'pending' | 'carried_out' | 'not_carried_out';
+    refusal?: {
+        code: 'checks_failing' | 'checks_running' | 'conflicting' | 'run_active' | 'commit_moved' | 'review_out_of_date' | 'pull_request_not_open' | 'merge_unavailable' | 'host_refused' | 'merge_in_progress' | 'interrupted';
+        reason: string;
+    };
+    mergedCommit?: string;
+    completedAt?: string;
+    mergeOutcomeUnknown?: true;
+    cloneFetchStartedAt?: string;
 };
 
 export type RunPullRequestOutput = {
@@ -269,6 +293,34 @@ export type ClosePullRequestResponseOutput = {
     runBranchDeletedAt?: string;
     runBranchDeletionFailure?: string;
     state: 'draft' | 'open' | 'merged' | 'closed' | 'missing';
+};
+
+export type MergeRunRequest = {
+    commit: string;
+};
+
+export type MergeRunResponseOutput = {
+    id: string;
+    approvedAt: string;
+    approvedBy: 'operator';
+    commit: string;
+    integrationBranch: string;
+    method: 'squash';
+    checksSeen: Array<{
+        name: string;
+        state: 'success' | 'failure' | 'pending' | 'neutral';
+    }>;
+    result: 'pending' | 'carried_out' | 'not_carried_out';
+    refusal?: {
+        code: 'checks_failing' | 'checks_running' | 'conflicting' | 'run_active' | 'commit_moved' | 'review_out_of_date' | 'pull_request_not_open' | 'merge_unavailable' | 'host_refused' | 'merge_in_progress' | 'interrupted';
+        reason: string;
+    };
+    mergedCommit?: string;
+    completedAt?: string;
+    mergeOutcomeUnknown?: true;
+    cloneFetchStartedAt?: string;
+    runBranchDeletedAt?: string;
+    runBranchDeletionFailure?: string;
 };
 
 export type PreparedFollowUpCheckOutput = {
@@ -1299,6 +1351,42 @@ export type CloseRunPullRequestResponses = {
 };
 
 export type CloseRunPullRequestResponse = CloseRunPullRequestResponses[keyof CloseRunPullRequestResponses];
+
+export type MergeRunData = {
+    body: MergeRunRequest;
+    path: {
+        runId: string;
+    };
+    query?: never;
+    url: '/api/runs/{runId}/merge';
+};
+
+export type MergeRunErrors = {
+    /**
+     * Unknown run (urn:agentic-studio:problem:run-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * Refused: urn:agentic-studio:problem:merge-checks-failing, urn:agentic-studio:problem:merge-checks-running, urn:agentic-studio:problem:merge-conflicting, urn:agentic-studio:problem:merge-run-active, urn:agentic-studio:problem:merge-commit-moved, urn:agentic-studio:problem:merge-review-out-of-date, urn:agentic-studio:problem:merge-pull-request-not-open, urn:agentic-studio:problem:merge-unavailable, urn:agentic-studio:problem:merge-host-refused or urn:agentic-studio:problem:merge-in-progress
+     */
+    409: ProblemDetails;
+    /**
+     * Invalid request body (field errors)
+     */
+    422: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type MergeRunError = MergeRunErrors[keyof MergeRunErrors];
+
+export type MergeRunResponses = {
+    200: MergeRunResponseOutput;
+};
+
+export type MergeRunResponse = MergeRunResponses[keyof MergeRunResponses];
 
 export type PrepareRunFailingChecksData = {
     body?: never;

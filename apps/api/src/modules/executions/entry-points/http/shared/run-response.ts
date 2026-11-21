@@ -1,4 +1,6 @@
 import { mergeAvailabilitySchema, pullRequestClosureSchema } from '@agentic-studio/contracts';
+import type { MergeApprovalView } from '../../../application/merge-approval-view.js';
+import { mergeApprovalResponseSchema, toMergeApprovalResponse } from './merge-approval-response.js';
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
@@ -140,6 +142,10 @@ export const runResponseSchema = z
       .optional(),
     /** Whether Studio can merge or close the pull request; single-Run answers only. */
     merge: mergeAvailabilitySchema.meta({ id: 'RunMergeAvailability' }).optional(),
+    /** The branch the pull request merges into; single-Run answers only. */
+    integrationBranch: z.string().optional(),
+    /** The newest Merge approval of the Run, whatever came of it; single-Run answers only. */
+    latestMergeApproval: mergeApprovalResponseSchema.optional(),
     cancelRequestedAt: z.iso.datetime().optional(),
     cancellation: z.object({ by: runCancelledBySchema, reason: z.string() }).optional(),
     delivery: runDeliverySchema.optional(),
@@ -296,6 +302,8 @@ export function toRunResponse(
     { allowed: true } | { allowed: false; reason: z.infer<typeof followUpRefusalSchema> }
   ) & { openUntil?: Date; removalPending?: true },
   merge?: z.infer<typeof mergeAvailabilitySchema>,
+  latestMergeApproval?: MergeApprovalView | null,
+  integrationBranch?: string,
 ): RunResponse {
   return {
     id: run.id,
@@ -341,6 +349,10 @@ export function toRunResponse(
         }
       : {}),
     ...(merge ? { merge } : {}),
+    ...(integrationBranch ? { integrationBranch } : {}),
+    ...(latestMergeApproval
+      ? { latestMergeApproval: toMergeApprovalResponse(latestMergeApproval) }
+      : {}),
     ...(run.cancelRequestedAt ? { cancelRequestedAt: run.cancelRequestedAt.toISOString() } : {}),
     ...(run.cancellation
       ? { cancellation: { by: run.cancellation.by, reason: run.cancellation.reason } }

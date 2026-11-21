@@ -4,6 +4,9 @@
     "executions/application/run-lookup-requests.ts": {
       "reason": "Steps 1 to 5 tried: its steps are one transaction across two aggregates (the Run and its lookup), so they fit on neither one (1); no infrastructure capability is involved (2); the five entry points that request a lookup (refresh, failing checks, review comments, Follow-up refresh, daily refresh) do not share their other steps, so they are not one use case (3); the answer is needed at once, so it cannot be a job or event (4); the steps are too many to repeat (5)."
     },
+    "executions/application/merge-approval-view.ts": {
+      "reason": "Steps 1 to 5 tried: a result shape is no behaviour of the entity (1); no infrastructure capability is involved (2); the merge and the single Run answer both show the whole Merge approval, and handlers never call each other, so no one use case holds it (3); it is no job or event (4); copying its fields into both would drift, since a new field must be added to every copy (5). It is a type with a pure mapping from the entity: no rule, no repository or port call."
+    },
     "executions/application/run-view.ts": {
       "reason": "Steps 1 to 5 tried: a result shape is no behaviour of the entity (1); no infrastructure capability is involved (2); the single Run, the two Run lists, the failing-checks preparation and the pull request refresh all show the whole Run, and handlers never call each other, so no one use case holds it (3); it is no job or event (4); copying its fields into each of those features would drift, since a new field must be added to every copy (5). It is a type with a pure mapping from the entity: no rule, no repository or port call."
     },

@@ -40,10 +40,11 @@ export class PrepareFailingChecksEndpoint {
       await this.handler.execute({
         runId,
       });
-      const { run, followUp, merge } = await this.getRun.execute({
-        runId,
-      });
-      return toRunResponse(run, followUp, merge);
+      const { run, followUp, merge, latestMergeApproval, integrationBranch } =
+        await this.getRun.execute({
+          runId,
+        });
+      return toRunResponse(run, followUp, merge, latestMergeApproval, integrationBranch);
     } catch (error) {
       if (error instanceof RunNotFoundError) throw runNotFound();
       if (error instanceof PullRequestNotRefreshableError) throw pullRequestNotRefreshable();
