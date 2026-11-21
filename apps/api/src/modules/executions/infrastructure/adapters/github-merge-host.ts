@@ -44,6 +44,9 @@ const pullRequestSchema = z.object({
   draft: z.boolean().optional(),
   mergeable: z.boolean().nullable().optional(),
   mergeable_state: z.string().optional(),
+  title: z.string(),
+  merge_commit_sha: z.string().nullable().optional(),
+  body: z.string().nullable().optional(),
   head: z.object({ sha: z.string(), ref: z.string(), repo: repositoryRef }),
   base: z.object({ ref: z.string(), repo: repositoryRef }),
 });
@@ -57,7 +60,7 @@ const combinedStatusSchema = z.object({
   total_count: z.number().int().optional(),
   statuses: z.array(z.object({ context: z.string(), state: z.string() })),
 });
-const mergeAnswerSchema = z.object({ merged: z.boolean() });
+const mergeAnswerSchema = z.object({ merged: z.boolean(), sha: z.string().optional() });
 const graphqlAnswerSchema = z.object({
   errors: z.array(z.object({ message: z.string().optional() })).optional(),
 });
@@ -150,7 +153,10 @@ export class GitHubMergeHost implements MergeHost {
     });
   }
 
-  async merge(scope: PullRequestScope, request: HostMergeRequest): Promise<MergeHostResult> {
+  async merge(
+    scope: PullRequestScope,
+    request: HostMergeRequest,
+  ): Promise<MergeHostResult<{ mergedCommit: string }>> {
     return this.guarded(scope, async (repository, number) => {
       if (!COMMIT_SHA.test(request.sha)) {
         return this.refusal('The commit is not a valid commit id.');
@@ -162,8 +168,9 @@ export class GitHubMergeHost implements MergeHost {
         ...(request.message === undefined ? {} : { commit_message: request.message }),
       });
       if (!answer.ok) return answer;
-      return mergeAnswerSchema.safeParse(answer.json).data?.merged === true
-        ? { ok: true }
+      const merged = mergeAnswerSchema.safeParse(answer.json).data;
+      return merged?.merged === true && merged.sha !== undefined
+        ? { ok: true, mergedCommit: merged.sha }
         : this.refusal('The host did not merge the pull request.');
     });
   }
@@ -250,6 +257,9 @@ export class GitHubMergeHost implements MergeHost {
         baseRef: base.ref,
         mergeable: data.mergeable ?? null,
         mergeableState: data.mergeable_state ?? 'unknown',
+        title: data.title,
+        mergedCommit: data.merged === true ? (data.merge_commit_sha ?? null) : null,
+        body: data.body ?? '',
       },
     };
   }

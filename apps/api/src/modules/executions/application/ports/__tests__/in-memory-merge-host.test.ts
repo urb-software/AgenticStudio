@@ -49,6 +49,7 @@ describe('InMemoryMergeHost', () => {
     host.setPullRequest({ headSha: 'a'.repeat(40) });
     expect(await host.merge(SCOPE, { sha: 'a'.repeat(40), method: 'merge_commit' })).toEqual({
       ok: true,
+      mergedCommit: 'f'.repeat(40),
     });
     expect(await host.readPullRequest(SCOPE)).toMatchObject({ pullRequest: { state: 'merged' } });
     await host.close(SCOPE);

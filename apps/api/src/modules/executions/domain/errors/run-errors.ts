@@ -1,4 +1,4 @@
-import type { ClosePullRequestRefusal } from '@agentic-studio/contracts';
+import type { ClosePullRequestRefusal } from '../value-objects/close-pull-request-refusal.js';
 import type { FollowUpRefusal } from '../value-objects/follow-up-refusal.js';
 import type { Provider } from '../value-objects/provider.js';
 import type { RunState } from '../value-objects/run-state.js';

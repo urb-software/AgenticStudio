@@ -61,6 +61,9 @@ function fakeHost() {
           baseRef: 'dev',
           mergeable: true,
           mergeableState: 'clean',
+          title: 'Add a health check',
+          body: '',
+          mergedCommit: null,
         },
       });
     },

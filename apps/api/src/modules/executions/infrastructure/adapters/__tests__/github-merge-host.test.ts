@@ -26,6 +26,8 @@ function pullRequestAnswer(overrides: Record<string, unknown> = {}) {
     draft: false,
     mergeable: true,
     mergeable_state: 'clean',
+    title: 'Add login',
+    body: 'Adds the login form.',
     head: { sha: SHA, ref: BRANCH, repo: { full_name: 'acme/shop' } },
     base: { ref: 'dev', repo: { full_name: 'acme/shop' } },
     ...overrides,
@@ -101,7 +103,42 @@ describe('GitHubMergeHost', () => {
           baseRef: 'dev',
           mergeable: true,
           mergeableState: 'clean',
+          title: 'Add login',
+          body: 'Adds the login form.',
+          mergedCommit: null,
         },
+      });
+    });
+
+    it('answers an empty description for a pull request without one', async () => {
+      const { host } = hostWith({
+        [PULL]: { status: 200, body: pullRequestAnswer({ body: null }) },
+      });
+      expect(await host.readPullRequest(SCOPE)).toMatchObject({
+        ok: true,
+        pullRequest: { title: 'Add login', body: '' },
+      });
+    });
+
+    it('answers the commit a merged pull request created, and none for one that is not merged', async () => {
+      const merged = hostWith({
+        [PULL]: {
+          status: 200,
+          body: pullRequestAnswer({
+            state: 'closed',
+            merged: true,
+            merge_commit_sha: 'd'.repeat(40),
+          }),
+        },
+      });
+      expect(await merged.host.readPullRequest(SCOPE)).toMatchObject({
+        pullRequest: { state: 'merged', mergedCommit: 'd'.repeat(40) },
+      });
+      const open = hostWith({
+        [PULL]: { status: 200, body: pullRequestAnswer({ merge_commit_sha: 'd'.repeat(40) }) },
+      });
+      expect(await open.host.readPullRequest(SCOPE)).toMatchObject({
+        pullRequest: { state: 'open', mergedCommit: null },
       });
     });
 
@@ -401,9 +438,7 @@ describe('GitHubMergeHost', () => {
         });
         expect(
           await host.merge(SCOPE, { sha: SHA, method, title: 'Add login (#7)', message: 'Body' }),
-        ).toEqual({
-          ok: true,
-        });
+        ).toEqual({ ok: true, mergedCommit: 'c'.repeat(40) });
         expect(requests.at(-1)?.body).toEqual({
           sha: SHA,
           merge_method: sent,
@@ -416,7 +451,10 @@ describe('GitHubMergeHost', () => {
     it('leaves out the title and message when none is given', async () => {
       const { host, requests } = hostWith({
         [PULL]: OPEN,
-        'PUT /repos/acme/shop/pulls/7/merge': { status: 200, body: { merged: true } },
+        'PUT /repos/acme/shop/pulls/7/merge': {
+          status: 200,
+          body: { merged: true, sha: 'c'.repeat(40) },
+        },
       });
       await host.merge(SCOPE, { sha: SHA, method: 'squash' });
       expect(requests.at(-1)?.body).toEqual({ sha: SHA, merge_method: 'squash' });

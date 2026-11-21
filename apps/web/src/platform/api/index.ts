@@ -17,6 +17,7 @@ import type {
   LoadReviewCommentsRequest,
   MergeReviewFileOutput,
   MergeReviewOutput,
+  MergeRunResponseOutput,
   ProjectOutput,
   PreparedFollowUpOutput,
   ProviderListOutput,
@@ -65,7 +66,9 @@ export type {
   LoadReviewCommentsRequest,
   MergeReviewFileOutput,
   MergeReviewFileSummaryOutput,
+  MergeApprovalOutput,
   MergeReviewOutput,
+  MergeRunResponseOutput,
   PreparedFollowUpCheckOutput,
   PreparedFollowUpOutput,
   ProviderAvailabilityOutput,
@@ -314,6 +317,12 @@ export const api = {
    */
   closeRunPullRequest: (runId: string): Promise<ClosePullRequestResponseOutput> =>
     unwrap(sdk.closeRunPullRequest({ path: { runId } })),
+  /**
+   * Approves and merges the Run's pull request pinned to the commit the operator reviewed (200).
+   * Repeating it after a merge retries only the steps still missing.
+   */
+  mergeRun: (runId: string, commit: string): Promise<MergeRunResponseOutput> =>
+    unwrap(sdk.mergeRun({ path: { runId }, body: { commit } })),
   prepareRunFailingChecks: (runId: string): Promise<RunOutput> =>
     unwrap(sdk.prepareRunFailingChecks({ path: { runId } })),
   /** The Follow-up prepared from the failing checks, for review; 404 when none. */

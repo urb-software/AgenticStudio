@@ -11,6 +11,11 @@ import { CLOCK, type Clock } from '../../ports/clock.js';
 import { RETENTION_POLICY, type RetentionPolicy } from '../../ports/retention-policy.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 import { MERGE_SETTINGS, type MergeSettings } from '../../ports/merge-settings.js';
+import {
+  MERGE_APPROVAL_REPOSITORY,
+  type MergeApprovalRepository,
+} from '../../../domain/repositories/merge-approval-repository.js';
+import { mergeApprovalView, type MergeApprovalView } from '../../merge-approval-view.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
 import { Lease } from '../../../domain/value-objects/lease.js';
 import { WorkerPresence } from '../../../domain/value-objects/worker-presence.js';
@@ -27,6 +32,10 @@ export interface GetRunResult {
   followUp: FollowUpView;
   /** Without a host call: from the setting and the Run's remote. */
   merge: { available: true } | { available: false; reason: MergeUnavailableReason };
+  /** The branch the Run's pull request merges into. */
+  integrationBranch: string;
+  /** `null` when the operator never approved a merge of this Run. */
+  latestMergeApproval: MergeApprovalView | null;
 }
 
 /** Throws {@link RunNotFoundError}, also for a non-UUID id. */
@@ -41,6 +50,7 @@ export class GetRunHandler {
     @Inject(WORKER_LEASE) private readonly lease: WorkerLease,
     @Inject(RETENTION_POLICY) private readonly retention: RetentionPolicy,
     @Inject(MERGE_SETTINGS) private readonly mergeSettings: MergeSettings,
+    @Inject(MERGE_APPROVAL_REPOSITORY) private readonly mergeApprovals: MergeApprovalRepository,
   ) {}
 
   async execute(input: GetRunInput): Promise<GetRunResult> {
@@ -63,6 +73,7 @@ export class GetRunHandler {
       Lease.ofSeconds(this.lease.seconds),
     ).isAnyConnected(now);
     const preparedFollowUp = (await this.preparedFollowUps.findRunIdsAmong([run.id])).has(run.id);
+    const approval = await this.mergeApprovals.findLatest(run.id);
     return {
       run: runView(run, { workerConnected, preparedFollowUp }),
       followUp: this.retention.followUpView(
@@ -72,6 +83,8 @@ export class GetRunHandler {
         now,
       ),
       merge: this.mergeAvailability(run.remoteUrl),
+      integrationBranch: run.delivery.integrationBranch,
+      latestMergeApproval: approval === null ? null : mergeApprovalView(approval.asOf(now)),
     };
   }
 

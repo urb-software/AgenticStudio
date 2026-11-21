@@ -158,6 +158,49 @@ export const zRunMergeAvailabilityOutput = z.union([
     })
 ]);
 
+export const zMergeApprovalOutput = z.object({
+    id: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
+    approvedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/),
+    approvedBy: z.literal('operator'),
+    commit: z.string(),
+    integrationBranch: z.string(),
+    method: z.enum(['squash']),
+    checksSeen: z.array(z.object({
+        name: z.string(),
+        state: z.enum([
+            'success',
+            'failure',
+            'pending',
+            'neutral'
+        ])
+    })),
+    result: z.enum([
+        'pending',
+        'carried_out',
+        'not_carried_out'
+    ]),
+    refusal: z.object({
+        code: z.enum([
+            'checks_failing',
+            'checks_running',
+            'conflicting',
+            'run_active',
+            'commit_moved',
+            'review_out_of_date',
+            'pull_request_not_open',
+            'merge_unavailable',
+            'host_refused',
+            'merge_in_progress',
+            'interrupted'
+        ]),
+        reason: z.string().max(500)
+    }).optional(),
+    mergedCommit: z.string().optional(),
+    completedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
+    mergeOutcomeUnknown: z.literal(true).optional(),
+    cloneFetchStartedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional()
+});
+
 export const zRunPullRequestCheckOutput = z.object({
     name: z.string(),
     state: z.enum([
@@ -311,6 +354,8 @@ export const zRunOutput = z.object({
     followUps: z.int().gte(0).lte(9007199254740991),
     followUp: zRunFollowUpEligibilityOutput.optional(),
     merge: zRunMergeAvailabilityOutput.optional(),
+    integrationBranch: z.string().optional(),
+    latestMergeApproval: zMergeApprovalOutput.optional(),
     cancelRequestedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
     cancellation: z.object({
         by: z.enum(['operator', 'system']),
@@ -373,6 +418,55 @@ export const zClosePullRequestResponseOutput = z.object({
         'closed',
         'missing'
     ])
+});
+
+export const zMergeRunRequest = z.object({
+    commit: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/)
+});
+
+export const zMergeRunResponseOutput = z.object({
+    id: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
+    approvedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/),
+    approvedBy: z.literal('operator'),
+    commit: z.string(),
+    integrationBranch: z.string(),
+    method: z.enum(['squash']),
+    checksSeen: z.array(z.object({
+        name: z.string(),
+        state: z.enum([
+            'success',
+            'failure',
+            'pending',
+            'neutral'
+        ])
+    })),
+    result: z.enum([
+        'pending',
+        'carried_out',
+        'not_carried_out'
+    ]),
+    refusal: z.object({
+        code: z.enum([
+            'checks_failing',
+            'checks_running',
+            'conflicting',
+            'run_active',
+            'commit_moved',
+            'review_out_of_date',
+            'pull_request_not_open',
+            'merge_unavailable',
+            'host_refused',
+            'merge_in_progress',
+            'interrupted'
+        ]),
+        reason: z.string().max(500)
+    }).optional(),
+    mergedCommit: z.string().optional(),
+    completedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
+    mergeOutcomeUnknown: z.literal(true).optional(),
+    cloneFetchStartedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
+    runBranchDeletedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
+    runBranchDeletionFailure: z.string().max(500).optional()
 });
 
 export const zPreparedFollowUpCheckOutput = z.object({
@@ -745,6 +839,14 @@ export const zCloseRunPullRequestPath = z.object({
 });
 
 export const zCloseRunPullRequestResponse = zClosePullRequestResponseOutput;
+
+export const zMergeRunBody = zMergeRunRequest;
+
+export const zMergeRunPath = z.object({
+    runId: z.string()
+});
+
+export const zMergeRunResponse = zMergeRunResponseOutput;
 
 export const zPrepareRunFailingChecksPath = z.object({
     runId: z.string()

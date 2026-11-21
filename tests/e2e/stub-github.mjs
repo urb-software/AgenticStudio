@@ -27,6 +27,11 @@
 // the Merge credential reads pull requests too. `GET /__control/audit` lists the writes it
 // accepted and refused, by who made them, for the smoke to check.
 //
+// The writes Studio's Merge adapter makes to merge a pull request: the GraphQL mutation
+// that marks it ready, an approving review (`POST .../pulls/<n>/reviews`) and the merge
+// (`PUT .../pulls/<n>/merge`, which honours `sha` and answers 409 when the head moved). Like the
+// two writes above, they accept only the Merge credential.
+//
 // Like GitHub, it checks what the smoke must prove end to end (Issue #115): every call carries
 // the Agent token (`Authorization: Bearer $STUB_GITHUB_TOKEN`, else 401), and a new pull
 // request is a draft against the integration branch (`draft: true`, `base` =
@@ -56,7 +61,17 @@ const AGENT_LOGIN = 'studio-agent';
 const pulls = [];
 
 /** Story #263: the writes it accepted and refused, as `{ method, path, role }`. */
-const audit = { accepted: [], refused: [], deletedBranches: [] };
+const audit = {
+  accepted: [],
+  refused: [],
+  deletedBranches: [],
+  markedReady: [],
+  approvals: [],
+  merges: [],
+};
+
+/** The commit a merge creates on the base branch. */
+const MERGE_COMMIT = 'e'.repeat(40);
 
 /** Issue #145: what the checks routes answer, as GitHub words them; set through the control endpoint. */
 let checkRuns = [];
@@ -132,6 +147,8 @@ const server = createServer((request, response) => {
     /^\/repos\/([^/]+)\/([^/]+)\/pulls\/\d+\/(reviews|comments)$/.exec(url.pathname) ??
     /^\/repos\/([^/]+)\/([^/]+)\/(issues)\/\d+\/comments$/.exec(url.pathname);
   const graphql = url.pathname === '/graphql';
+  const mergeRoute = /^\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)\/merge$/.exec(url.pathname);
+  const reviewsRoute = /^\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)\/reviews$/.exec(url.pathname);
   const refsRoute = /^\/repos\/([^/]+)\/([^/]+)\/git\/refs\/heads\/(.+)$/.exec(url.pathname);
   if (
     !match &&
@@ -141,6 +158,7 @@ const server = createServer((request, response) => {
     !logRoute &&
     !commentsRoute &&
     !graphql &&
+    !mergeRoute &&
     !refsRoute &&
     url.pathname !== '/user'
   )
@@ -184,7 +202,64 @@ const server = createServer((request, response) => {
     return response.writeHead(204).end();
   }
   if (refsRoute) return send(405, { message: 'Method not allowed' });
-  if (role === 'merge' && request.method !== 'GET' && !(match && request.method === 'PATCH')) {
+  const readJson = (done) => {
+    let text = '';
+    request.on('data', (chunk) => (text += chunk));
+    request.on('end', () => done(JSON.parse(text || '{}')));
+  };
+  const pullOf = (owner, repo, number) =>
+    pulls.find(
+      (candidate) => candidate.repo === `${owner}/${repo}` && candidate.number === Number(number),
+    );
+  if (mergeRoute && request.method === 'PUT') {
+    if (!mergeWrite('PUT', url.pathname)) return;
+    return readJson((body) => {
+      const pr = pullOf(mergeRoute[1], mergeRoute[2], mergeRoute[3]);
+      if (!pr) return send(404, { message: 'Not Found' });
+      if (pr.merged || pr.state !== 'open') {
+        console.log(`[stub-github] refused merge of #${pr.number}: ${pr.state}`);
+        return send(405, { message: 'Pull Request is not mergeable' });
+      }
+      if (pr.draft) return send(405, { message: 'Draft pull requests cannot be merged' });
+      if (body.sha !== (pr.headSha ?? 'c'.repeat(40))) {
+        console.log(
+          `[stub-github] refused merge of #${pr.number}: head is ${pr.headSha}, got ${body.sha}`,
+        );
+        return send(409, { message: 'Head branch was modified. Review and try the merge again.' });
+      }
+      pr.merged = true;
+      pr.state = 'closed';
+      audit.merges.push({
+        repo: pr.repo,
+        number: pr.number,
+        sha: body.sha,
+        method: body.merge_method,
+        title: body.commit_title,
+      });
+      console.log(`[stub-github] merged pull request #${pr.number} in ${pr.repo}`);
+      send(200, { sha: MERGE_COMMIT, merged: true, message: 'Pull Request successfully merged' });
+    });
+  }
+  if (reviewsRoute && request.method === 'POST') {
+    if (!mergeWrite('POST', url.pathname)) return;
+    return readJson((body) => {
+      const pr = pullOf(reviewsRoute[1], reviewsRoute[2], reviewsRoute[3]);
+      if (!pr) return send(404, { message: 'Not Found' });
+      audit.approvals.push({
+        repo: pr.repo,
+        number: pr.number,
+        event: body.event,
+        commit: body.commit_id,
+      });
+      send(200, { id: audit.approvals.length, state: 'APPROVED' });
+    });
+  }
+  if (
+    role === 'merge' &&
+    request.method !== 'GET' &&
+    !(match && request.method === 'PATCH') &&
+    !graphql
+  ) {
     audit.refused.push({ method: request.method, path: url.pathname, role });
     return send(403, { message: 'The Merge credential cannot write this' });
   }
@@ -205,8 +280,20 @@ const server = createServer((request, response) => {
     return send(200, list.slice((page - 1) * size, page * size));
   }
   if (graphql && request.method === 'POST') {
-    request.resume();
-    return request.on('end', () =>
+    return readJson((body) => {
+      if (String(body.query).includes('markPullRequestReadyForReview')) {
+        if (!mergeWrite('POST', url.pathname)) return;
+        const pr = pulls.find(
+          (candidate) => `PR_stub_${candidate.repo}_${candidate.number}` === body.variables?.id,
+        );
+        if (!pr) return send(200, { errors: [{ message: 'Could not resolve to a node.' }] });
+        pr.draft = false;
+        audit.markedReady.push({ repo: pr.repo, number: pr.number });
+        console.log(`[stub-github] marked pull request #${pr.number} ready for review`);
+        return send(200, {
+          data: { markPullRequestReadyForReview: { pullRequest: { isDraft: false } } },
+        });
+      }
       send(200, {
         data: {
           repository: {
@@ -224,8 +311,8 @@ const server = createServer((request, response) => {
             },
           },
         },
-      }),
-    );
+      });
+    });
   }
   if (logRoute && request.method === 'GET') {
     if (!(logRoute[3] in jobLogs)) return send(404, { message: 'Not Found' });
@@ -270,7 +357,7 @@ const server = createServer((request, response) => {
     if (!pr) return send(404, { message: 'Not Found' });
     const full = () => ({
       ...view(pr),
-      node_id: `PR_stub_${pr.number}`,
+      node_id: `PR_stub_${pr.repo}_${pr.number}`,
       state: pr.state,
       merged: pr.merged,
       draft: pr.draft,

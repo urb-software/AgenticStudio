@@ -10,6 +10,7 @@ import { useProjectRuns, useRetryDelivery, useRunSteps } from '../../api/runs-qu
 import { failedRequest } from '../../components/failed-request';
 import { FINAL_STATES } from '../../components/run-states';
 import { isGitHubPullRequestUrl } from '../../components/github-links';
+import { Mono } from '../../components/mono';
 
 /** The request "Retry delivery" makes (generated `retryRunDelivery`), shown when it fails. */
 const RETRY_REQUEST = 'POST /api/runs/{runId}/retry-delivery';
@@ -18,10 +19,6 @@ const RETRY_REQUEST = 'POST /api/runs/{runId}/retry-delivery';
 const NOT_DELIVERED: readonly RunOutput['state'][] = ['failed', 'cancelled', 'timed_out'];
 
 /** A branch name or check name, verbatim in mono (design-system README: show the machine). */
-function Mono({ children }: { children: string }) {
-  return <code className="font-mono text-code break-all">{children}</code>;
-}
-
 /** The Run's draft pull request on GitHub, opened in a new tab; as text if not on github.com. */
 function PullRequestLink({ pullRequest }: { pullRequest: { url: string; number: number } }) {
   if (!isGitHubPullRequestUrl(pullRequest.url)) {

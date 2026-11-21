@@ -1,5 +1,5 @@
 import { HttpStatus } from '@nestjs/common';
-import type { ClosePullRequestRefusal } from '@agentic-studio/contracts';
+import type { ClosePullRequestRefusal, MergeRefusal } from '@agentic-studio/contracts';
 import type { z } from 'zod';
 import { ProblemException } from '../../../../../platform/http/problem-details.js';
 import type { MergeReviewRefusal } from '../../../domain/value-objects/merge-review-refusal.js';
@@ -40,6 +40,16 @@ export const EXECUTIONS_PROBLEM_TYPES = {
   closeMergeUnavailable: 'urn:agentic-studio:problem:close-merge-unavailable',
   closeHostRefused: 'urn:agentic-studio:problem:close-host-refused',
   closeInProgress: 'urn:agentic-studio:problem:close-in-progress',
+  mergeChecksFailing: 'urn:agentic-studio:problem:merge-checks-failing',
+  mergeChecksRunning: 'urn:agentic-studio:problem:merge-checks-running',
+  mergeConflicting: 'urn:agentic-studio:problem:merge-conflicting',
+  mergeRunActive: 'urn:agentic-studio:problem:merge-run-active',
+  mergeCommitMoved: 'urn:agentic-studio:problem:merge-commit-moved',
+  mergeReviewOutOfDate: 'urn:agentic-studio:problem:merge-review-out-of-date',
+  mergePullRequestNotOpen: 'urn:agentic-studio:problem:merge-pull-request-not-open',
+  mergeUnavailable: 'urn:agentic-studio:problem:merge-unavailable',
+  mergeHostRefused: 'urn:agentic-studio:problem:merge-host-refused',
+  mergeInProgress: 'urn:agentic-studio:problem:merge-in-progress',
 } as const;
 
 const MERGE_REVIEW_REFUSALS: Record<
@@ -160,6 +170,73 @@ export function closePullRequestRefused(
     });
   }
   return new ProblemException(HttpStatus.CONFLICT, CLOSE_REFUSALS[reason]);
+}
+
+const MERGE_REFUSAL_PROBLEMS: Record<
+  Exclude<MergeRefusal, 'host_refused'>,
+  { type: string; title: string; detail: string }
+> = {
+  checks_failing: {
+    type: EXECUTIONS_PROBLEM_TYPES.mergeChecksFailing,
+    title: 'A check is failing',
+    detail: 'A check of the pull request is failing. Fix it with a Follow-up, then review again.',
+  },
+  checks_running: {
+    type: EXECUTIONS_PROBLEM_TYPES.mergeChecksRunning,
+    title: 'Checks are still running',
+    detail:
+      'A check is still running, or GitHub has not yet worked out whether the pull request merges. Try again in a moment.',
+  },
+  conflicting: {
+    type: EXECUTIONS_PROBLEM_TYPES.mergeConflicting,
+    title: 'The pull request conflicts',
+    detail:
+      'The pull request conflicts with the Integration branch. Bring it up to date, then review again.',
+  },
+  run_active: {
+    type: EXECUTIONS_PROBLEM_TYPES.mergeRunActive,
+    title: 'The run is still active',
+    detail: 'The run is still working or waiting. Merge its pull request once it has ended.',
+  },
+  commit_moved: {
+    type: EXECUTIONS_PROBLEM_TYPES.mergeCommitMoved,
+    title: 'The Run branch moved',
+    detail:
+      'The Run branch is not at the commit you reviewed. Review again to see what would be merged now.',
+  },
+  review_out_of_date: {
+    type: EXECUTIONS_PROBLEM_TYPES.mergeReviewOutOfDate,
+    title: 'No up-to-date merge review',
+    detail: 'There is no ready merge review of the current commit. Request one, then try again.',
+  },
+  pull_request_not_open: {
+    type: EXECUTIONS_PROBLEM_TYPES.mergePullRequestNotOpen,
+    title: 'The pull request is not open',
+    detail:
+      'The pull request is already merged, closed or gone, or the run has none. There is nothing to merge.',
+  },
+  merge_unavailable: {
+    type: EXECUTIONS_PROBLEM_TYPES.mergeUnavailable,
+    title: 'Merging is switched off',
+    detail:
+      "Studio cannot merge pull requests: the Merge credential is not set, or the run's Git host is not supported.",
+  },
+  merge_in_progress: {
+    type: EXECUTIONS_PROBLEM_TYPES.mergeInProgress,
+    title: 'A merge is under way',
+    detail: 'Another request is merging this pull request. Wait a moment and try again.',
+  },
+};
+
+export function mergeRefused(reason: MergeRefusal, hostReason?: string): ProblemException {
+  if (reason === 'host_refused') {
+    return new ProblemException(HttpStatus.CONFLICT, {
+      type: EXECUTIONS_PROBLEM_TYPES.mergeHostRefused,
+      title: 'The Git host refused',
+      detail: hostReason ? `GitHub refused: ${hostReason}` : 'GitHub refused the request.',
+    });
+  }
+  return new ProblemException(HttpStatus.CONFLICT, MERGE_REFUSAL_PROBLEMS[reason]);
 }
 
 export function closeInProgress(): ProblemException {

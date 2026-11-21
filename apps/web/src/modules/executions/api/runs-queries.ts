@@ -266,6 +266,24 @@ export function useCloseRunPullRequest(runId: string) {
   });
 }
 
+/**
+ * "Approve and merge" and its retry of the steps after a merge. Any answer reads the Run again at
+ * once: a refusal (409) means the Run is no longer as the page showed it, and the stored approval
+ * says what the Git host answered.
+ */
+export function useMergeRun(runId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (commit: string) => api.mergeRun(runId, commit),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: RUNS_KEY }),
+    onError: async (error: unknown) => {
+      if (error instanceof ApiError && error.status === 409) {
+        await queryClient.invalidateQueries({ queryKey: runKey(runId) });
+      }
+    },
+  });
+}
+
 const reviewCommentsKey = (runId: string) => ['review-comments', runId] as const;
 
 /**

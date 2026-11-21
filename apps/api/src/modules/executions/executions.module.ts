@@ -21,11 +21,15 @@ import { GetMergeReviewFileHandler } from './application/features/get-merge-revi
 import { PrepareMergeReviewHandler } from './application/features/prepare-merge-review/handler.js';
 import { RequestMergeReviewEndpoint } from './entry-points/http/operator/request-merge-review/endpoint.js';
 import { RequestMergeReviewHandler } from './application/features/request-merge-review/handler.js';
+import { MERGE_APPROVAL_REPOSITORY } from './domain/repositories/merge-approval-repository.js';
+import { PrismaMergeApprovalRepository } from './infrastructure/repositories/prisma-merge-approval-repository.js';
 import { PrismaRunMergeReviewRepository } from './infrastructure/repositories/prisma-run-merge-review-repository.js';
 import { AnswerRunEndpoint } from './entry-points/http/operator/answer-run/endpoint.js';
 import { AnswerRunHandler } from './application/features/answer-run/handler.js';
 import { CancelLongWaitingRunsHandler } from './application/features/cancel-long-waiting-runs/handler.js';
 import { ClosePullRequestEndpoint } from './entry-points/http/operator/close-pull-request/endpoint.js';
+import { MergeRunEndpoint } from './entry-points/http/operator/merge-run/endpoint.js';
+import { MergeRunHandler } from './application/features/merge-run/handler.js';
 import { ClosePullRequestHandler } from './application/features/close-pull-request/handler.js';
 import { CancelRunEndpoint } from './entry-points/http/operator/cancel-run/endpoint.js';
 import { CancelRunHandler } from './application/features/cancel-run/handler.js';
@@ -186,6 +190,7 @@ export class ExecutionsModule {
         BringUpToDateEndpoint,
         RefreshPullRequestEndpoint,
         ClosePullRequestEndpoint,
+        MergeRunEndpoint,
         PrepareFailingChecksEndpoint,
         GetPreparedFollowUpEndpoint,
         LoadReviewCommentsEndpoint,
@@ -217,6 +222,7 @@ export class ExecutionsModule {
         RunLookupRequests,
         { provide: RUN_DIFF_REPOSITORY, useClass: PrismaRunDiffRepository },
         { provide: RUN_MERGE_REVIEW_REPOSITORY, useClass: PrismaRunMergeReviewRepository },
+        { provide: MERGE_APPROVAL_REPOSITORY, useClass: PrismaMergeApprovalRepository },
         { provide: RUN_LOOKUP_REPOSITORY, useClass: PrismaRunLookupRepository },
         { provide: PREPARED_FOLLOW_UP_REPOSITORY, useClass: PrismaPreparedFollowUpRepository },
         { provide: REVIEW_COMMENT_REPOSITORY, useClass: PrismaReviewCommentRepository },
@@ -302,6 +308,7 @@ export class ExecutionsModule {
         FollowUpRunHandler,
         RefreshPullRequestHandler,
         ClosePullRequestHandler,
+        MergeRunHandler,
         PrepareFailingChecksHandler,
         GetPreparedFollowUpHandler,
         LoadReviewCommentsHandler,

@@ -73,6 +73,10 @@ export interface ChangedFile {
   tooLarge?: true;
 }
 
+/** Both lists can be on one page, and a landmark's name must differ from the other's. */
+const landmarkSuffix = (source: PatchSource) =>
+  source.kind === 'merge-review' ? ' in the merge review' : '';
+
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
 
 /** "+12 −4" in the run-state colours, with the words for screen readers. */
@@ -291,7 +295,7 @@ export function ChangedFiles({
     <div className="flex min-w-0 flex-col gap-4">
       <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-[minmax(0,16rem)_minmax(0,1fr)] md:items-start">
         <nav
-          aria-label="Changed files"
+          aria-label={`Changed files${landmarkSuffix(source)}`}
           className={cn('min-w-0 md:sticky md:top-16', selected !== null && 'max-md:hidden')}
         >
           <ul className="m-0 flex list-none flex-col gap-0.5 rounded-lg border border-border bg-surface p-1">
@@ -407,7 +411,7 @@ function FileChanges({
   return (
     <section
       ref={ref}
-      aria-label={file.path}
+      aria-label={`${file.path}${landmarkSuffix(source)}`}
       className={cn(
         'min-w-0 scroll-mt-20 overflow-hidden rounded-lg border border-border bg-surface',
         className,
@@ -517,6 +521,10 @@ function FileBody({
     return <Note>No changes to the content (the file was renamed, or its mode changed).</Note>;
   }
   return (
-    <DiffView lines={lines} label={`Diff of ${file.path}`} className="rounded-none border-0" />
+    <DiffView
+      lines={lines}
+      label={`Diff of ${file.path}${landmarkSuffix(source)}`}
+      className="rounded-none border-0"
+    />
   );
 }
