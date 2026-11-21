@@ -532,6 +532,20 @@ describe('GitHubMergeHost', () => {
       });
     });
 
+    it('keeps any other 422 on the deletion a refusal, such as a protected branch', async () => {
+      const { host } = hostWith({
+        [PULL]: OPEN,
+        [`DELETE /repos/acme/shop/git/refs/heads/${BRANCH}`]: {
+          status: 422,
+          body: { message: 'Cannot delete this branch: a ruleset forbids it.' },
+        },
+      });
+      expect(await host.deleteRunBranch(SCOPE)).toEqual({
+        ok: false,
+        failure: { code: 'refused', message: 'Cannot delete this branch: a ruleset forbids it.' },
+      });
+    });
+
     it('marks a draft ready through the GraphQL API and skips the call for a ready pull request', async () => {
       const draft = hostWith({
         [PULL]: { status: 200, body: pullRequestAnswer({ draft: true }) },

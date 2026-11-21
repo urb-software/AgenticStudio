@@ -274,7 +274,7 @@ export class GitHubMergeHost implements MergeHost {
     return unavailable();
   }
 
-  /** `missingIs422`: the host answers 422, not 404, for a ref that does not exist. */
+  /** `missingIs422`: a 422 "Reference does not exist", not a 404, is how the host says a ref is gone. */
   private async call(
     method: string,
     path: string,
@@ -309,9 +309,13 @@ export class GitHubMergeHost implements MergeHost {
         return unavailable();
       }
     }
-    if (missingIs422 && response.status === 422)
-      return { ok: false, failure: { code: 'not_found' } };
-    return { ok: false, failure: await this.failureOf(response) };
+    const failure = await this.failureOf(response);
+    const missing =
+      missingIs422 &&
+      response.status === 422 &&
+      failure.code === 'refused' &&
+      /^reference does not exist\.?$/i.test(failure.message.trim());
+    return { ok: false, failure: missing ? { code: 'not_found' } : failure };
   }
 
   private async failureOf(response: Response): Promise<MergeHostFailure> {
