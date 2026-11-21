@@ -64,6 +64,7 @@ describe('RefreshPullRequestHandler', () => {
         openPullRequestIdleDays: 30,
         hoursAfterPullRequestEnd: 24,
       }),
+      { configured: false, allowFileRemotes: false },
     );
   });
 

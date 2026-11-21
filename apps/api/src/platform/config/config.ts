@@ -3,7 +3,10 @@ import { accessSync, constants, existsSync, realpathSync, statSync } from 'node:
 import { isIP } from 'node:net';
 import { dirname, isAbsolute, join, relative } from 'node:path';
 import { z } from 'zod';
+import { MergeCredential } from './merge-credential.js';
 import { parseKnownHosts, type SshKnownHost } from './ssh-known-hosts.js';
+
+export { MergeCredential } from './merge-credential.js';
 
 export type { SshKnownHost } from './ssh-known-hosts.js';
 
@@ -90,6 +93,19 @@ const workerTokenSchema = z
   .transform((value) =>
     value === undefined ? null : createSecretKey(createHash('sha256').update(value).digest()),
   );
+
+/**
+ * `STUDIO_MERGE_TOKEN`: the Merge credential. Unset or empty: merging is off. Otherwise one
+ * line without whitespace of 20 to 255 characters; messages never echo the value.
+ */
+const mergeTokenSchema = z
+  .string()
+  .optional()
+  .transform((value) => (value === undefined || value === '' ? null : value))
+  .refine((value) => value === null || MergeCredential.isWellFormed(value), {
+    message: `must be one line without whitespace, ${MergeCredential.MIN_LENGTH} to ${MergeCredential.MAX_LENGTH} characters`,
+  })
+  .transform((value) => (value === null ? null : MergeCredential.of(value)));
 
 /** `STUDIO_OPERATOR_GITHUB_LOGIN`: a GitHub login (letters, digits, single hyphens), or none. */
 const githubLoginSchema = z
@@ -253,6 +269,10 @@ const environmentSchema = z.object({
   // The operator's own GitHub login, matched case-insensitively; its Review comments are
   // preselected. Unset or empty: nothing is preselected.
   STUDIO_OPERATOR_GITHUB_LOGIN: githubLoginSchema,
+  // The Merge credential (merging is off while unset); only an operator's merge or close uses it.
+  STUDIO_MERGE_TOKEN: mergeTokenSchema,
+  // Test-only: the GitHub API the merge adapter calls instead of api.github.com.
+  STUDIO_MERGE_GITHUB_API_URL: z.url({ protocol: /^https?$/ }).optional(),
   NODE_ENV: z.string().optional(),
 });
 
@@ -261,6 +281,10 @@ function schemaFor(workspaceRoot: string | undefined) {
     .extend({ STUDIO_DATA_DIR: dataDirSchema(workspaceRoot) })
     .refine((env) => env.STUDIO_GIT_ALLOW_FILE_REMOTES !== 'true' || env.NODE_ENV === 'test', {
       path: ['STUDIO_GIT_ALLOW_FILE_REMOTES'],
+      message: 'is a test-only setting; it is accepted only with NODE_ENV=test',
+    })
+    .refine((env) => env.STUDIO_MERGE_GITHUB_API_URL === undefined || env.NODE_ENV === 'test', {
+      path: ['STUDIO_MERGE_GITHUB_API_URL'],
       message: 'is a test-only setting; it is accepted only with NODE_ENV=test',
     });
 }
@@ -308,6 +332,13 @@ export interface AppConfig {
    * the author of the Review comments that are preselected.
    */
   operatorGithubLogin: string | null;
+  /**
+   * The Merge credential (`STUDIO_MERGE_TOKEN`), or `null` while merging is off. It prints as
+   * redacted; only the merge adapter's wiring reveals it.
+   */
+  mergeCredential: MergeCredential | null;
+  /** Test-only: the GitHub API base the merge adapter calls, `null` for the real one. */
+  mergeGithubApiUrl: string | null;
   /** Agent-side Working copy retention, from the `STUDIO_RETENTION_*` settings. */
   retention: {
     days: number;
@@ -370,6 +401,8 @@ export function loadConfig(
     runLogMaxBytes: result.data.STUDIO_RUN_LOG_MAX_BYTES,
     runSnapshotRetentionDays: result.data.STUDIO_RUN_SNAPSHOT_RETENTION_DAYS,
     operatorGithubLogin: result.data.STUDIO_OPERATOR_GITHUB_LOGIN,
+    mergeCredential: result.data.STUDIO_MERGE_TOKEN,
+    mergeGithubApiUrl: result.data.STUDIO_MERGE_GITHUB_API_URL?.replace(/\/+$/, '') ?? null,
     retention: {
       days: result.data.STUDIO_RETENTION_DAYS,
       maxPerProject: result.data.STUDIO_RETENTION_MAX_PER_PROJECT,

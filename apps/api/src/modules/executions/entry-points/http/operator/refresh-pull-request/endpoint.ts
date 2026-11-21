@@ -52,10 +52,10 @@ export class RefreshPullRequestEndpoint {
         runId,
         onOpen: parsed.data.onOpen === true,
       });
-      const { run, followUp } = await this.getRun.execute({
+      const { run, followUp, merge } = await this.getRun.execute({
         runId,
       });
-      return toRunResponse(run, followUp);
+      return toRunResponse(run, followUp, merge);
     } catch (error) {
       if (error instanceof RunNotFoundError) throw runNotFound();
       if (error instanceof PullRequestNotRefreshableError) throw pullRequestNotRefreshable();

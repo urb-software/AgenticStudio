@@ -1,3 +1,4 @@
+import { mergeAvailabilitySchema } from '@agentic-studio/contracts';
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
@@ -137,6 +138,8 @@ export const runResponseSchema = z
       })
       .meta({ id: 'RunFollowUpEligibility' })
       .optional(),
+    /** Whether Studio can merge or close the pull request; single-Run answers only. */
+    merge: mergeAvailabilitySchema.meta({ id: 'RunMergeAvailability' }).optional(),
     cancelRequestedAt: z.iso.datetime().optional(),
     cancellation: z.object({ by: runCancelledBySchema, reason: z.string() }).optional(),
     delivery: runDeliverySchema.optional(),
@@ -288,6 +291,7 @@ export function toRunResponse(
   followUp?: (
     { allowed: true } | { allowed: false; reason: z.infer<typeof followUpRefusalSchema> }
   ) & { openUntil?: Date; removalPending?: true },
+  merge?: z.infer<typeof mergeAvailabilitySchema>,
 ): RunResponse {
   return {
     id: run.id,
@@ -332,6 +336,7 @@ export function toRunResponse(
           },
         }
       : {}),
+    ...(merge ? { merge } : {}),
     ...(run.cancelRequestedAt ? { cancelRequestedAt: run.cancelRequestedAt.toISOString() } : {}),
     ...(run.cancellation
       ? { cancellation: { by: run.cancellation.by, reason: run.cancellation.reason } }

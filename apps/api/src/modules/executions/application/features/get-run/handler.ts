@@ -10,9 +10,12 @@ import type { FollowUpView } from '../../../domain/value-objects/follow-up-view.
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { RETENTION_POLICY, type RetentionPolicy } from '../../ports/retention-policy.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
+import { MERGE_SETTINGS, type MergeSettings } from '../../ports/merge-settings.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
 import { Lease } from '../../../domain/value-objects/lease.js';
 import { WorkerPresence } from '../../../domain/value-objects/worker-presence.js';
+import type { MergeUnavailableReason } from '../../../domain/value-objects/merge-unavailable-reason.js';
+import { MergeAvailabilityRule } from '../../../domain/value-objects/merge-availability-rule.js';
 import { RunNotFoundError } from '../../../domain/errors/run-errors.js';
 
 export interface GetRunInput {
@@ -22,6 +25,8 @@ export interface GetRunInput {
 export interface GetRunResult {
   run: RunView;
   followUp: FollowUpView;
+  /** Without a host call: from the setting and the Run's remote. */
+  merge: { available: true } | { available: false; reason: MergeUnavailableReason };
 }
 
 /** Throws {@link RunNotFoundError}, also for a non-UUID id. */
@@ -35,6 +40,7 @@ export class GetRunHandler {
     private readonly preparedFollowUps: PreparedFollowUpRepository,
     @Inject(WORKER_LEASE) private readonly lease: WorkerLease,
     @Inject(RETENTION_POLICY) private readonly retention: RetentionPolicy,
+    @Inject(MERGE_SETTINGS) private readonly mergeSettings: MergeSettings,
   ) {}
 
   async execute(input: GetRunInput): Promise<GetRunResult> {
@@ -65,6 +71,12 @@ export class GetRunHandler {
         over,
         now,
       ),
+      merge: this.mergeAvailability(run.remoteUrl),
     };
+  }
+
+  private mergeAvailability(remoteUrl: string): GetRunResult['merge'] {
+    const reason = MergeAvailabilityRule.of(this.mergeSettings).unavailableReason(remoteUrl);
+    return reason === null ? { available: true } : { available: false, reason };
   }
 }

@@ -12,7 +12,8 @@
 //    README.md, "Web /api proxy").
 //    The API gets a throwaway data directory (STUDIO_DATA_DIR) in the OS temp directory.
 //    The API runs with NODE_ENV=test and STUDIO_GIT_ALLOW_FILE_REMOTES=true: the Git adapter's
-//    test-only fixture-remote setting, which the API accepts only under NODE_ENV=test (#59).
+//    test-only fixture-remote setting, which the API accepts only under NODE_ENV=test (#59),
+//    and STUDIO_MERGE_GITHUB_API_URL, the merge adapter's test-only API base, gated the same way.
 //    Nothing else in the API reads NODE_ENV (Story #60, clarification 7).
 // 4. On Linux, creates throwaway bare fixture Repositories with a `dev` branch (two per
 //    Playwright project: one for the repository test, one for the Run test, since a remote
@@ -301,6 +302,10 @@ async function main() {
     STUDIO_WORKER_TOKEN: workerToken,
     // Issue #146: the operator's own GitHub login, whose review comments are preselected.
     STUDIO_OPERATOR_GITHUB_LOGIN: 'Smoke-Operator',
+    // The Merge credential for this run only, and the GitHub stub as the merge adapter's API
+    // (accepted only under NODE_ENV=test).
+    STUDIO_MERGE_TOKEN: randomBytes(24).toString('base64url'),
+    STUDIO_MERGE_GITHUB_API_URL: `http://127.0.0.1:${GITHUB_STUB_PORT}`,
   };
 
   startServer('api', process.execPath, ['apps/api/dist/main.js'], serverEnv);
