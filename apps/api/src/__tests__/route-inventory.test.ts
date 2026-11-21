@@ -108,6 +108,7 @@ describe('route and guard inventory', () => {
         "POST /api/worker/runs/states [worker-token]",
         "POST /api/worker/status [worker-token]",
         "PUT /api/projects/:id/environment-file [session]",
+        "PUT /api/projects/:id/merge-method [session]",
       ]
     `);
   });

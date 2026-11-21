@@ -39,6 +39,7 @@ type HostCheck = { name: string; state: 'success' | 'failure' | 'pending' | 'neu
 /** A Git host with one pull request that records what it was asked and can refuse any call. */
 function fakeHost() {
   const calls: string[] = [];
+  const mergeRequests: { sha: string; method: string; title?: string; message?: string }[] = [];
   const refusals = new Map<string, string>();
   const pullRequest = {
     state: 'open' as 'open' | 'closed' | 'merged',
@@ -86,7 +87,8 @@ function fakeHost() {
       return Promise.resolve(result);
     },
     approve: () => Promise.resolve(answer('approve')),
-    merge: async () => {
+    merge: async (_scope, request) => {
+      mergeRequests.push(request);
       const result = answer('merge');
       await gate.merge;
       if (!result.ok) return result;
@@ -97,7 +99,7 @@ function fakeHost() {
     close: () => Promise.reject(new Error('not used')),
     deleteRunBranch: () => Promise.resolve(answer('deleteRunBranch')),
   } satisfies FakeHost;
-  return { host, calls, refusals, pullRequest, checks, gate };
+  return { host, calls, mergeRequests, refusals, pullRequest, checks, gate };
 }
 
 describe('approve and merge API (PostgreSQL + Redis via Testcontainers)', () => {
@@ -206,6 +208,7 @@ describe('approve and merge API (PostgreSQL + Redis via Testcontainers)', () => 
     // Test isolation only; CASCADE also empties runs and their approvals.
     await db().$executeRaw`TRUNCATE TABLE projects CASCADE`;
     git.calls.length = 0;
+    git.mergeRequests.length = 0;
     git.refusals.clear();
     Object.assign(git.pullRequest, {
       state: 'open',
@@ -271,6 +274,71 @@ describe('approve and merge API (PostgreSQL + Redis via Testcontainers)', () => 
     const [repository] = await db().$queryRaw<{ state: string }[]>`
       SELECT state FROM repositories WHERE project_id = ${projectId}::uuid`;
     expect(repository!.state).toBe('fetching');
+  });
+
+  it.each([
+    [
+      'squash',
+      { sha: COMMIT, method: 'squash', title: 'Add a health check', message: 'Adds GET /health.' },
+    ],
+    ['merge_commit', { sha: COMMIT, method: 'merge_commit' }],
+  ] as const)(
+    "merges with the Project's method %s and records it on the approval",
+    async (mergeMethod, expectedRequest) => {
+      const { runId, projectId } = await deliveredRun();
+      await db().$executeRaw`
+        UPDATE projects SET merge_method = ${mergeMethod} WHERE id = ${projectId}::uuid`;
+
+      const merged = await merge(runId);
+
+      expect(merged.status).toBe(200);
+      expect(merged.body.method).toBe(mergeMethod);
+      expect(git.mergeRequests).toEqual([expectedRequest]);
+      expect((await getRun(runId)).body.latestMergeApproval.method).toBe(mergeMethod);
+      const [row] = await db().$queryRaw<{ method: string }[]>`
+        SELECT method FROM merge_approvals WHERE run_id = ${runId}::uuid`;
+      expect(row!.method).toBe(mergeMethod);
+    },
+  );
+
+  it("keeps the method an approval recorded when the Project's setting changes afterwards", async () => {
+    const { runId, projectId } = await deliveredRun();
+    const first = await merge(runId);
+    await db().$executeRaw`
+      UPDATE projects SET merge_method = 'merge_commit' WHERE id = ${projectId}::uuid`;
+
+    const again = await merge(runId);
+
+    expect(first.body.method).toBe('squash');
+    expect(again.body.method).toBe('squash');
+    expect(git.mergeRequests).toHaveLength(1);
+  });
+
+  it('a host that refuses the method leaves the approval not carried out, with no branch deletion and no Clone fetch', async () => {
+    const { runId, projectId } = await deliveredRun();
+    await db().$executeRaw`
+      UPDATE projects SET merge_method = 'merge_commit' WHERE id = ${projectId}::uuid`;
+    git.refusals.set('merge', 'Merge commits are not allowed on this repository.');
+
+    const refused = await merge(runId);
+
+    expectProblem(refused, 409, PROBLEM('host-refused'));
+    expect(refused.body.detail).toContain('Merge commits are not allowed on this repository.');
+    expect(await approvalRows(runId)).toEqual([
+      { result: 'not_carried_out', refusal_code: 'host_refused', merged_commit: null },
+    ]);
+    expect((await getRun(runId)).body.latestMergeApproval).toMatchObject({
+      method: 'merge_commit',
+      result: 'not_carried_out',
+      refusal: {
+        code: 'host_refused',
+        reason: 'Merge commits are not allowed on this repository.',
+      },
+    });
+    expect(git.calls).not.toContain('deleteRunBranch');
+    const [repository] = await db().$queryRaw<{ state: string }[]>`
+      SELECT state FROM repositories WHERE project_id = ${projectId}::uuid`;
+    expect(repository!.state).toBe('ready');
   });
 
   it('does not mark ready a pull request that is not a draft', async () => {

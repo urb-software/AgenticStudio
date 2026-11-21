@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { RunDetail } from '..';
 import type { MergeApprovalOutput, RunOutput } from '../../../platform/api';
-import { aRun, type FakeMergeReview, fakeRunsApi, problem } from './fake-runs-api';
+import { aRun, type FakeMergeReview, fakeRunsApi, PROJECT, problem } from './fake-runs-api';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
@@ -144,6 +144,45 @@ describe('Run page: Approve and merge', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Not yet' }));
     expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(api.calls('mergeRun')).toHaveLength(0);
+  });
+
+  it("names the merge commit method when the Project's setting says so", async () => {
+    const run = delivered();
+    const api = fakeRunsApi([run]);
+    api.setMergeReview(run.id, READY);
+    // The page reads the Project when it opens and the dialog reads it again when it mounts.
+    for (let reads = 0; reads < 3; reads++) {
+      api.respondNext('project', 200, {
+        ...PROJECT,
+        mergeMethod: 'merge_commit',
+        repository: null,
+      });
+    }
+    renderRun(run.id);
+    await screen.findByRole('heading', { level: 1 });
+    await userEvent.click(screen.getByRole('tab', { name: 'Changes' }));
+    await userEvent.click(
+      await within(reviewSection()).findByRole('button', { name: 'Approve and merge' }),
+    );
+
+    const dialog = await screen.findByRole('alertdialog', { name: 'Approve and merge' });
+
+    expect(within(dialog).getByText('Merge commit')).toBeTruthy();
+    expect(within(dialog).queryByText('Squash')).toBeNull();
+  });
+
+  it.each([
+    ['squash', 'squash'],
+    ['merge_commit', 'merge commit'],
+  ] as const)('shows the method %s the Merge approval recorded', async (method, words) => {
+    await openChanges(
+      delivered({
+        latestMergeApproval: { ...APPROVAL, method },
+        pullRequest: { ...PULL_REQUEST, state: 'merged', runBranchDeletedAt: APPROVAL.completedAt },
+      }),
+    );
+
+    expect(card().textContent).toContain(`, ${words}, into`);
   });
 
   it('merges the reviewed commit on confirm, and the page shows who merged, when and at which commit', async () => {

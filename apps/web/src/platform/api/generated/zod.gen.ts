@@ -21,6 +21,7 @@ export const zCreateProjectRequest = z.object({
 export const zProjectOutput = z.object({
     id: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
     name: z.string(),
+    mergeMethod: z.enum(['squash', 'merge_commit']),
     createdAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/)
 });
 
@@ -50,6 +51,7 @@ export const zRepositorySummaryOutput = z.object({
 export const zProjectDetailOutput = z.object({
     id: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
     name: z.string(),
+    mergeMethod: z.enum(['squash', 'merge_commit']),
     createdAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/),
     repository: zRepositorySummaryOutput.nullable()
 });
@@ -109,6 +111,10 @@ export const zEnvironmentFileInfoOutput = z.object({
     updatedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/)
 });
 
+export const zSetMergeMethodRequest = z.object({
+    mergeMethod: z.enum(['squash', 'merge_commit'])
+});
+
 export const zStartRunRequest = z.object({
     task: z.string().min(1).max(20000),
     provider: z.enum(['claude_code', 'codex'])
@@ -164,7 +170,7 @@ export const zMergeApprovalOutput = z.object({
     approvedBy: z.literal('operator'),
     commit: z.string(),
     integrationBranch: z.string(),
-    method: z.enum(['squash']),
+    method: z.enum(['squash', 'merge_commit']),
     checksSeen: z.array(z.object({
         name: z.string(),
         state: z.enum([
@@ -430,7 +436,7 @@ export const zMergeRunResponseOutput = z.object({
     approvedBy: z.literal('operator'),
     commit: z.string(),
     integrationBranch: z.string(),
-    method: z.enum(['squash']),
+    method: z.enum(['squash', 'merge_commit']),
     checksSeen: z.array(z.object({
         name: z.string(),
         state: z.enum([
@@ -769,6 +775,14 @@ export const zSetEnvironmentFilePath = z.object({
 });
 
 export const zSetEnvironmentFileResponse = zEnvironmentFileInfoOutput;
+
+export const zSetMergeMethodBody = zSetMergeMethodRequest;
+
+export const zSetMergeMethodPath = z.object({
+    id: z.string()
+});
+
+export const zSetMergeMethodResponse = zProjectOutput;
 
 export const zListProjectRunsPath = z.object({
     id: z.string()

@@ -15,7 +15,9 @@ import { LogRedaction } from '../../../../domain/value-objects/log-redaction.js'
 import type {
   IntegrationFetchResult,
   RunIntegrationFetches,
+  RunMergeMethods,
 } from '../../../../../projects/contracts/index.js';
+import type { MergeMethod } from '../../../../domain/value-objects/merge-method.js';
 import { InMemoryMergeHost, MERGED_COMMIT } from '../../../ports/__tests__/in-memory-merge-host.js';
 import type { MergeSettings } from '../../../ports/merge-settings.js';
 import { MergeRunHandler } from '../handler.js';
@@ -53,6 +55,8 @@ describe('MergeRunHandler', () => {
   let now: Date;
   let fetched: string[];
   let fetchAnswer: 'started' | 'not_started' | 'throws';
+  let mergeMethod: MergeMethod;
+  let methodReads: string[];
   let handler: MergeRunHandler;
 
   const fetches: RunIntegrationFetches = {
@@ -60,6 +64,13 @@ describe('MergeRunHandler', () => {
       fetched.push(projectId);
       if (fetchAnswer === 'throws') return Promise.reject(new Error('queue down'));
       return Promise.resolve({ status: fetchAnswer });
+    },
+  };
+
+  const mergeMethods: RunMergeMethods = {
+    mergeMethodFor: (projectId) => {
+      methodReads.push(projectId);
+      return Promise.resolve(mergeMethod);
     },
   };
 
@@ -72,6 +83,8 @@ describe('MergeRunHandler', () => {
     now = NOW;
     fetched = [];
     fetchAnswer = 'started';
+    mergeMethod = 'squash';
+    methodReads = [];
     handler = new MergeRunHandler(
       runs,
       approvals,
@@ -80,6 +93,7 @@ describe('MergeRunHandler', () => {
       settings,
       { now: () => now },
       fetches,
+      mergeMethods,
     );
     await deliveredRun(runs, { id: RUN_ID });
     reviews.reviews.set(RUN_ID, readyReview(RUN_ID));
@@ -156,6 +170,45 @@ describe('MergeRunHandler', () => {
         runBranchDeletionFailure: null,
       });
       expect((await stored()).retentionFacts()).toMatchObject({ pullRequestState: 'merged' });
+    });
+
+    it('merges with a merge commit, sends no title or message and records the method', async () => {
+      mergeMethod = 'merge_commit';
+
+      const result = await handler.execute({ runId: RUN_ID, commit: COMMIT });
+
+      expect(host.calls.find((call) => call.method === 'merge')!.merge).toEqual({
+        sha: COMMIT,
+        method: 'merge_commit',
+      });
+      expect(result.approval.method).toBe('merge_commit');
+      expect(approvals.approvals[0]!.method).toBe('merge_commit');
+    });
+
+    it("reads the Project's method once, for the Project of the Run, and uses it for the record and the merge", async () => {
+      await handler.execute({ runId: RUN_ID, commit: COMMIT });
+
+      expect(methodReads).toEqual([PROJECT]);
+      expect(approvals.approvals[0]!.method).toBe('squash');
+      expect(host.calls.find((call) => call.method === 'merge')!.merge!.method).toBe('squash');
+    });
+
+    it('does not read the method again when it repeats a carried out merge, even if the setting changed', async () => {
+      await handler.execute({ runId: RUN_ID, commit: COMMIT });
+      mergeMethod = 'merge_commit';
+
+      const again = await handler.execute({ runId: RUN_ID, commit: COMMIT });
+
+      expect(methodReads).toHaveLength(1);
+      expect(again.approval.method).toBe('squash');
+    });
+
+    it('does not read the method for a request a precondition refuses', async () => {
+      host.setChecks([{ name: 'ci', state: 'failure' }]);
+
+      await refused('checks_failing');
+
+      expect(methodReads).toEqual([]);
     });
 
     it('does not mark a pull request ready that is not a draft', async () => {
@@ -352,6 +405,24 @@ describe('MergeRunHandler', () => {
         expect(fetched).toEqual([]);
       },
     );
+
+    it('keeps the approval as not carried out, with the host words, when the host refuses the merge commit method', async () => {
+      mergeMethod = 'merge_commit';
+      host.refuse('merge', { code: 'refused', message: 'Merge commits are not allowed.' });
+
+      const error = await refused('host_refused');
+
+      expect(error.detail).toBe('Merge commits are not allowed.');
+      expect(approvals.approvals).toHaveLength(1);
+      expect(approvals.approvals[0]).toMatchObject({
+        method: 'merge_commit',
+        result: 'not_carried_out',
+        refusal: { code: 'host_refused', reason: 'Merge commits are not allowed.' },
+        mergedCommit: null,
+      });
+      expect(host.runBranchDeleted).toBe(false);
+      expect(fetched).toEqual([]);
+    });
 
     it('records a host that cannot be reached with its redacted words, and allows a new attempt', async () => {
       host.refuse('merge', { code: 'unavailable' });

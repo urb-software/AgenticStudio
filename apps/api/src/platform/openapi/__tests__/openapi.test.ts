@@ -91,9 +91,10 @@ describe('OpenAPI document', () => {
       properties: {
         id: { type: 'string', format: 'uuid' },
         name: { type: 'string' },
+        mergeMethod: { type: 'string', enum: ['squash', 'merge_commit'] },
         createdAt: { type: 'string', format: 'date-time' },
       },
-      required: ['id', 'name', 'createdAt'],
+      required: ['id', 'name', 'mergeMethod', 'createdAt'],
     });
 
     const list = document.paths['/api/projects']?.get;
@@ -132,7 +133,7 @@ describe('OpenAPI document', () => {
           anyOf: [{ $ref: '#/components/schemas/RepositorySummary_Output' }, { type: 'null' }],
         },
       },
-      required: ['id', 'name', 'createdAt', 'repository'],
+      required: ['id', 'name', 'mergeMethod', 'createdAt', 'repository'],
     });
 
     const read = document.paths['/api/projects/{id}/repository']?.get;
@@ -401,6 +402,22 @@ describe('OpenAPI document', () => {
     expect(document.components?.schemas?.SetEnvironmentFileRequest).toMatchObject({
       required: ['path', 'content'],
       additionalProperties: false,
+    });
+  });
+
+  it("documents PUT /api/projects/{id}/merge-method: the project's merge method, 200 or 404", () => {
+    const document = createOpenApiDocument(app);
+
+    const put = document.paths['/api/projects/{id}/merge-method']?.put;
+    expect(put?.operationId).toBe('setMergeMethod');
+    expect(Object.keys(put?.responses ?? {})).toEqual(expect.arrayContaining(['200', '404']));
+    expect(document.components?.schemas?.SetMergeMethodRequest).toMatchObject({
+      properties: { mergeMethod: { enum: ['squash', 'merge_commit'] } },
+      required: ['mergeMethod'],
+      additionalProperties: false,
+    });
+    expect(document.components?.schemas?.Project_Output).toMatchObject({
+      properties: { mergeMethod: { enum: ['squash', 'merge_commit'] } },
     });
   });
 

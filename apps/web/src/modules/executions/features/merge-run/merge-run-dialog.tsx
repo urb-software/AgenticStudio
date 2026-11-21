@@ -13,7 +13,8 @@ import {
   DialogTitle,
 } from '@/shared/ui/dialog';
 import { ApiError, type RunOutput } from '../../../../platform/api';
-import { useMergeRun } from '../../api/runs-queries';
+import { useMergeRun, useRunProject } from '../../api/runs-queries';
+import { mergeMethodLabel } from '../../components/merge-method-label';
 import { Mono } from '../../components/mono';
 import { summarizeChecks, taskSummary } from '../../components/run-presentation';
 
@@ -67,6 +68,7 @@ function ChecksSeen({ pullRequest }: { pullRequest: NonNullable<RunOutput['pullR
  */
 export function MergeRunDialog({ run, commit, open, onOpenChange }: MergeRunDialogProps) {
   const merge = useMergeRun(run.id);
+  const { data: project } = useRunProject(run.projectId);
   const problem = merge.error instanceof ApiError ? merge.error.problem : undefined;
   const { pullRequest } = run;
 
@@ -112,12 +114,19 @@ export function MergeRunDialog({ run, commit, open, onOpenChange }: MergeRunDial
               )}
             </dd>
             <dt className="text-text-muted">Method</dt>
-            <dd className="m-0">Squash</dd>
+            <dd className="m-0">
+              {project ? (
+                mergeMethodLabel(project.mergeMethod)
+              ) : (
+                <span className="text-text-muted">The Project&apos;s setting</span>
+              )}
+            </dd>
           </dl>
           {pullRequest ? <ChecksSeen pullRequest={pullRequest} /> : null}
           <ul className="m-0 flex list-disc flex-col gap-1.5 pl-5 text-body">
             <li>Your approving review is submitted on GitHub.</li>
             <li>The pull request is merged pinned to this commit, and refused if it moved.</li>
+            <li>The method is the Project&apos;s setting, read again when Studio merges.</li>
             <li>The Run branch is deleted on GitHub and the Project&apos;s clone is fetched.</li>
             <li>The run takes no more Follow-ups.</li>
           </ul>

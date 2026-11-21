@@ -21,7 +21,9 @@ import { MergeStudioRule } from '../../../domain/value-objects/merge-studio-rule
 import { isRunId } from '../../../domain/value-objects/run-id.js';
 import {
   RUN_INTEGRATION_FETCHES,
+  RUN_MERGE_METHODS,
   type RunIntegrationFetches,
+  type RunMergeMethods,
 } from '../../../../projects/contracts/index.js';
 import { mergeApprovalView, type MergeApprovalView } from '../../merge-approval-view.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
@@ -58,6 +60,7 @@ export class MergeRunHandler {
     @Inject(MERGE_SETTINGS) private readonly settings: MergeSettings,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(RUN_INTEGRATION_FETCHES) private readonly integrationFetches: RunIntegrationFetches,
+    @Inject(RUN_MERGE_METHODS) private readonly mergeMethods: RunMergeMethods,
   ) {}
 
   /** Throws `RunNotFoundError` or `MergeRefusedError`. */
@@ -111,13 +114,15 @@ export class MergeRunHandler {
       throw new MergeRefusedError(hostRefusal);
     }
 
+    // Read once, after every precondition passed: the approval records it and the merge uses it.
+    const method = await this.mergeMethods.mergeMethodFor(run.projectId);
     const approval = MergeApproval.approve(
       {
         id: randomUUID(),
         runId,
         commit,
         integrationBranch: run.delivery.integrationBranch,
-        method: 'squash',
+        method,
         checksSeen: checks.checks,
       },
       this.clock.now(),
@@ -173,8 +178,13 @@ export class MergeRunHandler {
     const merged = await this.host.merge(scope, {
       sha: commit,
       method: approval.method,
-      title: pullRequest.title,
-      ...(pullRequest.body === '' ? {} : { message: pullRequest.body }),
+      // A squash commit carries the pull request's own words; a merge commit keeps the host's.
+      ...(approval.method === 'squash'
+        ? {
+            title: pullRequest.title,
+            ...(pullRequest.body === '' ? {} : { message: pullRequest.body }),
+          }
+        : {}),
     });
     if (!merged.ok) {
       throw await this.refusedAfter(

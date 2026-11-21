@@ -824,6 +824,68 @@
         ]
       }
     },
+    "/api/projects/{id}/merge-method": {
+      "put": {
+        "description": "Sets how the project's Runs are merged: `squash` (the default) or `merge_commit`. It applies to merges approved afterwards; a Merge approval already stored keeps the method it recorded.",
+        "operationId": "setMergeMethod",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetMergeMethodRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project_Output"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown project (urn:agentic-studio:problem:project-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
     "/api/projects/{id}/runs": {
       "post": {
         "operationId": "startRun",
@@ -2659,6 +2721,14 @@
           "name": {
             "type": "string"
           },
+          "mergeMethod": {
+            "type": "string",
+            "enum": [
+              "squash",
+              "merge_commit"
+            ],
+            "description": "How the project's Runs are merged: `squash` (the default) or `merge_commit`."
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
@@ -2668,6 +2738,7 @@
         "required": [
           "id",
           "name",
+          "mergeMethod",
           "createdAt"
         ],
         "additionalProperties": false
@@ -2731,6 +2802,14 @@
           "name": {
             "type": "string"
           },
+          "mergeMethod": {
+            "type": "string",
+            "enum": [
+              "squash",
+              "merge_commit"
+            ],
+            "description": "How the project's Runs are merged: `squash` (the default) or `merge_commit`."
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
@@ -2750,6 +2829,7 @@
         "required": [
           "id",
           "name",
+          "mergeMethod",
           "createdAt",
           "repository"
         ],
@@ -2906,6 +2986,22 @@
           "path",
           "sizeBytes",
           "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "SetMergeMethodRequest": {
+        "type": "object",
+        "properties": {
+          "mergeMethod": {
+            "type": "string",
+            "enum": [
+              "squash",
+              "merge_commit"
+            ]
+          }
+        },
+        "required": [
+          "mergeMethod"
         ],
         "additionalProperties": false
       },
@@ -3306,7 +3402,8 @@
           "method": {
             "type": "string",
             "enum": [
-              "squash"
+              "squash",
+              "merge_commit"
             ]
           },
           "checksSeen": {
@@ -3861,7 +3958,8 @@
           "method": {
             "type": "string",
             "enum": [
-              "squash"
+              "squash",
+              "merge_commit"
             ]
           },
           "checksSeen": {

@@ -6,6 +6,7 @@ import { Banner } from '@/shared/components/banner';
 import { formatExactTime } from '@/shared/lib/relative-time';
 import { Button } from '@/shared/ui/button';
 import { ApiError, type MergeApprovalOutput, type RunOutput } from '../../../../platform/api';
+import { mergeMethodLabel } from '../../components/merge-method-label';
 import { MERGE_UNAVAILABLE_REASON } from '../../components/merge-unavailable-reason';
 import { Mono } from '../../components/mono';
 import { useMergeRun } from '../../api/runs-queries';
@@ -154,7 +155,8 @@ export function RunMergeApproval({ run }: { run: RunOutput }) {
             as commit <Mono>{approval.mergedCommit.slice(0, 12)}</Mono>
           </>
         ) : null}{' '}
-        (approved at <Mono>{approval.commit.slice(0, 12)}</Mono>, {approval.method}, into{' '}
+        (approved at <Mono>{approval.commit.slice(0, 12)}</Mono>,{' '}
+        {mergeMethodLabel(approval.method).toLowerCase()}, into{' '}
         <Mono>{approval.integrationBranch}</Mono>).
         {branchLeft ? null : <> The Run branch was deleted.</>}
       </p>

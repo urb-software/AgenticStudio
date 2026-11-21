@@ -21,7 +21,8 @@ type Route =
   | 'verify'
   | 'environmentFile'
   | 'setEnvironmentFile'
-  | 'removeEnvironmentFile';
+  | 'removeEnvironmentFile'
+  | 'setMergeMethod';
 
 /** A synthetic public key line for SSH connects (not key material). */
 export const FAKE_PUBLIC_KEY =
@@ -30,7 +31,8 @@ export const FAKE_PUBLIC_KEY =
 export const FAKE_FINGERPRINT = 'SHA256:c3ludGhldGljLWZpbmdlcnByaW50LWZvci10ZXN0cw';
 
 const RUNS_ROUTE = /^\/api\/projects\/[^/]+\/runs$/;
-const ROUTE = /^\/api\/projects\/([^/]+)(\/repository(\/fetch|\/verify)?|\/environment-file)?$/;
+const ROUTE =
+  /^\/api\/projects\/([^/]+)(\/repository(\/fetch|\/verify)?|\/environment-file|\/merge-method)?$/;
 
 /**
  * A fake of the project detail API behind `fetch`. `repository` is the server's state; tests
@@ -49,6 +51,7 @@ export function fakeProjectApi(project: ProjectOutput, initial: RepositoryOutput
     // What the server keeps of the project's Environment file (never sent back).
     environmentFile: null as EnvironmentFileInfoOutput | null,
     environmentFileContent: null as string | null,
+    mergeMethod: project.mergeMethod,
   };
   const scripted: Record<Route, ScriptedResponse[]> = {
     project: [],
@@ -60,6 +63,7 @@ export function fakeProjectApi(project: ProjectOutput, initial: RepositoryOutput
     environmentFile: [],
     setEnvironmentFile: [],
     removeEnvironmentFile: [],
+    setMergeMethod: [],
   };
   const calls: { route: Route; body?: unknown }[] = [];
   const held: Partial<Record<Route, Promise<void>>> = {};
@@ -85,6 +89,7 @@ export function fakeProjectApi(project: ProjectOutput, initial: RepositoryOutput
     if (!match) return undefined;
     const projectId = match[1]!;
     if (!match[2]) return { route: 'project', projectId };
+    if (match[2] === '/merge-method') return { route: 'setMergeMethod', projectId };
     if (match[2] === '/environment-file') {
       if (request.method === 'PUT') return { route: 'setEnvironmentFile', projectId };
       if (request.method === 'DELETE') return { route: 'removeEnvironmentFile', projectId };
@@ -103,7 +108,10 @@ export function fakeProjectApi(project: ProjectOutput, initial: RepositoryOutput
     if (!target) return json(404, problem(404, 'Not Found'));
     const { route, projectId } = target;
     const body: unknown =
-      route === 'connect' || route === 'verify' || route === 'setEnvironmentFile'
+      route === 'connect' ||
+      route === 'verify' ||
+      route === 'setEnvironmentFile' ||
+      route === 'setMergeMethod'
         ? await request.json()
         : undefined;
     calls.push({ route, body });
@@ -114,6 +122,7 @@ export function fakeProjectApi(project: ProjectOutput, initial: RepositoryOutput
       case 'project':
         return json(200, {
           ...project,
+          mergeMethod: state.mergeMethod,
           repository: state.repository && {
             state: state.repository.state,
             url: state.repository.url,
@@ -201,6 +210,10 @@ export function fakeProjectApi(project: ProjectOutput, initial: RepositoryOutput
           updatedAt: '2026-11-15T12:00:00.000Z',
         };
         return json(200, state.environmentFile);
+      }
+      case 'setMergeMethod': {
+        state.mergeMethod = (body as { mergeMethod: ProjectOutput['mergeMethod'] }).mergeMethod;
+        return json(200, { ...project, mergeMethod: state.mergeMethod });
       }
       case 'removeEnvironmentFile':
         state.environmentFile = null;

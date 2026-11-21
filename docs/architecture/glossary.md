@@ -99,7 +99,7 @@ The operator's action that lands a Run's pull request in the Integration branch 
 _Avoid_: Approve (for the whole action), land, ship
 
 **Merge approval**:
-The record stored first when the operator presses "Approve and merge": who, when, the commit approved and the Pull request checks seen. A merge the Git host refuses leaves it in place, marked as not carried out. The operator's review of the Studio-side diff of that commit is the independent review, because the author is the agent.
+The record stored first when the operator presses "Approve and merge": who, when, the commit approved, the merge method used (the Project's setting when it was approved) and the Pull request checks seen. A merge the Git host refuses leaves it in place, marked as not carried out. The operator's review of the Studio-side diff of that commit is the independent review, because the author is the agent.
 _Avoid_: Approval (alone), sign-off, review approval
 
 **Close without merging**:

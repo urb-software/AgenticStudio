@@ -6,6 +6,7 @@ import {
   RUN_BRANCH_REVIEWS,
   RUN_ENVIRONMENT_FILES,
   RUN_INTEGRATION_FETCHES,
+  RUN_MERGE_METHODS,
   RUN_START_POINTS,
 } from './contracts/index.js';
 import { ProjectRunIntegrationFetches } from './entry-points/contracts/run-integration-fetches.js';
@@ -38,8 +39,12 @@ import { RemoveEnvironmentFileEndpoint } from './entry-points/http/operator/remo
 import { RemoveEnvironmentFileHandler } from './application/features/remove-environment-file/handler.js';
 import { SetEnvironmentFileEndpoint } from './entry-points/http/operator/set-environment-file/endpoint.js';
 import { SetEnvironmentFileHandler } from './application/features/set-environment-file/handler.js';
+import { SetMergeMethodEndpoint } from './entry-points/http/operator/set-merge-method/endpoint.js';
+import { SetMergeMethodHandler } from './application/features/set-merge-method/handler.js';
+import { GetRunMergeMethodHandler } from './application/features/get-run-merge-method/handler.js';
 import { SweepOrphanedEnvironmentFilesHandler } from './application/features/sweep-orphaned-environment-files/handler.js';
 import { ProjectRunEnvironmentFiles } from './entry-points/contracts/run-environment-files.js';
+import { ProjectRunMergeMethods } from './entry-points/contracts/run-merge-methods.js';
 import { ProjectRunBranchReviews } from './entry-points/contracts/run-branch-reviews.js';
 import { ProjectRunStartPoints } from './entry-points/contracts/run-start-points.js';
 import { FetchForReviewHandler } from './application/features/fetch-for-review/handler.js';
@@ -101,8 +106,8 @@ export interface ProjectsModuleOptions {
 }
 
 /**
- * `projects` business module: projects, their Repository (Git adapter, background jobs) and
- * Environment file. Other modules reach it through {@link RUN_START_POINTS}, {@link RUN_ENVIRONMENT_FILES} and {@link RUN_BRANCH_REVIEWS} and {@link RUN_INTEGRATION_FETCHES}.
+ * `projects` business module: projects, their Repository (Git adapter, background jobs),
+ * Environment file and merge method. Other modules reach it through {@link RUN_START_POINTS}, {@link RUN_ENVIRONMENT_FILES} and {@link RUN_BRANCH_REVIEWS}, {@link RUN_INTEGRATION_FETCHES} and {@link RUN_MERGE_METHODS}.
  */
 @Module({})
 export class ProjectsModule {
@@ -122,6 +127,7 @@ export class ProjectsModule {
         GetEnvironmentFileEndpoint,
         SetEnvironmentFileEndpoint,
         RemoveEnvironmentFileEndpoint,
+        SetMergeMethodEndpoint,
       ],
       providers: [
         { provide: PROJECT_REPOSITORY, useClass: PrismaProjectRepository },
@@ -203,12 +209,16 @@ export class ProjectsModule {
         GetReviewSupportHandler,
         { provide: RUN_BRANCH_REVIEWS, useClass: ProjectRunBranchReviews },
         { provide: RUN_INTEGRATION_FETCHES, useClass: ProjectRunIntegrationFetches },
+        SetMergeMethodHandler,
+        GetRunMergeMethodHandler,
+        { provide: RUN_MERGE_METHODS, useClass: ProjectRunMergeMethods },
       ],
       exports: [
         RUN_START_POINTS,
         RUN_ENVIRONMENT_FILES,
         RUN_BRANCH_REVIEWS,
         RUN_INTEGRATION_FETCHES,
+        RUN_MERGE_METHODS,
       ],
     };
   }
