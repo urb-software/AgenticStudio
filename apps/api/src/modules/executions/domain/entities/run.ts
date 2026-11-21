@@ -879,10 +879,10 @@ export class Run {
   }
 
   /**
-   * Takes the claim on the close, or on the deletion that follows it; `done` takes none. Throws
-   * {@link ClosePullRequestRefusedError} or {@link CloseInProgressError}.
+   * Claims the close or the deletion after it (`done`: none). `resume_close`: an earlier attempt
+   * died holding the claim. Throws {@link ClosePullRequestRefusedError} or {@link CloseInProgressError}.
    */
-  claimClose(now: Date): 'close' | 'delete_branch' | 'done' {
+  claimClose(now: Date): 'close' | 'resume_close' | 'delete_branch' | 'done' {
     if (this.isActive) throw new ClosePullRequestRefusedError('run_active');
     if (this.hostPullRequest === null) {
       throw new ClosePullRequestRefusedError('pull_request_not_open');
@@ -892,7 +892,8 @@ export class Run {
     if (progress === 'complete') return 'done';
     if (status.isCloseClaimed(now)) throw new CloseInProgressError();
     this.updateStatus(status.closeClaimed(now));
-    return progress === 'not_closed' ? 'close' : 'delete_branch';
+    if (progress === 'branch_pending') return 'delete_branch';
+    return status.closeClaimedAt === null ? 'close' : 'resume_close';
   }
 
   releaseCloseClaim(): void {

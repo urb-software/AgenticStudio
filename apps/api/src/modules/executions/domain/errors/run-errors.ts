@@ -1,4 +1,4 @@
-import type { CloseRefusal } from '../value-objects/close-refusal.js';
+import type { ClosePullRequestRefusal } from '@agentic-studio/contracts';
 import type { FollowUpRefusal } from '../value-objects/follow-up-refusal.js';
 import type { Provider } from '../value-objects/provider.js';
 import type { RunState } from '../value-objects/run-state.js';
@@ -152,7 +152,7 @@ export class ProviderUnavailableError extends Error {
 /** `detail` is the Git host's redacted reason, for `host_refused` only. */
 export class ClosePullRequestRefusedError extends Error {
   constructor(
-    readonly reason: CloseRefusal,
+    readonly reason: ClosePullRequestRefusal,
     readonly detail?: string,
   ) {
     super(`The pull request cannot be closed from Studio (${reason}).`);

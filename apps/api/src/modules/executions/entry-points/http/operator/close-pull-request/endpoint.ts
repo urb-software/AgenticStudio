@@ -8,7 +8,6 @@ import {
   EXECUTIONS_PROBLEM_TYPES,
   runNotFound,
 } from '../../shared/problems.js';
-import { closureResponse } from '../../shared/run-response.js';
 import {
   CloseInProgressError,
   ClosePullRequestRefusedError,
@@ -40,12 +39,13 @@ export class ClosePullRequestEndpoint {
       const result = await this.handler.execute({ runId });
       return {
         state: result.state,
-        ...closureResponse({
-          closedFromStudioAt: result.closedFromStudioAt,
-          runBranchDeletedAt: result.runBranchDeletedAt,
-          runBranchDeletionFailure: result.runBranchDeletionFailure,
-        }),
         closedFromStudioAt: result.closedFromStudioAt.toISOString(),
+        ...(result.runBranchDeletedAt
+          ? { runBranchDeletedAt: result.runBranchDeletedAt.toISOString() }
+          : {}),
+        ...(result.runBranchDeletionFailure
+          ? { runBranchDeletionFailure: result.runBranchDeletionFailure }
+          : {}),
       };
     } catch (error) {
       if (error instanceof RunNotFoundError) throw runNotFound();

@@ -187,6 +187,9 @@ export class RunPullRequestStatus {
    * position, a closed one no merge verdict, and only an open one has checks.
    */
   read(result: PullRequestStateResult, now: Date): RunPullRequestStatus {
+    if (this.closedFromStudioAt !== null && !isEndedPullRequestState(result.state)) {
+      return this.staleReadAfterClose(now);
+    }
     return this.with({
       state: result.state,
       behindBy: result.behindBy ?? null,
@@ -203,6 +206,16 @@ export class RunPullRequestStatus {
             ? { commit: result.checksCommit, checks: result.checks }
             : null,
       endedAt: this.endedAtFor(result.state, now),
+    });
+  }
+
+  /** A close from Studio is final for Studio: a read of it as open again only ends the refresh. */
+  private staleReadAfterClose(now: Date): RunPullRequestStatus {
+    return this.with({
+      refreshedAt: now,
+      refreshError: null,
+      retryAt: null,
+      refreshRequestedAt: null,
     });
   }
 
@@ -234,6 +247,7 @@ export class RunPullRequestStatus {
    * keeping: those are cleared with the state (a closed one keeps its branch position).
    */
   observed(state: PullRequestState, now: Date): RunPullRequestStatus {
+    if (this.closedFromStudioAt !== null && !isEndedPullRequestState(state)) return this;
     const gone = state === 'merged' || state === 'missing';
     const over = gone || state === 'closed';
     return this.with({

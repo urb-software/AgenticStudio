@@ -12,11 +12,9 @@ import { ClosePullRequestDialog } from '../close-pull-request/close-pull-request
 
 type PullRequest = NonNullable<RunOutput['pullRequest']>;
 
-const MERGE_UNAVAILABLE_TEXT = {
-  not_configured:
-    "Closing the pull request from Studio is off: Studio's Merge credential is not configured.",
-  unsupported_host:
-    "Closing the pull request from Studio is off: this run's Git host is not supported.",
+const MERGE_UNAVAILABLE_REASON = {
+  not_configured: "Studio's Merge credential is not configured.",
+  unsupported_host: "this run's Git host is not supported.",
 } as const;
 
 function Time({ iso }: { iso: string }) {
@@ -28,7 +26,7 @@ function Time({ iso }: { iso: string }) {
 }
 
 /** What is left after a close whose branch deletion failed, and the retry of just that. */
-function BranchLeft({ run, failure }: { run: RunOutput; failure: string }) {
+function BranchLeft({ run, failure }: { run: RunOutput; failure: string | undefined }) {
   const retry = useCloseRunPullRequest(run.id);
   const problem = retry.error instanceof ApiError ? retry.error.problem : undefined;
   return (
@@ -36,7 +34,7 @@ function BranchLeft({ run, failure }: { run: RunOutput; failure: string }) {
       tone="warning"
       title="The pull request is closed, but the Run branch is still on GitHub."
     >
-      <span className="block break-words">{failure}</span>
+      <span className="block break-words">{failure ?? 'Deleting it did not finish.'}</span>
       {retry.error ? (
         <span className="mt-1 block break-words">
           {problem?.detail || 'Could not delete the Run branch. Try again.'}
@@ -51,6 +49,10 @@ function BranchLeft({ run, failure }: { run: RunOutput; failure: string }) {
           >
             Delete the Run branch again
           </Button>
+        </span>
+      ) : run.merge ? (
+        <span className="mt-1 block">
+          Deleting it from Studio is off: {MERGE_UNAVAILABLE_REASON[run.merge.reason]}
         </span>
       ) : null}
     </Banner>
@@ -90,9 +92,7 @@ export function RunClosePullRequest({
               </>
             ) : null}
           </p>
-          {runBranchDeletionFailure ? (
-            <BranchLeft run={run} failure={runBranchDeletionFailure} />
-          ) : null}
+          {runBranchDeletedAt ? null : <BranchLeft run={run} failure={runBranchDeletionFailure} />}
         </div>
       ) : finished && live && merge ? (
         <div
@@ -110,7 +110,9 @@ export function RunClosePullRequest({
               </Button>
             </div>
           ) : (
-            <p className="m-0 text-small text-text-muted">{MERGE_UNAVAILABLE_TEXT[merge.reason]}</p>
+            <p className="m-0 text-small text-text-muted">
+              Closing the pull request from Studio is off: {MERGE_UNAVAILABLE_REASON[merge.reason]}
+            </p>
           )}
         </div>
       ) : null}

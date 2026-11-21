@@ -182,6 +182,8 @@ export class GitHubMergeHost implements MergeHost {
       const answer = await this.call(
         'DELETE',
         `/repos/${repository.fullName}/git/refs/heads/${scope.runBranch}`,
+        undefined,
+        true,
       );
       return answer.ok ? { ok: true } : answer;
     });
@@ -272,7 +274,13 @@ export class GitHubMergeHost implements MergeHost {
     return unavailable();
   }
 
-  private async call(method: string, path: string, body?: unknown): Promise<Answer> {
+  /** `missingIs422`: the host answers 422, not 404, for a ref that does not exist. */
+  private async call(
+    method: string,
+    path: string,
+    body?: unknown,
+    missingIs422 = false,
+  ): Promise<Answer> {
     if (this.#credential === null) return notConfigured();
     let response: Response;
     try {
@@ -301,6 +309,8 @@ export class GitHubMergeHost implements MergeHost {
         return unavailable();
       }
     }
+    if (missingIs422 && response.status === 422)
+      return { ok: false, failure: { code: 'not_found' } };
     return { ok: false, failure: await this.failureOf(response) };
   }
 

@@ -74,7 +74,32 @@ describe('Run closing its pull request from Studio', () => {
     const run = delivered();
     run.claimClose(T0);
     expect(() => run.claimClose(T1)).toThrow(CloseInProgressError);
-    expect(run.claimClose(new Date(T0.getTime() + 120_000))).toBe('close');
+    expect(run.claimClose(new Date(T0.getTime() + 120_000))).toBe('resume_close');
+  });
+
+  it('ignores a read of the pull request as open after the close, but ends the refresh', () => {
+    const run = delivered();
+    run.claimClose(T0);
+    run.recordClosedFromStudio(T0);
+    run.recordLookupRequested('pull_request_state', T1);
+
+    run.recordPullRequestState({ state: 'draft', behindBy: 0, aheadBy: 1 }, T1);
+    run.recordObservedPullRequestState('open', T1);
+
+    expect(run.pullRequestStatus).toMatchObject({
+      state: 'closed',
+      refreshRequestedAt: null,
+      refreshedAt: T1,
+      endedAt: T0,
+    });
+  });
+
+  it('follows a read of the pull request as merged after the close', () => {
+    const run = delivered();
+    run.claimClose(T0);
+    run.recordClosedFromStudio(T0);
+    run.recordPullRequestState({ state: 'merged' }, T1);
+    expect(run.pullRequestStatus.state).toBe('merged');
   });
 
   it('releases the claim without recording a close', () => {

@@ -178,6 +178,46 @@ describe('Run page: Close without merging', () => {
     ).toBeNull();
   });
 
+  it('offers the retry when the deletion never finished and left no reason', async () => {
+    const run = delivered({
+      pullRequest: {
+        ...PULL_REQUEST,
+        state: 'closed',
+        closedFromStudioAt: '2026-11-21T12:00:00.000Z',
+      },
+    });
+    fakeRunsApi([run]);
+    renderRun(run.id);
+    await heading();
+
+    expect(within(card()).getByText('Deleting it did not finish.')).toBeTruthy();
+    expect(
+      within(card()).getByRole('button', { name: 'Delete the Run branch again' }),
+    ).toBeTruthy();
+  });
+
+  it('says why the retry is not offered when merging became unavailable', async () => {
+    const run = delivered({
+      merge: { available: false, reason: 'not_configured' },
+      pullRequest: {
+        ...PULL_REQUEST,
+        state: 'closed',
+        closedFromStudioAt: '2026-11-21T12:00:00.000Z',
+        runBranchDeletionFailure: 'Branch is protected.',
+      },
+    });
+    fakeRunsApi([run]);
+    renderRun(run.id);
+    await heading();
+
+    expect(
+      within(card()).queryByRole('button', { name: 'Delete the Run branch again' }),
+    ).toBeNull();
+    expect(
+      within(card()).getByText(/Deleting it from Studio is off: .*Merge credential/),
+    ).toBeTruthy();
+  });
+
   it('keeps a refusal in the dialog, with the reason', async () => {
     const run = delivered();
     const api = fakeRunsApi([run]);

@@ -7,6 +7,7 @@ import {
   ClosePullRequestRefusedError,
   RunNotFoundError,
 } from '../../../../domain/errors/run-errors.js';
+import type { RunIntegrationFetches } from '../../../../../projects/contracts/index.js';
 import type { MergeSettings } from '../../../ports/merge-settings.js';
 import { ClosePullRequestHandler } from '../handler.js';
 
@@ -20,14 +21,27 @@ describe('ClosePullRequestHandler', () => {
   let settings: MergeSettings;
   let now: Date;
   let handler: ClosePullRequestHandler;
+  let fetched: string[];
+  let failFetch: boolean;
 
   beforeEach(() => {
     runs = new InMemoryRunRepository();
     host = new InMemoryMergeHost();
     settings = { configured: true, allowFileRemotes: false };
     now = NOW;
-    handler = new ClosePullRequestHandler(runs, host, settings, { now: () => now });
+    fetched = [];
+    failFetch = false;
+    handler = new ClosePullRequestHandler(runs, host, settings, { now: () => now }, fetches);
   });
+
+  const fetches: RunIntegrationFetches = {
+    fetchIntegrationBranch: (projectId) => {
+      fetched.push(projectId);
+      return failFetch
+        ? Promise.reject(new Error('queue down'))
+        : Promise.resolve({ status: 'started' });
+    },
+  };
 
   const methods = () => host.calls.map((call) => call.method);
   const stored = async () => (await runs.findById(RUN_ID))!;
@@ -78,6 +92,62 @@ describe('ClosePullRequestHandler', () => {
     expect((await stored()).pullRequestStatus.closeClaimedAt).toBeNull();
   });
 
+  it('fetches the Integration branch of the Run project after the close and the deletion', async () => {
+    await deliveredRun(runs, { id: RUN_ID });
+
+    await handler.execute({ runId: RUN_ID });
+
+    expect(fetched).toEqual([PROJECT]);
+  });
+
+  it('keeps the close when the fetch cannot be started, and fetches again only on a retry of the deletion', async () => {
+    await deliveredRun(runs, { id: RUN_ID });
+    failFetch = true;
+
+    await expect(handler.execute({ runId: RUN_ID })).resolves.toMatchObject({ state: 'closed' });
+    await handler.execute({ runId: RUN_ID });
+
+    expect(fetched).toEqual([PROJECT]);
+    expect((await stored()).pullRequestStatus.closedFromStudioAt).toEqual(NOW);
+  });
+
+  it('does not fetch when nothing was closed', async () => {
+    await deliveredRun(runs, { id: RUN_ID });
+    host.refuse('close', { code: 'unavailable' });
+
+    await refusal(handler.execute({ runId: RUN_ID }));
+
+    expect(fetched).toEqual([]);
+  });
+
+  it('records a pull request the host closed for an earlier attempt of ours that died, and deletes the branch', async () => {
+    await deliveredRun(runs, { id: RUN_ID });
+    await runs.change(RUN_ID, (run) => void run.claimClose(NOW));
+    host.setPullRequest({ state: 'closed' });
+    now = new Date(NOW.getTime() + 300_000);
+
+    const result = await handler.execute({ runId: RUN_ID });
+
+    expect(methods()).toEqual(['readPullRequest', 'deleteRunBranch']);
+    expect(result).toMatchObject({ state: 'closed', closedFromStudioAt: now });
+  });
+
+  it('keeps the Run closed when a late lookup reads the pull request as open, and ends that refresh', async () => {
+    await deliveredRun(runs, { id: RUN_ID });
+    await handler.execute({ runId: RUN_ID });
+
+    await runs.change(RUN_ID, (run) => {
+      run.recordLookupRequested('pull_request_state', now);
+      run.recordPullRequestState({ state: 'open', behindBy: 0, aheadBy: 1 }, now);
+    });
+
+    expect((await stored()).pullRequestStatus).toMatchObject({
+      state: 'closed',
+      closedFromStudioAt: NOW,
+      refreshRequestedAt: null,
+    });
+  });
+
   it('refuses an unknown or malformed Run', async () => {
     await expect(handler.execute({ runId: 'nope' })).rejects.toBeInstanceOf(RunNotFoundError);
     await expect(handler.execute({ runId: RUN_ID })).rejects.toBeInstanceOf(RunNotFoundError);
@@ -90,6 +160,7 @@ describe('ClosePullRequestHandler', () => {
       host,
       { configured: false, allowFileRemotes: false },
       { now: () => now },
+      fetches,
     );
 
     expect((await refusal(handler.execute({ runId: RUN_ID }))).reason).toBe('merge_unavailable');

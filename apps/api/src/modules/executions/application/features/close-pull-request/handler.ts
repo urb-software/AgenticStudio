@@ -7,6 +7,10 @@ import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories
 import { MergeAvailabilityRule } from '../../../domain/value-objects/merge-availability-rule.js';
 import type { PullRequestState } from '../../../domain/value-objects/pull-request-state.js';
 import { isRunId } from '../../../domain/value-objects/run-id.js';
+import {
+  RUN_INTEGRATION_FETCHES,
+  type RunIntegrationFetches,
+} from '../../../../projects/contracts/index.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import {
   MERGE_HOST,
@@ -39,6 +43,7 @@ export class ClosePullRequestHandler {
     @Inject(MERGE_HOST) private readonly host: MergeHost,
     @Inject(MERGE_SETTINGS) private readonly settings: MergeSettings,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(RUN_INTEGRATION_FETCHES) private readonly integrationFetches: RunIntegrationFetches,
   ) {}
 
   async execute(input: ClosePullRequestInput): Promise<ClosePullRequestResult> {
@@ -48,7 +53,7 @@ export class ClosePullRequestHandler {
     if (MergeAvailabilityRule.of(this.settings).unavailableReason(found.remoteUrl) !== null) {
       throw new ClosePullRequestRefusedError('merge_unavailable');
     }
-    let stage = 'done' as 'close' | 'delete_branch' | 'done';
+    let stage = 'done' as 'close' | 'resume_close' | 'delete_branch' | 'done';
     const claimed = await this.runs.change(runId, (run) => {
       stage = run.claimClose(this.clock.now());
     });
@@ -61,21 +66,27 @@ export class ClosePullRequestHandler {
         integrationBranch: claimed.delivery.integrationBranch,
         ...host,
       };
-      if (stage === 'close') await this.close(runId, scope);
+      if (stage !== 'delete_branch') await this.close(runId, scope, stage === 'resume_close');
       await this.deleteRunBranch(runId, scope);
+      await this.fetchIntegrationBranch(claimed.projectId);
     }
     return this.result(runId);
   }
 
-  private async close(runId: string, scope: PullRequestScope): Promise<void> {
+  private async close(runId: string, scope: PullRequestScope, resumed: boolean): Promise<void> {
     const read = await this.host.readPullRequest(scope);
     if (!read.ok) {
       if (read.failure.code === 'not_found') throw await this.ended(runId, 'missing');
       throw await this.refused(runId, read.failure);
     }
-    if (read.pullRequest.state !== 'open') throw await this.ended(runId, read.pullRequest.state);
-    const closed = await this.host.close(scope);
-    if (!closed.ok) throw await this.refused(runId, closed.failure);
+    const { state } = read.pullRequest;
+    // Closed by an earlier attempt of ours that died before recording it.
+    const ours = state === 'closed' && resumed;
+    if (state !== 'open' && !ours) throw await this.ended(runId, state);
+    if (!ours) {
+      const closed = await this.host.close(scope);
+      if (!closed.ok) throw await this.refused(runId, closed.failure);
+    }
     await this.runs.change(runId, (run) => run.recordClosedFromStudio(this.clock.now()));
   }
 
@@ -86,6 +97,15 @@ export class ClosePullRequestHandler {
       if (failure === null) run.recordBranchDeleted(this.clock.now());
       else run.recordBranchDeletionFailed(failureText(failure));
     });
+  }
+
+  /** Best effort: the Clone catching up never undoes the close. */
+  private async fetchIntegrationBranch(projectId: string): Promise<void> {
+    try {
+      await this.integrationFetches.fetchIntegrationBranch(projectId);
+    } catch {
+      // The Repository record carries a fetch that failed.
+    }
   }
 
   /** Stores what the host reported; the refusal is that the pull request is not open. */

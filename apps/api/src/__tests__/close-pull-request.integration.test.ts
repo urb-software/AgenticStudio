@@ -5,6 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { MergeCredential } from '../platform/config/merge-credential.js';
 import { DATABASE_CLIENT, type DatabaseClient } from '../platform/database/database.module.js';
 import { problemDetailsSchema } from '../platform/http/problem-details.js';
+import { WITHOUT_QUEUE_WORKERS } from './test-config.js';
 import {
   signIn,
   startStudioApp,
@@ -148,7 +149,8 @@ describe('close without merging API (PostgreSQL + Redis via Testcontainers)', ()
         runLimits: LIMITS,
         mergeCredential: MergeCredential.of(MERGE_TOKEN),
       },
-      { executions: { mergeHost: git.host } },
+      // No job worker: the Integration branch fetch is scheduled, never run against the network.
+      { ...WITHOUT_QUEUE_WORKERS, executions: { mergeHost: git.host } },
     );
     cookie = await signIn(app);
   });
@@ -189,6 +191,10 @@ describe('close without merging API (PostgreSQL + Redis via Testcontainers)', ()
       closedFromStudioAt: closed.body.closedFromStudioAt,
       runBranchDeletedAt: closed.body.runBranchDeletedAt,
     });
+    // The Clone is asked to catch up with the Integration branch (the Repository record).
+    const [repository] = await db().$queryRaw<{ state: string }[]>`
+      SELECT state FROM repositories WHERE project_id = ${(await getRun(runId)).body.projectId}::uuid`;
+    expect(repository!.state).toBe('fetching');
   });
 
   it('changes nothing when repeated, and calls no host', async () => {

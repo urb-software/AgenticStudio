@@ -2,7 +2,13 @@ import { type DynamicModule, Module } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/config.js';
 import { DatabaseModule } from '../../platform/database/database.module.js';
 import { SecretsModule } from '../../platform/secrets/secrets.module.js';
-import { RUN_BRANCH_REVIEWS, RUN_ENVIRONMENT_FILES, RUN_START_POINTS } from './contracts/index.js';
+import {
+  RUN_BRANCH_REVIEWS,
+  RUN_ENVIRONMENT_FILES,
+  RUN_INTEGRATION_FETCHES,
+  RUN_START_POINTS,
+} from './contracts/index.js';
+import { ProjectRunIntegrationFetches } from './entry-points/contracts/run-integration-fetches.js';
 import { ENVIRONMENT_FILE_REPOSITORY } from './domain/repositories/environment-file-repository.js';
 import { PROJECT_REPOSITORY } from './domain/repositories/project-repository.js';
 import { REPOSITORY_CONNECTION_REPOSITORY } from './domain/repositories/repository-connection-repository.js';
@@ -96,7 +102,7 @@ export interface ProjectsModuleOptions {
 
 /**
  * `projects` business module: projects, their Repository (Git adapter, background jobs) and
- * Environment file. Other modules reach it through {@link RUN_START_POINTS}, {@link RUN_ENVIRONMENT_FILES} and {@link RUN_BRANCH_REVIEWS}.
+ * Environment file. Other modules reach it through {@link RUN_START_POINTS}, {@link RUN_ENVIRONMENT_FILES} and {@link RUN_BRANCH_REVIEWS} and {@link RUN_INTEGRATION_FETCHES}.
  */
 @Module({})
 export class ProjectsModule {
@@ -196,8 +202,14 @@ export class ProjectsModule {
         MergeDiffHandler,
         GetReviewSupportHandler,
         { provide: RUN_BRANCH_REVIEWS, useClass: ProjectRunBranchReviews },
+        { provide: RUN_INTEGRATION_FETCHES, useClass: ProjectRunIntegrationFetches },
       ],
-      exports: [RUN_START_POINTS, RUN_ENVIRONMENT_FILES, RUN_BRANCH_REVIEWS],
+      exports: [
+        RUN_START_POINTS,
+        RUN_ENVIRONMENT_FILES,
+        RUN_BRANCH_REVIEWS,
+        RUN_INTEGRATION_FETCHES,
+      ],
     };
   }
 }
