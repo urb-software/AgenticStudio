@@ -71,6 +71,8 @@ describe('loadConfig', () => {
       runLogMaxBytes: 8 * 1024 * 1024,
       runSnapshotRetentionDays: 7,
       operatorGithubLogin: null,
+      mergeCredential: null,
+      mergeGithubApiUrl: null,
       retention: {
         days: 7,
         maxPerProject: 10,
@@ -594,6 +596,64 @@ describe('loadConfig', () => {
     ])('refuses %s=%j', (name, value) => {
       const error = captureError(() => loadConfig({ ...requiredEnv, [name]: value }));
       expect(error.message).toContain(name);
+    });
+  });
+
+  describe('Merge credential', () => {
+    // A throwaway value generated per run: no token is committed.
+    const MERGE_TOKEN = `fake-${randomBytes(18).toString('hex')}`;
+
+    it.each([undefined, ''])('turns merging off when STUDIO_MERGE_TOKEN is %j', (value) => {
+      const env = value === undefined ? requiredEnv : { ...requiredEnv, STUDIO_MERGE_TOKEN: value };
+      expect(loadConfig(env).mergeCredential).toBeNull();
+    });
+
+    it('keeps a well-formed token revealable but never printed', () => {
+      const { mergeCredential } = loadConfig({ ...requiredEnv, STUDIO_MERGE_TOKEN: MERGE_TOKEN });
+      expect(mergeCredential?.reveal()).toBe(MERGE_TOKEN);
+      expect(inspect(mergeCredential)).not.toContain(MERGE_TOKEN);
+      expect(JSON.stringify(mergeCredential)).not.toContain(MERGE_TOKEN);
+      expect(`${mergeCredential}`).not.toContain(MERGE_TOKEN);
+    });
+
+    it('keeps the token out of a dump of the whole configuration', () => {
+      const config = loadConfig({ ...requiredEnv, STUDIO_MERGE_TOKEN: MERGE_TOKEN });
+      expect(inspect(config, { depth: null })).not.toContain(MERGE_TOKEN);
+      expect(JSON.stringify(config)).not.toContain(MERGE_TOKEN);
+    });
+
+    it('accepts 20 and 255 characters', () => {
+      for (const length of [20, 255]) {
+        expect(
+          loadConfig({ ...requiredEnv, STUDIO_MERGE_TOKEN: 'a'.repeat(length) }).mergeCredential,
+        ).not.toBeNull();
+      }
+    });
+
+    it.each([
+      ['too short', 'a'.repeat(19)],
+      ['too long', 'a'.repeat(256)],
+      ['with a space', `${'a'.repeat(12)} ${'b'.repeat(12)}`],
+      [
+        'with a line break',
+        `${'a'.repeat(12)}
+${'b'.repeat(12)}`,
+      ],
+      ['with a tab', `${'a'.repeat(12)}	${'b'.repeat(12)}`],
+    ])('stops start-up for a token %s, naming the setting and not the value', (_name, value) => {
+      const error = captureError(() => loadConfig({ ...requiredEnv, STUDIO_MERGE_TOKEN: value }));
+      expect(error).toBeInstanceOf(ConfigValidationError);
+      expect(error.message).toContain('STUDIO_MERGE_TOKEN');
+      expect(error.message).not.toContain(value);
+    });
+
+    it('accepts the merge API URL override only with NODE_ENV=test', () => {
+      const env = { ...requiredEnv, STUDIO_MERGE_GITHUB_API_URL: 'http://127.0.0.1:9999/' };
+      expect(loadConfig({ ...env, NODE_ENV: 'test' }).mergeGithubApiUrl).toBe(
+        'http://127.0.0.1:9999',
+      );
+      const error = captureError(() => loadConfig(env));
+      expect(error.message).toMatch(/STUDIO_MERGE_GITHUB_API_URL: is a test-only setting/);
     });
   });
 });

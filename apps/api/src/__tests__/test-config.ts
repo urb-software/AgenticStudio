@@ -78,6 +78,9 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     runLogMaxBytes: 8 * 1024 * 1024,
     runSnapshotRetentionDays: 7,
     operatorGithubLogin: null,
+    // Merging off unless a suite sets a credential.
+    mergeCredential: null,
+    mergeGithubApiUrl: null,
     retention: {
       days: 7,
       maxPerProject: 10,

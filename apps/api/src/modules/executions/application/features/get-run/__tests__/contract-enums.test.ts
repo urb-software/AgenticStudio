@@ -5,6 +5,7 @@ import {
   RUN_EVENT_TEXT_MAX_BYTES as WORKER_RUN_EVENT_TEXT_MAX_BYTES,
   FOLLOW_UP_MAX_LENGTH as WORKER_FOLLOW_UP_MAX_LENGTH,
   LOOKUP_KINDS as WORKER_LOOKUP_KINDS,
+  MERGE_UNAVAILABLE_REASONS as CONTRACT_MERGE_UNAVAILABLE_REASONS,
   LOOKUP_CLAIM_MAX as WORKER_LOOKUP_CLAIM_MAX,
   LOOKUP_RETRY_AFTER_MAX_SECONDS as WORKER_LOOKUP_RETRY_AFTER_MAX_SECONDS,
   REVIEW_COMMENT_KINDS as WORKER_REVIEW_COMMENT_KINDS,
@@ -32,6 +33,7 @@ import {
   reviewCommentsResponseSchema,
 } from '../../../../entry-points/http/shared/review-comments-response.js';
 import { ReviewComment } from '../../../../domain/value-objects/review-comment.js';
+import { MERGE_UNAVAILABLE_REASONS } from '../../../../domain/value-objects/merge-unavailable-reason.js';
 import { REVIEW_COMMENT_KINDS } from '../../../../domain/value-objects/review-comment-kind.js';
 import { REVIEW_COMMENT_SCOPES } from '../../../../domain/value-objects/review-comment-scope.js';
 import { REVIEW_VERDICTS } from '../../../../domain/value-objects/review-verdict.js';
@@ -94,6 +96,10 @@ describe('Run enums of the HTTP contract and the worker protocol', () => {
     expect(WORKER_REVIEW_COMMENTS_MAX).toBe(ReviewComment.SET_MAX);
     expect(WORKER_REVIEW_COMMENT_TEXT_MAX_BYTES).toBe(ReviewComment.TEXT_MAX_BYTES);
     expect(WORKER_REVIEW_COMMENT_DIFF_CONTEXT_MAX_BYTES).toBe(ReviewComment.DIFF_CONTEXT_MAX_BYTES);
+  });
+
+  it('HTTP: the same reasons merging is unavailable as the domain', () => {
+    expect([...CONTRACT_MERGE_UNAVAILABLE_REASONS]).toEqual([...MERGE_UNAVAILABLE_REASONS]);
   });
 
   it('worker protocol: the same Pull request check states', () => {

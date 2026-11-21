@@ -2754,6 +2754,9 @@
           "followUp": {
             "$ref": "#/components/schemas/RunFollowUpEligibility_Output"
           },
+          "merge": {
+            "$ref": "#/components/schemas/RunMergeAvailability_Output"
+          },
           "cancelRequestedAt": {
             "type": "string",
             "format": "date-time",
@@ -2916,6 +2919,44 @@
           "allowed"
         ],
         "additionalProperties": false
+      },
+      "RunMergeAvailability_Output": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "available": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "available"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "available": {
+                "type": "boolean",
+                "const": false
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "not_configured",
+                  "unsupported_host"
+                ]
+              }
+            },
+            "required": [
+              "available",
+              "reason"
+            ],
+            "additionalProperties": false
+          }
+        ]
       },
       "RunPullRequest_Output": {
         "type": "object",

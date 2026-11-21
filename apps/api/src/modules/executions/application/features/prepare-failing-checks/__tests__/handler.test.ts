@@ -65,6 +65,7 @@ describe('preparing a Follow-up from failing checks', () => {
         openPullRequestIdleDays: 30,
         hoursAfterPullRequestEnd: 24,
       }),
+      { configured: false, allowFileRemotes: false },
     );
   });
 

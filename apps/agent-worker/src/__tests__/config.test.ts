@@ -307,6 +307,7 @@ describe('Studio-side variables', () => {
       'REDIS_URL',
       'STUDIO_SECRETS_KEY',
       'STUDIO_OPERATOR_PASSWORD_HASH',
+      'STUDIO_MERGE_TOKEN',
       'POSTGRES_PASSWORD',
     ]);
   });

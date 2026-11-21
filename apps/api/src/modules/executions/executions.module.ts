@@ -100,6 +100,7 @@ import {
   RUN_SNAPSHOT_SETTINGS,
   type RunSnapshotSettings,
 } from './application/ports/environment-file-snapshots.js';
+import { GitHubMergeHost } from './infrastructure/adapters/github-merge-host.js';
 import { InProcessRunLogSignal } from './infrastructure/adapters/in-process-run-log-signal.js';
 import { PlatformOperatorSessions } from './infrastructure/adapters/platform-operator-sessions.js';
 import { PrismaRunDiffRepository } from './infrastructure/repositories/prisma-run-diff-repository.js';
@@ -114,6 +115,8 @@ import { CLOCK, type Clock } from './application/ports/clock.js';
 import { OPERATOR_LOGIN, type OperatorLogin } from './application/ports/operator-login.js';
 import { RUN_LIMITS, type RunLimitsSetting } from './application/ports/run-limits.js';
 import { OPERATOR_SESSIONS } from './application/ports/operator-sessions.js';
+import { MERGE_HOST, type MergeHost } from './application/ports/merge-host.js';
+import { MERGE_SETTINGS, type MergeSettings } from './application/ports/merge-settings.js';
 import { RUN_LOG_SETTINGS, type RunLogSettings } from './application/ports/run-log-settings.js';
 import { RUN_LOG } from './application/ports/run-log.js';
 import { RUN_LOG_SIGNAL } from './application/ports/run-log-signal.js';
@@ -131,6 +134,7 @@ export interface ExecutionsModuleOptions {
   logKeepAliveMs?: number;
   logStreamLimits?: { perSession: number; total: number };
   secretValues?: RunSecretValues;
+  mergeHost?: MergeHost;
   pullRequestRefresh?: Pick<DailyPullRequestRefreshSettings, 'manual'>;
 }
 
@@ -224,6 +228,29 @@ export class ExecutionsModule {
           useFactory: (config: AppConfig): OperatorLogin => ({ login: config.operatorGithubLogin }),
           inject: [APP_CONFIG],
         },
+        {
+          provide: MERGE_SETTINGS,
+          useFactory: (config: AppConfig): MergeSettings => ({
+            configured: config.mergeCredential !== null,
+            allowFileRemotes: config.gitAllowFileRemotes,
+          }),
+          inject: [APP_CONFIG],
+        },
+        // Only operator features may inject MERGE_HOST; a worker route never does.
+        options.mergeHost
+          ? { provide: MERGE_HOST, useValue: options.mergeHost }
+          : {
+              provide: MERGE_HOST,
+              useFactory: (config: AppConfig): MergeHost =>
+                new GitHubMergeHost({
+                  token: config.mergeCredential?.reveal() ?? null,
+                  ...(config.mergeGithubApiUrl === null
+                    ? {}
+                    : { apiUrl: config.mergeGithubApiUrl }),
+                  allowFileRemotes: config.gitAllowFileRemotes,
+                }),
+              inject: [APP_CONFIG],
+            },
         {
           provide: RUN_LIMITS,
           useFactory: (config: AppConfig): RunLimitsSetting => ({ ...config.runLimits }),

@@ -18,10 +18,10 @@ export class GetRunEndpoint {
   @ApiProblemResponses({ 404: `Unknown run (${EXECUTIONS_PROBLEM_TYPES.runNotFound})` })
   async get(@Param('runId') runId: string) {
     try {
-      const { run, followUp } = await this.handler.execute({
+      const { run, followUp, merge } = await this.handler.execute({
         runId,
       });
-      return toRunResponse(run, followUp);
+      return toRunResponse(run, followUp, merge);
     } catch (error) {
       if (error instanceof RunNotFoundError) throw runNotFound();
       throw error;

@@ -148,6 +148,16 @@ export const zRunFollowUpEligibilityOutput = z.object({
     removalPending: z.literal(true).optional()
 });
 
+export const zRunMergeAvailabilityOutput = z.union([
+    z.object({
+        available: z.literal(true)
+    }),
+    z.object({
+        available: z.literal(false),
+        reason: z.enum(['not_configured', 'unsupported_host'])
+    })
+]);
+
 export const zRunPullRequestCheckOutput = z.object({
     name: z.string(),
     state: z.enum([
@@ -297,6 +307,7 @@ export const zRunOutput = z.object({
     steps: zRunStepTotalsOutput,
     followUps: z.int().gte(0).lte(9007199254740991),
     followUp: zRunFollowUpEligibilityOutput.optional(),
+    merge: zRunMergeAvailabilityOutput.optional(),
     cancelRequestedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
     cancellation: z.object({
         by: z.enum(['operator', 'system']),
