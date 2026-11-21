@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 /**
@@ -109,6 +109,7 @@ export function pushFiles(
 ): string {
   git(fixture.work, ['checkout', '--quiet', '-B', branch, base]);
   for (const [path, content] of Object.entries(files)) {
+    mkdirSync(dirname(join(fixture.work, path)), { recursive: true });
     writeFileSync(join(fixture.work, path), content);
   }
   git(fixture.work, ['add', '--all']);

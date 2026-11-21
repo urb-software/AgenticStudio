@@ -221,8 +221,8 @@ describe.runIf(process.platform === 'linux')('merge review on Linux (real git)',
     });
 
     it('answers a conflict with the Integration branch', async () => {
-      commitOn('main', 'main', (work) => write(work, 'src/keep.txt', 'one\nmain\nthree\n'));
       commitOn(RUN_BRANCH, 'main', (work) => write(work, 'src/keep.txt', 'one\nrun\nthree\n'));
+      commitOn('main', 'main', (work) => write(work, 'src/keep.txt', 'one\nmain\nthree\n'));
 
       await expect(diff()).resolves.toEqual({ status: 'conflicting' });
     });
