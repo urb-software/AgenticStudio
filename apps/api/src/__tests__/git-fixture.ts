@@ -97,6 +97,26 @@ export function pushCommit(
   return git(fixture.work, ['rev-parse', 'HEAD']);
 }
 
+/**
+ * Pushes `branch`, started at the current `base`, with one commit that writes `files`;
+ * returns its id. Pushing to an existing branch moves it.
+ */
+export function pushFiles(
+  fixture: GitFixture,
+  branch: string,
+  base: string,
+  files: Record<string, string>,
+): string {
+  git(fixture.work, ['checkout', '--quiet', '-B', branch, base]);
+  for (const [path, content] of Object.entries(files)) {
+    writeFileSync(join(fixture.work, path), content);
+  }
+  git(fixture.work, ['add', '--all']);
+  git(fixture.work, ['commit', '--quiet', '-m', `change ${branch}`]);
+  git(fixture.work, ['push', '--quiet', '--force', fixture.bare, `${branch}:${branch}`]);
+  return git(fixture.work, ['rev-parse', 'HEAD']);
+}
+
 /** Deletes `branch` from the fixture's bare repository. */
 export function deleteRemoteBranch(fixture: GitFixture, branch: string): void {
   git(fixture.bare, ['update-ref', '-d', `refs/heads/${branch}`]);

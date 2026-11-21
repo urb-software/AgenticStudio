@@ -493,6 +493,48 @@ export const zRunDiffFileOutput = z.object({
     binary: z.literal(true).optional()
 });
 
+export const zMergeReviewFileSummaryOutput = z.object({
+    path: z.string(),
+    previousPath: z.string().optional(),
+    status: z.enum([
+        'added',
+        'modified',
+        'deleted',
+        'renamed'
+    ]),
+    binary: z.literal(true).optional(),
+    cut: z.boolean()
+});
+
+export const zMergeReviewOutput = z.object({
+    state: z.enum([
+        'none',
+        'preparing',
+        'ready',
+        'failed',
+        'out_of_date'
+    ]),
+    runCommit: z.string().optional(),
+    integrationCommit: z.string().optional(),
+    files: z.array(zMergeReviewFileSummaryOutput),
+    truncated: z.boolean(),
+    failure: z.string().optional()
+});
+
+export const zMergeReviewFileOutput = z.object({
+    path: z.string(),
+    previousPath: z.string().optional(),
+    status: z.enum([
+        'added',
+        'modified',
+        'deleted',
+        'renamed'
+    ]),
+    binary: z.literal(true).optional(),
+    cut: z.boolean(),
+    patch: z.string().optional()
+});
+
 export const zProviderAvailabilityOutput = z.object({
     id: z.enum(['claude_code', 'codex']),
     name: z.string(),
@@ -771,6 +813,26 @@ export const zGetRunDiffFileQuery = z.object({
 });
 
 export const zGetRunDiffFileResponse = zRunDiffFileOutput;
+
+export const zGetRunMergeReviewPath = z.object({
+    runId: z.string()
+});
+
+export const zGetRunMergeReviewResponse = zMergeReviewOutput;
+
+export const zRequestRunMergeReviewPath = z.object({
+    runId: z.string()
+});
+
+export const zGetRunMergeReviewFilePath = z.object({
+    runId: z.string()
+});
+
+export const zGetRunMergeReviewFileQuery = z.object({
+    path: z.string().min(1).max(4096)
+});
+
+export const zGetRunMergeReviewFileResponse = zMergeReviewFileOutput;
 
 export const zListProvidersResponse = zProviderListOutput;
 

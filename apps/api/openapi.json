@@ -2204,6 +2204,180 @@
         ]
       }
     },
+    "/api/runs/{runId}/merge-review": {
+      "post": {
+        "operationId": "requestRunMergeReview",
+        "parameters": [
+          {
+            "name": "runId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "The review is being prepared in the background."
+          },
+          "404": {
+            "description": "Unknown run (urn:agentic-studio:problem:run-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No pull request (urn:agentic-studio:problem:no-pull-request), pull request not open (urn:agentic-studio:problem:pull-request-not-open), repository not ready (urn:agentic-studio:problem:repository-not-ready), review in progress (urn:agentic-studio:problem:review-in-progress) or not on Linux (urn:agentic-studio:problem:unsupported-platform)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "runs"
+        ]
+      },
+      "get": {
+        "operationId": "getRunMergeReview",
+        "parameters": [
+          {
+            "name": "runId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MergeReview_Output"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown run (urn:agentic-studio:problem:run-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/runs/{runId}/merge-review/file": {
+      "get": {
+        "operationId": "getRunMergeReviewFile",
+        "parameters": [
+          {
+            "name": "runId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 4096,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MergeReviewFile_Output"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown run (urn:agentic-studio:problem:run-not-found) or file not in the review (urn:agentic-studio:problem:merge-review-file-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
     "/api/providers": {
       "get": {
         "operationId": "listProviders",
@@ -3769,6 +3943,114 @@
         "required": [
           "path",
           "status"
+        ],
+        "additionalProperties": false
+      },
+      "MergeReviewFileSummary_Output": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "previousPath": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "added",
+              "modified",
+              "deleted",
+              "renamed"
+            ]
+          },
+          "binary": {
+            "type": "boolean",
+            "const": true
+          },
+          "cut": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "status",
+          "cut"
+        ],
+        "additionalProperties": false
+      },
+      "MergeReview_Output": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "none",
+              "preparing",
+              "ready",
+              "failed",
+              "out_of_date"
+            ]
+          },
+          "runCommit": {
+            "type": "string"
+          },
+          "integrationCommit": {
+            "type": "string"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MergeReviewFileSummary_Output"
+            }
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "failure": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "files",
+          "truncated"
+        ],
+        "additionalProperties": false
+      },
+      "MergeReviewFile_Output": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "previousPath": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "added",
+              "modified",
+              "deleted",
+              "renamed"
+            ]
+          },
+          "binary": {
+            "type": "boolean",
+            "const": true
+          },
+          "cut": {
+            "type": "boolean"
+          },
+          "patch": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "status",
+          "cut"
         ],
         "additionalProperties": false
       },

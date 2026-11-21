@@ -275,6 +275,8 @@ model Run {
   /// Issue #146: the pull request's Review comments as the last load read them (at most one set
   /// per Run, replaced by each load).
   reviewCommentSet        RunReviewCommentSet?
+  /// The merge review Studio computed for the Run (at most one, replaced by each new review).
+  mergeReview             RunMergeReview?
   /// Issue #143: when a lookup first reported the pull request merged, closed or missing; cleared
   /// when a later one reports it open or draft again. Set only with such a pr_state.
   prEndedAt               DateTime?    @map("pr_ended_at") @db.Timestamptz(6)
@@ -390,6 +392,33 @@ model RunReviewCommentSet {
   loadedAt  DateTime @map("loaded_at") @db.Timestamptz(6)
 
   @@map("run_review_comment_sets")
+}
+
+/// What the Integration branch would gain from a Run's branch, as Studio computed it from its own
+/// Clone: one row per Run, replaced by each new review. Named CHECK constraints (migration SQL
+/// only): run_merge_reviews_state_check, run_merge_reviews_files_check and
+/// run_merge_reviews_ready_check (a ready review has both commits and a completion time).
+model RunMergeReview {
+  runId             String    @id @map("run_id") @db.Uuid
+  run               Run       @relation(fields: [runId], references: [id], onDelete: Cascade)
+  /// preparing | ready | failed.
+  state             String    @db.VarChar(16)
+  /// The Run branch's commit the review is of; null until the fetch succeeded.
+  runCommit         String?   @map("run_commit") @db.VarChar(64)
+  /// The Integration branch's commit it was merged into.
+  integrationCommit String?   @map("integration_commit") @db.VarChar(64)
+  /// `[{ path, previousPath?, status, binary?, cut, patch? }]` in Git's order; the patches are
+  /// untrusted repository text, redacted before they are stored.
+  files             Json
+  /// A limit left files or patches out.
+  truncated         Boolean   @default(false)
+  /// Why a failed review failed (redacted); null otherwise.
+  failure           String?   @db.VarChar(2000)
+  /// When the review was requested; it also tells which request a result belongs to.
+  requestedAt       DateTime  @map("requested_at") @db.Timestamptz(6)
+  completedAt       DateTime? @map("completed_at") @db.Timestamptz(6)
+
+  @@map("run_merge_reviews")
 }
 
 /// A question for the Git host that only an agent worker can answer (Issue #142), e.g. the state

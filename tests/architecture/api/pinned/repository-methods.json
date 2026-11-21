@@ -34,6 +34,17 @@
       },
       "findReviewCommentsLoad": { "kind": "query" }
     },
+    "executions/RunMergeReviewRepository": {
+      "find": { "kind": "load" },
+      "claim": {
+        "kind": "atomic",
+        "reason": "One INSERT ... ON CONFLICT DO UPDATE whose WHERE decides whether a review is already being prepared, so two requests never prepare the same Run; load, call and save would race."
+      },
+      "finish": {
+        "kind": "atomic",
+        "reason": "One UPDATE that stores an outcome only while the row is still the preparing review the result belongs to, so a late result never overwrites a newer request."
+      }
+    },
     "executions/RunRepository": {
       "add": { "kind": "save" },
       "findById": { "kind": "load" },
