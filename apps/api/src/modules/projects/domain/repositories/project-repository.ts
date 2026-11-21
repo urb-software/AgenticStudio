@@ -19,8 +19,8 @@ export interface ProjectRepository {
   findById(id: string): Promise<Project | null>;
 
   /**
-   * Writes the Project's merge method, the one field of a Project that changes. `false` when
-   * the project no longer exists.
+   * Writes the Project's merge method and no other field. `false` when the project no longer
+   * exists.
    */
-  save(project: Project): Promise<boolean>;
+  saveMergeMethod(project: Project): Promise<boolean>;
 }

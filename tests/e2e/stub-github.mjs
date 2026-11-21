@@ -32,10 +32,8 @@
 // (`PUT .../pulls/<n>/merge`, which honours `sha` and answers 409 when the head moved). Like the
 // two writes above, they accept only the Merge credential.
 //
-// Story #264: a repository can disallow a merge method, as its settings do on GitHub: the merge
-// route then answers 405 and merges nothing. `POST /__control/repos/<owner>/<repo>` with
-// `{ "disallowedMergeMethods": ["merge"] }` (GitHub's words: `squash`, `merge`, `rebase`) sets it
-// for that repository.
+// A repository can disallow a merge method (`POST /__control/repos/<owner>/<repo>` with
+// `{ "disallowedMergeMethods": ["merge"] }`): its merge route then answers 405.
 //
 // Like GitHub, it checks what the smoke must prove end to end (Issue #115): every call carries
 // the Agent token (`Authorization: Bearer $STUB_GITHUB_TOKEN`, else 401), and a new pull
@@ -75,7 +73,7 @@ const audit = {
   merges: [],
 };
 
-/** Story #264: `owner/repo` to the merge methods its settings disallow. */
+/** `owner/repo` to the merge methods it disallows. */
 const disallowedMergeMethods = new Map();
 
 /** The commit a merge creates on the base branch. */
@@ -107,7 +105,12 @@ const server = createServer((request, response) => {
     let text = '';
     request.on('data', (chunk) => (text += chunk));
     request.on('end', () => {
-      const body = JSON.parse(text || '{}');
+      let body;
+      try {
+        body = JSON.parse(text || '{}');
+      } catch {
+        return send(400, { message: 'The body is not valid JSON.' });
+      }
       if (Array.isArray(body.disallowedMergeMethods)) {
         disallowedMergeMethods.set(
           `${repoControl[1]}/${repoControl[2]}`,

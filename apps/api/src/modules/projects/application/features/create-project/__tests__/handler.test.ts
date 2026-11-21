@@ -35,7 +35,7 @@ class InMemoryProjectRepository implements ProjectRepository {
 
   findById = notUsed;
 
-  save = notUsed;
+  saveMergeMethod = notUsed;
 }
 
 function notUsed(): Promise<never> {

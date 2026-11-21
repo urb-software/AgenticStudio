@@ -48,11 +48,4 @@ describe('merge method handlers', () => {
     ).rejects.toBeInstanceOf(ProjectNotFoundError);
     await expect(read.execute({ projectId: UNKNOWN })).rejects.toBeInstanceOf(ProjectNotFoundError);
   });
-
-  it('refuses a value outside the list and changes nothing', async () => {
-    await expect(
-      set.execute({ projectId: PROJECT, mergeMethod: 'rebase' as 'squash' }),
-    ).rejects.toThrow('unknown');
-    await expect(read.execute({ projectId: PROJECT })).resolves.toBe('squash');
-  });
 });

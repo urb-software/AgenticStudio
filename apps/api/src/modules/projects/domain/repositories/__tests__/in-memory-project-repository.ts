@@ -29,7 +29,7 @@ export class InMemoryProjectRepository implements ProjectRepository {
     return Promise.resolve(this.projects.get(id) ?? null);
   }
 
-  save(project: Project): Promise<boolean> {
+  saveMergeMethod(project: Project): Promise<boolean> {
     if (!this.projects.has(project.id)) return Promise.resolve(false);
     this.projects.set(project.id, project);
     return Promise.resolve(true);

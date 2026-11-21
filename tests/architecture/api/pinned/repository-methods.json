@@ -125,7 +125,7 @@
       },
       "listNewestFirst": { "kind": "query" },
       "findById": { "kind": "load" },
-      "save": { "kind": "save" }
+      "saveMergeMethod": { "kind": "save" }
     },
     "projects/RepositoryConnectionRepository": {
       "find": { "kind": "load" },

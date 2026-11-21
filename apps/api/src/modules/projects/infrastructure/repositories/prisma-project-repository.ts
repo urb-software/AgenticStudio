@@ -66,7 +66,7 @@ export class PrismaProjectRepository implements ProjectRepository {
     return row ? toProject(row) : null;
   }
 
-  async save(project: Project): Promise<boolean> {
+  async saveMergeMethod(project: Project): Promise<boolean> {
     // `updateMany` does not throw for a row that is gone; its count says so.
     const { count } = await this.db.project.updateMany({
       where: { id: project.id },

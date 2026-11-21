@@ -69,8 +69,8 @@ function Choice({
 }
 
 /**
- * How Studio merges this project's Runs. The setting applies to merges approved afterwards; the
- * Run page names it in its confirmation, and a Merge approval records the one it used.
+ * How Studio merges this project's Runs. The Run page names it in its confirmation, and a Merge
+ * approval records the one it used.
  */
 export function MergeMethodCard({
   projectId,

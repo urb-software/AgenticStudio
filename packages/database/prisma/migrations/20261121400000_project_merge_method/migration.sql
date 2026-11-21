@@ -1,6 +1,5 @@
 -- The Project's merge method: how Studio asks the Git host to merge its Runs' pull requests.
--- Existing Projects become 'squash', the only method until now. A Merge approval may now record
--- 'merge_commit' too.
+-- Existing Projects become 'squash'. A Merge approval may record 'merge_commit' too.
 -- Rollback: set projects with merge_method 'merge_commit' to 'squash' and delete or rewrite the
 -- merge_approvals with method 'merge_commit', restore merge_approvals_method_check as
 -- CHECK ("method" IN ('squash')), then drop the constraint and the column of projects.
