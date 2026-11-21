@@ -14,6 +14,7 @@ import {
 } from '../../../domain/repositories/run-merge-review-repository.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import { MergeAvailabilityRule } from '../../../domain/value-objects/merge-availability-rule.js';
+import { CommitId } from '../../../domain/value-objects/commit-id.js';
 import { MergeApprovalLease } from '../../../domain/value-objects/merge-approval-lease.js';
 import { MergeHostRule } from '../../../domain/value-objects/merge-host-rule.js';
 import { MergeStudioRule } from '../../../domain/value-objects/merge-studio-rule.js';
@@ -46,11 +47,7 @@ export interface MergeRunResult {
   runBranchDeletionFailure: string | null;
 }
 
-/**
- * Merges the pull request pinned to the approved commit, after Studio read it and its checks
- * itself. A repeat after a merge retries only the steps still missing; a finished one calls no
- * host. Throws `RunNotFoundError` or `MergeRefusedError`.
- */
+/** Merges the pull request pinned to the approved commit, once Studio read it and its checks. */
 @Injectable()
 export class MergeRunHandler {
   constructor(
@@ -63,19 +60,32 @@ export class MergeRunHandler {
     @Inject(RUN_INTEGRATION_FETCHES) private readonly integrationFetches: RunIntegrationFetches,
   ) {}
 
+  /** Throws `RunNotFoundError` or `MergeRefusedError`. */
   async execute(input: MergeRunInput): Promise<MergeRunResult> {
+    return this.run(input, false);
+  }
+
+  private async run(input: MergeRunInput, reentered: boolean): Promise<MergeRunResult> {
     const { runId } = input;
     const commit = input.commit.toLowerCase();
     const run = isRunId(runId) ? await this.runs.findById(runId) : null;
     if (!run) throw new RunNotFoundError();
     const now = this.clock.now();
-    await this.approvals.interruptStale(runId, MergeApprovalLease.at(now).staleBefore, now);
-    const latest = await this.approvals.findLatest(runId);
+    let latest = await this.approvals.findLatest(runId);
+    if (latest?.isPending && !latest.asOf(now).isPending) {
+      // The request that stored it died: it ends as interrupted, whoever finishes it first.
+      await this.approvals.finish(latest.asOf(now));
+      latest = await this.approvals.findLatest(runId);
+    }
     if (latest?.isCarriedOut) return this.finishAfterMerge(run, latest);
     if (latest?.isPending) throw new MergeRefusedError('merge_in_progress');
     this.requireAvailable(run);
 
     const scope = this.scopeOf(run);
+    if (latest?.isNotCarriedOut && scope !== null) {
+      const reconciled = await this.reconcile(scope, latest);
+      if (reconciled) return this.finishAfterMerge((await this.runs.findById(runId))!, reconciled);
+    }
     const review = await this.reviews.find(runId);
     const refusal = MergeStudioRule.of({
       commit,
@@ -110,11 +120,32 @@ export class MergeRunHandler {
         method: 'squash',
         checksSeen: checks.checks,
       },
-      now,
+      this.clock.now(),
     );
     if (!(await this.approvals.add(approval))) throw new MergeRefusedError('merge_in_progress');
     const merged = await this.carryOut(scope, approval, pullRequest);
+    if (merged === null) {
+      // Another request took the approval over while this one merged: it answers from the record.
+      if (reentered) throw new MergeRefusedError('merge_in_progress');
+      return this.run(input, true);
+    }
     return this.finishAfterMerge((await this.runs.findById(runId))!, merged);
+  }
+
+  /** An approval recorded as not carried out, whose commit the host did merge, becomes carried out. */
+  private async reconcile(
+    scope: PullRequestScope,
+    approval: MergeApproval,
+  ): Promise<MergeApproval | null> {
+    const read = await this.host.readPullRequest(scope);
+    if (!read.ok) return null;
+    const { state, headSha, mergedCommit } = read.pullRequest;
+    if (state !== 'merged' || mergedCommit === null) return null;
+    if (!CommitId.of(approval.commit).equals(headSha)) return null;
+    const done = approval.carriedOut(mergedCommit, this.clock.now());
+    await this.approvals.save(done);
+    await this.observe(approval.runId, 'merged');
+    return done;
   }
 
   /**
@@ -125,14 +156,17 @@ export class MergeRunHandler {
     scope: PullRequestScope,
     approval: MergeApproval,
     pullRequest: HostPullRequest,
-  ): Promise<MergeApproval> {
+  ): Promise<MergeApproval | null> {
     const { commit } = approval;
     if (pullRequest.draft) {
+      await this.requireTimeFor(approval);
       const ready = await this.host.markReady(scope);
       if (!ready.ok) throw await this.refusedAfter(approval, ready.failure);
     }
+    await this.requireTimeFor(approval);
     const approved = await this.host.approve(scope, commit);
     if (!approved.ok) throw await this.refusedAfter(approval, approved.failure);
+    await this.requireTimeFor(approval);
     const merged = await this.host.merge(scope, {
       sha: commit,
       method: approval.method,
@@ -141,16 +175,24 @@ export class MergeRunHandler {
     });
     if (!merged.ok) throw await this.refusedAfter(approval, merged.failure);
     const done = approval.carriedOut(merged.mergedCommit, this.clock.now());
-    await this.approvals.save(done);
+    const stored = await this.approvals.finish(done);
     await this.observe(approval.runId, 'merged');
-    return done;
+    return stored ? done : null;
+  }
+
+  /** No host step starts when too little of the lease is left for it to end inside it. */
+  private async requireTimeFor(approval: MergeApproval): Promise<void> {
+    const now = this.clock.now();
+    if (MergeApprovalLease.at(now).allowsAStep(approval.approvedAt)) return;
+    await this.approvals.finish(approval.notCarriedOut('interrupted', MergeApproval.TOO_SLOW, now));
+    throw new MergeRefusedError('host_refused', MergeApproval.TOO_SLOW);
   }
 
   /** The steps after a merge that are still missing; each is best effort and never undoes it. */
   private async finishAfterMerge(run: Run, approval: MergeApproval): Promise<MergeRunResult> {
     const scope = this.scopeOf(run);
-    const branchLeft = run.pullRequestStatus.runBranchDeletedAt === null;
-    const fetchLeft = approval.cloneFetchStartedAt === null;
+    const branchLeft = run.runBranchPending;
+    const fetchLeft = approval.cloneFetchPending;
     let current = approval;
     if (scope !== null && (branchLeft || fetchLeft)) {
       this.requireAvailable(run);
@@ -235,7 +277,7 @@ export class MergeRunHandler {
     failure: MergeHostFailure,
   ): Promise<MergeRefusedError> {
     const { error, code } = refusalOf(failure);
-    await this.approvals.save(
+    await this.approvals.finish(
       approval.notCarriedOut(code, error.detail ?? failureText(failure), this.clock.now()),
     );
     return error;

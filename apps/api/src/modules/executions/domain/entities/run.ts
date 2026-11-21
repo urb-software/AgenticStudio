@@ -286,6 +286,11 @@ export class Run {
     };
   }
 
+  /** Whether the Run branch may still be on the Git host. */
+  get runBranchPending(): boolean {
+    return this.pullRequestStatus.runBranchDeletedAt === null;
+  }
+
   /** Working, waiting, or about to work again: nothing may be closed under it. */
   get isActive(): boolean {
     return (

@@ -63,6 +63,7 @@ function fakeHost() {
           mergeableState: 'clean',
           title: 'Add a health check',
           body: '',
+          mergedCommit: null,
         },
       });
     },

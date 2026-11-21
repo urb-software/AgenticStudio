@@ -45,6 +45,7 @@ const pullRequestSchema = z.object({
   mergeable: z.boolean().nullable().optional(),
   mergeable_state: z.string().optional(),
   title: z.string(),
+  merge_commit_sha: z.string().nullable().optional(),
   body: z.string().nullable().optional(),
   head: z.object({ sha: z.string(), ref: z.string(), repo: repositoryRef }),
   base: z.object({ ref: z.string(), repo: repositoryRef }),
@@ -257,6 +258,7 @@ export class GitHubMergeHost implements MergeHost {
         mergeable: data.mergeable ?? null,
         mergeableState: data.mergeable_state ?? 'unknown',
         title: data.title,
+        mergedCommit: data.merged === true ? (data.merge_commit_sha ?? null) : null,
         body: data.body ?? '',
       },
     };

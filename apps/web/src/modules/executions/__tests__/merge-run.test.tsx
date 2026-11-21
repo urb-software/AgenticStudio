@@ -195,6 +195,24 @@ describe('Run page: Approve and merge', () => {
     expect(mergeButton()).toBeTruthy();
   });
 
+  it('offers to record a merge that GitHub carried out although the record says it was not', async () => {
+    const run = delivered({
+      pullRequest: { ...PULL_REQUEST, state: 'merged' },
+      latestMergeApproval: {
+        ...APPROVAL,
+        result: 'not_carried_out',
+        mergedCommit: undefined,
+        refusal: { code: 'host_refused', reason: 'GitHub could not be reached.' },
+      },
+    });
+    const api = await openChanges(run);
+
+    await userEvent.click(within(card()).getByRole('button', { name: 'Record the merge' }));
+
+    expect(await within(card()).findByText('Merged from Studio')).toBeTruthy();
+    expect(api.calls('mergeRun')).toEqual([expect.objectContaining({ body: { commit: COMMIT } })]);
+  });
+
   it('says a merge is under way while the approval is pending', async () => {
     await openChanges(delivered({ latestMergeApproval: { ...APPROVAL, result: 'pending' } }));
 

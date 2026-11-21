@@ -172,7 +172,7 @@ export function closePullRequestRefused(
   return new ProblemException(HttpStatus.CONFLICT, CLOSE_REFUSALS[reason]);
 }
 
-const MERGE_REFUSALS: Record<
+const MERGE_REFUSAL_PROBLEMS: Record<
   Exclude<MergeRefusal, 'host_refused'>,
   { type: string; title: string; detail: string }
 > = {
@@ -236,7 +236,7 @@ export function mergeRefused(reason: MergeRefusal, hostReason?: string): Problem
       detail: hostReason ? `GitHub refused: ${hostReason}` : 'GitHub refused the request.',
     });
   }
-  return new ProblemException(HttpStatus.CONFLICT, MERGE_REFUSALS[reason]);
+  return new ProblemException(HttpStatus.CONFLICT, MERGE_REFUSAL_PROBLEMS[reason]);
 }
 
 export function closeInProgress(): ProblemException {

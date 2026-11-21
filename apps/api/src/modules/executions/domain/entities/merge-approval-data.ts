@@ -1,9 +1,7 @@
-import type {
-  MergeApprovalRefusalCode,
-  MergeApprovalResult,
-  MergeCheckSeen,
-  MergeMethod,
-} from '@agentic-studio/contracts';
+import type { MergeApprovalRefusalCode } from '../value-objects/merge-approval-refusal-code.js';
+import type { MergeApprovalResult } from '../value-objects/merge-approval-result.js';
+import type { MergeCheckSeen } from '../value-objects/merge-check-seen.js';
+import type { MergeMethod } from '../value-objects/merge-method.js';
 
 /** What a Merge approval holds, to restore it from. */
 export interface MergeApprovalData {

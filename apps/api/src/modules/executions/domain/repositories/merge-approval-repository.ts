@@ -13,12 +13,12 @@ export interface MergeApprovalRepository {
    */
   add(approval: MergeApproval): Promise<boolean>;
 
-  /** Replaces the stored approval with the same id: its outcome or its fetch. */
-  save(approval: MergeApproval): Promise<void>;
-
   /**
-   * Marks the Run's pending approvals older than `staleBefore` as not carried out (`interrupted`),
-   * so a request that died cannot block the Run for good.
+   * Stores the outcome of an approval, only while the stored one is still pending. `false` when
+   * it is not: another request took it over as interrupted, and the outcome is not written.
    */
-  interruptStale(runId: string, staleBefore: Date, now: Date): Promise<void>;
+  finish(approval: MergeApproval): Promise<boolean>;
+
+  /** Replaces the stored approval with the same id: a reconciled outcome or a started fetch. */
+  save(approval: MergeApproval): Promise<void>;
 }

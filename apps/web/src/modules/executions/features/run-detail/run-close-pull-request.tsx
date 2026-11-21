@@ -7,15 +7,11 @@ import { formatExactTime } from '@/shared/lib/relative-time';
 import { Button } from '@/shared/ui/button';
 import { ApiError, type RunOutput } from '../../../../platform/api';
 import { useCloseRunPullRequest } from '../../api/runs-queries';
+import { MERGE_UNAVAILABLE_REASON } from '../../components/merge-unavailable-reason';
 import { FINAL_STATES } from '../../components/run-states';
 import { ClosePullRequestDialog } from '../close-pull-request/close-pull-request-dialog';
 
 type PullRequest = NonNullable<RunOutput['pullRequest']>;
-
-const MERGE_UNAVAILABLE_REASON = {
-  not_configured: "Studio's Merge credential is not configured.",
-  unsupported_host: "this run's Git host is not supported.",
-} as const;
 
 function Time({ iso }: { iso: string }) {
   return (

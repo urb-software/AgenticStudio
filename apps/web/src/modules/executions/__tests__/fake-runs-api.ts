@@ -483,7 +483,8 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
         if (!run?.pullRequest) return json(404, problem(404, 'Run not found'));
         const at = new Date().toISOString();
         const { commit } = body as { commit: string };
-        const approval = run.latestMergeApproval ?? {
+        const earlier = run.latestMergeApproval;
+        const approval = (earlier?.result === 'carried_out' ? earlier : undefined) ?? {
           id: '00000000-0000-4000-8000-0000000000e1',
           approvedAt: at,
           approvedBy: 'operator' as const,

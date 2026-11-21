@@ -27,7 +27,7 @@
 // the Merge credential reads pull requests too. `GET /__control/audit` lists the writes it
 // accepted and refused, by who made them, for the smoke to check.
 //
-// Story #262: the writes Studio's Merge adapter makes to merge a pull request: the GraphQL mutation
+// The writes Studio's Merge adapter makes to merge a pull request: the GraphQL mutation
 // that marks it ready, an approving review (`POST .../pulls/<n>/reviews`) and the merge
 // (`PUT .../pulls/<n>/merge`, which honours `sha` and answers 409 when the head moved). Like the
 // two writes above, they accept only the Merge credential.

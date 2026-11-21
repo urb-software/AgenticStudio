@@ -1,18 +1,17 @@
-import {
-  MERGE_APPROVAL_REFUSAL_CODES,
-  MERGE_METHODS,
-  mergeCheckSeenSchema,
-} from '@agentic-studio/contracts';
 import { Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { DATABASE_CLIENT } from '../../../../platform/database/database.module.js';
 import { MergeApproval } from '../../domain/entities/merge-approval.js';
+import { MERGE_APPROVAL_REFUSAL_CODES } from '../../domain/value-objects/merge-approval-refusal-code.js';
+import { MERGE_APPROVAL_RESULTS } from '../../domain/value-objects/merge-approval-result.js';
+import { MERGE_CHECK_STATES } from '../../domain/value-objects/merge-check-seen.js';
+import { MERGE_METHODS } from '../../domain/value-objects/merge-method.js';
 import type { MergeApprovalRepository } from '../../domain/repositories/merge-approval-repository.js';
 import type { Executor } from './executor.js';
 
-const checksSchema = z.array(mergeCheckSeenSchema);
+const checksSchema = z.array(z.object({ name: z.string(), state: z.enum(MERGE_CHECK_STATES) }));
 const methodSchema = z.enum(MERGE_METHODS);
-const resultSchema = z.enum(['pending', 'carried_out', 'not_carried_out']);
+const resultSchema = z.enum(MERGE_APPROVAL_RESULTS);
 const refusalCodeSchema = z.enum(MERGE_APPROVAL_REFUSAL_CODES);
 
 type Row = NonNullable<Awaited<ReturnType<Executor['mergeApproval']['findFirst']>>>;
@@ -68,6 +67,20 @@ export class PrismaMergeApprovalRepository implements MergeApprovalRepository {
     return inserted === 1;
   }
 
+  async finish(approval: MergeApproval): Promise<boolean> {
+    const { count } = await this.db.mergeApproval.updateMany({
+      where: { id: approval.id, result: 'pending' },
+      data: {
+        result: approval.result,
+        refusalCode: approval.refusal?.code ?? null,
+        refusalReason: approval.refusal?.reason ?? null,
+        mergedCommit: approval.mergedCommit,
+        completedAt: approval.completedAt,
+      },
+    });
+    return count === 1;
+  }
+
   async save(approval: MergeApproval): Promise<void> {
     await this.db.mergeApproval.update({
       where: { id: approval.id },
@@ -78,18 +91,6 @@ export class PrismaMergeApprovalRepository implements MergeApprovalRepository {
         mergedCommit: approval.mergedCommit,
         completedAt: approval.completedAt,
         cloneFetchStartedAt: approval.cloneFetchStartedAt,
-      },
-    });
-  }
-
-  async interruptStale(runId: string, staleBefore: Date, now: Date): Promise<void> {
-    await this.db.mergeApproval.updateMany({
-      where: { runId, result: 'pending', approvedAt: { lt: staleBefore } },
-      data: {
-        result: 'not_carried_out',
-        refusalCode: 'interrupted',
-        refusalReason: MergeApproval.INTERRUPTED,
-        completedAt: now,
       },
     });
   }

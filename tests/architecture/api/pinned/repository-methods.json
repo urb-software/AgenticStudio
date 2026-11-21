@@ -7,11 +7,11 @@
         "kind": "atomic",
         "reason": "One INSERT whose partial unique index refuses a second pending approval of a Run, so two simultaneous merges are one; load, call and save would race."
       },
-      "save": { "kind": "save" },
-      "interruptStale": {
+      "finish": {
         "kind": "atomic",
-        "reason": "One UPDATE that finishes only the pending approvals older than a lease, so a request that died cannot block the Run and a live one is never touched."
-      }
+        "reason": "One UPDATE that stores an outcome only while the row is still pending, so a request that was taken over as interrupted never overwrites the takeover."
+      },
+      "save": { "kind": "save" }
     },
     "executions/PreparedFollowUpRepository": {
       "find": { "kind": "load" },

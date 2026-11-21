@@ -1,4 +1,5 @@
-import type { MergeCheckSeen, MergeMethod } from '@agentic-studio/contracts';
+import type { MergeCheckSeen } from '../value-objects/merge-check-seen.js';
+import type { MergeMethod } from '../value-objects/merge-method.js';
 
 /** What a new Merge approval records of the moment the operator approved. */
 export interface MergeApprovalFacts {

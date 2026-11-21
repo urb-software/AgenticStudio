@@ -507,7 +507,7 @@ describe('MergeRunHandler', () => {
             method: 'squash',
             checksSeen: [],
           },
-          new Date(NOW.getTime() - 300_000),
+          new Date(NOW.getTime() - 700_000),
         ),
       );
 
@@ -519,6 +519,128 @@ describe('MergeRunHandler', () => {
         'interrupted',
         null,
       ]);
+    });
+  });
+
+  describe('a request that outlives its lease', () => {
+    const approval = (approvedAt: Date) =>
+      MergeApproval.approve(
+        {
+          id: 'e0000000-0000-4000-8000-000000000001',
+          runId: RUN_ID,
+          commit: COMMIT,
+          integrationBranch: 'dev',
+          method: 'squash',
+          checksSeen: [],
+        },
+        approvedAt,
+      );
+
+    it('is taken over, and when it ends late its outcome does not overwrite the takeover', async () => {
+      const release = host.hold('merge');
+      const first = handler.execute({ runId: RUN_ID, commit: COMMIT });
+      for (let spins = 0; !methods().includes('merge') && spins < 50; spins += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      expect(methods()).toContain('merge');
+      now = new Date(NOW.getTime() + 700_000);
+
+      const second = await handler.execute({ runId: RUN_ID, commit: COMMIT });
+      release();
+      const firstResult = await first;
+
+      expect(approvals.approvals.map((stored) => stored.refusal?.code ?? stored.result)).toEqual([
+        'interrupted',
+        'carried_out',
+      ]);
+      expect(second.approval.result).toBe('carried_out');
+      expect(firstResult.approval).toMatchObject({ result: 'carried_out', id: second.approval.id });
+      expect(host.runBranchDeleted).toBe(true);
+    });
+
+    it('starts no host step with too little of the lease left, and records it as interrupted', async () => {
+      const release = host.hold('markReady');
+      const running = refusal(handler.execute({ runId: RUN_ID, commit: COMMIT }));
+      for (let spins = 0; !methods().includes('markReady') && spins < 50; spins += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      now = new Date(NOW.getTime() + 560_000);
+      release();
+
+      const error = await running;
+
+      expect(error.reason).toBe('host_refused');
+      expect(error.detail).toBe(MergeApproval.TOO_SLOW);
+      expect(methods()).not.toContain('approve');
+      expect(approvals.approvals[0]).toMatchObject({
+        result: 'not_carried_out',
+        refusal: { code: 'interrupted' },
+      });
+    });
+
+    it('treats a pending approval inside its lease as live', async () => {
+      await approvals.add(approval(new Date(NOW.getTime() - 500_000)));
+
+      await refused('merge_in_progress');
+    });
+  });
+
+  describe('a merge the host carried out but the record does not show', () => {
+    const failedApproval = async (code: 'host_refused' | 'interrupted') => {
+      const pending = MergeApproval.approve(
+        {
+          id: 'e0000000-0000-4000-8000-000000000002',
+          runId: RUN_ID,
+          commit: COMMIT,
+          integrationBranch: 'dev',
+          method: 'squash',
+          checksSeen: [{ name: 'ci', state: 'success' }],
+        },
+        T0,
+      );
+      await approvals.add(pending);
+      await approvals.finish(pending.notCarriedOut(code, 'GitHub could not be reached.', T0));
+    };
+
+    it('is recorded as carried out with the commit the host created, and the missing steps run', async () => {
+      await failedApproval('host_refused');
+      host.setPullRequest({ state: 'merged', mergedCommit: 'd'.repeat(40), draft: false });
+
+      const result = await handler.execute({ runId: RUN_ID, commit: COMMIT });
+
+      expect(result.approval).toMatchObject({
+        id: 'e0000000-0000-4000-8000-000000000002',
+        result: 'carried_out',
+        refusal: null,
+        mergedCommit: 'd'.repeat(40),
+        checksSeen: [{ name: 'ci', state: 'success' }],
+      });
+      expect(methods()).toEqual(['readPullRequest', 'deleteRunBranch']);
+      expect(fetched).toEqual([PROJECT]);
+      expect(approvals.approvals).toHaveLength(1);
+      expect((await stored()).retentionFacts()).toMatchObject({ pullRequestState: 'merged' });
+    });
+
+    it('also repairs an approval that was taken over as interrupted', async () => {
+      await failedApproval('interrupted');
+      host.setPullRequest({ state: 'merged', mergedCommit: 'd'.repeat(40) });
+
+      await expect(handler.execute({ runId: RUN_ID, commit: COMMIT })).resolves.toMatchObject({
+        approval: { result: 'carried_out' },
+      });
+    });
+
+    it.each([
+      ['another commit was merged', { headSha: 'c'.repeat(40) }],
+      ['the host names no merge commit', { mergedCommit: null }],
+      ['the pull request was only closed', { state: 'closed' as const }],
+    ])('stays refused when %s', async (_name, change) => {
+      await failedApproval('host_refused');
+      host.setPullRequest({ state: 'merged', mergedCommit: 'd'.repeat(40), ...change });
+
+      await refused('pull_request_not_open');
+
+      expect(approvals.approvals[0]!.result).toBe('not_carried_out');
     });
   });
 });

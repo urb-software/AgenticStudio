@@ -1302,6 +1302,27 @@ test(RUN_TEST, async ({ page }, testInfo) => {
     .poll(async () => (await readRun()).pullRequest?.checksCommit, { timeout: 30_000 })
     .toBe(reviewedCommit);
 
+  // The stub refuses the three merge writes made with the Agent token, as GitHub does.
+  const repositoryPath = `/repos/${acceptedOwner}/${acceptedRepository}/pulls/${acceptedNumber}`;
+  const asAgentToken = { Authorization: `Bearer ${process.env.E2E_GITHUB_AGENT_TOKEN}` };
+  const agentWrites = [
+    {
+      method: 'POST',
+      path: '/graphql',
+      body: { query: 'mutation { markPullRequestReadyForReview }' },
+    },
+    { method: 'POST', path: `${repositoryPath}/reviews`, body: { event: 'APPROVE' } },
+    { method: 'PUT', path: `${repositoryPath}/merge`, body: { sha: reviewedCommit } },
+  ];
+  for (const write of agentWrites) {
+    const refused = await fetch(`${stub}${write.path}`, {
+      method: write.method,
+      headers: asAgentToken,
+      body: JSON.stringify(write.body),
+    });
+    expect(refused.status, `${write.method} ${write.path}`).toBe(403);
+  }
+
   await main.getByRole('tab', { name: 'Changes' }).click();
   const mergeReview = main.getByRole('region', { name: 'Merge review, computed by Studio' });
   await expect(mergeReview.getByRole('button', { name: 'Approve and merge' })).toHaveCount(0);

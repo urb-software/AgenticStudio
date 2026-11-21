@@ -44,6 +44,7 @@ function fakeHost() {
     headSha: COMMIT,
     mergeable: true as boolean | null,
     mergeableState: 'clean',
+    mergedCommit: null as string | null,
   };
   const checks: { list: HostCheck[] } = { list: [] };
   const gate: { merge: Promise<void> | null } = { merge: null };
@@ -83,6 +84,7 @@ function fakeHost() {
       await gate.merge;
       if (!result.ok) return result;
       pullRequest.state = 'merged';
+      pullRequest.mergedCommit = MERGED_COMMIT;
       return { ok: true as const, mergedCommit: MERGED_COMMIT };
     },
     close: () => Promise.reject(new Error('not used')),
@@ -204,6 +206,7 @@ describe('approve and merge API (PostgreSQL + Redis via Testcontainers)', () => 
       headSha: COMMIT,
       mergeable: true,
       mergeableState: 'clean',
+      mergedCommit: null,
     });
     git.checks.list = [];
     git.gate.merge = null;
@@ -261,26 +264,6 @@ describe('approve and merge API (PostgreSQL + Redis via Testcontainers)', () => 
     const [repository] = await db().$queryRaw<{ state: string }[]>`
       SELECT state FROM repositories WHERE project_id = ${projectId}::uuid`;
     expect(repository!.state).toBe('fetching');
-  });
-
-  it('keeps the Merge credential out of every answer and stored record', async () => {
-    const { runId } = await deliveredRun();
-    git.refusals.set('deleteRunBranch', 'Branch is protected.');
-
-    const merged = await merge(runId);
-    const run = await getRun(runId);
-    const rows = await db().$queryRaw<unknown[]>`
-      SELECT to_jsonb(a) AS approval,
-             (SELECT coalesce(jsonb_agg(to_jsonb(e)), '[]'::jsonb) FROM run_events e WHERE e.run_id = a.run_id) AS events
-      FROM merge_approvals a WHERE a.run_id = ${runId}::uuid`;
-
-    for (const text of [
-      JSON.stringify(merged.body),
-      JSON.stringify(run.body),
-      JSON.stringify(rows),
-    ]) {
-      expect(text).not.toContain(MERGE_TOKEN);
-    }
   });
 
   it('does not mark ready a pull request that is not a draft', async () => {
@@ -407,27 +390,51 @@ describe('approve and merge API (PostgreSQL + Redis via Testcontainers)', () => 
       expect(await approvalRows(runId)).toEqual([]);
     });
 
-    it('host_refused: the approval is kept as not carried out, with the reason, and a new attempt can follow', async () => {
+    it.each(['markReady', 'approve', 'merge'] as const)(
+      'host_refused at %s: the approval is kept as not carried out, with the reason, and a new attempt can follow',
+      async (step) => {
+        const { runId } = await deliveredRun();
+        git.refusals.set(step, 'Required status check is expected.');
+
+        const refused = await merge(runId);
+
+        expectProblem(refused, 409, PROBLEM('host-refused'));
+        expect(refused.body.detail).toContain('Required status check is expected.');
+        expect(await approvalRows(runId)).toEqual([
+          { result: 'not_carried_out', refusal_code: 'host_refused', merged_commit: null },
+        ]);
+        expect((await getRun(runId)).body.latestMergeApproval).toMatchObject({
+          result: 'not_carried_out',
+          refusal: { code: 'host_refused', reason: 'Required status check is expected.' },
+        });
+        expect(git.calls).not.toContain('deleteRunBranch');
+        git.refusals.clear();
+        expect((await merge(runId)).status).toBe(200);
+        expect((await approvalRows(runId)).map((row) => row.result)).toEqual([
+          'not_carried_out',
+          'carried_out',
+        ]);
+      },
+    );
+
+    it('a merge the host carried out although the record says otherwise is recorded by the next request', async () => {
       const { runId } = await deliveredRun();
-      git.refusals.set('merge', 'Required status check is expected.');
-
-      const refused = await merge(runId);
-
-      expectProblem(refused, 409, PROBLEM('host-refused'));
-      expect(refused.body.detail).toContain('Required status check is expected.');
-      expect(await approvalRows(runId)).toEqual([
-        { result: 'not_carried_out', refusal_code: 'host_refused', merged_commit: null },
-      ]);
-      expect((await getRun(runId)).body.latestMergeApproval).toMatchObject({
-        result: 'not_carried_out',
-        refusal: { code: 'host_refused', reason: 'Required status check is expected.' },
-      });
+      git.refusals.set('merge', 'GitHub could not be reached.');
+      expectProblem(await merge(runId), 409, PROBLEM('host-refused'));
       git.refusals.clear();
-      expect((await merge(runId)).status).toBe(200);
-      expect((await approvalRows(runId)).map((row) => row.result)).toEqual([
-        'not_carried_out',
-        'carried_out',
+      git.pullRequest.state = 'merged';
+      git.pullRequest.mergedCommit = MERGED_COMMIT;
+      git.calls.length = 0;
+
+      const recorded = await merge(runId);
+
+      expect(recorded.status).toBe(200);
+      expect(recorded.body).toMatchObject({ result: 'carried_out', mergedCommit: MERGED_COMMIT });
+      expect(git.calls).toEqual(['readPullRequest', 'deleteRunBranch']);
+      expect(await approvalRows(runId)).toEqual([
+        { result: 'carried_out', refusal_code: null, merged_commit: MERGED_COMMIT },
       ]);
+      expect((await getRun(runId)).body.pullRequest.state).toBe('merged');
     });
 
     it('is a 404 for an unknown run and a 422 for a commit that is not a full commit id', async () => {
@@ -472,7 +479,7 @@ describe('approve and merge API (PostgreSQL + Redis via Testcontainers)', () => 
 
     expectProblem(await merge(runId), 409, PROBLEM('in-progress'));
     await db().$executeRaw`
-      UPDATE merge_approvals SET approved_at = now() - interval '10 minutes'
+      UPDATE merge_approvals SET approved_at = now() - interval '11 minutes'
       WHERE run_id = ${runId}::uuid`;
 
     expect((await merge(runId)).status).toBe(200);

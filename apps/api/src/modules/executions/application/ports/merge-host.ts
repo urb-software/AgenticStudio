@@ -40,6 +40,8 @@ export interface HostPullRequest {
   /** `null` while the host has not computed it yet. */
   mergeable: boolean | null;
   mergeableState: string;
+  /** The commit a merged pull request created; `null` until merged. */
+  mergedCommit: string | null;
   title: string;
   /** The description; empty when there is none. */
   body: string;

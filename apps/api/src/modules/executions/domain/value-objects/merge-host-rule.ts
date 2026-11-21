@@ -1,10 +1,8 @@
-import type { MergeRefusal } from '@agentic-studio/contracts';
+import { CommitId } from './commit-id.js';
 import type { MergeHostFacts } from './merge-host-facts.js';
+import type { MergeRefusal } from './merge-refusal.js';
 
-/**
- * The refusals Studio reaches by reading the pull request and its checks itself. Neutral and
- * skipped checks pass, and so does a commit with no checks at all.
- */
+/** The refusals Studio reaches by reading the pull request and its checks itself. */
 export class MergeHostRule {
   private constructor(private readonly facts: MergeHostFacts) {}
 
@@ -16,7 +14,7 @@ export class MergeHostRule {
   refusal(): MergeRefusal | null {
     const { commit, pullRequest, checks } = this.facts;
     if (pullRequest.state !== 'open') return 'pull_request_not_open';
-    if (pullRequest.headSha.toLowerCase() !== commit.toLowerCase()) return 'commit_moved';
+    if (!CommitId.of(commit).equals(pullRequest.headSha)) return 'commit_moved';
     if (checks.some((check) => check.state === 'failure')) return 'checks_failing';
     if (checks.some((check) => check.state === 'pending')) return 'checks_running';
     if (pullRequest.mergeable === false || pullRequest.mergeableState === 'dirty') {

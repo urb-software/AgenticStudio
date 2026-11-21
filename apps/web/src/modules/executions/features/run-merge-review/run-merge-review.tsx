@@ -12,6 +12,8 @@ import {
   type RunOutput,
 } from '../../../../platform/api';
 import { useMergeReview, useRequestMergeReview } from '../../api/runs-queries';
+import { MERGE_UNAVAILABLE_REASON } from '../../components/merge-unavailable-reason';
+import { Mono } from '../../components/mono';
 import { failedRequest } from '../../components/failed-request';
 import { FINAL_STATES } from '../../components/run-states';
 import { MergeRunDialog } from '../merge-run/merge-run-dialog';
@@ -31,10 +33,6 @@ function changedFiles(files: readonly MergeReviewFileSummaryOutput[]): ChangedFi
     ...(file.binary ? { binary: true as const } : {}),
     ...(file.cut ? { tooLarge: true as const } : {}),
   }));
-}
-
-function Mono({ children }: { children: string }) {
-  return <code className="font-mono text-code break-all text-text">{children}</code>;
 }
 
 /** Whether a review can be requested for this pull request: it must not be over. */
@@ -102,10 +100,7 @@ function PullRequestReview({ run }: { run: RunOutput }) {
       </div>
       {data?.state === 'ready' && run.merge?.available === false && !over ? (
         <p className="m-0 text-small text-text-muted">
-          Merging from Studio is off:{' '}
-          {run.merge.reason === 'not_configured'
-            ? "Studio's Merge credential is not configured."
-            : "this run's Git host is not supported."}
+          Merging from Studio is off: {MERGE_UNAVAILABLE_REASON[run.merge.reason]}
         </p>
       ) : null}
       {mergeable && data?.runCommit ? (

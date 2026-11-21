@@ -1,4 +1,4 @@
-import type { MergeRefusal } from '@agentic-studio/contracts';
+import type { MergeRefusal } from '../value-objects/merge-refusal.js';
 
 /** `detail` is the Git host's redacted reason, for `host_refused` only. */
 export class MergeRefusedError extends Error {

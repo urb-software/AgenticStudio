@@ -6,12 +6,9 @@ import { Banner } from '@/shared/components/banner';
 import { formatExactTime } from '@/shared/lib/relative-time';
 import { Button } from '@/shared/ui/button';
 import { ApiError, type MergeApprovalOutput, type RunOutput } from '../../../../platform/api';
+import { MERGE_UNAVAILABLE_REASON } from '../../components/merge-unavailable-reason';
+import { Mono } from '../../components/mono';
 import { useMergeRun } from '../../api/runs-queries';
-
-const MERGE_UNAVAILABLE_REASON = {
-  not_configured: "Studio's Merge credential is not configured.",
-  unsupported_host: "this run's Git host is not supported.",
-} as const;
 
 function Time({ iso }: { iso: string }) {
   return (
@@ -19,10 +16,6 @@ function Time({ iso }: { iso: string }) {
       {formatExactTime(new Date(iso))}
     </time>
   );
-}
-
-function Mono({ children }: { children: string }) {
-  return <code className="font-mono text-code break-all">{children}</code>;
 }
 
 /** What is left after a merge, and the retry of just that. */
@@ -79,6 +72,22 @@ function StepsLeft({
   );
 }
 
+/** The pull request is merged on GitHub although the record says otherwise: the same request repairs it. */
+function RecordMerged({ run, approval }: { run: RunOutput; approval: MergeApprovalOutput }) {
+  const record = useMergeRun(run.id);
+  return (
+    <div>
+      <Button
+        icon={GitMergeIcon}
+        loading={record.isPending}
+        onClick={() => record.mutate(approval.commit)}
+      >
+        Record the merge
+      </Button>
+    </div>
+  );
+}
+
 /**
  * The latest Merge approval of the Run: who merged, when and at which commit, what a merge left
  * undone, or why the last attempt was not carried out.
@@ -96,6 +105,7 @@ export function RunMergeApproval({ run }: { run: RunOutput }) {
   }
 
   if (approval.result === 'not_carried_out') {
+    const mergedAnyway = run.pullRequest?.state === 'merged' && run.merge?.available === true;
     return (
       <div
         data-slot="run-merge-not-carried-out"
@@ -108,6 +118,7 @@ export function RunMergeApproval({ run }: { run: RunOutput }) {
             {approval.refusal?.reason ?? 'No reason was recorded.'}
           </span>
         </Banner>
+        {mergedAnyway ? <RecordMerged run={run} approval={approval} /> : null}
       </div>
     );
   }

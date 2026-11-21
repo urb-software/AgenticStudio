@@ -1,20 +1,16 @@
-import type {
-  MergeApprovalRefusalCode,
-  MergeApprovalResult,
-  MergeCheckSeen,
-  MergeMethod,
-} from '@agentic-studio/contracts';
+import type { MergeApprovalRefusalCode } from '../value-objects/merge-approval-refusal-code.js';
+import type { MergeApprovalResult } from '../value-objects/merge-approval-result.js';
+import type { MergeCheckSeen } from '../value-objects/merge-check-seen.js';
+import type { MergeMethod } from '../value-objects/merge-method.js';
 import { MergeApprovalLease } from '../value-objects/merge-approval-lease.js';
 import type { MergeApprovalData } from './merge-approval-data.js';
 import type { MergeApprovalFacts } from './merge-approval-facts.js';
 
-/**
- * What the operator approved when pressing "Approve and merge": stored before the merge, kept
- * whatever came of it. A change returns the next approval.
- */
+/** The operator's approval of one commit, stored before the merge and kept whatever came of it. */
 export class MergeApproval {
   static readonly REASON_MAX_LENGTH = 500;
   static readonly INTERRUPTED = 'The request ended before it recorded a result.';
+  static readonly TOO_SLOW = 'The merge took too long and was stopped before it finished.';
 
   private constructor(
     readonly id: string,
@@ -73,6 +69,10 @@ export class MergeApproval {
     return this.result === 'pending';
   }
 
+  get isNotCarriedOut(): boolean {
+    return this.result === 'not_carried_out';
+  }
+
   get isCarriedOut(): boolean {
     return this.result === 'carried_out';
   }
@@ -86,8 +86,14 @@ export class MergeApproval {
     });
   }
 
+  /** Also for an approval recorded as not carried out whose merge the host did carry out. */
   carriedOut(mergedCommit: string, now: Date): MergeApproval {
-    return this.with({ result: 'carried_out', mergedCommit, completedAt: now });
+    return this.with({ result: 'carried_out', refusal: null, mergedCommit, completedAt: now });
+  }
+
+  /** Whether the Clone fetch after the merge has not started yet. */
+  get cloneFetchPending(): boolean {
+    return this.cloneFetchStartedAt === null;
   }
 
   /** The Clone fetch after the merge was handed to the Repository. */

@@ -433,10 +433,9 @@ model RunMergeReview {
   @@map("run_merge_reviews")
 }
 
-/// What the operator approved when pressing "Approve and merge", stored before the merge and kept
-/// whatever came of it. The migration adds CHECK constraints and the partial unique index
-/// `merge_approvals_one_pending_per_run_key` (UNIQUE (run_id) WHERE result = 'pending'), which
-/// Prisma does not model: it makes two simultaneous merges of a Run one. Never drop it.
+/// The operator's approval of a commit, stored before the merge and kept whatever came of it.
+/// Never drop `merge_approvals_one_pending_per_run_key` (UNIQUE (run_id) WHERE result = 'pending'):
+/// it makes two simultaneous merges one. It and the CHECKs live only in the migration.
 model MergeApproval {
   id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   runId               String    @map("run_id") @db.Uuid

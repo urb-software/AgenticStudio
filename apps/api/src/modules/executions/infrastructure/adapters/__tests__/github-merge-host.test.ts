@@ -105,6 +105,7 @@ describe('GitHubMergeHost', () => {
           mergeableState: 'clean',
           title: 'Add login',
           body: 'Adds the login form.',
+          mergedCommit: null,
         },
       });
     });
@@ -116,6 +117,28 @@ describe('GitHubMergeHost', () => {
       expect(await host.readPullRequest(SCOPE)).toMatchObject({
         ok: true,
         pullRequest: { title: 'Add login', body: '' },
+      });
+    });
+
+    it('answers the commit a merged pull request created, and none for one that is not merged', async () => {
+      const merged = hostWith({
+        [PULL]: {
+          status: 200,
+          body: pullRequestAnswer({
+            state: 'closed',
+            merged: true,
+            merge_commit_sha: 'd'.repeat(40),
+          }),
+        },
+      });
+      expect(await merged.host.readPullRequest(SCOPE)).toMatchObject({
+        pullRequest: { state: 'merged', mergedCommit: 'd'.repeat(40) },
+      });
+      const open = hostWith({
+        [PULL]: { status: 200, body: pullRequestAnswer({ merge_commit_sha: 'd'.repeat(40) }) },
+      });
+      expect(await open.host.readPullRequest(SCOPE)).toMatchObject({
+        pullRequest: { state: 'open', mergedCommit: null },
       });
     });
 

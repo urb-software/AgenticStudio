@@ -1,4 +1,4 @@
-import { MergeApproval } from '../../entities/merge-approval.js';
+import type { MergeApproval } from '../../entities/merge-approval.js';
 import type { MergeApprovalRepository } from '../merge-approval-repository.js';
 
 /** In-memory {@link MergeApprovalRepository} that refuses a second pending approval, as the store does. */
@@ -26,23 +26,17 @@ export class InMemoryMergeApprovalRepository implements MergeApprovalRepository 
     return Promise.resolve(true);
   }
 
+  finish(approval: MergeApproval): Promise<boolean> {
+    const index = this.approvals.findIndex((stored) => stored.id === approval.id);
+    if (index === -1 || !this.approvals[index]!.isPending) return Promise.resolve(false);
+    this.approvals[index] = approval;
+    return Promise.resolve(true);
+  }
+
   save(approval: MergeApproval): Promise<void> {
     const index = this.approvals.findIndex((stored) => stored.id === approval.id);
     if (index === -1) return Promise.reject(new Error('No such approval.'));
     this.approvals[index] = approval;
-    return Promise.resolve();
-  }
-
-  interruptStale(runId: string, staleBefore: Date, now: Date): Promise<void> {
-    this.approvals.forEach((stored, index) => {
-      if (
-        stored.runId === runId &&
-        stored.isPending &&
-        stored.approvedAt.getTime() < staleBefore.getTime()
-      ) {
-        this.approvals[index] = stored.notCarriedOut('interrupted', MergeApproval.INTERRUPTED, now);
-      }
-    });
     return Promise.resolve();
   }
 }

@@ -33,6 +33,7 @@ const OPEN_PULL_REQUEST: HostPullRequest = {
   baseRef: 'dev',
   mergeable: true,
   mergeableState: 'clean',
+  mergedCommit: null,
   title: 'Add a health check',
   body: 'Adds GET /health.',
 };
@@ -48,6 +49,7 @@ export class InMemoryMergeHost implements MergeHost {
   private checks: HostCheck[] = [];
   private readonly refusals = new Map<MergeHostMethod, MergeHostFailure>();
   private branchDeleted = false;
+  private readonly gates = new Map<MergeHostMethod, Promise<void>>();
 
   setPullRequest(pullRequest: Partial<HostPullRequest>): void {
     this.pullRequest = { ...this.pullRequest, ...pullRequest };
@@ -61,6 +63,24 @@ export class InMemoryMergeHost implements MergeHost {
   refuse(method: MergeHostMethod, failure: MergeHostFailure | null): void {
     if (failure === null) this.refusals.delete(method);
     else this.refusals.set(method, failure);
+  }
+
+  /** The next call of `method` waits for the returned release, after it was recorded. */
+  hold(method: MergeHostMethod): () => void {
+    let release = () => undefined as void;
+    this.gates.set(
+      method,
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    );
+    return release;
+  }
+
+  private async takeGate(method: MergeHostMethod): Promise<void> {
+    const gate = this.gates.get(method);
+    this.gates.delete(method);
+    await gate;
   }
 
   get runBranchDeleted(): boolean {
@@ -82,7 +102,9 @@ export class InMemoryMergeHost implements MergeHost {
   }
 
   async markReady(scope: PullRequestScope) {
-    return this.answer('markReady', scope, {}, () => {
+    this.calls.push({ method: 'markReady', scope });
+    await this.takeGate('markReady');
+    return this.decide('markReady', scope, () => {
       this.pullRequest = { ...this.pullRequest, draft: false };
       return { ok: true as const };
     });
@@ -93,18 +115,15 @@ export class InMemoryMergeHost implements MergeHost {
   }
 
   async merge(scope: PullRequestScope, request: HostMergeRequest) {
-    return this.answer(
-      'merge',
-      scope,
-      { sha: request.sha, merge: request },
-      (): MergeHostResult<{ mergedCommit: string }> => {
-        if (request.sha !== this.pullRequest.headSha) {
-          return { ok: false, failure: { code: 'refused', message: 'Head branch was modified.' } };
-        }
-        this.pullRequest = { ...this.pullRequest, state: 'merged' };
-        return { ok: true, mergedCommit: MERGED_COMMIT };
-      },
-    );
+    this.calls.push({ method: 'merge', scope, sha: request.sha, merge: request });
+    await this.takeGate('merge');
+    return this.decide('merge', scope, (): MergeHostResult<{ mergedCommit: string }> => {
+      if (request.sha !== this.pullRequest.headSha) {
+        return { ok: false, failure: { code: 'refused', message: 'Head branch was modified.' } };
+      }
+      this.pullRequest = { ...this.pullRequest, state: 'merged', mergedCommit: MERGED_COMMIT };
+      return { ok: true, mergedCommit: MERGED_COMMIT };
+    });
   }
 
   async close(scope: PullRequestScope) {
@@ -128,6 +147,14 @@ export class InMemoryMergeHost implements MergeHost {
     succeed: () => MergeHostResult<T>,
   ): MergeHostResult<T> {
     this.calls.push({ method, scope, ...details });
+    return this.decide(method, scope, succeed);
+  }
+
+  private decide<T extends object>(
+    method: MergeHostMethod,
+    scope: PullRequestScope,
+    succeed: () => MergeHostResult<T>,
+  ): MergeHostResult<T> {
     const ownBranch = RunBranchRule.of(scope.runId, scope.integrationBranch).accepts(
       scope.runBranch,
     );

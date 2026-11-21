@@ -14,6 +14,7 @@ import {
 } from '@/shared/ui/dialog';
 import { ApiError, type RunOutput } from '../../../../platform/api';
 import { useMergeRun } from '../../api/runs-queries';
+import { Mono } from '../../components/mono';
 import { summarizeChecks, taskSummary } from '../../components/run-presentation';
 
 const CHECKS_LISTED = 8;
@@ -25,10 +26,6 @@ type MergeRunDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 };
-
-function Mono({ children }: { children: string }) {
-  return <code className="font-mono text-code break-all text-text">{children}</code>;
-}
 
 /** The checks as the page last read them; the API reads them again before it merges. */
 function ChecksSeen({ pullRequest }: { pullRequest: NonNullable<RunOutput['pullRequest']> }) {
