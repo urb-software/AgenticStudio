@@ -28,7 +28,7 @@ A Project's Preview is the Project's own Compose stack, built from the Integrati
 
 ### Network decision (2026-11-23)
 
-Decided by the operator on 2026-11-23, in the refinement of Epic #271.
+Decided by the operator on 2026-11-23, in a comment on Epic #271.
 
 - Outbound internet access is allowed for builds and at run time, as it is for Runs.
 - Studio's internal services (database, queue, the API's internal address) and the host's loopback are blocked, and a test proves the blocking.
@@ -52,5 +52,4 @@ Decided by the operator on 2026-11-23, in the refinement of Epic #271.
 
 ## Upgrade paths
 
-- **A Preview user per Project**, so that one Project's Preview cannot damage another's.
-- **A microVM or a separate machine for Previews**, behind the same controller interface.
+Stronger isolation needs a separate decision.

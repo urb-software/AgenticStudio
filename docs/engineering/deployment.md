@@ -10,13 +10,15 @@ All host names, accounts, domains and addresses below are placeholders.
 
 | | Studio's side | The agent side |
 | --- | --- | --- |
-| Runs | PostgreSQL, Redis, the reverse proxy, API, web (and later the environment-controller) as a Compose stack | The agent worker and the agents it starts (provider CLIs, their Git and Docker commands) |
+| Runs | PostgreSQL, Redis, the reverse proxy, API, web as a Compose stack | The agent worker and the agents it starts (provider CLIs, their Git and Docker commands) |
 | As | Containers of the **system** Docker daemon (root only); the API, web, reverse proxy and migrations run as uid 10001 (`STUDIO_CONTAINER_UID`) with a read-only root filesystem | The **agent user** (default `agent`, uid/gid 2001, `AGENT_UID`): not in the `docker` group, no `sudo`, no password, no cron, at or SSH login; everything it runs is under its user manager |
 | Docker | `/var/run/docker.sock`, root only | Its own **rootless** daemon at `/run/user/<uid>/docker.sock`, a systemd user service |
 | Configuration | `/etc/agentic-studio/.env` (root, 0600) in `/etc/agentic-studio/` (root, 0700) | `~agent/.config/agentic-studio-worker/.env` (agent, 0600) |
 | Data | `/var/lib/agentic-studio/data` (uid 10001, 0700, inside root-only `/var/lib/agentic-studio`; the API's `STUDIO_DATA_DIR`), `/var/lib/agentic-studio/proxy` (uid 10001, 0700: the proxy's certificates and ACME account), Docker volumes | `~agent/.local/share/agentic-studio-worker` (Working copies, per-project caches) |
 | Code | The production images ([Production images](#production-images)); Compose files and the `Caddyfile` in `/opt/agentic-studio/` (root, 0700) | `/opt/agentic-studio-worker/` (root-owned, readable, not writable by the agent user) |
 | Network | Container network `172.31.250.0/24` with fixed addresses (PostgreSQL `.10`, Redis `.11`, API `.12`, web `.13`, reverse proxy `.20`; other containers from `.128/25`); only the reverse proxy publishes host ports (80 and 443, IPv4) | Calls the API through the reverse proxy's worker port, `http://172.31.250.20:8080`, with the worker token; a firewall rule rejects its traffic to Studio's container network, except that port. Like any host process it reaches the proxy's published ports, never the API, web, PostgreSQL or Redis directly |
+
+The environment-controller runs on the host as the Preview user ([ADR 0004](../architecture/adr/0004-preview-isolation.md)), not in this stack; its setup follows in #275.
 
 The worker always calls Studio; Studio never reaches into the host. The operating-system boundary is the security boundary; the CLIs' hooks and permission rules are guardrails on top of it ([Security](security.md) §2).
 
