@@ -1,4 +1,4 @@
-import { LineCounter, isMap, isScalar, parseDocument, visit, type Document } from 'yaml';
+import { LineCounter, isAlias, isMap, isScalar, parseDocument, visit, type Document } from 'yaml';
 import type { RefusalCode } from './refusal.js';
 
 /** Path into the document: keys and sequence indexes. */
@@ -9,6 +9,8 @@ export const MAX_TEXT_BYTES = 256 * 1024;
 export const MAX_NODES = 20_000;
 /** Alias expansion cap (`yaml` counts the nodes an alias pulls in). Real stacks use a handful. */
 const MAX_ALIAS_COUNT = 100;
+/** At most this many aliases, and this many anchors, in one document. */
+const MAX_ALIASES = 100;
 
 /** Tags of the YAML core schema. Any other tag is a custom tag and is refused. */
 const CORE_TAGS: ReadonlySet<string> = new Set([
@@ -69,26 +71,31 @@ export function parseCompose(text: string): ParseResult {
     offset === undefined ? undefined : lineCounter.linePos(offset).line;
 
   let nodes = 0;
+  let aliases = 0;
+  let anchors = 0;
   visit(doc, {
+    // One callback for every node: a specific visitor (`Map`, `Seq`, ...) would replace it.
     Node(_key, node) {
       nodes += 1;
+      if (isAlias(node)) aliases += 1;
+      if ('anchor' in node && node.anchor) anchors += 1;
       if ('tag' in node && node.tag && !CORE_TAGS.has(node.tag)) {
         problems.push({ code: 'custom_tag', path: [], line: lineAt(node.range?.[0]) });
       }
-    },
-    Map(_key, map) {
-      const seen = new Set<string>();
-      let merges = 0;
-      for (const pair of map.items) {
-        const key = pair.key;
-        if (!isScalar(key)) continue;
-        // A `<<` merge may be overridden by an explicit key, so merge keys are not compared.
-        const duplicate =
-          typeof key.value === 'symbol'
-            ? (merges += 1) > 1
-            : seen.size === seen.add(String(key.value)).size;
-        if (duplicate) {
-          problems.push({ code: 'duplicate_key', path: [], line: lineAt(key.range?.[0]) });
+      if (isMap(node)) {
+        const seen = new Set<string>();
+        let merges = 0;
+        for (const pair of node.items) {
+          const key = pair.key;
+          if (!isScalar(key)) continue;
+          // A `<<` merge may be overridden by an explicit key, so merge keys are not compared.
+          const duplicate =
+            typeof key.value === 'symbol'
+              ? (merges += 1) > 1
+              : seen.size === seen.add(String(key.value)).size;
+          if (duplicate) {
+            problems.push({ code: 'duplicate_key', path: [], line: lineAt(key.range?.[0]) });
+          }
         }
       }
     },
@@ -103,6 +110,10 @@ export function parseCompose(text: string): ParseResult {
     },
   });
 
+  // `yaml` finds the anchor of each alias by walking the document, which is quadratic.
+  if (aliases > MAX_ALIASES || anchors > MAX_ALIASES) {
+    return { ok: false, problems: [{ code: 'alias_limit', path: [] }] };
+  }
   if (nodes > MAX_NODES) return { ok: false, problems: [{ code: 'too_many_nodes', path: [] }] };
 
   // `parseDocument` reports a second document as an error; the document must also be a mapping.

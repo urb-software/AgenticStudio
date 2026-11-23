@@ -21,6 +21,7 @@ export const REFUSAL_CODES = [
   'external_network',
   'external_volume',
   'path_outside_source',
+  'build_context_not_local',
   'external_file',
   'entry_service_missing',
   'entry_port_invalid',
@@ -61,6 +62,7 @@ export const REFUSAL_MESSAGES: Record<RefusalCode, string> = {
   external_network: 'An external network is not allowed.',
   external_volume: 'An external volume is not allowed.',
   path_outside_source: 'A path must stay inside the source directory.',
+  build_context_not_local: 'A build context must be `.` or start with `./`.',
   external_file:
     'Loading another Compose file (include, or extends with a file) is not supported: its content would not be judged.',
   entry_service_missing: 'The chosen entry service does not exist in the Compose file.',

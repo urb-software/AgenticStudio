@@ -32,6 +32,18 @@ describe('time budget on the largest inputs', () => {
       `services:\n  web:\n    image: n\n${keys(20_000, '\n').replace(/^/gm, '    ')}\n`,
     ],
     [
+      'ten thousand distinct anchors, each used once',
+      `x-a: [${Array.from({ length: 9_990 }, (_, i) => `&a${i} 1`).join(',')}]\nx-b: [${Array.from({ length: 9_990 }, (_, i) => `*a${i}`).join(',')}]\nservices:\n  web: {image: n}\n`,
+    ],
+    [
+      'fourteen thousand distinct anchors on mappings',
+      `x-a: [${Array.from({ length: 14_000 }, (_, i) => `&a${i} {}`).join(',')}]\nx-b: [${Array.from({ length: 14_000 }, (_, i) => `*a${i}`).join(',')}]\nservices:\n  web: {image: n}\n`,
+    ],
+    [
+      'sixty thousand empty mappings (the node cap counts mappings too)',
+      `x-a: [${'{},'.repeat(60_000)}{}]\nservices:\n  web: {image: n}\n`,
+    ],
+    [
       'a long flow sequence',
       `services:\n  web:\n    image: n\n    command: [${'1,'.repeat(100_000)}1]\n`,
     ],

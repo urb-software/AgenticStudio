@@ -4,7 +4,10 @@ import type { Path } from './parse.js';
 export type Obj = Record<string, unknown>;
 
 export function isObj(value: unknown): value is Obj {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  // A `Set` or a `Map` from a YAML tag is not a mapping, whatever its entries.
+  const prototype: unknown = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
 export function isScalarValue(value: unknown): value is string | number | boolean {

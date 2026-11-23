@@ -227,8 +227,8 @@ function judgeSourcePath(judge: Judge, value: unknown, path: Path): void {
 /** A build context is `.` or starts with `./`: anything else may be read as a remote one. */
 function judgeContext(judge: Judge, value: unknown, path: Path): void {
   if (typeof value !== 'string') return judge.refuse('invalid_value', path);
-  const local = value === '.' || value.startsWith('./');
-  if (!local || judgePath(value) === 'outside') judge.refuse('path_outside_source', path);
+  if (judgePath(value) === 'outside') return judge.refuse('path_outside_source', path);
+  if (value !== '.' && !value.startsWith('./')) judge.refuse('build_context_not_local', path);
 }
 
 function judgeBuild(judge: Judge, value: unknown, path: Path): void {

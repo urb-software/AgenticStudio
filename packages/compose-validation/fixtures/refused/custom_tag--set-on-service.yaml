@@ -1,0 +1,2 @@
+services:
+  web: !!set {image, privileged}
