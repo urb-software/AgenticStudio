@@ -5,6 +5,7 @@ import { basename, dirname, join } from 'node:path';
 import { type AppConfig, SHELL_SAFE_PATH } from '../../../../../platform/config/config.js';
 import { parseSshHostKey } from '../../../../../platform/config/ssh-known-hosts.js';
 import {
+  type CommitFileOutcome,
   GitCloneMissingError,
   type GitOperationOptions,
   GitOperationError,
@@ -799,6 +800,77 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
             `${commit}:${path}`,
           ]);
           return entry.exitCode === 0;
+        });
+      }),
+    );
+  }
+
+  async readFileAtCommit(
+    projectId: string,
+    commit: string,
+    path: string,
+    maxBytes: number,
+    options: GitOperationOptions = {},
+  ): Promise<CommitFileOutcome> {
+    this.assertSupportedPlatform();
+    if (!COMMIT_ID.test(commit)) {
+      throw new GitRequestRejectedError('The commit id is not a full commit id.');
+    }
+    if (environmentFilePathProblem(path) !== null) {
+      throw new GitRequestRejectedError('The path is not a safe relative path.');
+    }
+    this.paths.clone(projectId);
+    return this.guarded('cat-file', () =>
+      this.queued(projectId, this.settings.fetchTimeoutMs, options, async (options) => {
+        const clone = await this.paths.existingClone(projectId);
+        if (!clone) {
+          throw new GitCloneMissingError();
+        }
+        return this.withOperation(this.settings.fetchTimeoutMs, options, async (context) => {
+          const gitDir = `--git-dir=${clone}`;
+          const known = await this.git(context, [
+            gitDir,
+            'rev-parse',
+            '--verify',
+            '--quiet',
+            `${commit}^{commit}`,
+          ]);
+          if (known.exitCode !== 0) throw new GitOperationError('unknown');
+          // The entry at the path, with its mode: only a regular file (100644 or 100755) is read.
+          // Never a symlink (120000), a submodule (160000) or a directory (040000).
+          const listed = await this.git(
+            context,
+            ['--literal-pathspecs', gitDir, 'ls-tree', '-z', commit, '--', path],
+            undefined,
+            LIST_OUTPUT_LIMIT_BYTES,
+          );
+          if (listed.exitCode !== 0) {
+            throw new GitOperationError('unknown', redactGitOutput(listed.stderr));
+          }
+          const entry = /^(\d{6}) blob ([0-9a-f]{40}|[0-9a-f]{64})\t([^\0]*)\0$/.exec(
+            listed.stdout,
+          );
+          if (!entry || entry[3] !== path || !['100644', '100755'].includes(entry[1]!)) {
+            return { status: 'missing' as const };
+          }
+          const object = entry[2]!;
+          const size = await this.git(context, [gitDir, 'cat-file', '-s', object]);
+          if (size.exitCode !== 0) {
+            throw new GitOperationError('unknown', redactGitOutput(size.stderr));
+          }
+          if (Number(size.stdout.trim()) > maxBytes) return { status: 'too_large' as const };
+          // `cat-file blob` applies no filter, textconv or attribute: the stored bytes.
+          const blob = await this.git(
+            context,
+            [gitDir, 'cat-file', 'blob', object],
+            undefined,
+            maxBytes,
+          );
+          if (blob.stdoutCut) return { status: 'too_large' as const };
+          if (blob.exitCode !== 0) {
+            throw new GitOperationError('unknown', redactGitOutput(blob.stderr));
+          }
+          return { status: 'found' as const, text: blob.stdout };
         });
       }),
     );

@@ -111,3 +111,47 @@ export interface RunMergeMethods {
   /** The Project's current merge method. Throws when the project does not exist. */
   mergeMethodFor(projectId: string): Promise<MergeMethod>;
 }
+
+export const RUN_PREVIEW_SOURCES = Symbol('RUN_PREVIEW_SOURCES');
+
+/** Longest file `readIntegrationFile` returns, in bytes: the Compose validation's own limit. */
+export const INTEGRATION_FILE_MAX_BYTES = 256 * 1024;
+
+/**
+ * Whether a Project's Repository can be read for a Preview: `ready`, or why not
+ * (`unsupported_platform`: the API does not run on Linux).
+ */
+export type PreviewSourceStatus =
+  | { status: 'ready' }
+  | {
+      status:
+        'project_not_found' | 'no_repository' | 'repository_not_ready' | 'unsupported_platform';
+    };
+
+/**
+ * `found`: the regular file's text and the commit it was read at. `missing`: the path is not in
+ * the tree, or is no regular file (a symlink, a submodule or a directory). `too_large`: the file
+ * is over {@link INTEGRATION_FILE_MAX_BYTES}.
+ */
+export type IntegrationFileResult =
+  | { status: 'found'; text: string; commit: string }
+  | {
+      status:
+        | 'missing'
+        | 'too_large'
+        | 'project_not_found'
+        | 'repository_not_ready'
+        | 'unsupported_platform'
+        | 'failed';
+    };
+
+/** What `environments` reads of a Project's Repository to set up a Preview. */
+export interface RunPreviewSources {
+  status(projectId: string): Promise<PreviewSourceStatus>;
+
+  /**
+   * One file of the Integration branch at the commit the Clone holds, read from Git's object
+   * store and never from a working tree. The path must be a safe relative POSIX path.
+   */
+  readIntegrationFile(projectId: string, path: string): Promise<IntegrationFileResult>;
+}

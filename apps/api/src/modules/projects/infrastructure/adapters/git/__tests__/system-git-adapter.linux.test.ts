@@ -219,6 +219,80 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
       );
     });
 
+    it('reads a regular file at a commit of the Clone, and nothing else', async () => {
+      const inner = createFixture(fixtures, 'preview-inner', { 'inner.txt': 'inner\n' });
+      const source = createFixture(
+        fixtures,
+        'preview-source',
+        {
+          'compose.yaml': 'services:\n  web:\n    image: nginx\n',
+          'deploy/run.yaml': { executable: 'services: {}\n' },
+          'big.yaml': 'x'.repeat(2048),
+          'link.yaml': { symlink: 'compose.yaml' },
+        },
+        {
+          branch: 'dev',
+          submodule: { path: 'vendor/lib', url: inner.url, commit: headOf(inner) },
+        },
+      );
+      const git = adapter();
+      const { commit } = await git.clone(PROJECT_ID, source.url, 'dev');
+      const read = (path: string, max = 1024) =>
+        git.readFileAtCommit(PROJECT_ID, commit, path, max);
+
+      await expect(read('compose.yaml')).resolves.toEqual({
+        status: 'found',
+        text: 'services:\n  web:\n    image: nginx\n',
+      });
+      await expect(read('deploy/run.yaml')).resolves.toEqual({
+        status: 'found',
+        text: 'services: {}\n',
+      });
+      await expect(read('nope.yaml')).resolves.toEqual({ status: 'missing' });
+      await expect(read('deploy/nope.yaml')).resolves.toEqual({ status: 'missing' });
+      // A directory, a symlink and a submodule are no regular file.
+      await expect(read('deploy')).resolves.toEqual({ status: 'missing' });
+      await expect(read('link.yaml')).resolves.toEqual({ status: 'missing' });
+      await expect(read('vendor/lib')).resolves.toEqual({ status: 'missing' });
+      // Literal, not a pattern.
+      await expect(read('*.yaml')).resolves.toEqual({ status: 'missing' });
+      // Over the limit, by the object's size.
+      await expect(read('big.yaml', 2047)).resolves.toEqual({ status: 'too_large' });
+      await expect(read('big.yaml', 2048)).resolves.toMatchObject({ status: 'found' });
+      // The Clone is bare: nothing was written to disk besides Git's own files.
+      expect(existsSync(join(clonePath(), 'compose.yaml'))).toBe(false);
+    });
+
+    it('refuses an unsafe path or commit, and a missing Clone, when reading a file', async () => {
+      const git = adapter();
+      const { commit } = await git.clone(PROJECT_ID, fixture.url, 'dev');
+
+      for (const path of [
+        '../x',
+        '/etc/passwd',
+        'a/../b',
+        'a\\b',
+        './compose.yaml',
+        'a//b',
+        '.git/config',
+        '',
+        'a\u0000b',
+      ]) {
+        await expect(git.readFileAtCommit(PROJECT_ID, commit, path, 1024)).rejects.toThrow(
+          GitRequestRejectedError,
+        );
+      }
+      await expect(git.readFileAtCommit(PROJECT_ID, 'HEAD', 'README.md', 1024)).rejects.toThrow(
+        GitRequestRejectedError,
+      );
+      await expect(
+        git.readFileAtCommit(PROJECT_ID, 'f'.repeat(40), 'README.md', 1024),
+      ).rejects.toThrow(GitOperationError);
+      await expect(
+        git.readFileAtCommit(OTHER_PROJECT_ID, commit, 'README.md', 1024),
+      ).rejects.toThrow(GitCloneMissingError);
+    });
+
     it('removes a Clone, and treats a missing Clone as removed', async () => {
       const git = adapter();
       await git.clone(PROJECT_ID, fixture.url, 'dev');

@@ -99,6 +99,17 @@ class ProbeController {
     });
   }
 
+  @Get('with-extensions')
+  withExtensions(): never {
+    throw new ProblemException(422, {
+      type: 'urn:agentic-studio:problem:probe-refused',
+      title: 'Probe refused',
+      detail: 'The probe was refused.',
+      // The standard members are the problem's own: an extension never replaces one.
+      extensions: { refusals: [{ code: 'x', place: 'y' }], status: 200, type: 'about:forged' },
+    });
+  }
+
   @Get('bad-response')
   @ZodResponse({ status: 200, type: ProbeOutputDto })
   badResponse() {
@@ -311,6 +322,19 @@ describe('problem+json error mapping', () => {
       title: 'Probe conflict',
       detail: 'The probe conflicts.',
       errors: [{ path: 'url', message: 'Already used.' }],
+    });
+  });
+
+  it('adds the extension members of a ProblemException, never over the standard ones', async () => {
+    const response = await request(app.getHttpServer()).get('/api/__test__/with-extensions');
+
+    expect(response.status).toBe(422);
+    expect(response.body).toMatchObject({
+      type: 'urn:agentic-studio:problem:probe-refused',
+      title: 'Probe refused',
+      status: 422,
+      detail: 'The probe was refused.',
+      refusals: [{ code: 'x', place: 'y' }],
     });
   });
 

@@ -63,6 +63,13 @@ export interface MergeDiffFile {
 export type MergeDiffOutcome =
   { status: 'computed'; files: MergeDiffFile[]; truncated: boolean } | { status: 'conflicting' };
 
+/**
+ * `missing`: the path is not in the tree, or is no regular file (a symlink, a submodule or a
+ * directory). `too_large`: the file is over the limit passed to the read.
+ */
+export type CommitFileOutcome =
+  { status: 'found'; text: string } | { status: 'missing' } | { status: 'too_large' };
+
 export type GitFailureReason = Exclude<RepositoryFailureCode, 'interrupted'>;
 
 export const GIT_FAILURE_REASONS: readonly GitFailureReason[] = REPOSITORY_FAILURE_CODES.filter(
@@ -160,6 +167,19 @@ export interface RepositoryGit {
     path: string,
     options?: GitOperationOptions,
   ): Promise<boolean>;
+
+  /**
+   * The text of the regular file at the safe relative POSIX `path` in `commit`, read from the
+   * Clone's object store and never a working tree; at most `maxBytes`. Throws the errors of
+   * {@link RepositoryGit.isPathTracked}, and `unknown` for a commit that is not in the Clone.
+   */
+  readFileAtCommit(
+    projectId: string,
+    commit: string,
+    path: string,
+    maxBytes: number,
+    options?: GitOperationOptions,
+  ): Promise<CommitFileOutcome>;
 
   /** Removes the Project's Clone (and any partial one); a missing Clone is not an error. */
   removeClone(projectId: string, options?: GitOperationOptions): Promise<void>;

@@ -94,6 +94,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@agentic-studio/compose-validation':
+        specifier: workspace:*
+        version: link:../../packages/compose-validation
       '@agentic-studio/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts

@@ -1,4 +1,5 @@
 import { type DynamicModule, Module } from '@nestjs/common';
+import { EnvironmentsModule } from './modules/environments/environments.module.js';
 import {
   ExecutionsModule,
   type ExecutionsModuleOptions,
@@ -24,7 +25,7 @@ export class AppModule {
       executions?: ExecutionsModuleOptions;
     } = {},
   ): DynamicModule {
-    // One instance: `executions` imports this same module to reach its public contract.
+    // One instance: `executions` and `environments` import this same module to reach its public contract.
     const projects = ProjectsModule.register(options.projects);
     return {
       module: AppModule,
@@ -38,6 +39,7 @@ export class AppModule {
         AuthModule,
         projects,
         ExecutionsModule.register(projects, options.executions),
+        EnvironmentsModule.register(projects),
       ],
     };
   }

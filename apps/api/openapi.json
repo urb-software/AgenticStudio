@@ -2645,6 +2645,203 @@
           "runs"
         ]
       }
+    },
+    "/api/projects/{id}/preview": {
+      "get": {
+        "description": "The project's Preview: its settings or `null`, the hostname it will be served at (or why there is none), and whether the repository is ready to be read.",
+        "operationId": "getPreview",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Preview_Output"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown project (urn:agentic-studio:problem:project-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/projects/{id}/preview/settings": {
+      "put": {
+        "description": "Sets the project's Preview settings, or replaces them. Studio reads the Compose file from the Integration branch at the commit its Clone holds, judges it, and saves only when it is accepted. Published ports in the file are removed when the Preview starts; `removedPorts` lists them.",
+        "operationId": "savePreviewSettings",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SavePreviewSettingsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavePreviewSettingsResponse_Output"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown project (urn:agentic-studio:problem:project-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The repository cannot be read now (urn:agentic-studio:problem:preview-repository-not-ready), or the API is not on Linux (urn:agentic-studio:problem:preview-unsupported-platform)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The file or the choice was refused (urn:agentic-studio:problem:preview-refused); `refusals` lists every reason with its place",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewRefusedProblem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The Compose file could not be read (urn:agentic-studio:problem:preview-source-unavailable)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "environments"
+        ]
+      },
+      "delete": {
+        "description": "Removes the project's Preview settings. Removing settings that are not set changes nothing.",
+        "operationId": "removePreviewSettings",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed (or there were none)"
+          },
+          "404": {
+            "description": "Unknown project (urn:agentic-studio:problem:project-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The Preview is running (urn:agentic-studio:problem:preview-running)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "environments"
+        ]
+      }
     }
   },
   "info": {
@@ -4711,6 +4908,292 @@
         },
         "required": [
           "connected"
+        ],
+        "additionalProperties": false
+      },
+      "Preview_Output": {
+        "type": "object",
+        "properties": {
+          "settings": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "composeFile": {
+                    "type": "string"
+                  },
+                  "service": {
+                    "type": "string"
+                  },
+                  "port": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "updatedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  }
+                },
+                "required": [
+                  "composeFile",
+                  "service",
+                  "port",
+                  "updatedAt"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hostname": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hostnameUnavailable": {
+            "type": "string",
+            "enum": [
+              "not_configured"
+            ]
+          },
+          "repository": {
+            "type": "object",
+            "properties": {
+              "ready": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "no_repository",
+                  "repository_not_ready",
+                  "unsupported_platform"
+                ]
+              }
+            },
+            "required": [
+              "ready"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "settings",
+          "hostname",
+          "repository"
+        ],
+        "additionalProperties": false
+      },
+      "PreviewRefusedProblem": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "detail": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": "string"
+          },
+          "refusals": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "enum": [
+                    "text_too_large",
+                    "too_many_nodes",
+                    "too_many_services",
+                    "yaml_syntax",
+                    "custom_tag",
+                    "not_a_mapping",
+                    "duplicate_key",
+                    "alias_limit",
+                    "unjudgeable",
+                    "unknown_key",
+                    "invalid_value",
+                    "interpolation",
+                    "privileged",
+                    "host_namespace",
+                    "capability_added",
+                    "device",
+                    "mount_outside_source",
+                    "docker_socket",
+                    "external_network",
+                    "external_volume",
+                    "path_outside_source",
+                    "build_context_not_local",
+                    "external_file",
+                    "entry_service_missing",
+                    "entry_port_invalid",
+                    "compose_file_missing",
+                    "compose_file_too_large",
+                    "invalid_path"
+                  ]
+                },
+                "place": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "place",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail",
+          "correlationId",
+          "refusals"
+        ]
+      },
+      "SavePreviewSettingsRequest": {
+        "type": "object",
+        "properties": {
+          "composeFile": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "Relative POSIX path of the Compose file in the Integration branch, at most 255 characters: no leading `/` or `./`, no `..`, backslash or empty segment."
+          },
+          "service": {
+            "type": "string",
+            "maxLength": 63,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]*$",
+            "description": "The Compose service the Preview routes to."
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535,
+            "description": "The port of that service the Preview routes to."
+          }
+        },
+        "required": [
+          "composeFile",
+          "service",
+          "port"
+        ],
+        "additionalProperties": false
+      },
+      "SavePreviewSettingsResponse_Output": {
+        "type": "object",
+        "properties": {
+          "settings": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "composeFile": {
+                    "type": "string"
+                  },
+                  "service": {
+                    "type": "string"
+                  },
+                  "port": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "updatedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  }
+                },
+                "required": [
+                  "composeFile",
+                  "service",
+                  "port",
+                  "updatedAt"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hostname": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hostnameUnavailable": {
+            "type": "string",
+            "enum": [
+              "not_configured"
+            ]
+          },
+          "repository": {
+            "type": "object",
+            "properties": {
+              "ready": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "no_repository",
+                  "repository_not_ready",
+                  "unsupported_platform"
+                ]
+              }
+            },
+            "required": [
+              "ready"
+            ],
+            "additionalProperties": false
+          },
+          "removedPorts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "service": {
+                  "type": "string"
+                },
+                "place": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "service",
+                "place"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "settings",
+          "hostname",
+          "repository"
         ],
         "additionalProperties": false
       },

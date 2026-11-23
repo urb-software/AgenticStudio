@@ -34,7 +34,7 @@ FROM base AS build
 COPY . .
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
   pnpm install --frozen-lockfile --store-dir /pnpm/store --filter "@agentic-studio/api..."
-RUN pnpm --filter @agentic-studio/contracts --filter @agentic-studio/database --filter @agentic-studio/api run build
+RUN pnpm --filter @agentic-studio/compose-validation --filter @agentic-studio/contracts --filter @agentic-studio/database --filter @agentic-studio/api run build
 
 # Production dependencies only, for the API and the workspace packages it uses.
 FROM base AS prod-deps
@@ -58,6 +58,9 @@ WORKDIR /app
 # Root-owned and read-only for the API's uid: the code cannot be changed at run time.
 COPY --from=prod-deps /app/pnpm-workspace.yaml /app/package.json ./
 COPY --from=prod-deps /app/node_modules ./node_modules
+COPY --from=prod-deps /app/packages/compose-validation/package.json ./packages/compose-validation/
+COPY --from=prod-deps /app/packages/compose-validation/node_modules ./packages/compose-validation/node_modules
+COPY --from=build /app/packages/compose-validation/dist ./packages/compose-validation/dist
 COPY --from=prod-deps /app/packages/contracts/package.json ./packages/contracts/
 COPY --from=prod-deps /app/packages/contracts/node_modules ./packages/contracts/node_modules
 COPY --from=build /app/packages/contracts/dist ./packages/contracts/dist

@@ -116,6 +116,32 @@ const githubLoginSchema = z
     message: 'must be a GitHub login: letters, digits and hyphens, at most 39 characters',
   });
 
+/** A DNS name: two or more lowercase LDH labels of at most 63 characters, 253 in all, not an IP address. */
+function isDnsName(value: string): boolean {
+  const labels = value.split('.');
+  return (
+    value.length <= 253 &&
+    labels.length >= 2 &&
+    labels.every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label)) &&
+    !/^\d+$/.test(labels[labels.length - 1]!)
+  );
+}
+
+/**
+ * `STUDIO_PREVIEW_DOMAIN`: the domain Previews are served under. Unset or empty: no hostname is
+ * shown. Messages never echo the value.
+ */
+const previewDomainSchema = z
+  .string()
+  .optional()
+  .transform((value) =>
+    value === undefined || value.trim() === '' ? null : value.trim().toLowerCase(),
+  )
+  .refine((value) => value === null || isDnsName(value), {
+    message:
+      'must be a DNS name of lowercase letters, digits and hyphens, e.g. preview.example.test',
+  });
+
 const studioOriginSchema = z
   .url({ protocol: /^https?$/ })
   .refine((value) => new URL(value).origin === value.replace(/\/$/, ''), {
@@ -273,8 +299,17 @@ const environmentSchema = z.object({
   STUDIO_MERGE_TOKEN: mergeTokenSchema,
   // Test-only: the GitHub API the merge adapter calls instead of api.github.com.
   STUDIO_MERGE_GITHUB_API_URL: z.url({ protocol: /^https?$/ }).optional(),
+  // The domain Previews are served under (security.md section 5); never Studio's own hostname.
+  STUDIO_PREVIEW_DOMAIN: previewDomainSchema,
   NODE_ENV: z.string().optional(),
 });
+
+function isStudioHostnameOrBelow(domain: string | null, studioOrigin: string): boolean {
+  if (domain === null) return false;
+  // A trailing dot names the same host.
+  const studioHost = new URL(studioOrigin).hostname.toLowerCase().replace(/[.]$/, '');
+  return domain === studioHost || domain.endsWith(`.${studioHost}`);
+}
 
 function schemaFor(workspaceRoot: string | undefined) {
   return environmentSchema
@@ -282,6 +317,12 @@ function schemaFor(workspaceRoot: string | undefined) {
     .refine((env) => env.STUDIO_GIT_ALLOW_FILE_REMOTES !== 'true' || env.NODE_ENV === 'test', {
       path: ['STUDIO_GIT_ALLOW_FILE_REMOTES'],
       message: 'is a test-only setting; it is accepted only with NODE_ENV=test',
+    })
+    .refine((env) => !isStudioHostnameOrBelow(env.STUDIO_PREVIEW_DOMAIN, env.STUDIO_ORIGIN), {
+      path: ['STUDIO_PREVIEW_DOMAIN'],
+      message:
+        "must not be Studio's own hostname or a name under it: a Preview needs its own origin " +
+        '(security.md section 5)',
     })
     .refine((env) => env.STUDIO_MERGE_GITHUB_API_URL === undefined || env.NODE_ENV === 'test', {
       path: ['STUDIO_MERGE_GITHUB_API_URL'],
@@ -339,6 +380,8 @@ export interface AppConfig {
   mergeCredential: MergeCredential | null;
   /** Test-only: the GitHub API base the merge adapter calls, `null` for the real one. */
   mergeGithubApiUrl: string | null;
+  /** The domain Previews are served under (`STUDIO_PREVIEW_DOMAIN`), or `null` while unset. */
+  previewDomain: string | null;
   /** Agent-side Working copy retention, from the `STUDIO_RETENTION_*` settings. */
   retention: {
     days: number;
@@ -403,6 +446,7 @@ export function loadConfig(
     operatorGithubLogin: result.data.STUDIO_OPERATOR_GITHUB_LOGIN,
     mergeCredential: result.data.STUDIO_MERGE_TOKEN,
     mergeGithubApiUrl: result.data.STUDIO_MERGE_GITHUB_API_URL?.replace(/\/+$/, '') ?? null,
+    previewDomain: result.data.STUDIO_PREVIEW_DOMAIN,
     retention: {
       days: result.data.STUDIO_RETENTION_DAYS,
       maxPerProject: result.data.STUDIO_RETENTION_MAX_PER_PROJECT,

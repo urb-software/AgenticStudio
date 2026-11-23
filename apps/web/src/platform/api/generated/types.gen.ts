@@ -487,6 +487,68 @@ export type AgentWorkerOutput = {
     disk?: AgentWorkerDiskOutput;
 };
 
+export type PreviewOutput = {
+    settings: {
+        composeFile: string;
+        service: string;
+        port: number;
+        updatedAt: string;
+    } | null;
+    hostname: string | null;
+    hostnameUnavailable?: 'not_configured';
+    repository: {
+        ready: boolean;
+        reason?: 'no_repository' | 'repository_not_ready' | 'unsupported_platform';
+    };
+};
+
+export type PreviewRefusedProblem = {
+    type: string;
+    title: string;
+    status: number;
+    detail: string;
+    correlationId: string;
+    refusals: Array<{
+        code: 'text_too_large' | 'too_many_nodes' | 'too_many_services' | 'yaml_syntax' | 'custom_tag' | 'not_a_mapping' | 'duplicate_key' | 'alias_limit' | 'unjudgeable' | 'unknown_key' | 'invalid_value' | 'interpolation' | 'privileged' | 'host_namespace' | 'capability_added' | 'device' | 'mount_outside_source' | 'docker_socket' | 'external_network' | 'external_volume' | 'path_outside_source' | 'build_context_not_local' | 'external_file' | 'entry_service_missing' | 'entry_port_invalid' | 'compose_file_missing' | 'compose_file_too_large' | 'invalid_path';
+        place: string;
+        message: string;
+    }>;
+};
+
+export type SavePreviewSettingsRequest = {
+    /**
+     * Relative POSIX path of the Compose file in the Integration branch, at most 255 characters: no leading `/` or `./`, no `..`, backslash or empty segment.
+     */
+    composeFile: string;
+    /**
+     * The Compose service the Preview routes to.
+     */
+    service: string;
+    /**
+     * The port of that service the Preview routes to.
+     */
+    port: number;
+};
+
+export type SavePreviewSettingsResponseOutput = {
+    settings: {
+        composeFile: string;
+        service: string;
+        port: number;
+        updatedAt: string;
+    } | null;
+    hostname: string | null;
+    hostnameUnavailable?: 'not_configured';
+    repository: {
+        ready: boolean;
+        reason?: 'no_repository' | 'repository_not_ready' | 'unsupported_platform';
+    };
+    removedPorts?: Array<{
+        service: string;
+        place: string;
+    }>;
+};
+
 export type ProblemDetails = {
     type: string;
     title: string;
@@ -1900,3 +1962,106 @@ export type GetAgentWorkerResponses = {
 };
 
 export type GetAgentWorkerResponse = GetAgentWorkerResponses[keyof GetAgentWorkerResponses];
+
+export type GetPreviewData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/projects/{id}/preview';
+};
+
+export type GetPreviewErrors = {
+    /**
+     * Unknown project (urn:agentic-studio:problem:project-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type GetPreviewError = GetPreviewErrors[keyof GetPreviewErrors];
+
+export type GetPreviewResponses = {
+    200: PreviewOutput;
+};
+
+export type GetPreviewResponse = GetPreviewResponses[keyof GetPreviewResponses];
+
+export type RemovePreviewSettingsData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/projects/{id}/preview/settings';
+};
+
+export type RemovePreviewSettingsErrors = {
+    /**
+     * Unknown project (urn:agentic-studio:problem:project-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * The Preview is running (urn:agentic-studio:problem:preview-running)
+     */
+    409: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type RemovePreviewSettingsError = RemovePreviewSettingsErrors[keyof RemovePreviewSettingsErrors];
+
+export type RemovePreviewSettingsResponses = {
+    /**
+     * Removed (or there were none)
+     */
+    204: void;
+};
+
+export type RemovePreviewSettingsResponse = RemovePreviewSettingsResponses[keyof RemovePreviewSettingsResponses];
+
+export type SavePreviewSettingsData = {
+    body: SavePreviewSettingsRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/projects/{id}/preview/settings';
+};
+
+export type SavePreviewSettingsErrors = {
+    /**
+     * Unknown project (urn:agentic-studio:problem:project-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * The repository cannot be read now (urn:agentic-studio:problem:preview-repository-not-ready), or the API is not on Linux (urn:agentic-studio:problem:preview-unsupported-platform)
+     */
+    409: ProblemDetails;
+    /**
+     * The file or the choice was refused (urn:agentic-studio:problem:preview-refused); `refusals` lists every reason with its place
+     */
+    422: PreviewRefusedProblem;
+    /**
+     * The Compose file could not be read (urn:agentic-studio:problem:preview-source-unavailable)
+     */
+    502: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type SavePreviewSettingsError = SavePreviewSettingsErrors[keyof SavePreviewSettingsErrors];
+
+export type SavePreviewSettingsResponses = {
+    200: SavePreviewSettingsResponseOutput;
+};
+
+export type SavePreviewSettingsResponse = SavePreviewSettingsResponses[keyof SavePreviewSettingsResponses];

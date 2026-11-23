@@ -63,8 +63,8 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     // Deliberate, client-facing text at any status (e.g. 501 "Unsupported platform"), and
     // the field errors of a FieldProblemException.
     if (exception instanceof ProblemException) {
-      const { type, title, detail, errors } = exception.problem;
-      return { ...base, type, title, detail, ...(errors ? { errors } : {}) };
+      const { type, title, detail, errors, extensions } = exception.problem;
+      return { ...extensions, ...base, type, title, detail, ...(errors ? { errors } : {}) };
     }
     if (status >= 500) {
       return { ...base, detail: GENERIC_SERVER_DETAIL };

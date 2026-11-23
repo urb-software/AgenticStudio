@@ -676,6 +676,96 @@ export const zAgentWorkerOutput = z.object({
     disk: zAgentWorkerDiskOutput.optional()
 });
 
+export const zPreviewOutput = z.object({
+    settings: z.object({
+        composeFile: z.string(),
+        service: z.string(),
+        port: z.int().gte(-9007199254740991).lte(9007199254740991),
+        updatedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/)
+    }).nullable(),
+    hostname: z.string().nullable(),
+    hostnameUnavailable: z.enum(['not_configured']).optional(),
+    repository: z.object({
+        ready: z.boolean(),
+        reason: z.enum([
+            'no_repository',
+            'repository_not_ready',
+            'unsupported_platform'
+        ]).optional()
+    })
+});
+
+export const zPreviewRefusedProblem = z.object({
+    type: z.string(),
+    title: z.string(),
+    status: z.int().gte(-9007199254740991).lte(9007199254740991),
+    detail: z.string(),
+    correlationId: z.string(),
+    refusals: z.array(z.object({
+        code: z.enum([
+            'text_too_large',
+            'too_many_nodes',
+            'too_many_services',
+            'yaml_syntax',
+            'custom_tag',
+            'not_a_mapping',
+            'duplicate_key',
+            'alias_limit',
+            'unjudgeable',
+            'unknown_key',
+            'invalid_value',
+            'interpolation',
+            'privileged',
+            'host_namespace',
+            'capability_added',
+            'device',
+            'mount_outside_source',
+            'docker_socket',
+            'external_network',
+            'external_volume',
+            'path_outside_source',
+            'build_context_not_local',
+            'external_file',
+            'entry_service_missing',
+            'entry_port_invalid',
+            'compose_file_missing',
+            'compose_file_too_large',
+            'invalid_path'
+        ]),
+        place: z.string(),
+        message: z.string()
+    }))
+});
+
+export const zSavePreviewSettingsRequest = z.object({
+    composeFile: z.string().max(255),
+    service: z.string().max(63).regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/),
+    port: z.int().gte(1).lte(65535)
+});
+
+export const zSavePreviewSettingsResponseOutput = z.object({
+    settings: z.object({
+        composeFile: z.string(),
+        service: z.string(),
+        port: z.int().gte(-9007199254740991).lte(9007199254740991),
+        updatedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/)
+    }).nullable(),
+    hostname: z.string().nullable(),
+    hostnameUnavailable: z.enum(['not_configured']).optional(),
+    repository: z.object({
+        ready: z.boolean(),
+        reason: z.enum([
+            'no_repository',
+            'repository_not_ready',
+            'unsupported_platform'
+        ]).optional()
+    }),
+    removedPorts: z.array(z.object({
+        service: z.string(),
+        place: z.string()
+    })).optional()
+});
+
 export const zProblemDetails = z.object({
     type: z.string(),
     title: z.string(),
@@ -975,3 +1065,26 @@ export const zGetRunMergeReviewFileResponse = zMergeReviewFileOutput;
 export const zListProvidersResponse = zProviderListOutput;
 
 export const zGetAgentWorkerResponse = zAgentWorkerOutput;
+
+export const zGetPreviewPath = z.object({
+    id: z.string()
+});
+
+export const zGetPreviewResponse = zPreviewOutput;
+
+export const zRemovePreviewSettingsPath = z.object({
+    id: z.string()
+});
+
+/**
+ * Removed (or there were none)
+ */
+export const zRemovePreviewSettingsResponse = z.void();
+
+export const zSavePreviewSettingsBody = zSavePreviewSettingsRequest;
+
+export const zSavePreviewSettingsPath = z.object({
+    id: z.string()
+});
+
+export const zSavePreviewSettingsResponse = zSavePreviewSettingsResponseOutput;

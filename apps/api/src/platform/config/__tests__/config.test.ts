@@ -73,6 +73,7 @@ describe('loadConfig', () => {
       operatorGithubLogin: null,
       mergeCredential: null,
       mergeGithubApiUrl: null,
+      previewDomain: null,
       retention: {
         days: 7,
         maxPerProject: 10,
@@ -655,5 +656,64 @@ ${'b'.repeat(12)}`,
       const error = captureError(() => loadConfig(env));
       expect(error.message).toMatch(/STUDIO_MERGE_GITHUB_API_URL: is a test-only setting/);
     });
+  });
+
+  describe('STUDIO_PREVIEW_DOMAIN with a Studio hostname that ends in a dot', () => {
+    const studio = { ...requiredEnv, STUDIO_ORIGIN: 'https://studio.example.' };
+
+    it.each(['studio.example', 'x.studio.example'])('refuses %s', (value) => {
+      const error = captureError(() => loadConfig({ ...studio, STUDIO_PREVIEW_DOMAIN: value }));
+      expect(error.message).toContain('STUDIO_PREVIEW_DOMAIN');
+      expect(error.message).toContain('own hostname');
+    });
+  });
+
+  describe('STUDIO_PREVIEW_DOMAIN', () => {
+    const studio = { ...requiredEnv, STUDIO_ORIGIN: 'https://studio.example.test' };
+
+    it('is null while unset or empty', () => {
+      expect(loadConfig(studio).previewDomain).toBeNull();
+      expect(loadConfig({ ...studio, STUDIO_PREVIEW_DOMAIN: '  ' }).previewDomain).toBeNull();
+    });
+
+    it('accepts a DNS name, lowercased, that is not Studio or below it', () => {
+      for (const domain of [
+        'preview.example.test',
+        'example.test',
+        'studio.example.test.invalid',
+      ]) {
+        expect(loadConfig({ ...studio, STUDIO_PREVIEW_DOMAIN: domain }).previewDomain).toBe(domain);
+      }
+      expect(
+        loadConfig({ ...studio, STUDIO_PREVIEW_DOMAIN: ' Preview.Example.TEST ' }).previewDomain,
+      ).toBe('preview.example.test');
+    });
+
+    it.each([
+      ['an IP address', '203.0.113.7'],
+      ['one label', 'onelabel'],
+      ['an empty label', 'preview..example.test'],
+      ['a leading hyphen', '-preview.example.test'],
+      ['a scheme', 'https://preview.example.test'],
+      ['a path', 'preview.example.test/x'],
+      ['a port', 'preview.example.test:8443'],
+      ['a label over 63 characters', `${'a'.repeat(64)}.example.test`],
+      ['a name over 253 characters', `${'a'.repeat(60)}.`.repeat(5) + 'example.test'],
+    ])('stops start-up for %s, naming the setting and not the value', (_name, value) => {
+      const error = captureError(() => loadConfig({ ...studio, STUDIO_PREVIEW_DOMAIN: value }));
+      expect(error).toBeInstanceOf(ConfigValidationError);
+      expect(error.message).toContain('STUDIO_PREVIEW_DOMAIN');
+      expect(error.message).not.toContain(value);
+    });
+
+    it.each(['studio.example.test', 'preview.studio.example.test', 'STUDIO.example.test'])(
+      "stops start-up for Studio's own hostname or a name under it (%s)",
+      (value) => {
+        const error = captureError(() => loadConfig({ ...studio, STUDIO_PREVIEW_DOMAIN: value }));
+        expect(error.message).toContain('STUDIO_PREVIEW_DOMAIN');
+        expect(error.message).toContain('own hostname');
+        expect(error.message).not.toContain(value);
+      },
+    );
   });
 });

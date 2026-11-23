@@ -7,8 +7,12 @@ import {
   RUN_ENVIRONMENT_FILES,
   RUN_INTEGRATION_FETCHES,
   RUN_MERGE_METHODS,
+  RUN_PREVIEW_SOURCES,
   RUN_START_POINTS,
 } from './contracts/index.js';
+import { GetPreviewSourceStatusHandler } from './application/features/get-preview-source-status/handler.js';
+import { ReadIntegrationFileHandler } from './application/features/read-integration-file/handler.js';
+import { ProjectRunPreviewSources } from './entry-points/contracts/run-preview-sources.js';
 import { ProjectRunIntegrationFetches } from './entry-points/contracts/run-integration-fetches.js';
 import { ENVIRONMENT_FILE_REPOSITORY } from './domain/repositories/environment-file-repository.js';
 import { PROJECT_REPOSITORY } from './domain/repositories/project-repository.js';
@@ -107,7 +111,7 @@ export interface ProjectsModuleOptions {
 
 /**
  * `projects` business module: projects, their Repository (Git adapter, background jobs),
- * Environment file and merge method. Other modules reach it through {@link RUN_START_POINTS}, {@link RUN_ENVIRONMENT_FILES} and {@link RUN_BRANCH_REVIEWS}, {@link RUN_INTEGRATION_FETCHES} and {@link RUN_MERGE_METHODS}.
+ * Environment file and merge method. Other modules reach it through {@link RUN_START_POINTS}, {@link RUN_ENVIRONMENT_FILES} and {@link RUN_BRANCH_REVIEWS}, {@link RUN_INTEGRATION_FETCHES}, {@link RUN_MERGE_METHODS} and {@link RUN_PREVIEW_SOURCES}.
  */
 @Module({})
 export class ProjectsModule {
@@ -212,6 +216,9 @@ export class ProjectsModule {
         SetMergeMethodHandler,
         GetRunMergeMethodHandler,
         { provide: RUN_MERGE_METHODS, useClass: ProjectRunMergeMethods },
+        GetPreviewSourceStatusHandler,
+        ReadIntegrationFileHandler,
+        { provide: RUN_PREVIEW_SOURCES, useClass: ProjectRunPreviewSources },
       ],
       exports: [
         RUN_START_POINTS,
@@ -219,6 +226,7 @@ export class ProjectsModule {
         RUN_BRANCH_REVIEWS,
         RUN_INTEGRATION_FETCHES,
         RUN_MERGE_METHODS,
+        RUN_PREVIEW_SOURCES,
       ],
     };
   }
