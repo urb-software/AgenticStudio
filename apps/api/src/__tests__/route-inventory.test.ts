@@ -47,24 +47,27 @@ function routes(controllers: Controller[]): string[] {
 }
 
 describe('route and guard inventory', () => {
-  it('lists every route of projects and executions with its authentication and guards', () => {
+  it('lists every route of projects, executions and environments with its authentication and guards', () => {
     // Reached through the composition root: nothing outside a module imports its internals.
-    // Only the two modules under test are listed; the platform's controllers are not.
+    // Only the three business modules are listed; the platform's controllers are not.
     const modules = (AppModule.register(testConfig()).imports ?? []).filter(
       (entry): entry is DynamicModule =>
-        'module' in entry && ['ProjectsModule', 'ExecutionsModule'].includes(entry.module.name),
+        'module' in entry &&
+        ['ProjectsModule', 'ExecutionsModule', 'EnvironmentsModule'].includes(entry.module.name),
     );
-    expect(modules).toHaveLength(2);
+    expect(modules).toHaveLength(3);
     const controllers = modules.flatMap((entry) => entry.controllers ?? []);
     expect(routes(controllers as Controller[])).toMatchInlineSnapshot(`
       [
         "DELETE /api/projects/:id/environment-file [session]",
+        "DELETE /api/projects/:id/preview/settings [session]",
         "DELETE /api/projects/:id/repository [session]",
         "DELETE /api/runs/:runId/pull-request/failing-checks/prepared [session]",
         "GET /api/agent-worker [session]",
         "GET /api/projects [session]",
         "GET /api/projects/:id [session]",
         "GET /api/projects/:id/environment-file [session]",
+        "GET /api/projects/:id/preview [session]",
         "GET /api/projects/:id/repository [session]",
         "GET /api/projects/:id/runs [session]",
         "GET /api/providers [session]",
@@ -109,6 +112,7 @@ describe('route and guard inventory', () => {
         "POST /api/worker/status [worker-token]",
         "PUT /api/projects/:id/environment-file [session]",
         "PUT /api/projects/:id/merge-method [session]",
+        "PUT /api/projects/:id/preview/settings [session]",
       ]
     `);
   });

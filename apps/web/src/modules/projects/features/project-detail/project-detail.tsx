@@ -1,6 +1,12 @@
 'use client';
 
-import { ArrowLeftIcon, RefreshCwIcon, SearchXIcon, TriangleAlertIcon } from 'lucide-react';
+import {
+  ArrowLeftIcon,
+  GlobeIcon,
+  RefreshCwIcon,
+  SearchXIcon,
+  TriangleAlertIcon,
+} from 'lucide-react';
 import Link from 'next/link';
 import { EmptyState } from '@/shared/components/empty-state';
 import { Button } from '@/shared/ui/button';
@@ -86,6 +92,9 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
             {formatTimeAgo(createdAt, dataUpdatedAt)}
           </time>
         </p>
+        <Button asChild icon={GlobeIcon} className="mt-2 self-start">
+          <Link href={`/projects/${projectId}/preview`}>Preview</Link>
+        </Button>
       </header>
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <RepositoryCard projectId={projectId} summary={data.repository} />

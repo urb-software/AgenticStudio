@@ -41,6 +41,7 @@ const app = await buildApp(
       operatorGithubLogin: null,
       mergeCredential: null,
       mergeGithubApiUrl: null,
+      previewDomain: null,
       retention: {
         days: 7,
         maxPerProject: 10,

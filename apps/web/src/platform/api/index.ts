@@ -20,6 +20,8 @@ import type {
   MergeRunResponseOutput,
   ProjectOutput,
   PreparedFollowUpOutput,
+  PreviewOutput,
+  PreviewRefusedProblem,
   ProviderListOutput,
   RefreshPullRequestRequest,
   RepositoryOutput,
@@ -33,6 +35,8 @@ import type {
   RunsSummaryOutput,
   RunStepListOutput,
   SessionResponseOutput,
+  SavePreviewSettingsRequest,
+  SavePreviewSettingsResponseOutput,
   SetEnvironmentFileRequest,
   SetMergeMethodRequest,
   StartRunRequest,
@@ -45,6 +49,7 @@ import {
   zConnectRepositoryRequest,
   zRunEventOutput,
   zCreateProjectRequest,
+  zPreviewRefusedProblem,
   zStartRunRequest,
 } from './generated/zod.gen';
 
@@ -72,6 +77,8 @@ export type {
   MergeRunResponseOutput,
   PreparedFollowUpCheckOutput,
   PreparedFollowUpOutput,
+  PreviewOutput,
+  PreviewRefusedProblem,
   ProviderAvailabilityOutput,
   ProviderListOutput,
   RefreshPullRequestRequest,
@@ -93,6 +100,8 @@ export type {
   RunsSummaryOutput,
   RunStepListOutput,
   RunStepOutput,
+  SavePreviewSettingsRequest,
+  SavePreviewSettingsResponseOutput,
   SessionResponseOutput,
   SetEnvironmentFileRequest,
   SetMergeMethodRequest,
@@ -117,6 +126,19 @@ export const startRunRequestHint = zStartRunRequest;
 export const bringUpToDateRequestHint = zBringUpToDateRequest;
 
 client.setConfig({ credentials: 'same-origin' });
+
+/** What a refused Preview save names: a code, a place in the file or the request, and fixed wording. */
+export type PreviewRefusal = PreviewRefusedProblem['refusals'][number];
+
+/**
+ * The refusals of a 422 on saving the Preview settings, checked against the contract; none for
+ * any other error.
+ */
+export function previewRefusalsOf(error: unknown): PreviewRefusal[] {
+  if (!(error instanceof ApiError) || error.status !== 422) return [];
+  const parsed = zPreviewRefusedProblem.safeParse(error.problem);
+  return parsed.success ? parsed.data.refusals : [];
+}
 
 /** Where the UI goes when the API answers 401. */
 export const LOGIN_PATH = '/login';
@@ -243,6 +265,22 @@ export const api = {
     body: SetEnvironmentFileRequest,
   ): Promise<EnvironmentFileInfoOutput> =>
     unwrap(sdk.setEnvironmentFile({ path: { id: projectId }, body })),
+  /** The project's Preview: settings or `null`, hostname, and whether the Repository can be read. */
+  getPreview: (projectId: string): Promise<PreviewOutput> =>
+    unwrap(sdk.getPreview({ path: { id: projectId } })),
+  /**
+   * Saves the Preview settings once the API has judged the Compose file (200). A refusal answers
+   * 422 with `refusals`; read them with {@link previewRefusalsOf}.
+   */
+  savePreviewSettings: (
+    projectId: string,
+    body: SavePreviewSettingsRequest,
+  ): Promise<SavePreviewSettingsResponseOutput> =>
+    unwrap(sdk.savePreviewSettings({ path: { id: projectId }, body })),
+  /** Removes the Preview settings (204, also when none were set). */
+  removePreviewSettings: async (projectId: string): Promise<void> => {
+    await unwrap(sdk.removePreviewSettings({ path: { id: projectId } }));
+  },
   /** Sets how the project's Runs are merged (200: the project). */
   setMergeMethod: (projectId: string, body: SetMergeMethodRequest): Promise<ProjectOutput> =>
     unwrap(sdk.setMergeMethod({ path: { id: projectId }, body })),

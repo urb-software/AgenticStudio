@@ -81,6 +81,8 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     // Merging off unless a suite sets a credential.
     mergeCredential: null,
     mergeGithubApiUrl: null,
+    // No preview domain unless a suite sets one.
+    previewDomain: null,
     retention: {
       days: 7,
       maxPerProject: 10,

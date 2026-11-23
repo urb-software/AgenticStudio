@@ -38,7 +38,14 @@ export class ProblemDetailsDto extends createZodDto(problemDetailsSchema) {}
 export class ProblemException extends HttpException {
   constructor(
     status: number,
-    readonly problem: { type: string; title: string; detail: string; errors?: FieldError[] },
+    readonly problem: {
+      type: string;
+      title: string;
+      detail: string;
+      errors?: FieldError[];
+      /** Extension members (RFC 9457 section 3.2), e.g. `refusals`; never override the standard ones. */
+      extensions?: Record<string, unknown>;
+    },
   ) {
     super(problem.detail, status);
   }

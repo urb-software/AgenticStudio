@@ -30,6 +30,8 @@ model Project {
   runs            Run[]
   /// The project's Environment file setting (Issue #104), independent of the Repository.
   environmentFile EnvironmentFile?
+  /// The project's Preview settings (`environments` module, Issue #276).
+  previewSettings PreviewSettings?
 
   /// Serves the newest-first list (created_at DESC, id DESC as the tie-breaker).
   @@index([createdAt(sort: Desc), id(sort: Desc)], map: "projects_created_at_id_idx")
@@ -584,4 +586,20 @@ model RunLeaseRenewal {
   renewedAt DateTime @map("renewed_at") @db.Timestamptz(6)
 
   @@map("run_lease_renewals")
+}
+
+/// A project's Preview settings (`environments` module, Issue #276): the Compose file in the
+/// Integration branch and the service and port the Preview routes to. The migration adds CHECK
+/// constraints (non-empty path, service-name pattern, port 1-65535), which Prisma does not model.
+model PreviewSettings {
+  /// The owning project; also the primary key, so a project has at most one.
+  projectId   String   @id @map("project_id") @db.Uuid
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Relative POSIX path of the Compose file, validated by the API.
+  composeFile String   @map("compose_file") @db.VarChar(255)
+  service     String   @db.VarChar(63)
+  port        Int
+  updatedAt   DateTime @default(dbgenerated("now()")) @map("updated_at") @db.Timestamptz(6)
+
+  @@map("preview_settings")
 }
