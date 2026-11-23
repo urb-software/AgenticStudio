@@ -1,12 +1,14 @@
 import { REFUSAL_CODES } from '@agentic-studio/compose-validation';
 import {
   PREVIEW_COMPOSE_FILE_MAX_LENGTH,
+  PREVIEW_REPOSITORY_REASONS,
   PREVIEW_REFUSAL_CODES,
   PREVIEW_SERVICE_MAX_LENGTH,
   PREVIEW_SERVICE_PATTERN,
   savePreviewSettingsRequestSchema,
 } from '@agentic-studio/contracts';
 import { describe, expect, it } from 'vitest';
+import type { PreviewRepositoryReason } from '../../../../domain/errors/preview-settings-errors.js';
 import { PreviewComposeFile } from '../../../../domain/value-objects/preview-compose-file.js';
 import { PreviewPort } from '../../../../domain/value-objects/preview-port.js';
 import { PreviewService } from '../../../../domain/value-objects/preview-service.js';
@@ -21,6 +23,11 @@ describe('the Preview contract and its sources', () => {
       'compose_file_too_large',
       'invalid_path',
     ]);
+  });
+
+  it('lists the reasons a Repository cannot be read, as the domain does', () => {
+    const reasons: PreviewRepositoryReason[] = [...PREVIEW_REPOSITORY_REASONS];
+    expect(reasons).toEqual(['no_repository', 'repository_not_ready', 'unsupported_platform']);
   });
 
   it('takes its limits from the domain', () => {

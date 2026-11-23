@@ -658,6 +658,16 @@ ${'b'.repeat(12)}`,
     });
   });
 
+  describe('STUDIO_PREVIEW_DOMAIN with a Studio hostname that ends in a dot', () => {
+    const studio = { ...requiredEnv, STUDIO_ORIGIN: 'https://studio.example.' };
+
+    it.each(['studio.example', 'x.studio.example'])('refuses %s', (value) => {
+      const error = captureError(() => loadConfig({ ...studio, STUDIO_PREVIEW_DOMAIN: value }));
+      expect(error.message).toContain('STUDIO_PREVIEW_DOMAIN');
+      expect(error.message).toContain('own hostname');
+    });
+  });
+
   describe('STUDIO_PREVIEW_DOMAIN', () => {
     const studio = { ...requiredEnv, STUDIO_ORIGIN: 'https://studio.example.test' };
 

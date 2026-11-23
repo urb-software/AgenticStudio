@@ -13,10 +13,7 @@ export interface RemovePreviewSettingsInput {
   projectId: string;
 }
 
-/**
- * Removing none changes nothing. Throws {@link ProjectNotFoundError}, and `PreviewRunningError`
- * once a Preview can run.
- */
+/** Removing settings that are not set changes nothing. */
 @Injectable()
 export class RemovePreviewSettingsHandler {
   constructor(
@@ -31,7 +28,6 @@ export class RemovePreviewSettingsHandler {
     }
     const settings = await this.settings.find(projectId);
     if (!settings) return;
-    // No Preview state exists yet; the feature that adds it passes whether the Preview runs.
     settings.remove({ previewRunning: false });
     await this.settings.delete(projectId);
   }

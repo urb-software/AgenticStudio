@@ -29,9 +29,12 @@ export class PreviewRefusedError extends Error {
   }
 }
 
+export type PreviewRepositoryReason =
+  'no_repository' | 'repository_not_ready' | 'unsupported_platform';
+
 /** The Repository cannot be read for a Preview: not connected, not ready, or not on a Linux host. */
 export class PreviewRepositoryNotReadyError extends Error {
-  constructor(readonly reason: 'no_repository' | 'repository_not_ready' | 'unsupported_platform') {
+  constructor(readonly reason: PreviewRepositoryReason) {
     super('The Repository cannot be read for a Preview now.');
     this.name = 'PreviewRepositoryNotReadyError';
   }

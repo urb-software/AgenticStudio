@@ -1,3 +1,4 @@
+import type { PreviewRepositoryReason } from '../domain/errors/preview-settings-errors.js';
 import type { PreviewSettings } from '../domain/entities/preview-settings.js';
 import { PreviewHostname } from '../domain/value-objects/preview-hostname.js';
 
@@ -9,7 +10,7 @@ export interface PreviewView {
   hostnameUnavailable?: 'not_configured';
   repository: {
     ready: boolean;
-    reason?: 'no_repository' | 'repository_not_ready' | 'unsupported_platform';
+    reason?: PreviewRepositoryReason;
   };
 }
 
@@ -17,7 +18,7 @@ export function previewView(input: {
   projectId: string;
   settings: PreviewSettings | null;
   domain: string | null;
-  repositoryReason: 'no_repository' | 'repository_not_ready' | 'unsupported_platform' | null;
+  repositoryReason: PreviewRepositoryReason | null;
 }): PreviewView {
   const { settings, domain, repositoryReason } = input;
   return {

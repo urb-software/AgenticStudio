@@ -3,6 +3,8 @@ import { z } from 'zod';
 /** Longest Compose file path, in characters, and longest Compose service name. */
 export const PREVIEW_COMPOSE_FILE_MAX_LENGTH = 255;
 export const PREVIEW_SERVICE_MAX_LENGTH = 63;
+export const PREVIEW_PORT_MIN = 1;
+export const PREVIEW_PORT_MAX = 65535;
 
 /** The Compose service-name rule. */
 export const PREVIEW_SERVICE_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/;
@@ -57,7 +59,7 @@ export type PreviewRefusal = z.infer<typeof previewRefusalSchema>;
 export const savePreviewSettingsRequestSchema = z.strictObject({
   composeFile: z
     .string()
-    .max(1024)
+    .max(PREVIEW_COMPOSE_FILE_MAX_LENGTH)
     .describe(
       'Relative POSIX path of the Compose file in the Integration branch, at most 255 characters: ' +
         'no leading `/` or `./`, no `..`, backslash or empty segment.',
@@ -67,7 +69,11 @@ export const savePreviewSettingsRequestSchema = z.strictObject({
     .max(PREVIEW_SERVICE_MAX_LENGTH)
     .regex(PREVIEW_SERVICE_PATTERN)
     .describe('The Compose service the Preview routes to.'),
-  port: z.int().min(1).max(65535).describe('The port of that service the Preview routes to.'),
+  port: z
+    .int()
+    .min(PREVIEW_PORT_MIN)
+    .max(PREVIEW_PORT_MAX)
+    .describe('The port of that service the Preview routes to.'),
 });
 export type SavePreviewSettingsRequest = z.infer<typeof savePreviewSettingsRequestSchema>;
 
@@ -77,6 +83,7 @@ export const PREVIEW_REPOSITORY_REASONS = [
   'unsupported_platform',
 ] as const;
 export const previewRepositoryReasonSchema = z.enum(PREVIEW_REPOSITORY_REASONS);
+export type PreviewRepositoryReason = z.infer<typeof previewRepositoryReasonSchema>;
 
 export const previewSettingsSchema = z.strictObject({
   composeFile: z.string(),

@@ -1,6 +1,7 @@
 import { validateCompose } from '@agentic-studio/compose-validation';
 import { Inject, Injectable } from '@nestjs/common';
 import {
+  INTEGRATION_FILE_MAX_BYTES,
   RUN_PREVIEW_SOURCES,
   type RunPreviewSources,
 } from '../../../../projects/contracts/index.js';
@@ -39,12 +40,10 @@ export type SavePreviewSettingsResult = PreviewView & {
 /** Fixed wording of the refusals this flow adds to the validation's own. */
 const COMPOSE_FILE_MISSING =
   'The Compose file is not in the Integration branch, or is not a regular file.';
-const COMPOSE_FILE_TOO_LARGE = 'The Compose file is larger than 256 KiB.';
+const COMPOSE_FILE_TOO_LARGE = `The Compose file is larger than ${INTEGRATION_FILE_MAX_BYTES / 1024} KiB.`;
 
 /**
  * Saves only what the Compose validation accepts, judged on the file as the Clone holds it.
- * Throws {@link ProjectNotFoundError}, {@link PreviewRepositoryNotReadyError}, {@link PreviewRefusedError}
- * (every reason), {@link PreviewSourceUnavailableError}, or an invalid service or port error.
  */
 @Injectable()
 export class SavePreviewSettingsHandler {
@@ -58,9 +57,10 @@ export class SavePreviewSettingsHandler {
     const { projectId } = input;
     const source = await this.sources.status(projectId);
     if (source.status === 'project_not_found') throw new ProjectNotFoundError();
+    // An unsafe path is refused whatever the Repository's state.
+    const composeFile = this.composeFileOf(input.composeFile);
     if (source.status !== 'ready') throw new PreviewRepositoryNotReadyError(source.status);
 
-    const composeFile = this.composeFileOf(input.composeFile);
     const service = PreviewService.of(input.service);
     const port = PreviewPort.of(input.port);
 

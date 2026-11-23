@@ -20,6 +20,8 @@ const TITLE_ID = 'preview-settings-form-title';
 /** The path a new Preview is prefilled with. */
 export const DEFAULT_COMPOSE_FILE = 'compose.yaml';
 
+const PORT_MIN = 1;
+const PORT_MAX = 65535;
 const SERVICE_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/;
 
 type Field = 'composeFile' | 'service' | 'port';
@@ -85,10 +87,10 @@ export function PreviewSettingsForm({ projectId, settings, repository }: Preview
     if (
       port.trim() === '' ||
       !Number.isInteger(portNumber) ||
-      portNumber < 1 ||
-      portNumber > 65535
+      portNumber < PORT_MIN ||
+      portNumber > PORT_MAX
     ) {
-      local.port = 'Enter a whole number from 1 to 65535.';
+      local.port = `Enter a whole number from ${PORT_MIN} to ${PORT_MAX}.`;
     }
     setHints(local);
     if (Object.keys(local).length > 0) return;

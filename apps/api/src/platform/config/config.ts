@@ -306,7 +306,8 @@ const environmentSchema = z.object({
 
 function isStudioHostnameOrBelow(domain: string | null, studioOrigin: string): boolean {
   if (domain === null) return false;
-  const studioHost = new URL(studioOrigin).hostname.toLowerCase();
+  // A trailing dot names the same host.
+  const studioHost = new URL(studioOrigin).hostname.toLowerCase().replace(/[.]$/, '');
   return domain === studioHost || domain.endsWith(`.${studioHost}`);
 }
 

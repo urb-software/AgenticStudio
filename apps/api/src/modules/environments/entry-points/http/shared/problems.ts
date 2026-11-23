@@ -1,4 +1,5 @@
 import { HttpStatus } from '@nestjs/common';
+import type { PreviewRepositoryReason } from '../../../domain/errors/preview-settings-errors.js';
 import { ProblemException } from '../../../../../platform/http/problem-details.js';
 
 /** Problem `type` URIs of the environments API (RFC 9457); generic validation errors stay `about:blank`. */
@@ -25,9 +26,7 @@ export function projectNotFound(): ProblemException {
   });
 }
 
-export function repositoryNotReady(
-  reason: 'no_repository' | 'repository_not_ready' | 'unsupported_platform',
-): ProblemException {
+export function repositoryNotReady(reason: PreviewRepositoryReason): ProblemException {
   if (reason === 'unsupported_platform') {
     return new ProblemException(HttpStatus.CONFLICT, {
       type: ENVIRONMENTS_PROBLEM_TYPES.unsupportedPlatform,

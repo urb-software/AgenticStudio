@@ -102,6 +102,15 @@ describe('SavePreviewSettingsHandler', () => {
     expect(sources.readIntegrationFile).not.toHaveBeenCalled();
   });
 
+  it('refuses an unsafe path as invalid_path even while the Repository is not ready', async () => {
+    sources.statusAnswer = { status: 'repository_not_ready' };
+
+    expect(await refusalsOf({ ...INPUT, composeFile: '../x' })).toEqual([
+      { code: 'invalid_path', place: 'composeFile', message: expect.any(String) },
+    ]);
+    await expect(handler.execute(INPUT)).rejects.toBeInstanceOf(PreviewRepositoryNotReadyError);
+  });
+
   it('refuses a file that is not in the tree, or is no regular file, as compose_file_missing', async () => {
     sources.fileAnswer = { status: 'missing' };
 

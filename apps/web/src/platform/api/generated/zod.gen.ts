@@ -738,7 +738,7 @@ export const zPreviewRefusedProblem = z.object({
 });
 
 export const zSavePreviewSettingsRequest = z.object({
-    composeFile: z.string().max(1024),
+    composeFile: z.string().max(255),
     service: z.string().max(63).regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/),
     port: z.int().gte(1).lte(65535)
 });

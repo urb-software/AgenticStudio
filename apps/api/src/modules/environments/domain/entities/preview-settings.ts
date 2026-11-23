@@ -7,7 +7,6 @@ import type { PreviewSettingsRemovalFacts } from './preview-settings-removal-fac
 
 /**
  * A Project's Preview settings: the Compose file and the service and port its Preview routes to.
- * Made only by {@link PreviewSettings.create} or {@link PreviewSettings.restore}.
  */
 export class PreviewSettings {
   readonly projectId: string;

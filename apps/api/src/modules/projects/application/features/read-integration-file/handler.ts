@@ -31,8 +31,7 @@ export interface ReadIntegrationFileInput {
 export type ReadIntegrationFileResult = IntegrationFileResult;
 
 /**
- * Reads at the commit the Clone holds for a `ready` Repository, never from a working tree. The
- * caller has checked the path; it is checked again here, and an unsafe one is `failed`.
+ * Reads a file at the commit the Clone holds for a `ready` Repository, never from a working tree.
  */
 @Injectable()
 export class ReadIntegrationFileHandler {

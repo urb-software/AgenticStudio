@@ -5077,7 +5077,7 @@
         "properties": {
           "composeFile": {
             "type": "string",
-            "maxLength": 1024,
+            "maxLength": 255,
             "description": "Relative POSIX path of the Compose file in the Integration branch, at most 255 characters: no leading `/` or `./`, no `..`, backslash or empty segment."
           },
           "service": {

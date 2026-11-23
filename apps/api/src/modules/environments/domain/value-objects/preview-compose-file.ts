@@ -10,7 +10,6 @@ export class InvalidPreviewComposeFileError extends Error {
 
 /** Where a Preview's Compose file is in the Integration branch: a relative POSIX path. */
 export class PreviewComposeFile {
-  /** Longest path, in characters. */
   static readonly MAX_LENGTH = 255;
 
   private constructor(readonly value: string) {}
