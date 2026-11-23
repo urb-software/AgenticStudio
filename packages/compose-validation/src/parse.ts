@@ -5,6 +5,8 @@ import type { RefusalCode } from './refusal.js';
 export type Path = readonly (string | number)[];
 
 export const MAX_TEXT_BYTES = 256 * 1024;
+/** Real stacks hold hundreds of nodes. */
+export const MAX_NODES = 20_000;
 /** Alias expansion cap (`yaml` counts the nodes an alias pulls in). Real stacks use a handful. */
 const MAX_ALIAS_COUNT = 100;
 
@@ -43,7 +45,8 @@ export function parseCompose(text: string): ParseResult {
       version: '1.2',
       schema: 'core',
       merge: true,
-      uniqueKeys: true,
+      // `yaml` checks duplicates by comparing every pair of keys, which is quadratic.
+      uniqueKeys: false,
       lineCounter,
     });
   } catch {
@@ -65,10 +68,28 @@ export function parseCompose(text: string): ParseResult {
   const lineAt = (offset: number | undefined): number | undefined =>
     offset === undefined ? undefined : lineCounter.linePos(offset).line;
 
+  let nodes = 0;
   visit(doc, {
     Node(_key, node) {
+      nodes += 1;
       if ('tag' in node && node.tag && !CORE_TAGS.has(node.tag)) {
         problems.push({ code: 'custom_tag', path: [], line: lineAt(node.range?.[0]) });
+      }
+    },
+    Map(_key, map) {
+      const seen = new Set<string>();
+      let merges = 0;
+      for (const pair of map.items) {
+        const key = pair.key;
+        if (!isScalar(key)) continue;
+        // A `<<` merge may be overridden by an explicit key, so merge keys are not compared.
+        const duplicate =
+          typeof key.value === 'symbol'
+            ? (merges += 1) > 1
+            : seen.size === seen.add(String(key.value)).size;
+        if (duplicate) {
+          problems.push({ code: 'duplicate_key', path: [], line: lineAt(key.range?.[0]) });
+        }
       }
     },
     Pair(_key, pair) {
@@ -81,6 +102,8 @@ export function parseCompose(text: string): ParseResult {
       }
     },
   });
+
+  if (nodes > MAX_NODES) return { ok: false, problems: [{ code: 'too_many_nodes', path: [] }] };
 
   // `parseDocument` reports a second document as an error; the document must also be a mapping.
   if (!isMap(doc.contents)) {

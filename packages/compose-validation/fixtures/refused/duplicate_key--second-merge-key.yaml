@@ -1,0 +1,6 @@
+x: &a {restart: always}
+services:
+  web:
+    <<: *a
+    <<: *a
+    image: a

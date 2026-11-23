@@ -1,7 +1,0 @@
-# place: include[0].env_file
-include:
-  - path: ./ok.yaml
-    env_file: /etc/environment
-services:
-  web:
-    image: nginx:1.27

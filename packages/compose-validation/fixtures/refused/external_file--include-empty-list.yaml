@@ -1,0 +1,5 @@
+# place: include
+include: []
+services:
+  web:
+    image: nginx:1.27

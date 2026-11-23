@@ -1,6 +1,7 @@
-/** Every reason a Compose file is refused. Each code has at least one failing fixture. */
+/** Every reason a Compose file is refused. */
 export const REFUSAL_CODES = [
   'text_too_large',
+  'too_many_nodes',
   'too_many_services',
   'yaml_syntax',
   'custom_tag',
@@ -20,6 +21,7 @@ export const REFUSAL_CODES = [
   'external_network',
   'external_volume',
   'path_outside_source',
+  'external_file',
   'entry_service_missing',
   'entry_port_invalid',
 ] as const;
@@ -38,6 +40,7 @@ export interface Refusal {
 
 export const REFUSAL_MESSAGES: Record<RefusalCode, string> = {
   text_too_large: 'The Compose file is larger than the size limit.',
+  too_many_nodes: 'The Compose file holds more YAML nodes than the limit.',
   too_many_services: 'The Compose file defines more services than the limit.',
   yaml_syntax: 'The Compose file is not valid YAML.',
   custom_tag: 'YAML custom tags are not allowed.',
@@ -58,6 +61,8 @@ export const REFUSAL_MESSAGES: Record<RefusalCode, string> = {
   external_network: 'An external network is not allowed.',
   external_volume: 'An external volume is not allowed.',
   path_outside_source: 'A path must stay inside the source directory.',
+  external_file:
+    'Loading another Compose file (include, or extends with a file) is not supported: its content would not be judged.',
   entry_service_missing: 'The chosen entry service does not exist in the Compose file.',
   entry_port_invalid: 'The chosen entry port is not a valid port number.',
 };

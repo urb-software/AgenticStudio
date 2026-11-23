@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  MAX_NODES,
   MAX_SERVICES,
   MAX_TEXT_BYTES,
   REFUSAL_CODES,
@@ -94,6 +95,9 @@ describe('refused fixtures', () => {
   const generated: Partial<Record<RefusalCode, ComposeResult>> = {
     text_too_large: validateCompose(
       input(`services:\n  web:\n    image: x\n# ${'a'.repeat(MAX_TEXT_BYTES)}\n`),
+    ),
+    too_many_nodes: validateCompose(
+      input(`services:\n  web:\n    image: x\n    command: [${'1,'.repeat(MAX_NODES)}1]\n`),
     ),
     unjudgeable: validateCompose({
       text: 42 as unknown as string,

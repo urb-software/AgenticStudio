@@ -1,4 +1,4 @@
-# place: include[0]
+# place: include
 include:
   - ../other/compose.yaml
 services:

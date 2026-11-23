@@ -1,7 +1,7 @@
-# place: include[0].profiles
+# place: include
 include:
   - path: ./a.yaml
-    profiles: [x]
+    env_file: /etc/environment
 services:
   web:
     image: nginx:1.27

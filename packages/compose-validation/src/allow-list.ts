@@ -74,7 +74,6 @@ export const RESOURCE_LIMIT_KEYS: ReadonlySet<string> = new Set(['cpus', 'memory
 export const RESOURCE_RESERVATION_KEYS: ReadonlySet<string> = new Set(['cpus', 'memory']);
 export const SERVICE_NETWORK_KEYS: ReadonlySet<string> = new Set(['aliases']);
 export const EXTENDS_KEYS: ReadonlySet<string> = new Set(['file', 'service']);
-export const INCLUDE_KEYS: ReadonlySet<string> = new Set(['path', 'env_file', 'project_directory']);
 export const ENV_FILE_KEYS: ReadonlySet<string> = new Set(['path', 'required', 'format']);
 
 /** Top-level `volumes` entries: no `name`, no `driver_opts` (a bind in disguise). */

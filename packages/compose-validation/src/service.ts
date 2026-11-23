@@ -17,7 +17,15 @@ import {
   TMPFS_OPTION_KEYS,
   VOLUME_OPTION_KEYS,
 } from './allow-list.js';
-import { isObj, isScalarList, isScalarValue, isStringList, type Judge, type Obj } from './judge.js';
+import {
+  isObj,
+  isScalarList,
+  isScalarMap,
+  isScalarValue,
+  isStringList,
+  type Judge,
+  type Obj,
+} from './judge.js';
 import { isDockerSocketPath, judgeJoined, judgePath } from './paths.js';
 import type { Path } from './parse.js';
 
@@ -45,10 +53,7 @@ const JUDGED_FIELDS: ReadonlySet<string> = new Set([
 
 const VOLUME_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 
-/**
- * Judges one service. Returns the places of the published ports it holds; the caller removes
- * them from the normalised stack.
- */
+/** Judges one service and returns the places of its published ports. */
 export function judgeService(
   judge: Judge,
   service: Obj,
@@ -151,10 +156,6 @@ export function judgeService(
   return { removedPorts };
 }
 
-function isScalarMap(value: unknown): boolean {
-  return isObj(value) && Object.values(value).every((item) => item === null || isScalarValue(item));
-}
-
 function judgeHealthcheck(judge: Judge, value: unknown, path: Path): void {
   if (!isObj(value)) return judge.refuse('invalid_value', path);
   judge.onlyKeys(value, HEALTHCHECK_KEYS, path);
@@ -223,15 +224,22 @@ function judgeSourcePath(judge: Judge, value: unknown, path: Path): void {
   if (judgePath(value) === 'outside') judge.refuse('path_outside_source', path);
 }
 
+/** A build context is `.` or starts with `./`: anything else may be read as a remote one. */
+function judgeContext(judge: Judge, value: unknown, path: Path): void {
+  if (typeof value !== 'string') return judge.refuse('invalid_value', path);
+  const local = value === '.' || value.startsWith('./');
+  if (!local || judgePath(value) === 'outside') judge.refuse('path_outside_source', path);
+}
+
 function judgeBuild(judge: Judge, value: unknown, path: Path): void {
-  if (typeof value === 'string') return judgeSourcePath(judge, value, path);
+  if (typeof value === 'string') return judgeContext(judge, value, path);
   if (!isObj(value)) return judge.refuse('invalid_value', path);
   judge.onlyKeys(value, BUILD_KEYS, path);
   const { context, dockerfile, args, target } = value;
   const baseContext = typeof context === 'string' ? context : '.';
   // A context that is itself outside is refused once, below; the Dockerfile is judged against it.
   const contextOutside = judgePath(baseContext) === 'outside';
-  if (context !== undefined) judgeSourcePath(judge, context, [...path, 'context']);
+  if (context !== undefined) judgeContext(judge, context, [...path, 'context']);
   if (dockerfile !== undefined) {
     const at = [...path, 'dockerfile'];
     if (typeof dockerfile !== 'string') judge.refuse('invalid_value', at);
@@ -268,12 +276,10 @@ function judgeExtends(judge: Judge, value: unknown, path: Path, declared: Declar
   judge.onlyKeys(value, EXTENDS_KEYS, path);
   const { file, service } = value;
   if (typeof service !== 'string') judge.refuse('invalid_value', [...path, 'service']);
-  if (file === undefined) {
-    if (typeof service === 'string' && !declared.services.has(service)) {
-      judge.refuse('invalid_value', [...path, 'service']);
-    }
-  } else {
-    judgeSourcePath(judge, file, [...path, 'file']);
+  if (file !== undefined) {
+    judge.refuse('external_file', [...path, 'file']);
+  } else if (typeof service === 'string' && !declared.services.has(service)) {
+    judge.refuse('invalid_value', [...path, 'service']);
   }
 }
 

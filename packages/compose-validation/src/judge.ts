@@ -11,6 +11,10 @@ export function isScalarValue(value: unknown): value is string | number | boolea
   return ['string', 'number', 'boolean'].includes(typeof value);
 }
 
+export function isScalarMap(value: unknown): boolean {
+  return isObj(value) && Object.values(value).every((item) => item === null || isScalarValue(item));
+}
+
 export function isStringList(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string');
 }
@@ -43,10 +47,13 @@ export function placeOf(path: Path): string {
 /** Collects refusals. Messages are fixed per code and never carry a value from the file. */
 export class Judge {
   readonly refusals: Refusal[] = [];
+  /** A hostile file can hold thousands of problems; the first ones are enough to act on. */
+  static readonly MAX_REFUSALS = 100;
 
   constructor(private readonly lineOf: (path: Path) => number | undefined) {}
 
   refuse(code: RefusalCode, path: Path, line?: number | null): void {
+    if (this.refusals.length >= Judge.MAX_REFUSALS) return;
     const found = line === null ? undefined : (line ?? this.lineOf(path));
     const refusal: Refusal = { code, place: placeOf(path), message: REFUSAL_MESSAGES[code] };
     if (found !== undefined) refusal.line = found;
