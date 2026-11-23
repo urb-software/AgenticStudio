@@ -31,10 +31,12 @@ NestJS API (apps/api) ───────── PostgreSQL, Redis + BullMQ
   │                                 └── Official Claude/Codex CLI
   │                                     in a working copy per run
   │
-  └── Authorized environment actions → environment-controller
-                                          │
-                                          └── controlled Docker Compose
-                                              for project Preview
+  └◄─────── Preview work calls ── environment-controller
+            (controller → API only)   host, Preview user
+                                       │
+                                       └── controlled Docker Compose in the
+                                           Preview user's rootless Docker
+                                           for the project Preview
 
 Traefik exposes only explicitly approved UI/Preview entrypoints.
 ```
@@ -49,7 +51,7 @@ Conceptual diagram. The exact network, queue, auth, and deployment boundaries mu
 | `agents` | `AgentDefinition`, `SkillDefinition`, assignment, native-file definitions, validation and publishing | Task queue execution |
 | `workflows` | Workflow definitions, step dependencies, ordering, conditions, human approval semantics | Individual worker/process execution plumbing |
 | `executions` | Runs, their working copies, state transitions, queue scheduling, progress/log/result records, the pull request, its review diff, the Merge approval and the merge | Direct Docker host control or unrelated project Git internals |
-| `environments` | Project environment lifecycle, Compose stack abstraction, health/logs, shared Preview | CLI agent definitions |
+| `environments` | A Project's Preview settings, the shared Preview and its states, builds and their logs, Compose stack abstraction | CLI agent definitions, Runs, the Project's Clone |
 | `mcp` | Reusable MCP server definitions, bindings, validation/connection checks, CLI tool configuration | Project repository internals or a full gateway in MVP |
 
 Frontend navigation may cross these boundaries (`/skills` is part of `agents`; `/projects/:id/preview` shows `environments` in a project context). Backend boundaries remain authoritative.
@@ -74,7 +76,7 @@ logging/    # Structured logs, correlation/tracing
 - `apps/web`: UI only; never connects directly to privileged infrastructure or the agent worker.
 - `apps/api`: authoritative business operations, state, authentication, coordination; REST for operations, SSE for realtime delivery.
 - `apps/agent-worker`: runs on the host as the agent user, outside Studio's containers ([ADR 0002](adr/0002-agent-run-isolation.md)). It always calls the API, with a token limited to handling runs, to take approved runs and report status, events and results; the API never reaches into the host, and the worker has no access to the database or Redis. It runs official CLI adapters in a working copy per run ([behaviour notes](agent-worker.md)). **Never gets access to the system Docker daemon or its socket**; agents may use the agent user's rootless Docker daemon ([Security](../engineering/security.md) §2).
-- `apps/environment-controller`: narrow privileged interface for validated, authorized Docker Compose operations; no generic shell/Docker command interface.
+- `apps/environment-controller`: runs on the host as the Preview user, a third user with its own rootless Docker daemon, outside Studio's containers ([ADR 0004](adr/0004-preview-isolation.md)). Like the agent worker it always calls the API, with its own token limited to Preview work, to claim Preview work and report state and build logs; the API never reaches into the host. Its token cannot handle Runs and the worker's token cannot handle Previews. It starts Docker Compose only in the Preview user's daemon. No generic shell/Docker command interface, no access to the system Docker daemon, and no Git credential or Working copy.
 - `packages/contracts`: a cross-process contract is extracted here **only if** multiple runtime apps need it. One source of truth; never the same schema in both a module and a shared package. It holds the worker protocol and the shared kernel ([Backend](backend.md) §6) and no Integration Event: a cross-process Integration Event needs a decision first, and `architecture:monorepo` rejects an event-versioned export name there.
 
 ## 6. Integration events and reliable messaging
@@ -98,12 +100,13 @@ logging/    # Structured logs, correlation/tracing
 ## 8. Deployment and trust boundaries
 
 - Target: one dedicated server, single operator, with no production credentials on it and backups kept off it ([ADR 0002](adr/0002-agent-run-isolation.md)).
-- **Studio's side:** the reverse proxy, database, queue, API, web and environment-controller run as a Docker Compose stack under the system Docker daemon, which only root controls.
+- **Studio's side:** the reverse proxy, database, queue, API and web run as a Docker Compose stack under the system Docker daemon, which only root controls.
 - **The agent side:** the agent worker and the agents run on the host as an ordinary user (the agent user), not in the `docker` group and without passwordless `sudo`, with their own rootless Docker daemon. This operating-system boundary is the security boundary; CLI hooks and permission rules are guardrails only.
+- **The Preview side:** the environment-controller and the Previews run on the host as the Preview user, not in the `docker` group and without passwordless `sudo`, with their own rootless Docker daemon used only for Previews ([ADR 0004](adr/0004-preview-isolation.md)). The agent side has no access to the Preview user's credentials or daemon.
 - Server setup and the boundary checks run as the agent user: [Deployment](../engineering/deployment.md) (#107).
 - MVP has no mandatory GPU, Kubernetes, multi-tenant infrastructure, or microVM/KVM dependency.
 - Compose is a starting point, **not security-equivalent to a sandbox/microVM**; stronger isolation can follow a risk assessment.
-- Keep the Studio administrative session separate from untrusted Preview origins. Restrict exposed ports, networking, filesystem mounts and privileges.
+- Keep the Studio administrative session separate from untrusted Preview origins: the preview domain is never Studio's hostname or a name under it. Restrict exposed ports, networking, filesystem mounts and privileges.
 - Secret material stays outside Git and outside agent-visible prompts, logs and ordinary config exports. See [Security](../engineering/security.md).
 
 ## 9. Bootstrap implementation decisions (P0 v2 baseline)
@@ -120,7 +123,7 @@ Sequencing, exact bootstrap commands and role ownership: [Bootstrap](../engineer
 
 ## 10. Decisions intentionally deferred
 
-- Network egress policies and resource budgets. The run isolation model is decided in [ADR 0002](adr/0002-agent-run-isolation.md); its pending inputs are listed there.
+- Network egress policies for Runs and resource budgets. (A Preview's network access is decided: [ADR 0004](adr/0004-preview-isolation.md#network-decision-2026-11-23).) The run isolation model is decided in [ADR 0002](adr/0002-agent-run-isolation.md); its pending inputs are listed there.
 - Outcome of the per-provider CLI terms/auth validation, provider credential handling and throttling (the CLI-only approach and its acceptance gate are decided; see [Security](../engineering/security.md) §2).
 - External identity integration (OAuth/SSO, multi-operator RBAC) and precise production domain/TLS topology; the minimal single-operator session strategy above is **not deferred**.
 - Exact scope and configuration semantics of MCP management in the first release.
