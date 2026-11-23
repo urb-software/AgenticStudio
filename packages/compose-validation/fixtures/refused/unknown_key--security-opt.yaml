@@ -1,0 +1,6 @@
+# place: services.web.security_opt
+services:
+  web:
+    image: nginx:1.27
+    security_opt:
+      - seccomp=unconfined

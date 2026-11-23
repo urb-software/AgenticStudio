@@ -1,0 +1,6 @@
+# place: services.web.extra_hosts
+services:
+  web:
+    image: nginx:1.27
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

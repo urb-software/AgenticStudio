@@ -1,0 +1,5 @@
+# place: services.web.privilaged
+services:
+  web:
+    image: nginx:1.27
+    privilaged: true

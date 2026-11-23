@@ -1,0 +1,6 @@
+# place: services.web.deploy.replicas
+services:
+  web:
+    image: nginx:1.27
+    deploy:
+      replicas: 3

@@ -1,0 +1,8 @@
+# place: include[0].path[1]
+include:
+  - path:
+      - ./ok.yaml
+      - ../../bad.yaml
+services:
+  web:
+    image: nginx:1.27

@@ -1,0 +1,6 @@
+# place: include[0]
+include:
+  - ../other/compose.yaml
+services:
+  web:
+    image: nginx:1.27

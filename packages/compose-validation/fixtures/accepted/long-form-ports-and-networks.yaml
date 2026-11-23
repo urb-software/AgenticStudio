@@ -1,0 +1,16 @@
+services:
+  web:
+    image: nginx:1.27
+    ports:
+      - target: 80
+        published: 8080
+        protocol: tcp
+      - "127.0.0.1:8443:443"
+    networks:
+      front:
+        aliases: [site]
+      default:
+networks:
+  front:
+    driver: bridge
+    internal: false

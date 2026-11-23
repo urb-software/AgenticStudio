@@ -1,0 +1,4 @@
+# place: services.web.build
+services:
+  web:
+    build: https://github.com/example/app.git

@@ -1,0 +1,8 @@
+# place: services.web.volumes[0]
+x-base: &base
+  volumes:
+    - /:/host
+services:
+  web:
+    <<: *base
+    image: nginx:1.27

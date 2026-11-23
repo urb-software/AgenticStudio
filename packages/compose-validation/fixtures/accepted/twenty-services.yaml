@@ -1,0 +1,41 @@
+services:
+  web:
+    image: busybox:1.36
+  s1:
+    image: busybox:1.36
+  s2:
+    image: busybox:1.36
+  s3:
+    image: busybox:1.36
+  s4:
+    image: busybox:1.36
+  s5:
+    image: busybox:1.36
+  s6:
+    image: busybox:1.36
+  s7:
+    image: busybox:1.36
+  s8:
+    image: busybox:1.36
+  s9:
+    image: busybox:1.36
+  s10:
+    image: busybox:1.36
+  s11:
+    image: busybox:1.36
+  s12:
+    image: busybox:1.36
+  s13:
+    image: busybox:1.36
+  s14:
+    image: busybox:1.36
+  s15:
+    image: busybox:1.36
+  s16:
+    image: busybox:1.36
+  s17:
+    image: busybox:1.36
+  s18:
+    image: busybox:1.36
+  s19:
+    image: busybox:1.36

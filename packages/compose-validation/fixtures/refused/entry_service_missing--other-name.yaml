@@ -1,0 +1,5 @@
+# entry: web 8080
+# place: services
+services:
+  api:
+    image: nginx:1.27

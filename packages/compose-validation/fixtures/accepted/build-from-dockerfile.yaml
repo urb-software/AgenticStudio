@@ -1,0 +1,14 @@
+services:
+  web:
+    build:
+      context: ./app
+      dockerfile: docker/Dockerfile
+      target: runtime
+      args:
+        NODE_ENV: production
+    env_file:
+      - ./app/.env.example
+      - path: ./app/.env.local
+        required: false
+    expose:
+      - "3000"

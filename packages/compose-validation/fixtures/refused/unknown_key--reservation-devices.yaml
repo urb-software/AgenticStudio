@@ -1,0 +1,9 @@
+# place: services.web.deploy.resources.reservations.devices
+services:
+  web:
+    image: nginx:1.27
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]

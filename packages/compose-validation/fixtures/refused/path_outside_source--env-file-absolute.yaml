@@ -1,0 +1,5 @@
+# place: services.web.env_file
+services:
+  web:
+    image: nginx:1.27
+    env_file: /etc/passwd

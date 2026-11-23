@@ -1,0 +1,9 @@
+# place: services.web.extends.extra
+services:
+  web:
+    image: nginx:1.27
+    extends:
+      service: db
+      extra: x
+  db:
+    image: postgres:16

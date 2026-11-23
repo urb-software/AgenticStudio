@@ -1,0 +1,5 @@
+# place: services.web.environment
+services:
+  web:
+    image: nginx:1.27
+    environment: just-a-string

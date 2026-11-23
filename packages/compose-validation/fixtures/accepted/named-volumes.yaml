@@ -1,0 +1,22 @@
+services:
+  web:
+    image: nginx:1.27
+    volumes:
+      - assets:/usr/share/nginx/html:ro
+      - ./conf/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./data:/data
+      - /var/cache/nginx
+      - type: volume
+        source: assets
+        target: /srv/assets
+        read_only: true
+      - type: bind
+        source: ./static
+        target: /srv/static
+      - type: tmpfs
+        target: /tmp
+        tmpfs:
+          size: 1000000
+volumes:
+  assets:
+    driver: local

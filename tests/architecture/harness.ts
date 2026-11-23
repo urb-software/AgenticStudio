@@ -282,6 +282,8 @@ export const SERVER_PACKAGES = [
   ...INFRASTRUCTURE_PACKAGES,
   '@agentic-studio/api',
   '@agentic-studio/testing',
+  // The Compose file validation: judged by the API and the environment-controller, never in a browser.
+  '@agentic-studio/compose-validation',
   // The worker protocol: only the API and the agent worker use it.
   '@agentic-studio/contracts',
 ];

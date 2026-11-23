@@ -1,0 +1,5 @@
+# place: foo
+services:
+  web:
+    image: nginx:1.27
+foo: bar

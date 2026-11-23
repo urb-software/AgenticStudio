@@ -1,0 +1,6 @@
+# place: services.web.devices
+services:
+  web:
+    image: nginx:1.27
+    devices:
+      - "${DEV}:/dev/x"

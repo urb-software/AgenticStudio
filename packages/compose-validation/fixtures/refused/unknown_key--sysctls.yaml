@@ -1,0 +1,6 @@
+# place: services.web.sysctls
+services:
+  web:
+    image: nginx:1.27
+    sysctls:
+      net.core.somaxconn: 1024

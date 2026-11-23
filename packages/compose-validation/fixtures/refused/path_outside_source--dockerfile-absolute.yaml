@@ -1,0 +1,6 @@
+# place: services.web.build.dockerfile
+services:
+  web:
+    build:
+      context: .
+      dockerfile: /etc/Dockerfile

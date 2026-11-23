@@ -1,0 +1,5 @@
+# place: services.web.pid
+services:
+  web:
+    image: nginx:1.27
+    pid: service:db

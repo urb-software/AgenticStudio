@@ -1,0 +1,5 @@
+# place: services.web.container_name
+services:
+  web:
+    image: nginx:1.27
+    container_name: shared

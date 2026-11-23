@@ -1,0 +1,9 @@
+# place: services.web.volumes[1]
+services:
+  web:
+    image: nginx:1.27
+    volumes:
+      - data:/d
+      - /root:/r
+volumes:
+  data:

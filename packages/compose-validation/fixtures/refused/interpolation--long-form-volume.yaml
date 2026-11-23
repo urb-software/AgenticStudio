@@ -1,0 +1,8 @@
+# place: services.web.volumes
+services:
+  web:
+    image: nginx:1.27
+    volumes:
+      - type: bind
+        source: "${SRC}"
+        target: /x

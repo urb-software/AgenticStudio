@@ -1,0 +1,7 @@
+# place: services.web.cap_add[0]
+x-base: &base
+  cap_add: [NET_ADMIN]
+services:
+  web:
+    <<: *base
+    image: nginx:1.27

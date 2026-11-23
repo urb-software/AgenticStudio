@@ -1,0 +1,6 @@
+# place: include
+include:
+  - ${FILE}
+services:
+  web:
+    image: nginx:1.27

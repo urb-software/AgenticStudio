@@ -1,0 +1,37 @@
+name: shop
+services:
+  web:
+    build: .
+    command: ["node", "server.js"]
+    ports:
+      - "8080:3000"
+    environment:
+      DATABASE_URL: postgres://app:app@db:5432/app
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [backend]
+    restart: unless-stopped
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: example
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app"]
+      interval: 5s
+      retries: 10
+    networks:
+      backend:
+        aliases: [database]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+volumes:
+  dbdata:
+networks:
+  backend:

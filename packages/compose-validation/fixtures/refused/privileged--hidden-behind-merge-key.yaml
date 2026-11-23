@@ -1,0 +1,7 @@
+# place: services.web.privileged
+x-base: &base
+  privileged: true
+services:
+  web:
+    <<: *base
+    image: nginx:1.27

@@ -1,0 +1,8 @@
+# place: networks.shared.external
+services:
+  web:
+    image: nginx:1.27
+    networks: [shared]
+networks:
+  shared:
+    external: "true"

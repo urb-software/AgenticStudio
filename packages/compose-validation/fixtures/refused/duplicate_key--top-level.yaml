@@ -1,0 +1,6 @@
+services:
+  web:
+    image: nginx:1.27
+services:
+  other:
+    image: busybox

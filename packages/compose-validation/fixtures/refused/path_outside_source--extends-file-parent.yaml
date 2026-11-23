@@ -1,0 +1,7 @@
+# place: services.web.extends.file
+services:
+  web:
+    image: nginx:1.27
+    extends:
+      file: ../base.yaml
+      service: base

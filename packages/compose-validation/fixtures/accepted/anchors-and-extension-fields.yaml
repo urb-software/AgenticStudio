@@ -1,0 +1,12 @@
+x-common: &common
+  restart: unless-stopped
+  environment:
+    TZ: UTC
+services:
+  web:
+    <<: *common
+    image: nginx:1.27
+  worker:
+    <<: *common
+    image: busybox:1.36
+    command: sleep infinity

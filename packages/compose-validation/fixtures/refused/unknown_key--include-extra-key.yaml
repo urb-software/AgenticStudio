@@ -1,0 +1,7 @@
+# place: include[0].profiles
+include:
+  - path: ./a.yaml
+    profiles: [x]
+services:
+  web:
+    image: nginx:1.27
