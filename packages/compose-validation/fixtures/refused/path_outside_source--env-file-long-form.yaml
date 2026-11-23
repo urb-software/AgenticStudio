@@ -1,0 +1,7 @@
+# place: services.web.env_file[0].path
+services:
+  web:
+    image: nginx:1.27
+    env_file:
+      - path: ../../.env
+        required: false

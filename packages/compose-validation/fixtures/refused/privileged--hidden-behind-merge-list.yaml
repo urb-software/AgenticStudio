@@ -1,0 +1,9 @@
+# place: services.web.privileged
+x-a: &a
+  restart: always
+x-b: &b
+  privileged: true
+services:
+  web:
+    <<: [*a, *b]
+    image: nginx:1.27

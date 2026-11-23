@@ -1,0 +1,6 @@
+# place: services.web.cap_add[0]
+services:
+  web:
+    image: nginx:1.27
+    cap_add:
+      - SYS_ADMIN

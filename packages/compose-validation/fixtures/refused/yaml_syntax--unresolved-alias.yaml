@@ -1,0 +1,4 @@
+services:
+  web:
+    <<: *ghost
+    image: nginx

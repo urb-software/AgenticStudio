@@ -1,0 +1,6 @@
+# place: services.web.build.network
+services:
+  web:
+    build:
+      context: .
+      network: host

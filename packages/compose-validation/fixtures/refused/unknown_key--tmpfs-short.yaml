@@ -1,0 +1,5 @@
+# place: services.web.tmpfs
+services:
+  web:
+    image: nginx:1.27
+    tmpfs: /tmp

@@ -21,7 +21,12 @@ import {
  */
 export const WEB_PACKAGE_CLASSIFICATION: { allowed: string[]; forbidden: string[] } = {
   allowed: [],
-  forbidden: ['@agentic-studio/contracts', '@agentic-studio/database', '@agentic-studio/testing'],
+  forbidden: [
+    '@agentic-studio/compose-validation',
+    '@agentic-studio/contracts',
+    '@agentic-studio/database',
+    '@agentic-studio/testing',
+  ],
 };
 
 /**
@@ -91,7 +96,12 @@ export const monorepoGate: Gate = {
       comment: 'The web app never imports server or privileged implementations.',
       severity: 'error',
       from: { path: '^apps/web/' },
-      to: { path: ['^packages/(contracts|database|testing)/', npmPackages(...SERVER_PACKAGES)] },
+      to: {
+        path: [
+          '^packages/(compose-validation|contracts|database|testing)/',
+          npmPackages(...SERVER_PACKAGES),
+        ],
+      },
     },
     {
       name: 'mono-agent-worker-no-studio-infrastructure',

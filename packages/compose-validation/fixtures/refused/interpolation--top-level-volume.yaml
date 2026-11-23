@@ -1,0 +1,7 @@
+# place: volumes
+services:
+  web:
+    image: nginx:1.27
+volumes:
+  data:
+    driver: "${DRV}"

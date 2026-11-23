@@ -1,0 +1,5 @@
+# entry: web 80.5
+# place: entryPort
+services:
+  web:
+    image: nginx:1.27

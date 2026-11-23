@@ -1,0 +1,6 @@
+x: &a {privileged: true}
+services:
+  web:
+    <<: *a
+    image: a
+    image: b

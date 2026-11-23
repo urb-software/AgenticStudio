@@ -1,0 +1,5 @@
+# entry: constructor 8080
+# place: services
+services:
+  web:
+    image: nginx:1.27

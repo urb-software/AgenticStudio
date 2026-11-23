@@ -1,0 +1,7 @@
+# place: services.web.healthcheck.exec
+services:
+  web:
+    image: nginx:1.27
+    healthcheck:
+      test: [CMD, 'true']
+      exec: x

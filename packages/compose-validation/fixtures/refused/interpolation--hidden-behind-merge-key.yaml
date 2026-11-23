@@ -1,0 +1,8 @@
+# place: services.web.volumes
+x-base: &base
+  volumes:
+    - ${SRC}:/x
+services:
+  web:
+    <<: *base
+    image: nginx:1.27

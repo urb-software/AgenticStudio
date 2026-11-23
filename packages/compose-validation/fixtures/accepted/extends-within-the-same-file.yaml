@@ -1,0 +1,9 @@
+services:
+  base:
+    image: nginx:1.27
+    restart: always
+  web:
+    extends: base
+  other:
+    extends:
+      service: base

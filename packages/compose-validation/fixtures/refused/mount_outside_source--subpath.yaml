@@ -1,0 +1,12 @@
+# place: services.web.volumes[0].volume.subpath
+services:
+  web:
+    image: nginx:1.27
+    volumes:
+      - type: volume
+        source: data
+        target: /x
+        volume:
+          subpath: ../other
+volumes:
+  data:

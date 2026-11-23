@@ -1,0 +1,8 @@
+# place: networks.n.name
+services:
+  web:
+    image: nginx:1.27
+    networks: [n]
+networks:
+  n:
+    name: studio_default

@@ -1,0 +1,5 @@
+# place: services.web.network_mode
+services:
+  web:
+    image: nginx:1.27
+    network_mode: "${MODE}"

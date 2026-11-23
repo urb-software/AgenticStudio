@@ -1,0 +1,8 @@
+# place: networks.n.driver
+services:
+  web:
+    image: nginx:1.27
+    networks: [n]
+networks:
+  n:
+    driver: macvlan

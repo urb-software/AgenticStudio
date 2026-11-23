@@ -1,0 +1,4 @@
+# place: services.web.build
+services:
+  web:
+    build: ..

@@ -8,6 +8,9 @@ docs/
 .github/
 LICENSE
 
+# Compose fixtures: some are deliberately invalid YAML, and all are kept exactly as written.
+packages/compose-validation/fixtures/
+
 # Generated code.
 packages/database/src/generated/
 apps/api/openapi.json

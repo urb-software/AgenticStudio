@@ -1,0 +1,5 @@
+# place: services.web.userns_mode
+services:
+  web:
+    image: nginx:1.27
+    userns_mode: host

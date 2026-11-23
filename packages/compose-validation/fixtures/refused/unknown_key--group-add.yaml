@@ -1,0 +1,6 @@
+# place: services.web.group_add
+services:
+  web:
+    image: nginx:1.27
+    group_add:
+      - docker

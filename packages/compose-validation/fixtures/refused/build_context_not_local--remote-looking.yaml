@@ -1,0 +1,5 @@
+# place: services.web.build.context
+services:
+  web:
+    build:
+      context: example.com/evil.git

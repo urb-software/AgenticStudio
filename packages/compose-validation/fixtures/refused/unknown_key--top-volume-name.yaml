@@ -1,0 +1,9 @@
+# place: volumes.d.name
+services:
+  web:
+    image: nginx:1.27
+    volumes:
+      - d:/x
+volumes:
+  d:
+    name: other_project_data

@@ -1,0 +1,10 @@
+# place: services.web.volumes[0].bind.propagation
+services:
+  web:
+    image: nginx:1.27
+    volumes:
+      - type: bind
+        source: ./x
+        target: /x
+        bind:
+          propagation: rshared

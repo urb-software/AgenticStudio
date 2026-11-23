@@ -1,0 +1,5 @@
+%TAG !e! tag:example.com,2000:
+---
+services:
+  web:
+    image: !e!thing nginx

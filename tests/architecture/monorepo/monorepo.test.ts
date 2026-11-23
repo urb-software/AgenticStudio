@@ -9,6 +9,10 @@ describeGate('monorepo', monorepoGate, '.', [
   { fixture: 'web-imports-database-package', expected: ['mono-web-no-server-implementations'] },
   { fixture: 'web-imports-contracts-package', expected: ['mono-web-no-server-implementations'] },
   {
+    fixture: 'web-imports-compose-validation-package',
+    expected: ['mono-web-no-server-implementations'],
+  },
+  {
     fixture: 'web-manifest-depends-on-database',
     expected: ['mono-manifest-web-no-server-packages'],
   },

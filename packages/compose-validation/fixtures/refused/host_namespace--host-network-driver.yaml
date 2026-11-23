@@ -1,0 +1,8 @@
+# place: networks.h.driver
+services:
+  web:
+    image: nginx:1.27
+    networks: [h]
+networks:
+  h:
+    driver: host

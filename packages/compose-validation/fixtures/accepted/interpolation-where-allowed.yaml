@@ -1,0 +1,8 @@
+services:
+  web:
+    image: ${REGISTRY}/web:${TAG:-latest}
+    command: ["serve", "--port", "${PORT}"]
+    environment:
+      - API_URL=${API_URL}
+    labels:
+      app.version: ${TAG}

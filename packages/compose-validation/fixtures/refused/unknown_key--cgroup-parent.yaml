@@ -1,0 +1,5 @@
+# place: services.web.cgroup_parent
+services:
+  web:
+    image: nginx:1.27
+    cgroup_parent: /system.slice

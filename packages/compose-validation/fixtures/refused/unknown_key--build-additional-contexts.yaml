@@ -1,0 +1,7 @@
+# place: services.web.build.additional_contexts
+services:
+  web:
+    build:
+      context: .
+      additional_contexts:
+        app: ../app

@@ -1,0 +1,6 @@
+# place: services.web.ulimits
+services:
+  web:
+    image: nginx:1.27
+    ulimits:
+      nofile: 65535

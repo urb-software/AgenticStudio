@@ -1,0 +1,6 @@
+# place: services.web.privileged
+x-flag: &flag true
+services:
+  web:
+    image: nginx:1.27
+    privileged: *flag
