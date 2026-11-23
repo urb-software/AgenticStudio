@@ -108,7 +108,7 @@ _Avoid_: Reject, abandon, discard
 
 **Merge review**:
 What the Integration branch would gain from a Run's branch, computed on Studio's side: Studio fetches the Run branch into the Project's Clone with the Project's own credentials, merges it with the Integration branch in the Clone (no working tree) and shows the result's changes, redacted. It is the diff the operator reviews before a Merge; the Run diff is the agent worker's account and is not the basis of an approval. A review is of one commit and reads as out of date once the Run branch has another.
-_Avoid_: Preview (a different, later concept), PR diff
+_Avoid_: Preview (a different concept: see [Preview](#environments)), PR diff
 
 **Merge credential**:
 The token on Studio's side that a Merge or a Close without merging uses on the Git host: a fine-grained token of the operator's Git host account, limited to the managed Repositories, with write access to pull requests and contents. It is never given to the agent side. While it is unset, merging and closing are switched off.
@@ -165,6 +165,28 @@ _Avoid_: Checks (unqualified), CI status
 **Review comment**:
 A comment on a Run's pull request on the Git host: a review's summary with its verdict, an inline comment on the diff, or a conversation comment. Anyone can write one on a public pull request, so it is untrusted text: the operator loads them on request, sees them (their own, by the configured GitHub login, preselected; everyone else's collapsed and unselected), and sends only the ones they choose, as a Follow-up prepared from them.
 _Avoid_: Feedback, remark
+
+### `environments`
+
+**Preview**:
+A Project's own Compose stack, built from the Integration branch and reachable in the browser under its own hostname, behind the Preview password. A Project has one shared Preview, not one per Run. It rebuilds after a merge made through Studio and on the operator's "Rebuild"; it runs until the operator stops it.
+_Avoid_: Environment (alone), staging, deployment
+
+**Preview build**:
+One attempt to build and start a Preview from the Integration branch at a commit, with its state and its redacted, capped log. A failed build leaves the previous Preview running.
+_Avoid_: Deploy, pipeline
+
+**Preview settings**:
+What a Project provides for its Preview: the path of its Compose file in the Repository, and the one service and port to show. Without them the Project has no Preview.
+_Avoid_: Environment settings
+
+**Preview user**:
+The third operating-system user on the server, used only for Previews. It has its own rootless Docker daemon and runs the environment-controller. It is not the agent user.
+_Avoid_: Preview account, controller user
+
+**Preview password**:
+The secret that protects every Preview at the reverse proxy. It is not Studio's login and is kept outside Git.
+_Avoid_: Preview token
 
 ### Architecture vocabulary
 

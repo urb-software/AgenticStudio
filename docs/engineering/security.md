@@ -167,10 +167,17 @@ The repository is public: rulesets and secret scanning are enforced for free, an
 
 ## 5. Environments / Docker Compose
 
-- A separate **`environment-controller`** holds the minimum privilege needed to manage approved project stacks; the agent-worker does not share its Docker credentials/socket.
+- **The boundary is the Preview user** ([ADR 0004](../architecture/adr/0004-preview-isolation.md)). Previews run on the host under a third operating-system user, not in the `docker` group and without passwordless `sudo`, with its own rootless Docker daemon used only for Previews. The **`environment-controller`** runs as that user, never under the system Docker daemon or with its socket. A hostile Compose file can at most damage other Previews.
 - The controller exposes *specific authorized operations* (e.g. start, stop, status, logs, controlled refresh) against validated project definitions, not an arbitrary Docker command surface.
-- Before applying a stack change, validate repository/project identity, allowed Compose files, volume mounts, ports, images, environment variables, resource limits and credentials.
+- **Validation is the second line of defence, not the boundary.** Before anything starts, validate repository/project identity, allowed Compose files, volume mounts, ports, images, environment variables, resource limits and credentials. It refuses: privileged containers, host network, process or IPC namespaces, added capabilities, devices, mounts outside the source directory, a Docker socket mount, external networks, and build contexts outside the source directory. Published ports are removed; only the chosen service is routed.
+- **Tokens.** The controller calls Studio over its own routes with its own token, limited to Preview work. That token cannot handle Runs, and the agent worker's token cannot handle Previews. The agent worker and the agents have no access to Preview credentials or to the Preview user's daemon.
+- **No Git credential on the Preview side.** The API hands the controller an archive of the Integration branch at the merged commit, with the Environment file's content (test values only). The controller never reads a Working copy.
 - Preview code is **untrusted**: separate origin without administrative Studio cookies, isolated network and storage access, restricted forwarded headers and ports.
+- **Origin separation.** The preview domain is not Studio's hostname or a name under it, and Studio's session cookie stays bound to Studio's hostname only, so a Preview never receives it.
+- **Preview password.** A Preview is protected by a Preview password at the reverse proxy, not by Studio's login. It is a secret kept outside Git and never shown in logs.
+- **Network access (decided 2026-11-23).** Outbound internet access is allowed for builds and at run time. Studio's internal services (database, queue, the API's internal address) and the host's loopback are blocked, and a test proves the blocking. Accepted risk: Preview code can send anywhere whatever it can read, which is the Environment file's test values and its own data.
+- A failed build leaves the previous Preview running. The build log is redacted and capped like a Run log. Each Preview has a memory and a processor limit, each build a time limit.
+- How the reverse proxy reaches a service of the Preview user's daemon is settled by the routing trial (#273), not here.
 - One default shared Preview per project tracks approved changes in the project's integration branch (default `dev`). A run's working copy does not create a preview.
 - Compose isolation is a pragmatic MVP baseline, **not** microVM-strength isolation. Stronger sandboxing may follow with appropriate server/KVM support.
 
