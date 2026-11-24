@@ -27,6 +27,8 @@ export const CODE_JOBS = [
   'security',
   'quality-agent-worker',
   'test-agent-worker',
+  'quality-environment-controller',
+  'test-environment-controller',
   'deploy-server',
 ];
 

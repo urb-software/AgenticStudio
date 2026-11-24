@@ -54,6 +54,29 @@ export const AGENT_WORKER_ALLOWED_IMPORTS = [
   npmPackages('zod'),
 ];
 
+/**
+ * The environment controller's production files allowed to import `node:child_process`: the
+ * process runner, the one place a process is started. Adding a file here is a reviewed change.
+ */
+export const CONTROLLER_PROCESS_FILES = ['apps/environment-controller/src/process-runner.ts'];
+
+/** The environment controller's production code: its src/ outside tests. */
+const CONTROLLER_PRODUCTION = {
+  path: '^apps/environment-controller/src/',
+  pathNot: '(^|/)__tests__/',
+};
+
+/**
+ * What the controller's production code may import besides Node core modules: its own files,
+ * the controller protocol, the Compose validation, zod and yaml. Everything else is denied.
+ */
+export const CONTROLLER_ALLOWED_IMPORTS = [
+  '^apps/environment-controller/src/',
+  '^packages/contracts/',
+  '^packages/compose-validation/',
+  npmPackages('zod', 'yaml'),
+];
+
 export const monorepoGate: Gate = {
   entries: ['apps', 'packages'],
   exclude: '^(apps|packages)/[^/]+/(node_modules|dist|\\.next|out|coverage)/',
@@ -173,6 +196,77 @@ export const monorepoGate: Gate = {
         'node:worker_threads.',
       severity: 'error',
       from: AGENT_WORKER_PRODUCTION,
+      to: { path: coreModules('module', 'vm', 'cluster', 'worker_threads') },
+    },
+    {
+      name: 'mono-controller-no-studio-infrastructure',
+      comment:
+        'The environment controller runs as the Preview user with its own token: outside its ' +
+        'tests it never imports the database package, the ORM, Redis, the queue, NestJS or the ' +
+        'test helpers; it reaches Studio over the controller routes only.',
+      severity: 'error',
+      from: { path: '^apps/environment-controller/', pathNot: '(^|/)__tests__/' },
+      to: {
+        path: [
+          '^packages/(database|testing|log-redaction)/',
+          npmPackages(
+            ...ORM_PACKAGES,
+            '@agentic-studio/testing',
+            '@agentic-studio/log-redaction',
+            'bullmq',
+            'bull',
+            'ioredis',
+            'redis',
+            'pg',
+            'postgres',
+            'dockerode',
+            '@nestjs',
+          ),
+        ],
+      },
+    },
+    {
+      name: 'mono-controller-production-no-test-code',
+      comment:
+        "The controller's production code never imports its test code: tests may use the " +
+        'database and test helpers, so importing a test file would bridge the rule above.',
+      severity: 'error',
+      from: { path: '^apps/environment-controller/', pathNot: '(^|/)__tests__/' },
+      to: { path: '^apps/environment-controller/.*__tests__/' },
+    },
+    {
+      name: 'mono-controller-process-runner-only',
+      comment:
+        'Processes start only through the controller process runner, which takes a literal ' +
+        'program name from a fixed list: no other production file imports node:child_process.',
+      severity: 'error',
+      from: {
+        path: CONTROLLER_PRODUCTION.path,
+        pathNot: [
+          CONTROLLER_PRODUCTION.pathNot,
+          ...CONTROLLER_PROCESS_FILES.map((file) => `^${file}$`),
+        ],
+      },
+      to: { path: coreModules('child_process') },
+    },
+    {
+      name: 'mono-controller-allowed-imports-only',
+      comment:
+        "Deny by default: the controller's production code imports only its own files, " +
+        '@agentic-studio/contracts, @agentic-studio/compose-validation, zod, yaml and Node core ' +
+        'modules, so no other app (the agent worker included), npm or workspace package can ' +
+        'reach past the process runner.',
+      severity: 'error',
+      from: CONTROLLER_PRODUCTION,
+      to: { pathNot: CONTROLLER_ALLOWED_IMPORTS, dependencyTypesNot: ['core'] },
+    },
+    {
+      name: 'mono-controller-no-loader-core-modules',
+      comment:
+        "The controller's production code never imports node:module (createRequire would load " +
+        'child_process unseen), node:vm, node:cluster or node:worker_threads.',
+      severity: 'error',
+      from: CONTROLLER_PRODUCTION,
       to: { path: coreModules('module', 'vm', 'cluster', 'worker_threads') },
     },
     {

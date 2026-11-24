@@ -117,6 +117,7 @@ The module layout and the thirteen structure rules are canonical in [Backend](..
 - Shared public contracts have a single canonical source; no duplicate event definitions.
 - No prohibited package cycles, hidden app-to-app implementation imports, or shortcuts bypassing published interfaces.
 - No exported name shaped `<Name>V<n>` or `<Name>V<n>Schema` in `packages/contracts/src`: it holds no Integration Event ([Backend](../architecture/backend.md) §6).
+- The environment controller's production code (`apps/environment-controller/src` outside `__tests__`) imports only its own files, `@agentic-studio/contracts`, `@agentic-studio/compose-validation`, `zod`, `yaml` and Node core modules: no database package, ORM, Redis, queue, NestJS or test helper, no other app (the agent worker's process code included), no test code, and no loader core module (`node:module`, `node:vm`, `node:cluster`, `node:worker_threads`). Only `src/process-runner.ts` imports `node:child_process`; it takes a literal program name from a fixed list (`docker`, `systemctl`, the egress rules script, `nsenter`).
 - Rule 14 comment checks (§5): no Issue or pull request number in a comment, and no comment block longer than three lines without `@long-comment <reason>`.
 
 **All three checks inspect the entire relevant dependency graph on code/config PRs**, even when affected unit tests run on a subset.
@@ -258,7 +259,7 @@ Rules that are review only are covered by the specific backend items of the revi
 
 ### Rule 14: comments
 
-Rule 14 is not a structure rule: it is about readability and applies to the whole repository (API, web app, agent worker, shared packages and tests). It is recorded beside rules 1 to 13 so there is one list ([Backend](../architecture/backend.md) §3).
+Rule 14 is not a structure rule: it is about readability and applies to the whole repository (API, web app, agent worker, environment controller, shared packages and tests). It is recorded beside rules 1 to 13 so there is one list ([Backend](../architecture/backend.md) §3).
 
 **Comments explain why, briefly, and only when the code cannot.**
 
@@ -319,7 +320,7 @@ Enforcement:
 | Issue or pull request reference | Fails a comment that contains `#<digits>` or a link to an Issue or pull request | the same run |
 | Structure report figure | Reports the comment-to-code ratio per production file and flags files above 0.25; reported, not blocking | `pnpm structure:report` (§4) |
 
-Both checks read comments with the TypeScript scanner (never a pattern over code), so a string or template literal that contains `//` or `#123` is not a comment. They are `tests/architecture/monorepo/comment-rules.test.ts` over `scripts/comment-rules.mjs`, with passing and failing fixtures in `tests/architecture/fixtures/comments/`, and they run locally with `pnpm architecture:monorepo`. They cover `apps/api/src`, `apps/web`, `apps/agent-worker`, `packages/*` and `tests/architecture` (JavaScript and TypeScript files, hand-written declaration files included). Excluded: generated code (any `generated/` directory, or a file with a generated-file header such as `@generated`); build output and `node_modules`; and the gate fixtures in `tests/architecture/fixtures/`, which violate on purpose. The `@long-comment` tag is a budgeted exception: a pull request that adds one lists it with its reason.
+Both checks read comments with the TypeScript scanner (never a pattern over code), so a string or template literal that contains `//` or `#123` is not a comment. They are `tests/architecture/monorepo/comment-rules.test.ts` over `scripts/comment-rules.mjs`, with passing and failing fixtures in `tests/architecture/fixtures/comments/`, and they run locally with `pnpm architecture:monorepo`. They cover `apps/api/src`, `apps/web`, `apps/agent-worker`, `apps/environment-controller`, `packages/*` and `tests/architecture` (JavaScript and TypeScript files, hand-written declaration files included). Excluded: generated code (any `generated/` directory, or a file with a generated-file header such as `@generated`); build output and `node_modules`; and the gate fixtures in `tests/architecture/fixtures/`, which violate on purpose. The `@long-comment` tag is a budgeted exception: a pull request that adds one lists it with its reason.
 
 ## 6. Test stack and placement
 
@@ -355,6 +356,8 @@ architecture:monorepo # Cross-app and package boundaries
  e2e:smoke            # Critical affected user journeys
 quality:agent-worker  # Format + ESLint + typecheck + build of apps/agent-worker
  test:agent-worker    # Unit + worker loop against the real API (Linux)
+quality:environment-controller # Format + ESLint + typecheck + build of apps/environment-controller
+ test:environment-controller   # Unit + controller loop against the real API + Docker Compose runtime on the runner's Docker (Linux)
 deploy:server         # Server setup script and isolation boundary checks (Linux, #107)
 security              # Secrets, dependency audit, SAST and critical checks
 ci:required           # Final policy aggregation
@@ -377,6 +380,8 @@ pnpm check:web
 pnpm test:web
 pnpm check:agent-worker
 pnpm test:agent-worker
+pnpm check:environment-controller
+pnpm test:environment-controller
 pnpm architecture:api
 pnpm architecture:web
 pnpm architecture:monorepo
@@ -386,7 +391,7 @@ pnpm structure:report    # the API structure report (a step of CI architecture:a
 pnpm check:affected
 ```
 
-Current state (root `package.json`, `.github/workflows/ci.yml`): `check:api` and `check:web` exist and run in the CI jobs `quality:api` and `quality:web`; `test:api`, `test:web` and the three `architecture:*` scripts exist and run as the CI jobs of the same names. Contract checks run as `pnpm contracts:check` (CI job `test:contracts`); there is no `pnpm test:contracts` script. `pnpm structure:report` prints the structure report (§4; in CI a step of `architecture:api` that writes it to the job summary, with the change against the base branch, and always exits 0; locally add `--base-ref <git ref>` for the change against a ref). `pnpm format:check` (whole repository, in CI `quality:web`), `pnpm guards:check` (tracked files only: `apps/web/src/app/globals.css` byte-identical to `design-system/code/globals.css`, and no merge conflict markers; in CI `quality:web` after `format:check`), `pnpm design:test` (design-system viewer server tests, in CI `quality:web`) and `pnpm e2e:smoke` (CI `e2e:smoke`) also exist, and CI `security` runs the pnpm built-in command `pnpm audit --audit-level high` (not a package script). `check:agent-worker` and `test:agent-worker` run as the CI jobs `quality:agent-worker` and `test:agent-worker` (Issue #96). The CI job `deploy:server` (Issue #107) runs ShellCheck and the `deploy/tests/` suites; they need Linux, Docker and a throwaway VM, so there is no local script ([Deployment](deployment.md) §8). `pnpm check:affected` is **not implemented**. A missing script is recorded as `NOT IMPLEMENTED`, not `PASS`.
+Current state (root `package.json`, `.github/workflows/ci.yml`): `check:api` and `check:web` exist and run in the CI jobs `quality:api` and `quality:web`; `test:api`, `test:web` and the three `architecture:*` scripts exist and run as the CI jobs of the same names. Contract checks run as `pnpm contracts:check` (CI job `test:contracts`); there is no `pnpm test:contracts` script. `pnpm structure:report` prints the structure report (§4; in CI a step of `architecture:api` that writes it to the job summary, with the change against the base branch, and always exits 0; locally add `--base-ref <git ref>` for the change against a ref). `pnpm format:check` (whole repository, in CI `quality:web`), `pnpm guards:check` (tracked files only: `apps/web/src/app/globals.css` byte-identical to `design-system/code/globals.css`, and no merge conflict markers; in CI `quality:web` after `format:check`), `pnpm design:test` (design-system viewer server tests, in CI `quality:web`) and `pnpm e2e:smoke` (CI `e2e:smoke`) also exist, and CI `security` runs the pnpm built-in command `pnpm audit --audit-level high` (not a package script). `check:agent-worker` and `test:agent-worker` run as the CI jobs `quality:agent-worker` and `test:agent-worker` (Issue #96). `check:environment-controller` and `test:environment-controller` run as the CI jobs `quality:environment-controller` and `test:environment-controller`: the second one needs Linux and Docker (the controller loop uses Testcontainers, and the Docker Compose runtime is tested against the runner's own Docker), so locally run it with the integration suites excluded, and a rootless-daemon run is a recorded manual run on a disposable VM, not a CI job. The CI job `deploy:server` (Issue #107) runs ShellCheck and the `deploy/tests/` suites; they need Linux, Docker and a throwaway VM, so there is no local script ([Deployment](deployment.md) §8). `pnpm check:affected` is **not implemented**. A missing script is recorded as `NOT IMPLEMENTED`, not `PASS`.
 
 For every substantive task, the implementer runs all relevant existing checks and reports exact commands, exit status, commit SHA, skips, and blockers.
 

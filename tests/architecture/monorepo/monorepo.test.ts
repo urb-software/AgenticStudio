@@ -21,7 +21,10 @@ describeGate('monorepo', monorepoGate, '.', [
     expected: ['mono-manifest-web-no-server-packages'],
   },
   { fixture: 'package-imports-app', expected: ['mono-packages-no-apps'] },
-  { fixture: 'privileged-app-imports-another-app', expected: ['mono-no-cross-app-imports'] },
+  {
+    fixture: 'privileged-app-imports-another-app',
+    expected: ['mono-controller-allowed-imports-only', 'mono-no-cross-app-imports'],
+  },
   { fixture: 'app-manifest-depends-on-app', expected: ['mono-manifest-no-app-dependencies'] },
   {
     fixture: 'packages-cycle',
@@ -85,6 +88,40 @@ describeGate('monorepo', monorepoGate, '.', [
   {
     fixture: 'agent-worker-dynamic-imports-vm',
     expected: ['mono-agent-worker-no-loader-core-modules'],
+  },
+  { fixture: 'controller-uses-contracts-and-process-runner', expected: [] },
+  {
+    fixture: 'controller-imports-database-package',
+    expected: ['mono-controller-no-studio-infrastructure', 'mono-controller-allowed-imports-only'],
+  },
+  {
+    fixture: 'controller-imports-nest',
+    expected: ['mono-controller-no-studio-infrastructure', 'mono-controller-allowed-imports-only'],
+  },
+  {
+    fixture: 'controller-imports-test-code',
+    expected: ['mono-controller-production-no-test-code'],
+  },
+  {
+    fixture: 'controller-imports-child-process-outside-runner',
+    expected: ['mono-controller-process-runner-only'],
+  },
+  {
+    fixture: 'controller-imports-process-wrapper',
+    expected: ['mono-controller-allowed-imports-only'],
+  },
+  {
+    fixture: 'controller-imports-workspace-package',
+    expected: ['mono-controller-allowed-imports-only'],
+  },
+  { fixture: 'controller-imports-vm', expected: ['mono-controller-no-loader-core-modules'] },
+  {
+    fixture: 'controller-dynamic-imports-vm',
+    expected: ['mono-controller-no-loader-core-modules'],
+  },
+  {
+    fixture: 'controller-uses-create-require',
+    expected: ['mono-controller-no-loader-core-modules'],
   },
 ]);
 

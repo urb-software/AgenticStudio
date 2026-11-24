@@ -19,6 +19,8 @@
     "test:web": "pnpm --filter @agentic-studio/web run test",
     "check:agent-worker": "prettier --check apps/agent-worker && pnpm --filter \"@agentic-studio/agent-worker...\" run check",
     "test:agent-worker": "pnpm run build:packages && pnpm --filter @agentic-studio/api run build && pnpm --filter @agentic-studio/agent-worker run build && pnpm --filter @agentic-studio/agent-worker run test",
+    "check:environment-controller": "prettier --check apps/environment-controller && pnpm --filter \"@agentic-studio/environment-controller...\" run check",
+    "test:environment-controller": "pnpm run build:packages && pnpm --filter @agentic-studio/api run build && pnpm --filter @agentic-studio/environment-controller run build && pnpm --filter @agentic-studio/environment-controller run test",
     "architecture:api": "tsc -p tests/architecture && vitest run --config tests/architecture/vitest.config.mts --project api",
     "architecture:web": "tsc -p tests/architecture && vitest run --config tests/architecture/vitest.config.mts --project web",
     "architecture:monorepo": "tsc -p tests/architecture && vitest run --config tests/architecture/vitest.config.mts --project monorepo",
