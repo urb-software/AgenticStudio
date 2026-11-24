@@ -7,7 +7,9 @@
 # Redis from the server Compose file, builds the API and web production images (Issue #132) and
 # starts the whole stack with them (migrations, API, web, reverse proxy), checks the login rate
 # limit per client through the proxy, then runs every boundary check as the agent user, the `api`
-# group included. Every password, key and token here is a throwaway test value; the domain is a
+# group included. The Preview side is covered too: its checks as the Preview user, a
+# third user refused both users' sockets and data-roots, and one real build by the controller in
+# the Preview user's rootless daemon, served through the proxy. Every password, key and token here is a throwaway test value; the domain is a
 # reserved test name served with Caddy's internal CA.
 # shellcheck disable=SC2016 # single-quoted text run by another shell
 set -uo pipefail
@@ -59,6 +61,7 @@ printf '%s\n' "$second" | sed 's/^/      | /'
 if [ "$status" -eq 0 ]; then ok "second run succeeded"; else not_ok "second run failed (exit $status)"; fi
 expect_line "second run changed nothing" "$second" '^Done: 0 change\(s\)\.$'
 expect_line "rootless Docker reported unchanged" "$second" '^\[rootless\] unchanged'
+expect_line "Preview rootless Docker reported unchanged" "$second" '^\[preview-rootless\] unchanged'
 expect_line "managed guardrails reported ok" "$second" '^\[guardrails\] ok '
 
 uid="$(id -u agent)"
@@ -66,6 +69,13 @@ as_agent() {
   (cd / && runuser -u agent -- env -i HOME=/home/agent USER=agent LOGNAME=agent PATH=/usr/local/bin:/usr/bin:/bin \
     XDG_RUNTIME_DIR="/run/user/$uid" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" "$@")
 }
+
+puid="$(id -u preview)"
+as_preview() {
+  (cd / && runuser -u preview -- env -i HOME=/home/preview USER=preview LOGNAME=preview PATH=/usr/local/bin:/usr/bin:/bin \
+    XDG_RUNTIME_DIR="/run/user/$puid" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$puid/bus" "$@")
+}
+check_preview() { as_preview /usr/local/bin/agentic-studio-check-preview "$@" 2>&1; }
 
 section "State"
 expect_false "agent user is not in the docker group" bash -c "id -nG agent | tr ' ' '\n' | grep -qx docker"
@@ -77,6 +87,109 @@ expect_true "the firewall service is active" systemctl is-active agentic-studio-
 expect_true "the firewall rule is in OUTPUT" iptables -w -C OUTPUT -m owner --uid-owner "$uid" -j AGENTIC-STUDIO-AGENT
 expect_true "the system Docker daemon runs" systemctl is-active docker.service
 systemctl show "user-$uid.slice" -p MemoryMax -p TasksMax -p CPUWeight | sed 's/^/      | /'
+expect_true "Preview user has uid and gid 2002" bash -c '[ "$(id -u preview):$(id -g preview)" = 2002:2002 ]'
+expect_false "Preview user is not in the docker group" bash -c "id -nG preview | tr ' ' '\n' | grep -qx docker"
+expect_true "linger is on for the Preview user" bash -c '[ "$(loginctl show-user preview -p Linger --value)" = yes ]'
+expect_true "rootless Docker runs as the Preview user's service" as_preview systemctl --user is-active docker.service
+expect_true "the controller service is enabled for the Preview user" as_preview systemctl --user is-enabled agentic-studio-controller.service
+expect_false "the controller is not started without its token" as_preview systemctl --user is-active agentic-studio-controller.service
+expect_true "the Preview firewall service is active" systemctl is-active agentic-studio-preview-firewall.service
+expect_true "the Preview firewall rule is in OUTPUT" iptables -w -C OUTPUT -m owner --uid-owner "$puid" -j AGENTIC-STUDIO-PREVIEW
+expect_stat /run/preview-proxy preview:previewproxy 2750
+expect_stat /usr/local/lib/agentic-studio/preview-egress-rules root:root 755
+expect_true "the tmpfiles.d entry for the socket directory exists" \
+  grep -qx 'd /run/preview-proxy 2750 preview previewproxy -' /etc/tmpfiles.d/agentic-studio-preview-proxy.conf
+expect_true "the docker.service drop-in applies the egress rules and keeps the daemon up on an OOM" \
+  bash -c "grep -q 'ExecStartPost=/usr/local/lib/agentic-studio/preview-egress-rules apply' /home/preview/.config/systemd/user/docker.service.d/60-agentic-studio-egress.conf && grep -qx 'OOMPolicy=continue' /home/preview/.config/systemd/user/docker.service.d/60-agentic-studio-egress.conf"
+expect_true "the Preview user's slice has its limits" bash -c "[ \"\$(systemctl show user-$puid.slice -p TasksMax --value)\" = 4096 ]"
+expect_true "the user manager delegates cpu, memory and pids" \
+  bash -c "c=\"\$(cat /sys/fs/cgroup/user.slice/user-$puid.slice/user@$puid.service/cgroup.controllers)\"; [[ \" \$c \" == *' cpu '* && \" \$c \" == *' memory '* && \" \$c \" == *' pids '* ]]"
+expect_true "the egress rules verify inside the Preview daemon's namespace" \
+  as_preview nsenter -U --preserve-credentials -n -t "$(cat "/run/user/$puid/dockerd-rootless/child_pid")" \
+  /usr/local/lib/agentic-studio/preview-egress-rules verify
+expect_true "Studio's own firewall for the agent user is unchanged: active" systemctl is-active agentic-studio-agent-firewall.service
+
+section "A third user is refused both users' sockets and data-roots"
+useradd --create-home --uid 2999 --shell /bin/bash thirduser
+third() { (cd / && runuser -u thirduser -- env -i HOME=/home/thirduser PATH=/usr/local/bin:/usr/bin:/bin "$@"); }
+for who in agent preview; do
+  case "$who" in agent) id_of=$uid ;; *) id_of=$puid ;; esac
+  sock="/run/user/$id_of/docker.sock"
+  expect_true "the $who's socket exists (control)" test -S "$sock"
+  expect_false "the third user cannot reach the $who's socket" third curl -fsS --max-time 3 --unix-socket "$sock" http://localhost/_ping
+  expect_false "the third user cannot list the $who's data-root" third ls "/home/$who/.local/share/docker"
+done
+expect_true "the agent reaches its own socket (control)" as_agent curl -fsS --max-time 5 --unix-socket "/run/user/$uid/docker.sock" http://localhost/_ping
+expect_true "the Preview user reaches its own socket (control)" as_preview curl -fsS --max-time 5 --unix-socket "/run/user/$puid/docker.sock" http://localhost/_ping
+expect_false "the agent cannot reach the Preview user's socket" as_agent curl -fsS --max-time 3 --unix-socket "/run/user/$puid/docker.sock" http://localhost/_ping
+expect_false "the Preview user cannot reach the agent's socket" as_preview curl -fsS --max-time 3 --unix-socket "/run/user/$uid/docker.sock" http://localhost/_ping
+expect_false "the agent cannot list the Preview user's data-root" as_agent ls /home/preview/.local/share/docker
+expect_false "the Preview user cannot list the agent's data-root" as_preview ls /home/agent/.local/share/docker
+userdel -r thirduser 2>/dev/null
+
+section "Preview checks as the Preview user (before the controller token is set)"
+out="$(check_preview --skip api)"
+status=$?
+printf '%s\n' "$out" | sed 's/^/      | /'
+if [ "$status" -eq 0 ]; then ok "the Preview checks pass (token checks wait for the token)"; else not_ok "the Preview checks failed (exit $status)"; fi
+expect_false "no FAIL line" grep -q '^FAIL' <<<"$out"
+for name in not-root not-privileged sudo-needs-password home-private linger system-docker-unreachable \
+  agent-docker-unreachable agent-files-unreadable studio-files-unreadable studio-network-unreachable \
+  cgroup-v2 cgroup-delegation preview-user-limits slice-limit-bites build-memory-limit \
+  egress-script-root-owned rootless-docker daemon-dns egress-rules-verify egress-blocked-build-step \
+  egress-blocked-compose-network internet-https controller-unit-enabled controller-env-file \
+  controller-data-dir controller-settings preview-proxy-dir controller-free-disk; do
+  expect_line "PASS $name" "$out" "^PASS  $name "
+done
+expect_line "SKIP controller-active until the token is set" "$out" '^SKIP  controller-active '
+
+section "Egress rules: control, and again after the daemon restarts"
+# A root listener on the host's address stands in for any host service; the rules, not the
+# listener, keep Preview containers away from it.
+HOST_ADDR="$(ip -4 route get 192.0.2.1 | awk '{ for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1) }')"
+socat TCP-LISTEN:29191,reuseaddr,fork /dev/null &
+LISTENER=$!
+sleep 1
+expect_true "control: root reaches the listener on the host's address" timeout 3 bash -c "exec 3<>/dev/tcp/$HOST_ADDR/29191"
+expect_false "a Preview container does not reach the host's address" \
+  as_preview docker run --rm busybox:1.37 sh -c "nc -w 3 $HOST_ADDR 29191 </dev/null"
+expect_false "a Preview container does not reach the host's loopback through 10.0.2.2" \
+  as_preview docker run --rm busybox:1.37 sh -c "nc -w 3 10.0.2.2 29191 </dev/null"
+as_preview systemctl --user restart docker.service
+wait_for_preview_daemon() { as_preview docker info --format '{{.ServerVersion}}' >/dev/null 2>&1; }
+wait_for() {
+  local _
+  for _ in $(seq 1 30); do "$@" && return 0; sleep 1; done
+  return 1
+}
+expect_true "the Preview daemon is back after a restart" wait_for wait_for_preview_daemon
+expect_true "the rules are applied again in the new namespace (ExecStartPost)" \
+  as_preview nsenter -U --preserve-credentials -n -t "$(cat "/run/user/$puid/dockerd-rootless/child_pid")" \
+  /usr/local/lib/agentic-studio/preview-egress-rules verify
+expect_false "after the restart a container still does not reach the host's address" \
+  as_preview docker run --rm busybox:1.37 sh -c "nc -w 3 $HOST_ADDR 29191 </dev/null"
+kill "$LISTENER" 2>/dev/null
+wait "$LISTENER" 2>/dev/null
+
+section "Units do not start while their token is empty"
+# Both units are enabled and their tokens are still empty: after the user managers restart (as at
+# boot) the services are inactive because their ExecCondition failed, not failed or restarting.
+systemctl restart "user@$uid.service" "user@$puid.service"
+agent_docker_up() { as_agent systemctl --user is-active --quiet docker.service; }
+preview_docker_up() { as_preview systemctl --user is-active --quiet docker.service; }
+expect_true "the agent's rootless Docker is back" wait_for agent_docker_up
+expect_true "the Preview user's rootless Docker is back" wait_for preview_docker_up
+sleep 5
+for pair in "agent:agentic-studio-worker.service" "preview:agentic-studio-controller.service"; do
+  who="${pair%%:*}"
+  unit="${pair#*:}"
+  state="$(runuser -u "$who" -- env -i XDG_RUNTIME_DIR="/run/user/$(id -u "$who")" systemctl --user show "$unit" -p ActiveState -p ExecCondition 2>&1)"
+  expect_line "$unit is inactive with an empty token" "$state" '^ActiveState=inactive$'
+  expect_line "... because its ExecCondition exited with status 1" "$state" 'status=1'
+  expect_false "... and it is not failed" runuser -u "$who" -- env -i XDG_RUNTIME_DIR="/run/user/$(id -u "$who")" systemctl --user is-failed --quiet "$unit"
+done
+
+section "State (continued)"
 as_agent docker info --format 'rootless daemon: {{json .SecurityOptions}} cgroup v{{.CgroupVersion}} {{.CgroupDriver}}' |
   sed 's/^/      | /'
 
@@ -254,6 +367,113 @@ expect_line "with the password and no socket: 404" "$(preview_status -u "preview
 expect_line "the 404 says the Preview is not running" \
   "$(curl -sk --max-time 10 --resolve "$PREVIEW_HOST:443:$HOST_IP" -u "preview:$PREVIEW_PASSWORD" "https://$PREVIEW_HOST/")" '^This Preview is not running\.$'
 
+section "Controller token on both sides: the controller runs and claim answers 204"
+CONTROLLER_TOKEN="$(openssl rand -hex 24)"
+CONTROLLER_ENV=/home/preview/.config/agentic-studio-controller/.env
+set_env "$ENV_FILE" STUDIO_CONTROLLER_TOKEN "$CONTROLLER_TOKEN"
+as_preview sed -i "s|^STUDIO_CONTROLLER_TOKEN=.*|STUDIO_CONTROLLER_TOKEN=$CONTROLLER_TOKEN|" "$CONTROLLER_ENV"
+if agentic-studio-compose up -d --wait; then ok "the stack is up with the controller token"; else not_ok "the stack did not restart with the controller token"; fi
+out="$(bash "$SETUP" --only controller-service 2>&1)"
+printf '%s\n' "$out" | sed 's/^/      | /'
+expect_line "the controller service step restarted the controller" "$out" '^\[controller-service\] ok \(environment controller restarted\)'
+controller_active() { as_preview systemctl --user is-active --quiet agentic-studio-controller.service; }
+expect_true "the controller is active" wait_for controller_active
+controller_cgroup="$(cat "/proc/$(as_preview systemctl --user show agentic-studio-controller.service -p MainPID --value)/cgroup" 2>/dev/null)"
+expect_line "the controller runs in its own slice" "$controller_cgroup" 'user@2002\.service/.*agentic-studio-controller\.slice'
+expect_false "... outside app.slice, which holds the daemon and the builds and is bounded per build" grep -q '/app\.slice' <<<"$controller_cgroup"
+out="$(check_preview --claim)"
+status=$?
+printf '%s\n' "$out" | sed 's/^/      | /'
+if [ "$status" -eq 0 ]; then ok "every Preview check passes with the token set"; else not_ok "the Preview checks failed (exit $status)"; fi
+expect_line "nothing skipped: RESULT: PASS" "$(grep '^RESULT:' <<<"$out" | tail -n 1)" '^RESULT: PASS \('
+for name in controller-active controller-token-works controller-token-claim controller-token-nothing-else; do
+  expect_line "PASS $name" "$out" "^PASS  $name "
+done
+printf '%s' "$CONTROLLER_TOKEN" >/root/controller-token.test
+holders=""
+for cmdline in /proc/[0-9]*/cmdline; do
+  [ "$cmdline" != "/proc/$$/cmdline" ] || continue
+  if grep -qF -f /root/controller-token.test "$cmdline" 2>/dev/null; then
+    holders+="$(basename "$(dirname "$cmdline")"):$(cut -c1-30 "$(dirname "$cmdline")/comm" 2>/dev/null) "
+  fi
+done
+rm -f /root/controller-token.test
+expect_line "the controller token is on no host command line (holders: ${holders:-none})" "${holders:-none}" '^none$'
+out="$(as_agent /usr/local/bin/agentic-studio-check-boundary --skip 'identity,processes,studio-files,docker-socket,sudo,studio-network,host,cgroup,guardrails,rootless,api' 2>&1)"
+expect_line "the agent is refused the Preview side; the worker token gets 401 on claim" "$out" '^PASS  worker-token-not-controller '
+expect_line "the agent is refused the Preview user's socket and data-root" "$out" '^PASS  preview-docker-unreachable '
+expect_line "the agent is not in the proxy group and cannot list the socket directory" "$out" '^PASS  preview-sockets-unreachable '
+
+section "A real build through the Preview user's rootless daemon, served through the proxy"
+# Fixture: a Project whose Repository is `ready`, with a Clone in Studio's data directory holding
+# a tiny HTTP service that needs a build step. The operation is inserted by SQL, as an API
+# request would have.
+FIX_ID=3f2a1b4c-5d6e-4f70-8a91-b2c3d4e5f607
+FIX_LABEL=preview-3f2a1b4c5d6e
+FIX_HOST="$FIX_LABEL.$PREVIEW_DOMAIN"
+fixture="$(mktemp -d)"
+export GIT_CONFIG_GLOBAL=/dev/null GIT_AUTHOR_NAME=Fixture GIT_AUTHOR_EMAIL=fixture@example.test \
+  GIT_COMMITTER_NAME=Fixture GIT_COMMITTER_EMAIL=fixture@example.test
+mkdir -p "$fixture/work/app"
+printf 'services:\n  web:\n    build:\n      context: ./app\n    expose:\n      - "8080"\n' >"$fixture/work/compose.yaml"
+printf 'FROM busybox:1.37\nRUN echo built > /built.txt\nCOPY index.html /www/index.html\nCMD ["httpd", "-f", "-p", "8080", "-h", "/www"]\n' >"$fixture/work/app/Dockerfile"
+printf 'preview-ok\n' >"$fixture/work/app/index.html"
+git -C "$fixture/work" init -q --initial-branch=dev
+git -C "$fixture/work" add --all
+git -C "$fixture/work" commit -q -m 'fixture'
+FIX_COMMIT="$(git -C "$fixture/work" rev-parse HEAD)"
+install -d -o 10001 -g 10001 -m 0700 /var/lib/agentic-studio/data/clones
+git clone -q --bare "$fixture/work" "/var/lib/agentic-studio/data/clones/$FIX_ID.git"
+chown -R 10001:10001 "/var/lib/agentic-studio/data/clones"
+rm -rf "$fixture"
+sql() { agentic-studio-compose exec -T postgres psql -U studio -d agentic_studio -v ON_ERROR_STOP=1 -At "$@"; }
+sql -c "insert into projects (id, name, name_normalized) values ('$FIX_ID', 'Preview fixture', 'preview fixture')" >/dev/null
+sql -c "insert into repositories (project_id, url, url_normalized, integration_branch, state, head_sha, last_fetched_at) values ('$FIX_ID', 'https://git.example.test/fixture.git', 'git.example.test/fixture', 'dev', 'ready', '$FIX_COMMIT', now())" >/dev/null
+operation_status() { sql -c "select status from preview_operations where id = '$1'"; }
+operation_done() { case "$(operation_status "$1")" in succeeded | failed) return 0 ;; *) return 1 ;; esac; }
+wait_operation() {
+  local _
+  for _ in $(seq 1 180); do operation_done "$1" && return 0; sleep 5; done
+  return 1
+}
+explain_operation() {
+  sql -c "select kind, status, coalesce(failure_code, ''), coalesce(failure_detail, '') from preview_operations where id = '$1'" | sed 's/^/      | /'
+  sql -c "select text from preview_operation_lines where operation_id = '$1' order by seq desc limit 40" | sed 's/^/      | /'
+  journalctl _SYSTEMD_USER_UNIT=agentic-studio-controller.service _UID="$puid" -n 40 --no-pager 2>&1 | sed 's/^/      | /'
+}
+build_id="$(sql -c "insert into preview_operations (project_id, kind, status, commit, compose_file, service, port, memory_mib, cpu_percent, tasks_max, build_minutes) values ('$FIX_ID', 'build', 'requested', '$FIX_COMMIT', 'compose.yaml', 'web', 8080, 1024, 100, 512, 20) returning id" | head -n 1)"
+expect_line "the build operation was inserted" "$build_id" '^[0-9a-f-]{36}$'
+if wait_operation "$build_id"; then ok "the build operation finished"; else not_ok "the build operation did not finish in 15 minutes"; fi
+expect_line "the build succeeded" "$(operation_status "$build_id")" '^succeeded$'
+[ "$(operation_status "$build_id")" = succeeded ] || explain_operation "$build_id"
+preview_body() { curl -sk --max-time 10 --resolve "$FIX_HOST:443:$HOST_IP" -u "preview:$PREVIEW_PASSWORD" "https://$FIX_HOST/"; }
+expect_line "the Preview answers 200 through the proxy with the password" \
+  "$(curl -sk --max-time 10 --resolve "$FIX_HOST:443:$HOST_IP" -o /dev/null -w '%{http_code}' -u "preview:$PREVIEW_PASSWORD" "https://$FIX_HOST/")" '^200$'
+expect_line "... and serves the built service's page" "$(preview_body)" '^preview-ok$'
+expect_false "the agent cannot connect to the Preview's bridge socket (it would skip the password)"   as_agent curl -fsS --max-time 3 --unix-socket "/run/preview-proxy/$FIX_LABEL.sock" http://localhost/
+expect_false "the agent cannot list the socket directory" as_agent ls /run/preview-proxy
+expect_line "without the password it is still 401" \
+  "$(curl -sk --max-time 10 --resolve "$FIX_HOST:443:$HOST_IP" -o /dev/null -w '%{http_code}' "https://$FIX_HOST/")" '^401$'
+expect_stat "/run/preview-proxy/$FIX_LABEL.sock" preview:previewproxy 660
+preview_containers() { as_preview docker ps -q --filter "label=io.agentic-studio.project=$FIX_ID"; }
+preview_containers_all() { as_preview docker ps -aq --filter "label=io.agentic-studio.project=$FIX_ID"; }
+nonempty() { [ -n "$("$@")" ]; }
+expect_true "the Preview user's daemon runs the Preview's container" nonempty preview_containers
+expect_line "the system Docker daemon holds no container of the Preview" "$(docker ps -aq --filter "label=io.agentic-studio.project=$FIX_ID" | wc -l)" '^0$'
+stop_id="$(sql -c "insert into preview_operations (project_id, kind, status) values ('$FIX_ID', 'stop', 'requested') returning id" | head -n 1)"
+if wait_operation "$stop_id"; then ok "the stop operation finished"; else not_ok "the stop operation did not finish"; fi
+expect_line "the stop succeeded" "$(operation_status "$stop_id")" '^succeeded$'
+[ "$(operation_status "$stop_id")" = succeeded ] || explain_operation "$stop_id"
+expect_line "after the stop the Preview is not running: 404" \
+  "$(curl -sk --max-time 10 --resolve "$FIX_HOST:443:$HOST_IP" -o /dev/null -w '%{http_code}' -u "preview:$PREVIEW_PASSWORD" "https://$FIX_HOST/")" '^404$'
+expect_line "... with the not-running page" "$(preview_body)" '^This Preview is not running\.$'
+expect_false "the socket is gone" test -e "/run/preview-proxy/$FIX_LABEL.sock"
+expect_false "the Preview's containers are gone" \
+  bash -c "$(declare -f as_preview); puid=$puid; as_preview docker ps -aq --filter label=io.agentic-studio.project=$FIX_ID | grep -q ."
+out="$(journalctl _SYSTEMD_USER_UNIT=agentic-studio-controller.service _UID="$puid" --no-pager 2>&1)"
+expect_false "no controller token, Environment value or password in the controller's journal" \
+  grep -qF -e "$CONTROLLER_TOKEN" -e "$PREVIEW_PASSWORD" <<<"$out"
+
 section "Boundary checks as the agent user (every group, the API against the real stack)"
 out="$(as_agent /usr/local/bin/agentic-studio-check-boundary 2>&1)"
 status=$?
@@ -266,7 +486,8 @@ for name in not-root not-in-docker-group processes-in-user-manager no-studio-con
   system-docker-unreachable system-containerd-unreachable sudo-needs-password studio-stack-running \
   studio-postgres-unreachable studio-redis-unreachable studio-app-direct-unreachable no-wsl-escape \
   cgroup-v2 agent-user-limits rootless-docker rootless-container-limits rootless-compose \
-  worker-token-works worker-token-nothing-else managed-guardrails managed-guardrails-locked; do
+  worker-token-works worker-token-nothing-else managed-guardrails managed-guardrails-locked \
+  preview-files-unreadable preview-docker-unreachable preview-sockets-unreachable worker-token-not-controller; do
   expect_line "PASS $name" "$out" "^PASS  $name "
 done
 
@@ -353,11 +574,6 @@ section "The agent side never runs without its firewall"
 agent_side_down() {
   ! systemctl is-active --quiet "user@$uid.service" && ! pgrep -u agent >/dev/null
 }
-wait_for() {
-  local _
-  for _ in $(seq 1 30); do "$@" && return 0; sleep 1; done
-  return 1
-}
 agent_side_up() {
   systemctl is-active --quiet "user@$uid.service" && as_agent systemctl --user is-active --quiet docker.service
 }
@@ -385,6 +601,40 @@ expect_true "... and the agent side with it" wait_for agent_side_down
 expect_true "the verify timer is active" systemctl is-active --quiet agentic-studio-agent-firewall-verify.timer
 systemctl start "user@$uid.service"
 expect_true "restarting the agent side restores the rules" "$firewall" verify
+
+section "The Preview side never runs without its firewall"
+preview_firewall=/usr/local/sbin/agentic-studio-preview-firewall
+preview_side_down() {
+  ! systemctl is-active --quiet "user@$puid.service" && ! pgrep -u preview >/dev/null
+}
+preview_side_up() {
+  systemctl is-active --quiet "user@$puid.service" && as_preview systemctl --user is-active --quiet docker.service
+}
+systemctl stop agentic-studio-preview-firewall.service
+expect_true "Preview firewall stopped -> the Preview user's manager and every Preview process stop" wait_for preview_side_down
+expect_true "the agent side is unaffected" as_agent systemctl --user is-active --quiet docker.service
+expect_true "starting the Preview side starts its firewall first" systemctl start "user@$puid.service"
+expect_true "... the Preview firewall is active" systemctl is-active --quiet agentic-studio-preview-firewall.service
+expect_true "... rootless Docker is back" wait_for preview_side_up
+expect_true "... with its egress rules applied again" \
+  as_preview nsenter -U --preserve-credentials -n -t "$(cat "/run/user/$puid/dockerd-rootless/child_pid")" \
+  /usr/local/lib/agentic-studio/preview-egress-rules verify
+controller_active_for_a_minute() {
+  local _
+  for _ in $(seq 1 60); do controller_active && return 0; sleep 1; done
+  return 1
+}
+if expect_true "... and the controller is back (it follows the daemon)" controller_active_for_a_minute; then :; else
+  as_preview systemctl --user status agentic-studio-controller.service --no-pager 2>&1 | sed 's/^/      | /'
+  journalctl _SYSTEMD_USER_UNIT=agentic-studio-controller.service _UID="$puid" -n 30 --no-pager 2>&1 | sed 's/^/      | /'
+fi
+"$preview_firewall" remove
+systemctl start agentic-studio-preview-firewall-verify.service
+expect_false "Preview rules missing -> the verify run stops the Preview firewall unit" \
+  systemctl is-active --quiet agentic-studio-preview-firewall.service
+expect_true "... and the Preview side with it" wait_for preview_side_down
+systemctl start "user@$puid.service"
+expect_true "restarting the Preview side restores the rules" "$preview_firewall" verify
 
 agentic-studio-compose down -v >/dev/null 2>&1
 finish

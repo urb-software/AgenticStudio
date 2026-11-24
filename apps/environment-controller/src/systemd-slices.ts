@@ -9,6 +9,13 @@ import type { ProcessRunner } from './process-runner.js';
 /** Room for the daemon itself on top of a build's memory: dockerd, containerd, rootlesskit and the shims. */
 export const BUILD_DAEMON_HEADROOM_MIB = 512;
 
+/**
+ * The Preview user's `app.slice` holds the rootless daemon and BuildKit's build cgroups (build
+ * steps run in a cgroup of their own directly below it, not in the daemon's unit). Previews run in
+ * their own slices and the controller in its own, so a build bound does not touch either.
+ */
+const BUILD_BOUND_UNIT = 'app.slice';
+
 const limitsFailed = (detail: string) => new OperationFailure('limits_failed', detail);
 
 function checked(value: number, bounds: { min: number; max: number }, name: string): number {
@@ -64,7 +71,7 @@ export class SystemdSlices implements PreviewSlices {
         '--user',
         'set-property',
         '--runtime',
-        'docker.service',
+        BUILD_BOUND_UNIT,
         `MemoryMax=${memory + BUILD_DAEMON_HEADROOM_MIB}M`,
         'MemorySwapMax=0',
         `CPUQuota=${cpu}%`,

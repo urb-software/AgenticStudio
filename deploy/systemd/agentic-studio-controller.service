@@ -1,0 +1,44 @@
+# The environment controller as a systemd user service of the Preview user (ADR 0004).
+# Installed by deploy/setup-server.sh as /etc/systemd/user/agentic-studio-controller.service
+# (root-owned), enabled only for the Preview user. @CONTROLLER_CODE_DIR@, @NODE_BIN@ and
+# @PREVIEW_USER@ are filled in by the setup script.
+[Unit]
+Description=AI Agent Studio environment controller
+Documentation=file://@CONTROLLER_CODE_DIR@/docs/engineering/deployment.md
+# Never runs for another user, even though the file is installed for every user manager.
+ConditionUser=@PREVIEW_USER@
+# The Preview user's rootless Docker daemon (a user service of the same manager). When the daemon
+# restarts, the controller restarts with it and re-checks the egress rules before starting anything.
+Requires=docker.service
+After=docker.service
+PartOf=docker.service
+
+[Service]
+Type=simple
+# Not in app.slice, which holds the rootless daemon and the builds and is bounded per build: a
+# build that runs out of memory must never take the controller with it.
+Slice=agentic-studio-controller.slice
+# Root-owned code the Preview user can read but not change.
+WorkingDirectory=@CONTROLLER_CODE_DIR@/apps/environment-controller
+# The controller's own settings (Preview user, 0600). It refuses to start if a Studio-side or
+# agent-side variable reaches its environment.
+EnvironmentFile=%h/.config/agentic-studio-controller/.env
+# Does not start (and does not fail) until the token in that file is set, so an empty token never
+# makes a restart loop at boot. Exit status 1 skips the unit.
+ExecCondition=/usr/bin/grep -Eq '^STUDIO_CONTROLLER_TOKEN=.{32,}' %h/.config/agentic-studio-controller/.env
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin
+# EnvironmentFile overrides Environment=, so what production insists on is set by `env`, after the
+# file is read: production, and the Preview user's rootless daemon, never the system one.
+ExecStart=/usr/bin/env STUDIO_CONTROLLER_ENVIRONMENT=production HOME=%h XDG_RUNTIME_DIR=%t DOCKER_HOST=unix://%t/docker.sock @NODE_BIN@ @CONTROLLER_CODE_DIR@/apps/environment-controller/dist/main.js
+Restart=on-failure
+RestartSec=10s
+UMask=0077
+NoNewPrivileges=yes
+# No RestrictNamespaces and no seccomp filter: the controller enters the rootless daemon's
+# namespaces (nsenter, setns). SIGTERM goes to the controller first; it stops its own processes
+# (builds, socket bridges) before the rest of the control group is killed.
+KillMode=mixed
+TimeoutStopSec=90s
+
+[Install]
+WantedBy=default.target

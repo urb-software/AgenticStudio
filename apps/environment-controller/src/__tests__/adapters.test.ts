@@ -131,7 +131,7 @@ describe('SystemdSlices.boundBuild', () => {
   const slices = (runner: RecordingRunner) =>
     new SystemdSlices({ runner, directory: join(dir, 'user'), env });
 
-  it('bounds the daemon unit with the memory plus the daemon headroom, no swap and the CPU quota', async () => {
+  it('bounds the app slice with the memory plus the daemon headroom, no swap and the CPU quota', async () => {
     const runner = new RecordingRunner();
 
     await slices(runner).boundBuild(identity, limits, signal);
@@ -144,7 +144,7 @@ describe('SystemdSlices.boundBuild', () => {
         '--user',
         'set-property',
         '--runtime',
-        'docker.service',
+        'app.slice',
         'MemoryMax=1536M',
         'MemorySwapMax=0',
         'CPUQuota=100%',
@@ -166,7 +166,7 @@ describe('SystemdSlices.boundBuild', () => {
       '--user',
       'set-property',
       '--runtime',
-      'docker.service',
+      'app.slice',
       'MemoryMax=4608M',
       'MemorySwapMax=0',
       'CPUQuota=250%',

@@ -7,6 +7,9 @@
 #   - The agent side: the agent user (never in the `docker` group, no passwordless sudo), its
 #     rootless Docker daemon kept running without a login session, the agent worker as its
 #     systemd user service, and resource limits for the user.
+#   - The Preview side (ADR 0004): the Preview user, built the same way, with its own
+#     rootless Docker daemon whose network namespace carries egress rules, a firewall of its own,
+#     limits, the Preview proxy socket directory and the environment controller as its user service.
 #
 # Usage, as root, from a checkout of the repository:
 #   sudo deploy/setup-server.sh                  # every step
@@ -50,19 +53,40 @@ STUDIO_PROXY_WORKER_PORT="${STUDIO_PROXY_WORKER_PORT:-8080}"
 AGENT_MEMORY_MAX="${AGENT_MEMORY_MAX:-75%}"
 AGENT_TASKS_MAX="${AGENT_TASKS_MAX:-4096}"
 AGENT_CPU_WEIGHT="${AGENT_CPU_WEIGHT:-50}"
+# The Preview user: runs the environment controller and the Previews' own rootless
+# Docker daemon. Never the agent user's uid; an existing Preview user below 2000 is refused.
+PREVIEW_USER="${PREVIEW_USER:-preview}"
+PREVIEW_UID="${PREVIEW_UID:-2002}"
+# The group the reverse proxy container joins to reach the Preview sockets in /run/preview-proxy
+# (compose.server.preview.yaml, PREVIEW_PROXY_GID). The Preview user is not a member: the socket
+# directory is setgid, so sockets created in it carry the group.
+PREVIEW_PROXY_GID="${PREVIEW_PROXY_GID:-2003}"
+PREVIEW_PROXY_GROUP="previewproxy"
+PREVIEW_PROXY_DIR="/run/preview-proxy"
+CONTROLLER_CODE_DIR="${CONTROLLER_CODE_DIR:-/opt/agentic-studio-controller}"
+# Limits for everything the Preview user runs (its user slice, rootless Docker and builds included).
+PREVIEW_MEMORY_MAX="${PREVIEW_MEMORY_MAX:-50%}"
+PREVIEW_TASKS_MAX="${PREVIEW_TASKS_MAX:-4096}"
+PREVIEW_CPU_WEIGHT="${PREVIEW_CPU_WEIGHT:-50}"
+# The resolver the Previews' containers may reach (DNS only); empty: the first non-loopback IPv4
+# nameserver of /run/systemd/resolve/resolv.conf, else /etc/resolv.conf.
+PREVIEW_DNS="${PREVIEW_DNS:-}"
 # Disk quota on the agent user's home filesystem, in GiB; empty sets none. Applied only where
 # the filesystem has user quotas switched on (reported otherwise).
 AGENT_DISK_QUOTA_GB="${AGENT_DISK_QUOTA_GB:-}"
 # -------------------------------------------------------------------------------------------------
 
-STEPS=(preflight packages node user logins layout worker guardrails firewall limits rootless service)
-SYSTEMD_STEPS=(firewall limits rootless service)
+STEPS=(preflight packages node user preview-user logins layout worker controller guardrails firewall
+  preview-firewall limits rootless preview-rootless preview-proxy-dir service controller-service)
+SYSTEMD_STEPS=(firewall preview-firewall limits rootless preview-rootless preview-proxy-dir service controller-service)
 DOCKER_GPG_FINGERPRINT="9DC858229FC7DD38854AE2D88D81803C0EBFCD88"
 DOCKER_PACKAGES=(docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
   docker-ce-rootless-extras)
 BASE_PACKAGES=(ca-certificates curl gnupg git xz-utils uidmap slirp4netns dbus-user-session
-  fuse-overlayfs iptables acl quota)
+  fuse-overlayfs iptables acl quota socat util-linux iproute2)
 FIREWALL_CHAIN="AGENTIC-STUDIO-AGENT"
+PREVIEW_FIREWALL_CHAIN="AGENTIC-STUDIO-PREVIEW"
+PREVIEW_EGRESS_SCRIPT="/usr/local/lib/agentic-studio/preview-egress-rules"
 # Groups besides docker whose members can become root.
 ROOT_EQUIVALENT_GROUPS="lxd incus-admin libvirt disk"
 
@@ -102,8 +126,11 @@ packages   Base packages (${BASE_PACKAGES[*]}), Docker's official apt repository
 node       Node.js ${NODE_VERSION} into /usr/local (root-owned), pinned SHA-256 verified; corepack enabled.
 user       Creates the agent user '${AGENT_USER}' with uid/gid ${AGENT_UID} (home directory, own group, no password, no sudo)
            with a subordinate uid/gid range; checks it again afterwards.
-logins     The agent user gets no cron (/etc/cron.deny), no at (/etc/at.deny) and no SSH login
-           (/etc/ssh/sshd_config.d/60-agentic-studio.conf, when sshd is installed); logind kills its
+preview-user  Creates the Preview user '${PREVIEW_USER}' (uid/gid ${PREVIEW_UID}) the same way, and the group
+           '${PREVIEW_PROXY_GROUP}' (gid ${PREVIEW_PROXY_GID}) for the reverse proxy; the Preview user is in no root-equivalent
+           group, not in the proxy group, and shares no group with the agent user.
+logins     The agent and Preview users get no cron (/etc/cron.deny), no at (/etc/at.deny) and no SSH login
+           (/etc/ssh/sshd_config.d/60-agentic-studio.conf, when sshd is installed); logind kills their
            session processes at logout (/etc/systemd/logind.conf.d/60-agentic-studio.conf).
 layout     Root only: ${STUDIO_CONFIG_DIR} (0700, .env 0600 from deploy/studio.env.example),
            ${STUDIO_STATE_DIR} (0700; data/ and proxy/ owned by uid ${STUDIO_CONTAINER_UID}),
@@ -111,8 +138,13 @@ layout     Root only: ${STUDIO_CONFIG_DIR} (0700, .env 0600 from deploy/studio.e
            /usr/local/sbin/agentic-studio-compose; /usr/local/bin/agentic-studio-check-boundary.
            Agent side, written as the agent user: ~/.config/agentic-studio-worker/.env (0600, from
            apps/agent-worker/.env.example) and ~/.local/share/agentic-studio-worker (0700).
+           Preview side, written as the Preview user: ~/.config/agentic-studio-controller/.env (0600, from
+           apps/environment-controller/.env.example, empty token) and ~/.local/share/agentic-studio-controller (0700);
+           /usr/local/bin/agentic-studio-check-preview.
 worker     The agent worker's code from this checkout's HEAD into ${WORKER_CODE_DIR} (root-owned,
            world-readable, not writable by the agent user), installed and built there.
+controller The environment controller's code from this checkout's HEAD into ${CONTROLLER_CODE_DIR} (root-owned,
+           world-readable, not writable by the Preview user), installed and built there.
 guardrails Studio's managed guardrails for Claude Code and Codex, from the worker's guardrails folder
            (${WORKER_CODE_DIR}/apps/agent-worker/guardrails, its managed-files.txt): root:root, files 0644,
            directories 0755 (/etc/claude-code/managed-settings.json, /etc/codex/managed_config.toml,
@@ -123,13 +155,22 @@ firewall   /usr/local/sbin/agentic-studio-agent-firewall and agentic-studio-agen
            rejects the agent user's traffic to ${STUDIO_NETWORK_SUBNET} except the reverse proxy's worker
            port (${STUDIO_PROXY_ADDRESS}:${STUDIO_PROXY_WORKER_PORT});
            a verify timer, and a drop-in binding user@<uid>.service to the firewall (fail closed).
+preview-firewall  The same for the Preview user (agentic-studio-preview-firewall.service, chain ${PREVIEW_FIREWALL_CHAIN}).
 limits     /etc/systemd/system/user-<uid>.slice.d/50-agentic-studio.conf (MemoryMax=${AGENT_MEMORY_MAX},
            TasksMax=${AGENT_TASKS_MAX}, CPUWeight=${AGENT_CPU_WEIGHT}), cgroup delegation for user managers,
-           and a disk quota where available.
+           and a disk quota where available. The same for the Preview user (MemoryMax=${PREVIEW_MEMORY_MAX},
+           TasksMax=${PREVIEW_TASKS_MAX}, CPUWeight=${PREVIEW_CPU_WEIGHT}).
 rootless   AppArmor profile for rootlesskit where Ubuntu restricts user namespaces, linger for the
            agent user, and its rootless Docker daemon as a systemd user service.
+preview-rootless  The Preview user's rootless Docker daemon (linger, systemd user service), its daemon.json
+           (dns), ${PREVIEW_EGRESS_SCRIPT} (root-owned) and the docker.service drop-in that applies the
+           egress rules in the daemon's network namespace at every start.
+preview-proxy-dir  /etc/tmpfiles.d/agentic-studio-preview-proxy.conf: ${PREVIEW_PROXY_DIR} (setgid 2750,
+           ${PREVIEW_USER}:${PREVIEW_PROXY_GROUP}) at every boot; created now as well.
 service    /etc/systemd/user/agentic-studio-worker.service, enabled for the agent user; started only
            once its worker token is filled in.
+controller-service  /etc/systemd/user/agentic-studio-controller.service, enabled for the Preview user (ConditionUser);
+           started only once its STUDIO_CONTROLLER_TOKEN is filled in.
 EOF
 }
 
@@ -141,16 +182,24 @@ agent_exists() { id -u "$AGENT_USER" >/dev/null 2>&1; }
 agent_uid() { id -u "$AGENT_USER"; }
 agent_home() { getent passwd "$AGENT_USER" | cut -d: -f6; }
 
-# Runs a command as the agent user with a clean environment. Files in the agent user's home are
-# only ever written this way, never by root, so a planted symlink cannot redirect a root write.
-as_agent() {
-  local uid home
-  uid="$(agent_uid)"
-  home="$(agent_home)"
-  (cd / && runuser -u "$AGENT_USER" -- env -i HOME="$home" USER="$AGENT_USER" LOGNAME="$AGENT_USER" \
+preview_exists() { id -u "$PREVIEW_USER" >/dev/null 2>&1; }
+preview_uid() { id -u "$PREVIEW_USER"; }
+preview_home() { getent passwd "$PREVIEW_USER" | cut -d: -f6; }
+
+# Runs a command as a user (the agent user or the Preview user) with a clean environment. Files
+# in their homes are only ever written this way, never by root, so a planted symlink cannot
+# redirect a root write.
+as_user() {
+  local user="$1" uid home
+  shift
+  uid="$(id -u "$user")"
+  home="$(getent passwd "$user" | cut -d: -f6)"
+  (cd / && runuser -u "$user" -- env -i HOME="$home" USER="$user" LOGNAME="$user" \
     SHELL=/bin/bash PATH=/usr/local/bin:/usr/bin:/bin XDG_RUNTIME_DIR="/run/user/$uid" \
     DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" "$@")
 }
+as_agent() { as_user "$AGENT_USER" "$@"; }
+as_preview() { as_user "$PREVIEW_USER" "$@"; }
 
 # The agent user must never be in the docker group or able to use sudo without a password.
 assert_agent_safe() {
@@ -169,6 +218,9 @@ assert_agent_safe() {
       die "the agent user '$AGENT_USER' is in the $group group, which is root-equivalent. Remove it (gpasswd -d $AGENT_USER $group) and run the script again."
     fi
   done
+  if id -nG "$AGENT_USER" | tr ' ' '\n' | grep -qx "$PREVIEW_PROXY_GROUP"; then
+    die "the agent user '$AGENT_USER' is in the $PREVIEW_PROXY_GROUP group: it could reach the Preview sockets and skip the Preview password. Remove it (gpasswd -d $AGENT_USER $PREVIEW_PROXY_GROUP) and run the script again."
+  fi
   if command -v sudo >/dev/null 2>&1; then
     if sudo -n -l -U "$AGENT_USER" 2>/dev/null | grep -Eq 'NOPASSWD|!authenticate'; then
       die "the agent user '$AGENT_USER' has passwordless sudo rules (sudo -l -U $AGENT_USER). Remove them and run the script again."
@@ -182,11 +234,89 @@ assert_agent_safe() {
   fi
 }
 
+# The Preview settings, checked before anything else (they end up in file names, unit files and
+# firewall rules), whether or not the Preview user exists yet.
+validate_preview_settings() {
+  if ! [[ "$PREVIEW_USER" =~ ^[a-z_][a-z0-9_-]*$ ]] || [ "$PREVIEW_USER" = root ] || [ "$PREVIEW_USER" = "$AGENT_USER" ]; then
+    die "PREVIEW_USER '$PREVIEW_USER' is not a valid ordinary user name, or equals the agent user."
+  fi
+  if ! [[ "$PREVIEW_UID" =~ ^[0-9]+$ ]] || [ "$PREVIEW_UID" -lt 2000 ]; then
+    die "PREVIEW_UID must be a number of 2000 or more (below 2000 ordinary users and container images commonly run)."
+  fi
+  [ "$PREVIEW_UID" != "$AGENT_UID" ] || die "PREVIEW_UID ($PREVIEW_UID) must differ from the agent user's uid (AGENT_UID)."
+  if agent_exists && [ "$PREVIEW_UID" = "$(agent_uid)" ]; then
+    die "PREVIEW_UID ($PREVIEW_UID) must differ from the agent user's uid."
+  fi
+  [ "$PREVIEW_UID" != "$STUDIO_CONTAINER_UID" ] || die "PREVIEW_UID equals STUDIO_CONTAINER_UID ($STUDIO_CONTAINER_UID), the uid of Studio's containers."
+  local taken
+  taken="$(getent passwd "$PREVIEW_UID" | cut -d: -f1 || true)"
+  if [ -n "$taken" ] && [ "$taken" != "$PREVIEW_USER" ]; then
+    die "uid $PREVIEW_UID is already taken by the user '$taken' (PREVIEW_UID)."
+  fi
+  taken="$(getent group "$PREVIEW_UID" | cut -d: -f1 || true)"
+  if [ -n "$taken" ] && [ "$taken" != "$PREVIEW_USER" ]; then
+    die "gid $PREVIEW_UID is already taken by the group '$taken' (PREVIEW_UID)."
+  fi
+  if ! [[ "$PREVIEW_PROXY_GID" =~ ^[0-9]+$ ]] || [ "$PREVIEW_PROXY_GID" -lt 2000 ]; then
+    die "PREVIEW_PROXY_GID must be a number of 2000 or more."
+  fi
+  local gid
+  for gid in "$AGENT_UID" "$PREVIEW_UID" "$STUDIO_CONTAINER_UID"; do
+    [ "$PREVIEW_PROXY_GID" != "$gid" ] || die "PREVIEW_PROXY_GID ($PREVIEW_PROXY_GID) must differ from the agent, Preview and Studio container ids."
+  done
+  local holder own
+  holder="$(getent group "$PREVIEW_PROXY_GID" | cut -d: -f1 || true)"
+  if [ -n "$holder" ] && [ "$holder" != "$PREVIEW_PROXY_GROUP" ]; then
+    die "gid $PREVIEW_PROXY_GID is already taken by the group '$holder' (PREVIEW_PROXY_GID); the Preview proxy group is '$PREVIEW_PROXY_GROUP'."
+  fi
+  own="$(getent group "$PREVIEW_PROXY_GROUP" | cut -d: -f3 || true)"
+  if [ -n "$own" ] && [ "$own" != "$PREVIEW_PROXY_GID" ]; then
+    die "the group '$PREVIEW_PROXY_GROUP' exists with gid $own, not PREVIEW_PROXY_GID ($PREVIEW_PROXY_GID)."
+  fi
+  [[ "$PREVIEW_MEMORY_MAX" =~ ^[0-9]+(%|[KMGT])?$ ]] || die "PREVIEW_MEMORY_MAX must be a number with an optional %, K, M, G or T."
+  [[ "$PREVIEW_TASKS_MAX" =~ ^[0-9]+$ ]] || die "PREVIEW_TASKS_MAX must be a number."
+  [[ "$PREVIEW_CPU_WEIGHT" =~ ^[0-9]+$ ]] || die "PREVIEW_CPU_WEIGHT must be a number."
+  [[ "$CONTROLLER_CODE_DIR" =~ ^/[A-Za-z0-9._/-]+$ ]] || die "CONTROLLER_CODE_DIR must be an absolute path of plain characters."
+  [ -z "$PREVIEW_DNS" ] || [[ "$PREVIEW_DNS" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || die "PREVIEW_DNS must be an IPv4 address."
+}
+
+# The Preview user must never be in the docker group, a root-equivalent group or sudo, nor in the
+# proxy group, and shares no group with the agent user (neither can reach the other's files).
+assert_preview_safe() {
+  preview_exists || return 0
+  local uid group
+  uid="$(preview_uid)"
+  [ "$uid" != 0 ] || die "the Preview user '$PREVIEW_USER' has uid 0."
+  [ "$uid" -ge 2000 ] ||
+    die "the Preview user '$PREVIEW_USER' has uid $uid, below 2000, where ordinary users and container images commonly run. Use a dedicated user with a uid of 2000 or more (PREVIEW_UID, default 2002)."
+  [ "$uid" != "$STUDIO_CONTAINER_UID" ] || die "the Preview user's uid equals STUDIO_CONTAINER_UID ($STUDIO_CONTAINER_UID)."
+  if agent_exists && [ "$uid" = "$(agent_uid)" ]; then die "the Preview user '$PREVIEW_USER' has the agent user's uid."; fi
+  for group in docker $ROOT_EQUIVALENT_GROUPS sudo admin wheel "$PREVIEW_PROXY_GROUP"; do
+    if id -nG "$PREVIEW_USER" | tr ' ' '\n' | grep -qx "$group"; then
+      die "the Preview user '$PREVIEW_USER' is in the $group group, which it must not be (root-equivalent access, or access to the proxy's sockets without the setgid directory). Remove it (gpasswd -d $PREVIEW_USER $group) and run the script again."
+    fi
+  done
+  if command -v sudo >/dev/null 2>&1; then
+    if sudo -n -l -U "$PREVIEW_USER" 2>/dev/null | grep -Eq 'NOPASSWD|!authenticate'; then
+      die "the Preview user '$PREVIEW_USER' has passwordless sudo rules (sudo -l -U $PREVIEW_USER). Remove them and run the script again."
+    fi
+    if (cd / && runuser -u "$PREVIEW_USER" -- sudo -n true) >/dev/null 2>&1; then
+      die "the Preview user '$PREVIEW_USER' can use sudo without a password. Remove that and run the script again."
+    fi
+  fi
+  if agent_exists; then
+    local shared
+    shared="$(comm -12 <(id -nG "$AGENT_USER" | tr ' ' '\n' | sort) <(id -nG "$PREVIEW_USER" | tr ' ' '\n' | sort) | tr '\n' ' ')"
+    [ -z "$shared" ] || die "the agent user and the Preview user share the group(s) ${shared% }: they must have no group in common."
+  fi
+}
+
 # Installs a file from stdin when its content, owner or mode differ. Root-owned paths only.
 install_content() {
   local dest="$1" mode="$2" tmp
   tmp="$(mktemp)"
   cat >"$tmp" || die "could not stage $dest."
+  [ -s "$tmp" ] || die "refusing to install empty content as $dest."
   if [ -f "$dest" ] && [ ! -L "$dest" ] && cmp -s "$tmp" "$dest" &&
     [ "$(stat -c '%U:%G %a' "$dest")" = "root:root $mode" ]; then
     rm -f "$tmp"
@@ -195,6 +325,17 @@ install_content() {
   install -o root -g root -m "$mode" "$tmp" "$dest" || die "could not install $dest."
   rm -f "$tmp"
   changed "$dest"
+}
+
+# install_template <dest> <mode> <source> <sed expression>...: installs the source with the
+# expressions applied; a failing sed or an empty result stops the script.
+install_template() {
+  local dest="$1" mode="$2" source="$3" expressions=() content
+  shift 3
+  for content in "$@"; do expressions+=(-e "$content"); done
+  content="$(sed "${expressions[@]}" "$source")" || die "could not render $source."
+  [ -n "$content" ] || die "rendering $source gave nothing."
+  install_content "$dest" "$mode" <<<"$content"
 }
 
 # A root-owned directory with an exact mode.
@@ -209,14 +350,14 @@ ensure_root_dir() {
 # Starts the agent user's manager if it is down (for example stopped with its firewall); its
 # drop-in starts the firewall first. Then waits for its bus.
 wait_for_user_bus() {
-  local uid
-  uid="$(agent_uid)"
+  local user="${1:-$AGENT_USER}" uid
+  uid="$(id -u "$user")"
   systemctl start "user@$uid.service"
   for _ in $(seq 1 30); do
     [ -S "/run/user/$uid/bus" ] && return 0
     sleep 1
   done
-  die "the agent user's systemd user manager did not start (no /run/user/$uid/bus)."
+  die "the systemd user manager of '$user' did not start (no /run/user/$uid/bus)."
 }
 
 # --- Steps ----------------------------------------------------------------------------------------
@@ -247,6 +388,8 @@ step_preflight() {
     log "WARNING: this looks like WSL. WSL with default settings is not an isolation boundary (ADR 0002); the target is native Linux."
   fi
   assert_agent_safe
+  validate_preview_settings
+  assert_preview_safe
   # Root runs code from this checkout (the worker build, the installed check script), so only
   # root may be able to change it.
   local writable
@@ -350,6 +493,35 @@ step_node() {
   fi
 }
 
+# Rootless Docker needs a subordinate uid/gid range; useradd normally assigns one.
+ensure_subids() {
+  local user="$1" file start
+  for file in /etc/subuid /etc/subgid; do
+    [ -e "$file" ] || install -o root -g root -m 0644 /dev/null "$file"
+    if ! grep -q "^$user:" "$file"; then
+      start="$(awk -F: 'BEGIN { m = 100000 } { e = $2 + $3; if (e > m) m = e } END { print m }' "$file")"
+      if [ "$file" = /etc/subuid ]; then
+        usermod --add-subuids "$start-$((start + 65535))" "$user"
+      else
+        usermod --add-subgids "$start-$((start + 65535))" "$user"
+      fi
+      changed "$file range $start-$((start + 65535)) for '$user'"
+    fi
+  done
+}
+
+# The user's home directory must not be accessible to other users.
+ensure_private_home() {
+  local user="$1" home mode
+  home="$(getent passwd "$user" | cut -d: -f6)"
+  [ -d "$home" ] || die "the home directory $home of '$user' does not exist."
+  mode="$(stat -c '%a' "$home")"
+  if [ "${mode: -1}" != 0 ]; then
+    chmod o-rwx "$home"
+    changed "$home not accessible to other users"
+  fi
+}
+
 step_user() {
   if ! agent_exists; then
     if ! [[ "$AGENT_UID" =~ ^[0-9]+$ ]] || [ "$AGENT_UID" -lt 2000 ]; then
@@ -361,59 +533,64 @@ step_user() {
     useradd --create-home --uid "$AGENT_UID" --gid "$AGENT_UID" --shell /bin/bash "$AGENT_USER"
     changed "created the agent user '$AGENT_USER' with uid/gid $AGENT_UID (no password, no sudo)"
   fi
-  # Rootless Docker needs a subordinate uid/gid range; useradd normally assigns one.
-  local file start
-  for file in /etc/subuid /etc/subgid; do
-    [ -e "$file" ] || install -o root -g root -m 0644 /dev/null "$file"
-    if ! grep -q "^$AGENT_USER:" "$file"; then
-      start="$(awk -F: 'BEGIN { m = 100000 } { e = $2 + $3; if (e > m) m = e } END { print m }' "$file")"
-      if [ "$file" = /etc/subuid ]; then
-        usermod --add-subuids "$start-$((start + 65535))" "$AGENT_USER"
-      else
-        usermod --add-subgids "$start-$((start + 65535))" "$AGENT_USER"
-      fi
-      changed "$file range $start-$((start + 65535)) for '$AGENT_USER'"
-    fi
-  done
-  local home mode
-  home="$(agent_home)"
-  [ -d "$home" ] || die "the agent user's home directory $home does not exist."
-  mode="$(stat -c '%a' "$home")"
-  if [ "${mode: -1}" != 0 ]; then
-    chmod o-rwx "$home"
-    changed "$home not accessible to other users"
-  fi
+  ensure_subids "$AGENT_USER"
+  ensure_private_home "$AGENT_USER"
   assert_agent_safe
   step_log "ok ('$AGENT_USER' is not in the docker group and has no passwordless sudo)"
 }
 
+step_preview_user() {
+  agent_exists || die "the agent user does not exist yet; run the user step first."
+  if ! getent group "$PREVIEW_PROXY_GROUP" >/dev/null; then
+    groupadd --gid "$PREVIEW_PROXY_GID" "$PREVIEW_PROXY_GROUP"
+    changed "created the group '$PREVIEW_PROXY_GROUP' with gid $PREVIEW_PROXY_GID (the reverse proxy's access to the Preview sockets)"
+  fi
+  if ! preview_exists; then
+    ! getent passwd "$PREVIEW_UID" >/dev/null || die "uid $PREVIEW_UID is already taken (PREVIEW_UID)."
+    ! getent group "$PREVIEW_UID" >/dev/null || die "gid $PREVIEW_UID is already taken (PREVIEW_UID)."
+    groupadd --gid "$PREVIEW_UID" "$PREVIEW_USER"
+    useradd --create-home --uid "$PREVIEW_UID" --gid "$PREVIEW_UID" --shell /bin/bash "$PREVIEW_USER"
+    changed "created the Preview user '$PREVIEW_USER' with uid/gid $PREVIEW_UID (no password, no sudo)"
+  fi
+  ensure_subids "$PREVIEW_USER"
+  ensure_private_home "$PREVIEW_USER"
+  assert_preview_safe
+  step_log "ok ('$PREVIEW_USER' is in no root-equivalent group, not in '$PREVIEW_PROXY_GROUP', shares no group with '$AGENT_USER')"
+}
+
 # Adds the agent user to a deny list (one name per line), creating the file if needed.
 deny_listed() {
-  local file="$1"
-  if [ -f "$file" ] && grep -qx "$AGENT_USER" "$file"; then return 0; fi
+  local file="$1" user="${2:-$AGENT_USER}"
+  if [ -f "$file" ] && grep -qx "$user" "$file"; then return 0; fi
   [ ! -L "$file" ] || die "$file is a symbolic link; refusing to use it."
   [ -e "$file" ] || install -o root -g root -m 0644 /dev/null "$file"
-  printf '%s\n' "$AGENT_USER" >>"$file"
-  changed "'$AGENT_USER' in $file"
+  printf '%s\n' "$user" >>"$file"
+  changed "'$user' in $file"
 }
 
 step_logins() {
   agent_exists || die "the agent user does not exist yet; run the user step first."
   # Nothing of the agent user may run outside its user manager, which is bound to the firewall.
-  deny_listed /etc/cron.deny
-  deny_listed /etc/at.deny
+  preview_exists || die "the Preview user does not exist yet; run the preview-user step first."
+  local user
+  for user in "$AGENT_USER" "$PREVIEW_USER"; do
+    deny_listed /etc/cron.deny "$user"
+    deny_listed /etc/at.deny "$user"
+  done
   local file
   for file in /etc/cron.allow /etc/at.allow; do
-    if [ -f "$file" ] && grep -qx "$AGENT_USER" "$file"; then
-      die "$file allows the agent user '$AGENT_USER'; remove it from there and run the script again."
-    fi
+    for user in "$AGENT_USER" "$PREVIEW_USER"; do
+      if [ -f "$file" ] && grep -qx "$user" "$file"; then
+        die "$file allows the user '$user'; remove it from there and run the script again."
+      fi
+    done
   done
   if [ -x /usr/sbin/sshd ]; then
     install -d -m 0755 /etc/ssh/sshd_config.d
     local ssh_changed=0
     install_content /etc/ssh/sshd_config.d/60-agentic-studio.conf 644 <<EOF && ssh_changed=1
-# Installed by deploy/setup-server.sh: the agent user never logs in over SSH.
-DenyUsers $AGENT_USER
+# Installed by deploy/setup-server.sh: the agent and Preview users never log in over SSH.
+DenyUsers $AGENT_USER $PREVIEW_USER
 EOF
     # sshd -t needs its privilege separation directory, which exists only while sshd runs when
     # it is socket-activated (Ubuntu 24.04).
@@ -427,11 +604,11 @@ EOF
   fi
   install -d -m 0755 /etc/systemd/logind.conf.d
   if install_content /etc/systemd/logind.conf.d/60-agentic-studio.conf 644 <<EOF; then
-# Installed by deploy/setup-server.sh: when a session of the agent user ends (for example the
-# operator's sudo -iu), its processes are killed; only its user manager keeps running.
+# Installed by deploy/setup-server.sh: when a session of the agent or Preview user ends (for
+# example the operator's sudo -iu), its processes are killed; only its user manager keeps running.
 [Login]
 KillUserProcesses=yes
-KillOnlyUsers=$AGENT_USER
+KillOnlyUsers=$AGENT_USER $PREVIEW_USER
 EOF
     if has_systemd; then systemctl kill --signal=HUP systemd-logind.service; fi
   fi
@@ -486,6 +663,7 @@ export STUDIO_ENV_FILE="$env" STUDIO_DATA_HOST_DIR="$STUDIO_STATE_DIR/data" STUD
 exec docker compose --project-directory "$STUDIO_COMPOSE_DIR" --env-file "$env" "\${files[@]}" "\$@"
 EOF
   install_content /usr/local/bin/agentic-studio-check-boundary 755 <"$SCRIPT_DIR/check-boundary.sh" || true
+  install_content /usr/local/bin/agentic-studio-check-preview 755 <"$SCRIPT_DIR/check-preview.sh" || true
 
   # The agent side, written as the agent user.
   local home worker_env
@@ -509,44 +687,84 @@ EOF
     as_agent chmod 0600 "$worker_env"
     changed "$worker_env is 0600"
   fi
+
+  # The Preview side, written as the Preview user.
+  preview_exists || die "the Preview user does not exist yet; run the preview-user step first."
+  local phome controller_env
+  phome="$(preview_home)"
+  controller_env="$phome/.config/agentic-studio-controller/.env"
+  as_preview mkdir -p "$phome/.config" "$phome/.local/share"
+  if ! as_preview test -d "$phome/.config/agentic-studio-controller" ||
+    ! as_preview test -d "$phome/.local/share/agentic-studio-controller"; then
+    as_preview install -d -m 0700 "$phome/.config/agentic-studio-controller" "$phome/.local/share/agentic-studio-controller"
+    changed "Preview side directories ~/.config/agentic-studio-controller and ~/.local/share/agentic-studio-controller"
+  fi
+  as_preview chmod 0700 "$phome/.config/agentic-studio-controller" "$phome/.local/share/agentic-studio-controller"
+  if ! as_preview test -e "$controller_env"; then
+    sed -e "s|^STUDIO_CONTROLLER_DATA_DIR=.*|STUDIO_CONTROLLER_DATA_DIR=$phome/.local/share/agentic-studio-controller|" \
+      -e "s|^STUDIO_API_URL=.*|STUDIO_API_URL=http://$STUDIO_PROXY_ADDRESS:$STUDIO_PROXY_WORKER_PORT|" \
+      -e "s|^STUDIO_CONTROLLER_PROXY_GID=.*|STUDIO_CONTROLLER_PROXY_GID=$PREVIEW_PROXY_GID|" \
+      "$REPO_DIR/apps/environment-controller/.env.example" |
+      as_preview sh -c 'umask 077 && cat > "$1"' sh "$controller_env"
+    changed "$controller_env from apps/environment-controller/.env.example (no token: fill it in)"
+  fi
+  if [ "$(as_preview stat -c '%a' "$controller_env")" != 600 ]; then
+    as_preview chmod 0600 "$controller_env"
+    changed "$controller_env is 0600"
+  fi
   step_log "ok"
 }
 
-step_worker() {
+# Builds one app's code from this checkout's HEAD into a root-owned directory.
+#   build_code <label> <dir> <package> <main.js relative to dir> <workspace package to build>...
+build_code() {
+  local label="$1" dir="$2" package="$3" main="$4" built
+  shift 4
   command -v git >/dev/null || die "git is missing; run the packages step first."
   [ -x /usr/local/bin/pnpm ] || die "pnpm is missing; run the node step first."
   local commit
   commit="$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null)" ||
     die "$REPO_DIR is not a Git checkout; run the script from a clone of the repository."
-  if [ -f "$WORKER_CODE_DIR/.source-commit" ] && [ "$(cat "$WORKER_CODE_DIR/.source-commit")" = "$commit" ] &&
-    [ -f "$WORKER_CODE_DIR/apps/agent-worker/dist/main.js" ]; then
-    step_log "unchanged (agent worker at ${commit:0:12})"
+  if [ -f "$dir/.source-commit" ] && [ "$(cat "$dir/.source-commit")" = "$commit" ] &&
+    [ -f "$dir/$main" ]; then
+    step_log "unchanged ($label at ${commit:0:12})"
     return 0
   fi
-  local staging="$WORKER_CODE_DIR.new"
+  local staging="$dir.new"
   rm -rf "$staging"
   install -d -o root -g root -m 0755 "$staging"
   git -C "$REPO_DIR" archive --format=tar HEAD | tar -x -C "$staging" --no-same-owner
-  # Dependency install scripts never run as root (--ignore-scripts); the worker needs none.
+  # Dependency install scripts never run as root (--ignore-scripts); the apps need none.
   (
     cd "$staging"
     export PATH="/usr/local/bin:$PATH" COREPACK_ENABLE_DOWNLOAD_PROMPT=0 CI=true
     # Copies, not hard links into root's pnpm store, so the code stands on its own.
     /usr/local/bin/pnpm install --frozen-lockfile --ignore-scripts --package-import-method copy \
-      --filter '@agentic-studio/agent-worker...'
-    /usr/local/bin/pnpm --filter @agentic-studio/contracts run build
-    /usr/local/bin/pnpm --filter @agentic-studio/agent-worker run build
+      --filter "$package..."
+    for built in "$@"; do
+      /usr/local/bin/pnpm --filter "@agentic-studio/$built" run build
+    done
   )
   printf '%s\n' "$commit" >"$staging/.source-commit"
   chown -R root:root "$staging"
   chmod -R u+rwX,go+rX,go-w "$staging"
-  if [ -d "$WORKER_CODE_DIR" ]; then
-    rm -rf "$WORKER_CODE_DIR.old"
-    mv "$WORKER_CODE_DIR" "$WORKER_CODE_DIR.old"
+  if [ -d "$dir" ]; then
+    rm -rf "$dir.old"
+    mv "$dir" "$dir.old"
   fi
-  mv "$staging" "$WORKER_CODE_DIR"
-  rm -rf "$WORKER_CODE_DIR.old"
-  changed "agent worker ${commit:0:12} built in $WORKER_CODE_DIR"
+  mv "$staging" "$dir"
+  rm -rf "$dir.old"
+  changed "$label ${commit:0:12} built in $dir"
+}
+
+step_worker() {
+  build_code "agent worker" "$WORKER_CODE_DIR" '@agentic-studio/agent-worker' apps/agent-worker/dist/main.js \
+    contracts agent-worker
+}
+
+step_controller() {
+  build_code "environment controller" "$CONTROLLER_CODE_DIR" '@agentic-studio/environment-controller' \
+    apps/environment-controller/dist/main.js contracts compose-validation environment-controller
 }
 
 # Directories the guardrails step creates stop below these existing system directories.
@@ -588,65 +806,67 @@ step_guardrails() {
   step_log "ok ($count managed-files.txt entries in place, root:root 0644; run by /usr/bin/env -i and /usr/local/bin/node)"
 }
 
-step_firewall() {
-  local uid
-  uid="$(agent_uid)"
+# The firewall for one user: <role> (agent or preview), <label> for texts, the user's uid, the
+# iptables chain.
+install_user_firewall() {
+  local role="$1" label="$2" uid="$3" chain="$4"
+  local script="/usr/local/sbin/agentic-studio-$role-firewall" unit="agentic-studio-$role-firewall"
   [[ "$STUDIO_PROXY_ADDRESS" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || die "STUDIO_PROXY_ADDRESS must be an IPv4 address."
   [[ "$STUDIO_PROXY_WORKER_PORT" =~ ^[0-9]{1,5}$ ]] || die "STUDIO_PROXY_WORKER_PORT must be a port number."
-  install_content /usr/local/sbin/agentic-studio-agent-firewall 755 <<EOF || true
+  install_content "$script" 755 <<EOF || true
 #!/usr/bin/env bash
-# Keeps the agent user (uid $uid) away from Studio's container network $STUDIO_NETWORK_SUBNET:
+# Keeps the $label (uid $uid) away from Studio's container network $STUDIO_NETWORK_SUBNET:
 # only the reverse proxy's worker port ($STUDIO_PROXY_ADDRESS:$STUDIO_PROXY_WORKER_PORT) is allowed
-# there; the API, PostgreSQL, Redis and anything else are rejected. Installed by deploy/setup-server.sh; run by agentic-studio-agent-firewall.service
+# there; the API, PostgreSQL, Redis and anything else are rejected. Installed by deploy/setup-server.sh; run by $unit.service
 # (apply, which fails unless the rules are verified in place) and its verify timer.
 set -euo pipefail
 verify() {
-  iptables -w -C OUTPUT -m owner --uid-owner $uid -j $FIREWALL_CHAIN &&
-    iptables -w -C $FIREWALL_CHAIN -d $STUDIO_PROXY_ADDRESS/32 -p tcp --dport $STUDIO_PROXY_WORKER_PORT -j RETURN &&
-    iptables -w -C $FIREWALL_CHAIN -d $STUDIO_NETWORK_SUBNET -p tcp -j REJECT --reject-with tcp-reset &&
-    iptables -w -C $FIREWALL_CHAIN -d $STUDIO_NETWORK_SUBNET -j REJECT
+  iptables -w -C OUTPUT -m owner --uid-owner $uid -j $chain &&
+    iptables -w -C $chain -d $STUDIO_PROXY_ADDRESS/32 -p tcp --dport $STUDIO_PROXY_WORKER_PORT -j RETURN &&
+    iptables -w -C $chain -d $STUDIO_NETWORK_SUBNET -p tcp -j REJECT --reject-with tcp-reset &&
+    iptables -w -C $chain -d $STUDIO_NETWORK_SUBNET -j REJECT
 }
 case "\${1:-apply}" in
   apply)
     # The chain is replaced atomically, so a re-apply never leaves it empty.
     iptables-restore -w --noflush <<RULES
 *filter
-:$FIREWALL_CHAIN - [0:0]
--A $FIREWALL_CHAIN -d $STUDIO_PROXY_ADDRESS/32 -p tcp --dport $STUDIO_PROXY_WORKER_PORT -j RETURN
--A $FIREWALL_CHAIN -d $STUDIO_NETWORK_SUBNET -p tcp -j REJECT --reject-with tcp-reset
--A $FIREWALL_CHAIN -d $STUDIO_NETWORK_SUBNET -j REJECT
+:$chain - [0:0]
+-A $chain -d $STUDIO_PROXY_ADDRESS/32 -p tcp --dport $STUDIO_PROXY_WORKER_PORT -j RETURN
+-A $chain -d $STUDIO_NETWORK_SUBNET -p tcp -j REJECT --reject-with tcp-reset
+-A $chain -d $STUDIO_NETWORK_SUBNET -j REJECT
 COMMIT
 RULES
-    iptables -w -C OUTPUT -m owner --uid-owner $uid -j $FIREWALL_CHAIN 2>/dev/null ||
-      iptables -w -I OUTPUT 1 -m owner --uid-owner $uid -j $FIREWALL_CHAIN
-    verify || { echo "agent firewall rules are not in place" >&2; exit 1; }
+    iptables -w -C OUTPUT -m owner --uid-owner $uid -j $chain 2>/dev/null ||
+      iptables -w -I OUTPUT 1 -m owner --uid-owner $uid -j $chain
+    verify || { echo "$role firewall rules are not in place" >&2; exit 1; }
     ;;
   verify)
-    verify 2>/dev/null || { echo "agent firewall rules are missing" >&2; exit 1; }
+    verify 2>/dev/null || { echo "$role firewall rules are missing" >&2; exit 1; }
     ;;
   remove)
-    while iptables -w -D OUTPUT -m owner --uid-owner $uid -j $FIREWALL_CHAIN 2>/dev/null; do :; done
-    iptables -w -F $FIREWALL_CHAIN 2>/dev/null || true
-    iptables -w -X $FIREWALL_CHAIN 2>/dev/null || true
+    while iptables -w -D OUTPUT -m owner --uid-owner $uid -j $chain 2>/dev/null; do :; done
+    iptables -w -F $chain 2>/dev/null || true
+    iptables -w -X $chain 2>/dev/null || true
     ;;
   *) echo "usage: \$0 apply|verify|remove" >&2; exit 2 ;;
 esac
 EOF
   local reload=0
-  install_content /etc/systemd/system/agentic-studio-agent-firewall.service 644 <<EOF && reload=1
+  install_content "/etc/systemd/system/$unit.service" 644 <<EOF && reload=1
 [Unit]
-Description=Keep the agent user away from Studio's container network
+Description=Keep the $label away from Studio's container network
 Documentation=file://$WORKER_CODE_DIR/docs/engineering/deployment.md
 After=network-pre.target
-# Before any user manager (the agent user's lingering one included) starts; that manager
+# Before any user manager (the $label's lingering one included) starts; that manager
 # requires and is bound to this unit (user@$uid.service.d/60-agentic-studio-firewall.conf).
 Before=systemd-user-sessions.service network.target
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/local/sbin/agentic-studio-agent-firewall apply
-ExecStop=/usr/local/sbin/agentic-studio-agent-firewall remove
+ExecStart=$script apply
+ExecStop=$script remove
 
 [Install]
 WantedBy=multi-user.target
@@ -654,18 +874,18 @@ EOF
   # Rules flushed later by another tool: the timer stops the firewall unit, which stops the
   # agent side with it (fail closed). Starting user@<uid>.service or re-running the setup
   # restores both.
-  install_content /etc/systemd/system/agentic-studio-agent-firewall-verify.service 644 <<'EOF' && reload=1
+  install_content "/etc/systemd/system/$unit-verify.service" 644 <<EOF && reload=1
 [Unit]
-Description=Stop the agent side when its firewall rules are missing
-After=agentic-studio-agent-firewall.service
+Description=Stop the $role side when its firewall rules are missing
+After=$unit.service
 
 [Service]
 Type=oneshot
-ExecStart=/bin/sh -c '/usr/local/sbin/agentic-studio-agent-firewall verify || systemctl stop agentic-studio-agent-firewall.service'
+ExecStart=/bin/sh -c '$script verify || systemctl stop $unit.service'
 EOF
-  install_content /etc/systemd/system/agentic-studio-agent-firewall-verify.timer 644 <<'EOF' && reload=1
+  install_content "/etc/systemd/system/$unit-verify.timer" 644 <<EOF && reload=1
 [Unit]
-Description=Check the agent firewall rules every minute
+Description=Check the $role firewall rules every minute
 
 [Timer]
 OnBootSec=1min
@@ -675,31 +895,39 @@ AccuracySec=10s
 [Install]
 WantedBy=timers.target
 EOF
-  # The agent user's manager (its services, rootless Docker and the worker) never runs without
+  # The user's manager (its services, rootless Docker and the worker or controller) never runs without
   # the firewall: starting it starts the firewall first, and stopping or failing the firewall
   # stops it.
   install -d -m 0755 "/etc/systemd/system/user@$uid.service.d"
-  install_content "/etc/systemd/system/user@$uid.service.d/60-agentic-studio-firewall.conf" 644 <<'EOF' && reload=1
-# Installed by deploy/setup-server.sh: the agent side runs only with its firewall.
+  install_content "/etc/systemd/system/user@$uid.service.d/60-agentic-studio-firewall.conf" 644 <<EOF && reload=1
+# Installed by deploy/setup-server.sh: the $role side runs only with its firewall.
 [Unit]
-Requires=agentic-studio-agent-firewall.service
-BindsTo=agentic-studio-agent-firewall.service
-After=agentic-studio-agent-firewall.service
+Requires=$unit.service
+BindsTo=$unit.service
+After=$unit.service
 EOF
   [ "$reload" = 0 ] || systemctl daemon-reload
-  systemctl enable --quiet agentic-studio-agent-firewall.service agentic-studio-agent-firewall-verify.timer
+  systemctl enable --quiet "$unit.service" "$unit-verify.timer"
   # Re-applying is idempotent (atomic) and picks up a changed rule set.
-  if systemctl is-active --quiet agentic-studio-agent-firewall.service; then
-    /usr/local/sbin/agentic-studio-agent-firewall apply
+  if systemctl is-active --quiet "$unit.service"; then
+    "$script" apply
   else
-    systemctl start agentic-studio-agent-firewall.service
+    systemctl start "$unit.service"
   fi
-  systemctl start agentic-studio-agent-firewall-verify.timer
-  step_log "ok (agent user -> $STUDIO_NETWORK_SUBNET rejected except $STUDIO_PROXY_ADDRESS:$STUDIO_PROXY_WORKER_PORT; the agent side is bound to it)"
+  systemctl start "$unit-verify.timer"
+  step_log "ok ($role user -> $STUDIO_NETWORK_SUBNET rejected except $STUDIO_PROXY_ADDRESS:$STUDIO_PROXY_WORKER_PORT; the $role side is bound to it)"
 }
 
-step_rootless() {
-  [ -x /usr/bin/dockerd-rootless-setuptool.sh ] || die "docker-ce-rootless-extras is missing; run the packages step first."
+step_firewall() { install_user_firewall agent "agent user" "$(agent_uid)" "$FIREWALL_CHAIN"; }
+
+step_preview_firewall() {
+  preview_exists || die "the Preview user does not exist yet; run the preview-user step first."
+  install_user_firewall preview "Preview user" "$(preview_uid)" "$PREVIEW_FIREWALL_CHAIN"
+}
+
+# Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor; rootlesskit needs a
+# profile that allows them (Docker's rootless documentation).
+ensure_rootlesskit_apparmor() {
   # Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor; rootlesskit needs a
   # profile that allows them (Docker's rootless documentation).
   if [ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || echo 0)" = 1 ] &&
@@ -717,6 +945,11 @@ include <tunables/global>
 EOF
     apparmor_parser -r /etc/apparmor.d/usr.bin.rootlesskit
   fi
+}
+
+step_rootless() {
+  [ -x /usr/bin/dockerd-rootless-setuptool.sh ] || die "docker-ce-rootless-extras is missing; run the packages step first."
+  ensure_rootlesskit_apparmor
   if [ "$(loginctl show-user "$AGENT_USER" -p Linger --value 2>/dev/null)" != yes ]; then
     loginctl enable-linger "$AGENT_USER"
     changed "linger for '$AGENT_USER' (its user services run without a login session)"
@@ -734,39 +967,52 @@ EOF
   fi
 }
 
-step_limits() {
-  local uid reload=0
-  uid="$(agent_uid)"
-  install -d -m 0755 "/etc/systemd/system/user-$uid.slice.d" /etc/systemd/system/user@.service.d
+# Limits for everything one user runs: its user slice.
+apply_user_limits() {
+  local user="$1" memory="$2" tasks="$3" cpu="$4" uid reload=0
+  uid="$(id -u "$user")"
+  install -d -m 0755 "/etc/systemd/system/user-$uid.slice.d"
   install_content "/etc/systemd/system/user-$uid.slice.d/50-agentic-studio.conf" 644 <<EOF && reload=1
-# Installed by deploy/setup-server.sh: limits for everything the agent user '$AGENT_USER' runs.
+# Installed by deploy/setup-server.sh: limits for everything the user '$user' runs.
 [Slice]
-MemoryMax=$AGENT_MEMORY_MAX
-TasksMax=$AGENT_TASKS_MAX
-CPUWeight=$AGENT_CPU_WEIGHT
+MemoryMax=$memory
+TasksMax=$tasks
+CPUWeight=$cpu
 EOF
+  if [ "$reload" = 1 ]; then
+    systemctl daemon-reload
+    # Applies the limits to the running slice now as well (the drop-in keeps them across boots).
+    if systemctl is-active --quiet "user-$uid.slice"; then
+      systemctl set-property --runtime "user-$uid.slice" "MemoryMax=$memory" \
+        "TasksMax=$tasks" "CPUWeight=$cpu"
+    fi
+  fi
+}
+
+step_limits() {
+  local delegate=0 user
+  preview_exists || die "the Preview user does not exist yet; run the preview-user step first."
+  install -d -m 0755 /etc/systemd/system/user@.service.d
+  apply_user_limits "$AGENT_USER" "$AGENT_MEMORY_MAX" "$AGENT_TASKS_MAX" "$AGENT_CPU_WEIGHT"
+  apply_user_limits "$PREVIEW_USER" "$PREVIEW_MEMORY_MAX" "$PREVIEW_TASKS_MAX" "$PREVIEW_CPU_WEIGHT"
   # Lets user managers hand cgroup controllers to rootless Docker, so container limits apply.
-  local delegate=0
   install_content /etc/systemd/system/user@.service.d/50-agentic-studio-delegate.conf 644 <<'EOF' && delegate=1
 # Installed by deploy/setup-server.sh (rootless Docker resource limits).
 [Service]
 Delegate=cpu cpuset io memory pids
 EOF
-  if [ "$reload" = 1 ] || [ "$delegate" = 1 ]; then
+  if [ "$delegate" = 1 ]; then
     systemctl daemon-reload
   fi
-  # A running user manager takes new delegation only when it restarts (stops the agent user's
-  # services, the worker and rootless Docker included; they start again with it).
-  if [ "$delegate" = 1 ] && systemctl is-active --quiet "user@$uid.service"; then
-    systemctl restart "user@$uid.service"
-    step_log "restarted user@$uid.service for the new cgroup delegation"
-  fi
-  if [ "$reload" = 1 ]; then
-    # Applies the limits to the running slice now as well (the drop-in keeps them across boots).
-    if systemctl is-active --quiet "user-$uid.slice"; then
-      systemctl set-property --runtime "user-$uid.slice" "MemoryMax=$AGENT_MEMORY_MAX" \
-        "TasksMax=$AGENT_TASKS_MAX" "CPUWeight=$AGENT_CPU_WEIGHT"
-    fi
+  # A running user manager takes new delegation only when it restarts (stops the user's
+  # services, rootless Docker and the worker or controller included; they start again with it).
+  if [ "$delegate" = 1 ]; then
+    for user in "$AGENT_USER" "$PREVIEW_USER"; do
+      if systemctl is-active --quiet "user@$(id -u "$user").service"; then
+        systemctl restart "user@$(id -u "$user").service"
+        step_log "restarted user@$(id -u "$user").service for the new cgroup delegation"
+      fi
+    done
   fi
   if [ -z "$AGENT_DISK_QUOTA_GB" ]; then
     step_log "no disk quota (AGENT_DISK_QUOTA_GB is empty)"
@@ -788,11 +1034,129 @@ EOF
   step_log "ok"
 }
 
+# The resolver the Previews' containers may reach: PREVIEW_DNS, else the first non-loopback IPv4
+# nameserver of systemd-resolved's file, else of /etc/resolv.conf.
+preview_dns() {
+  if [ -n "$PREVIEW_DNS" ]; then
+    printf '%s' "$PREVIEW_DNS"
+    return 0
+  fi
+  local file ns
+  for file in /run/systemd/resolve/resolv.conf /etc/resolv.conf; do
+    [ -r "$file" ] || continue
+    ns="$(awk '$1 == "nameserver" && $2 ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/ && $2 !~ /^127\./ { print $2; exit }' "$file")"
+    if [ -n "$ns" ]; then
+      printf '%s' "$ns"
+      return 0
+    fi
+  done
+  die "no non-loopback IPv4 nameserver in /run/systemd/resolve/resolv.conf or /etc/resolv.conf; set PREVIEW_DNS."
+}
+
+# Runs the egress rules script's verify inside the Preview daemon's network namespace, as the
+# Preview user, the way the controller does.
+preview_egress_verify() {
+  local uid pid
+  uid="$(preview_uid)"
+  pid="$(cat "/run/user/$uid/dockerd-rootless/child_pid" 2>/dev/null || true)"
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  as_preview nsenter -U --preserve-credentials -n -t "$pid" "$PREVIEW_EGRESS_SCRIPT" verify
+}
+
+step_preview_rootless() {
+  [ -x /usr/bin/dockerd-rootless-setuptool.sh ] || die "docker-ce-rootless-extras is missing; run the packages step first."
+  preview_exists || die "the Preview user does not exist yet; run the preview-user step first."
+  ensure_rootlesskit_apparmor
+  local dns home uid restart=0 unit_dir daemon_json dropin want have
+  dns="$(preview_dns)" || exit 1
+  home="$(preview_home)"
+  uid="$(preview_uid)"
+  if [ "$(loginctl show-user "$PREVIEW_USER" -p Linger --value 2>/dev/null)" != yes ]; then
+    loginctl enable-linger "$PREVIEW_USER"
+    changed "linger for '$PREVIEW_USER' (its user services run without a login session)"
+  fi
+  wait_for_user_bus "$PREVIEW_USER"
+
+  # The egress rules script is root-owned: the controller refuses it otherwise, and the Preview
+  # user cannot change what its own containers are held to.
+  ensure_root_dir /usr/local/lib/agentic-studio 755
+  install_template "$PREVIEW_EGRESS_SCRIPT" 755 "$SCRIPT_DIR/preview-egress-rules.sh" "s|@PREVIEW_DNS@|$dns|g" || true
+
+  unit_dir="$home/.config/systemd/user/docker.service.d"
+  daemon_json="$home/.config/docker/daemon.json"
+  dropin="$unit_dir/60-agentic-studio-egress.conf"
+  as_preview mkdir -p "$home/.config/docker" "$unit_dir"
+  want="{\"dns\":[\"$dns\"]}"
+  have="$(as_preview cat "$daemon_json" 2>/dev/null || true)"
+  if [ "$have" != "$want" ]; then
+    printf '%s\n' "$want" | as_preview sh -c 'umask 022 && cat > "$1"' sh "$daemon_json"
+    changed "$daemon_json (the resolver the egress rules allow)"
+    restart=1
+  fi
+  want="# Installed by deploy/setup-server.sh: the egress rules are applied in the daemon's network
+# namespace at every start, and the daemon does not start without them. The controller bounds
+# the Preview user's app.slice per build, and the kernel may pick the daemon instead of the build:
+# the daemon must then not stay stopped (Restart=always stays; OOMPolicy=continue keeps the
+# daemon's other processes). The controller requires the daemon and is stopped with it, and an
+# automatic restart of the daemon does not bring it back, so every start of the daemon also
+# starts the controller (no-op when it runs; its ExecCondition holds it back without a token).
+[Service]
+ExecStartPost=$PREVIEW_EGRESS_SCRIPT apply
+ExecStartPost=-/usr/bin/systemctl --user --no-block start agentic-studio-controller.service
+OOMPolicy=continue"
+  have="$(as_preview cat "$dropin" 2>/dev/null || true)"
+  if [ "$have" != "$want" ]; then
+    printf '%s\n' "$want" | as_preview sh -c 'umask 022 && cat > "$1"' sh "$dropin"
+    changed "$dropin"
+    restart=1
+  fi
+  as_preview systemctl --user daemon-reload
+
+  if as_preview systemctl --user is-active --quiet docker.service; then
+    if [ "$restart" = 1 ]; then
+      as_preview systemctl --user restart docker.service
+      step_log "restarted the Preview user's rootless Docker with the new settings"
+    else
+      step_log "unchanged (rootless Docker running for '$PREVIEW_USER')"
+    fi
+  else
+    if ! as_preview dockerd-rootless-setuptool.sh install; then
+      journalctl _SYSTEMD_USER_UNIT=docker.service _UID="$uid" -n 40 --no-pager >&2 || true
+      die "rootless Docker did not start for '$PREVIEW_USER' (its log is above)."
+    fi
+    as_preview systemctl --user enable --now docker.service
+    changed "rootless Docker for '$PREVIEW_USER' as its systemd user service"
+  fi
+  # The rules are re-applied every run (atomic, same rules), then read back as the controller does.
+  as_preview "$PREVIEW_EGRESS_SCRIPT" apply
+  preview_egress_verify || die "the Preview egress rules are not in place after applying them."
+  step_log "ok (egress rules in place in the Preview daemon's network namespace)"
+}
+
+step_preview_proxy_dir() {
+  preview_exists || die "the Preview user does not exist yet; run the preview-user step first."
+  getent group "$PREVIEW_PROXY_GROUP" >/dev/null || die "the group '$PREVIEW_PROXY_GROUP' does not exist; run the preview-user step first."
+  install -d -m 0755 /etc/tmpfiles.d
+  install_content /etc/tmpfiles.d/agentic-studio-preview-proxy.conf 644 <<EOF || true
+# Installed by deploy/setup-server.sh: the directory of the Preview sockets, created at every boot
+# (before any user manager starts). Setgid, so a socket the Preview user creates in it belongs to
+# the proxy group without the Preview user being a member of that group.
+d $PREVIEW_PROXY_DIR 2750 $PREVIEW_USER $PREVIEW_PROXY_GROUP -
+EOF
+  local before
+  before="$(stat -c '%U:%G %a' "$PREVIEW_PROXY_DIR" 2>/dev/null || echo none)"
+  systemd-tmpfiles --create /etc/tmpfiles.d/agentic-studio-preview-proxy.conf
+  [ "$(stat -c '%U:%G %a' "$PREVIEW_PROXY_DIR")" = "$PREVIEW_USER:$PREVIEW_PROXY_GROUP 2750" ] ||
+    die "$PREVIEW_PROXY_DIR is not $PREVIEW_USER:$PREVIEW_PROXY_GROUP 2750 after systemd-tmpfiles."
+  [ "$before" = "$PREVIEW_USER:$PREVIEW_PROXY_GROUP 2750" ] || changed "$PREVIEW_PROXY_DIR ($PREVIEW_USER:$PREVIEW_PROXY_GROUP 2750)"
+  step_log "ok"
+}
+
 step_service() {
   local unit=/etc/systemd/user/agentic-studio-worker.service home
   install -d -m 0755 /etc/systemd/user
-  install_content "$unit" 644 < <(sed -e "s|@WORKER_CODE_DIR@|$WORKER_CODE_DIR|g" \
-    -e "s|@NODE_BIN@|/usr/local/bin/node|g" "$SCRIPT_DIR/systemd/agentic-studio-worker.service") || true
+  install_template "$unit" 644 "$SCRIPT_DIR/systemd/agentic-studio-worker.service" \
+    "s|@WORKER_CODE_DIR@|$WORKER_CODE_DIR|g" "s|@NODE_BIN@|/usr/local/bin/node|g" || true
   wait_for_user_bus
   as_agent systemctl --user daemon-reload
   if ! as_agent systemctl --user is-enabled --quiet agentic-studio-worker.service; then
@@ -808,9 +1172,32 @@ step_service() {
   fi
 }
 
+step_controller_service() {
+  local unit=/etc/systemd/user/agentic-studio-controller.service home
+  preview_exists || die "the Preview user does not exist yet; run the preview-user step first."
+  install -d -m 0755 /etc/systemd/user
+  install_template "$unit" 644 "$SCRIPT_DIR/systemd/agentic-studio-controller.service" \
+    "s|@CONTROLLER_CODE_DIR@|$CONTROLLER_CODE_DIR|g" "s|@NODE_BIN@|/usr/local/bin/node|g" \
+    "s|@PREVIEW_USER@|$PREVIEW_USER|g" || true
+  wait_for_user_bus "$PREVIEW_USER"
+  as_preview systemctl --user daemon-reload
+  if ! as_preview systemctl --user is-enabled --quiet agentic-studio-controller.service; then
+    as_preview systemctl --user enable agentic-studio-controller.service
+    changed "enabled agentic-studio-controller.service for '$PREVIEW_USER'"
+  fi
+  home="$(preview_home)"
+  if as_preview grep -Eq '^STUDIO_CONTROLLER_TOKEN=.{32,}' "$home/.config/agentic-studio-controller/.env"; then
+    as_preview systemctl --user restart agentic-studio-controller.service
+    step_log "ok (environment controller restarted)"
+  else
+    step_log "ok (environment controller enabled, not started: its STUDIO_CONTROLLER_TOKEN is empty)"
+  fi
+}
+
 next_steps() {
-  local home
+  local home phome
   home="$(agent_home 2>/dev/null || echo "~$AGENT_USER")"
+  phome="$(preview_home 2>/dev/null || echo "~$PREVIEW_USER")"
   cat <<EOF
 
 Done: $CHANGES change(s).
@@ -832,6 +1219,13 @@ The script wrote no secret. Remaining manual steps (docs/engineering/deployment.
      then the worker (as the agent user, e.g. sudo -iu $AGENT_USER with XDG_RUNTIME_DIR=/run/user/<uid>):
        systemctl --user restart agentic-studio-worker
   5. As the agent user: agentic-studio-check-boundary   (must end with RESULT: PASS)
+  Previews (docs/engineering/deployment.md, "Previews: the Preview user and the controller"):
+  6. As root, put a new token (openssl rand -base64 32, never the worker token) into
+     $STUDIO_CONFIG_DIR/.env as STUDIO_CONTROLLER_TOKEN, and the same value into
+     $phome/.config/agentic-studio-controller/.env (Preview user, 0600) as STUDIO_CONTROLLER_TOKEN.
+     Then: agentic-studio-compose up -d --wait, and run this script again with --only controller-service
+     (the controller starts only once its token is set).
+  7. As the Preview user (sudo -iu $PREVIEW_USER): agentic-studio-check-preview   (must end with RESULT: PASS)
 EOF
 }
 
@@ -877,10 +1271,11 @@ main() {
       [ -f /sys/fs/cgroup/cgroup.controllers ] || die "step '$step' needs cgroup v2 (unified hierarchy)."
     fi
     CURRENT_STEP="$step"
-    "step_$step"
+    "step_${step//-/_}"
   done
   CURRENT_STEP=final
   assert_agent_safe
+  assert_preview_safe
   next_steps
 }
 
