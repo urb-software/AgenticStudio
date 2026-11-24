@@ -43,7 +43,7 @@ expect_fail "refuses an unknown step" "unknown step" bash "$SETUP" --only nonsen
 chmod g+w "$SRC/deploy/check-boundary.sh"
 expect_fail "refuses a checkout others can write" "must be owned by root" bash "$SETUP" --only preflight
 chmod g-w "$SRC/deploy/check-boundary.sh"
-groupadd -f lxd && usermod -aG lxd agent
+groupadd -f --gid 3001 lxd && usermod -aG lxd agent
 expect_fail "refuses an agent user in the lxd group" "is in the lxd group" bash "$SETUP" --only preflight
 gpasswd -d agent lxd >/dev/null
 useradd --create-home --uid 1500 lowuid
@@ -60,7 +60,7 @@ groupdel othergroup
 getent group 2002 >/dev/null || groupadd --gid 2002 preview
 useradd --create-home --uid 2002 --gid 2002 --shell /bin/bash preview
 for group in docker lxd sudo; do
-  groupadd -f "$group" && usermod -aG "$group" preview
+  groupadd -f --gid 3002 "$group" && usermod -aG "$group" preview
   expect_fail "refuses a Preview user in the $group group" "is in the $group group" bash "$SETUP" --only preflight
   usermod -G "" preview
 done
@@ -68,7 +68,7 @@ groupadd --gid 2003 previewproxy
 usermod -aG previewproxy preview
 expect_fail "refuses a Preview user in the proxy group" "is in the previewproxy group" bash "$SETUP" --only preflight
 usermod -G "" preview
-groupadd sharedgroup && usermod -aG sharedgroup agent && usermod -aG sharedgroup preview
+groupadd --gid 3003 sharedgroup && usermod -aG sharedgroup agent && usermod -aG sharedgroup preview
 expect_fail "refuses a group shared by the agent and Preview users" "share the group(s) sharedgroup" bash "$SETUP" --only preflight
 usermod -G "" agent && usermod -G "" preview && groupdel sharedgroup
 echo 'preview ALL=(ALL) NOPASSWD: ALL' >/etc/sudoers.d/preview-test
