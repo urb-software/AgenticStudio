@@ -117,10 +117,11 @@ case "${1:-}" in
   apply-inside) apply_inside ;;
   verify)
     # Within 30 seconds, whatever iptables does: a watchdog ends this process.
+    # Its output is closed: whoever reads this script's output must not wait for the sleep.
     (
       sleep 30
       kill -TERM $$
-    ) 2>/dev/null &
+    ) </dev/null >/dev/null 2>&1 &
     watchdog=$!
     if verify_inside; then
       kill "$watchdog" 2>/dev/null || true

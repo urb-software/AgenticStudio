@@ -364,12 +364,20 @@ out="$(check_preview --claim)"
 status=$?
 printf '%s\n' "$out" | sed 's/^/      | /'
 if [ "$status" -eq 0 ]; then ok "every Preview check passes with the token set"; else not_ok "the Preview checks failed (exit $status)"; fi
-expect_line "nothing skipped: RESULT: PASS" "$(tail -n 1 <<<"$out")" '^RESULT: PASS \('
+expect_line "nothing skipped: RESULT: PASS" "$(grep '^RESULT:' <<<"$out" | tail -n 1)" '^RESULT: PASS \('
 for name in controller-active controller-token-works controller-token-claim controller-token-nothing-else; do
   expect_line "PASS $name" "$out" "^PASS  $name "
 done
-expect_false "the controller token is on no host command line" \
-  bash -c "grep -qF '$CONTROLLER_TOKEN' /proc/[0-9]*/cmdline 2>/dev/null"
+printf '%s' "$CONTROLLER_TOKEN" >/root/controller-token.test
+holders=""
+for cmdline in /proc/[0-9]*/cmdline; do
+  [ "$cmdline" != "/proc/$$/cmdline" ] || continue
+  if grep -qF -f /root/controller-token.test "$cmdline" 2>/dev/null; then
+    holders+="$(basename "$(dirname "$cmdline")"):$(cut -c1-30 "$(dirname "$cmdline")/comm" 2>/dev/null) "
+  fi
+done
+rm -f /root/controller-token.test
+expect_line "the controller token is on no host command line (holders: ${holders:-none})" "${holders:-none}" '^none$'
 out="$(as_agent /usr/local/bin/agentic-studio-check-boundary --skip 'identity,processes,studio-files,docker-socket,sudo,studio-network,host,cgroup,guardrails,rootless,api' 2>&1)"
 expect_line "the agent is refused the Preview side; the worker token gets 401 on claim" "$out" '^PASS  worker-token-not-controller '
 expect_line "the agent is refused the Preview user's socket and data-root" "$out" '^PASS  preview-docker-unreachable '

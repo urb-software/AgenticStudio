@@ -391,7 +391,7 @@ check_egress() {
   for port in $(shuf -i 20000-29999 -n 20); do
     can_connect 127.0.0.1 "$port" || break
   done
-  socat "TCP-LISTEN:$port,reuseaddr,fork" /dev/null &
+  socat "TCP-LISTEN:$port,reuseaddr,fork" /dev/null 2>/dev/null &
   LISTENER_PID=$!
   sleep 1
   if ! can_connect "$host_ip" "$port"; then
