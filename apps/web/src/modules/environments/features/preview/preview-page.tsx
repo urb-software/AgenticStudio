@@ -20,6 +20,7 @@ import { Skeleton } from '@/shared/ui/skeleton';
 import { toast } from '@/shared/ui/sonner';
 import { ApiError, type PreviewOutput } from '../../../../platform/api';
 import { usePreview } from '../../api/preview-queries';
+import { BuildCard } from './build-card';
 import { PreviewSettingsForm } from './preview-settings-form';
 import { RemovePreviewSettingsDialog } from './remove-preview-settings-dialog';
 
@@ -168,6 +169,7 @@ export function PreviewPage({ projectId }: { projectId: string }) {
           <Link href={`/projects/${projectId}`}>Back to the project</Link>
         </Button>
       </header>
+      <BuildCard projectId={projectId} preview={data} dataUpdatedAt={dataUpdatedAt} />
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card aria-labelledby="preview-current-title">
           <CardHeader>

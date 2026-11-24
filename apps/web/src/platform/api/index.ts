@@ -20,6 +20,8 @@ import type {
   MergeRunResponseOutput,
   ProjectOutput,
   PreparedFollowUpOutput,
+  PreviewBuildEventsOutput,
+  PreviewBuildOutput,
   PreviewOutput,
   PreviewRefusedProblem,
   ProviderListOutput,
@@ -77,6 +79,8 @@ export type {
   MergeRunResponseOutput,
   PreparedFollowUpCheckOutput,
   PreparedFollowUpOutput,
+  PreviewBuildEventsOutput,
+  PreviewBuildOutput,
   PreviewOutput,
   PreviewRefusedProblem,
   ProviderAvailabilityOutput,
@@ -277,6 +281,22 @@ export const api = {
     body: SavePreviewSettingsRequest,
   ): Promise<SavePreviewSettingsResponseOutput> =>
     unwrap(sdk.savePreviewSettings({ path: { id: projectId }, body })),
+  /**
+   * Asks for a build of the Preview (202: the queued build). A refusal answers 422 with
+   * `refusals`; read them with {@link previewRefusalsOf}.
+   */
+  requestPreviewBuild: (projectId: string): Promise<PreviewBuildOutput> =>
+    unwrap(sdk.requestPreviewBuild({ path: { id: projectId } })),
+  /** One page of a build's log: the lines after `after`; `next` while more follow. */
+  listPreviewBuildEvents: (
+    projectId: string,
+    buildId: string,
+    after: number,
+    limit: number,
+  ): Promise<PreviewBuildEventsOutput> =>
+    unwrap(
+      sdk.listPreviewBuildEvents({ path: { id: projectId, buildId }, query: { after, limit } }),
+    ),
   /** Removes the Preview settings (204, also when none were set). */
   removePreviewSettings: async (projectId: string): Promise<void> => {
     await unwrap(sdk.removePreviewSettings({ path: { id: projectId } }));

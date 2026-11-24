@@ -128,6 +128,10 @@ describe('Preview page', () => {
       },
       hostname: 'preview-3f2b8c1e4d5a.example.test',
       repository: { ready: true },
+      state: 'stopped',
+      running: null,
+      latestBuild: null,
+      controller: { connected: true },
       removedPorts: [{ service: 'web', place: 'services.web.ports[0]' }],
     });
 

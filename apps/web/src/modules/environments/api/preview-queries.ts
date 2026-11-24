@@ -1,7 +1,10 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
+import type { LogRow } from '@/shared/components/log-viewer';
 import {
+  ApiError,
   api,
   type PreviewOutput,
   type SavePreviewSettingsRequest,
@@ -11,8 +14,119 @@ import {
 /** One project's Preview: its settings, hostname and whether the Repository can be read. */
 const previewKey = (projectId: string) => ['projects', projectId, 'preview'] as const;
 
+/** How often the Preview is read while a build is under way, and otherwise. */
+export const PREVIEW_BUILDING_POLL_MS = 2_000;
+export const PREVIEW_IDLE_POLL_MS = 15_000;
+
+/**
+ * Read every 2 s while a build is requested or claimed, otherwise every 15 s (the controller
+ * and the sweeps move it), and not in a hidden tab.
+ */
 export function usePreview(projectId: string) {
-  return useQuery({ queryKey: previewKey(projectId), queryFn: () => api.getPreview(projectId) });
+  return useQuery({
+    queryKey: previewKey(projectId),
+    queryFn: () => api.getPreview(projectId),
+    refetchInterval: (query) =>
+      query.state.data?.state === 'building' ? PREVIEW_BUILDING_POLL_MS : PREVIEW_IDLE_POLL_MS,
+    refetchIntervalInBackground: false,
+  });
+}
+
+/**
+ * Asks for a build. The command's answer is the queued build, which the page does not keep: the
+ * mutation stays pending until the Preview has been read again, so the page shows the state the
+ * server holds (frontend.md �4).
+ */
+export function useRequestPreviewBuild(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.requestPreviewBuild(projectId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: previewKey(projectId) }),
+  });
+}
+
+/** How often a build's log is read again while it is not final. */
+export const PREVIEW_LOG_POLL_MS = 2_000;
+const PREVIEW_LOG_PAGE = 500;
+
+export type PreviewBuildLog = {
+  rows: readonly LogRow[];
+  /** True once the build is over and every line has been read. */
+  complete: boolean;
+  /** True when the log reached its size cap. */
+  truncated: boolean;
+  /** True while the last read failed; the next one is tried anyway. */
+  failing: boolean;
+};
+
+const EMPTY_LOG: PreviewBuildLog = { rows: [], complete: false, truncated: false, failing: false };
+
+/**
+ * A build's log, read by polling: pages after the last `seq` it has, back to back while `next`
+ * says more follow, then every 2 s until the server says `final` with nothing more. The rows
+ * array only grows (earlier row objects stay), which is what the `LogViewer` lays out cheaply.
+ */
+export function usePreviewBuildLog(projectId: string, buildId: string): PreviewBuildLog {
+  const [log, setLog] = useState<{ buildId: string; value: PreviewBuildLog }>({
+    buildId,
+    value: EMPTY_LOG,
+  });
+  const current = log.buildId === buildId ? log.value : EMPTY_LOG;
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let after = 0;
+    let rows: LogRow[] = [];
+
+    const publish = (change: Partial<PreviewBuildLog>) => {
+      if (cancelled) return;
+      setLog((previous) => ({
+        buildId,
+        value: { ...(previous.buildId === buildId ? previous.value : EMPTY_LOG), rows, ...change },
+      }));
+    };
+
+    const read = async () => {
+      // Not in a hidden tab: look again once it may be visible.
+      if (typeof document !== 'undefined' && document.hidden) {
+        timer = setTimeout(() => void read(), PREVIEW_LOG_POLL_MS);
+        return;
+      }
+      try {
+        const page = await api.listPreviewBuildEvents(projectId, buildId, after, PREVIEW_LOG_PAGE);
+        if (cancelled) return;
+        if (page.events.length > 0) {
+          rows = rows.concat(
+            page.events.map((event) => ({
+              key: String(event.seq),
+              text: event.text,
+              tone: event.stream === 'controller' ? ('system' as const) : ('plain' as const),
+            })),
+          );
+          after = page.events.at(-1)!.seq;
+        }
+        const complete = page.final && page.next === undefined;
+        publish({ complete, truncated: page.truncated, failing: false });
+        if (complete) return;
+        timer = setTimeout(() => void read(), page.next === undefined ? PREVIEW_LOG_POLL_MS : 0);
+      } catch (error) {
+        if (cancelled) return;
+        publish({ failing: true });
+        // The build is not there (or not this Project's): nothing will ever come.
+        if (error instanceof ApiError && error.status === 404) return;
+        timer = setTimeout(() => void read(), PREVIEW_LOG_POLL_MS);
+      }
+    };
+
+    void read();
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) clearTimeout(timer);
+    };
+  }, [projectId, buildId]);
+
+  return current;
 }
 
 /**
