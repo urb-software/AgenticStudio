@@ -1,10 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, describe, expect, it } from 'vitest';
 import { DockerComposeRuntime } from '../docker-compose-runtime.js';
 import { OperationAborted, OperationFailure } from '../failure.js';
 import { buildLayout } from '../layout.js';
 import type { PreviewRun, RuntimeCall } from '../ports.js';
 import { RecordingBridges } from '../socket-bridge.js';
 import { type Call, RecordingRunner } from './fixtures/recording-runner.js';
+
+const adminDir = mkdtempSync(join(tmpdir(), 'controller-admin-'));
+afterAll(() => rmSync(adminDir, { recursive: true, force: true }));
 
 const PROJECT = '8f14e45f-ceea-467a-9575-1a3a8b1c0f10';
 const OTHER_PROJECT = '11111111-2222-4333-8444-555555555555';
@@ -79,7 +85,7 @@ function runtime(runner: RecordingRunner, bridges = new RecordingBridges()) {
     runtime: new DockerComposeRuntime({
       runner,
       bridges,
-      dataDir: '/data',
+      dataDir: adminDir,
       path: '/usr/bin',
       dockerHost: 'unix:///run/user/2002/docker.sock',
       xdgRuntimeDir: '/run/user/2002',
