@@ -59,7 +59,8 @@ FAILED=0
 SKIPPED=0
 WORK_DIR=""
 LISTENER_PID=""
-DOCKER_STATE=""
+APP_SLICE_STATE=""
+APP_SLICE_SWAP=""
 
 UID_NOW="$(id -u)"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$UID_NOW}"
@@ -82,7 +83,7 @@ skip() {
 
 cleanup() {
   [ -z "$LISTENER_PID" ] || kill "$LISTENER_PID" 2>/dev/null
-  [ -z "$DOCKER_STATE" ] || systemctl --user set-property --runtime docker.service "MemoryMax=$DOCKER_STATE" >/dev/null 2>&1
+  [ -z "$APP_SLICE_STATE" ] || systemctl --user set-property --runtime app.slice "MemoryMax=$APP_SLICE_STATE" "MemorySwapMax=$APP_SLICE_SWAP" >/dev/null 2>&1
   [ -z "$WORK_DIR" ] || rm -rf "$WORK_DIR"
 }
 trap cleanup EXIT
@@ -297,15 +298,18 @@ check_cgroup() {
   [[ "$current" =~ ^[0-9]+$ ]] || current=0
   expected=$((current + 536870912))
   kills_before="$(sed -n 's/^oom_kill //p' "$events" 2>/dev/null)"
-  DOCKER_STATE="${before:-infinity}"
-  systemctl --user set-property --runtime app.slice "MemoryMax=$expected" >/dev/null 2>&1
+  APP_SLICE_STATE="${before:-infinity}"
+  APP_SLICE_SWAP="$(systemctl --user show app.slice -p MemorySwapMax --value 2>/dev/null)"
+  APP_SLICE_SWAP="${APP_SLICE_SWAP:-infinity}"
+  # No swap, as the controller sets it: otherwise the kernel pages the allocation out instead.
+  systemctl --user set-property --runtime app.slice "MemoryMax=$expected" MemorySwapMax=0 >/dev/null 2>&1
   limit_set="$(systemctl --user show app.slice -p MemoryMax --value 2>/dev/null)"
   output="$(timeout 300 docker build --no-cache --progress plain -t preview-check-oom:probe "$WORK_DIR/oom" 2>&1)"
   build_status=$?
   kills_after="$(sed -n 's/^oom_kill //p' "$events" 2>/dev/null)"
-  systemctl --user set-property --runtime app.slice "MemoryMax=$DOCKER_STATE" >/dev/null 2>&1
+  systemctl --user set-property --runtime app.slice "MemoryMax=$APP_SLICE_STATE" "MemorySwapMax=$APP_SLICE_SWAP" >/dev/null 2>&1
   restored="$(systemctl --user show app.slice -p MemoryMax --value 2>/dev/null)"
-  DOCKER_STATE=""
+  APP_SLICE_STATE=""
   local up=1 _
   for _ in $(seq 1 30); do
     if [ "$(systemctl --user is-active docker.service 2>/dev/null)" = active ] && rootless_up; then
