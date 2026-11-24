@@ -37,11 +37,9 @@ export interface RequestPreviewOperationResult {
 }
 
 /**
- * Asks the environment controller to build, stop, remove the data of, or report on a Project's
- * Preview. A build snapshots the settings, the Integration branch's commit and the limits. No
- * HTTP route calls it: it is the seam for the features that trigger a Preview.
- * Throws {@link ProjectNotFoundError}, {@link PreviewRepositoryNotReadyError} and
- * {@link PreviewSettingsMissingError}.
+ * Asks the controller for a build, stop, data removal or state; no route calls it yet. A build
+ * snapshots the settings, the commit and the limits. Throws `ProjectNotFoundError`,
+ * `PreviewRepositoryNotReadyError` and `PreviewSettingsMissingError`.
  */
 @Injectable()
 export class RequestPreviewOperationHandler {

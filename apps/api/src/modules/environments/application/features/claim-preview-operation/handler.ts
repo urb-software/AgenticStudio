@@ -49,10 +49,8 @@ const ENVIRONMENT_FILE_UNAVAILABLE = PreviewOperationFailure.of(
 );
 
 /**
- * `null` when nothing is to do. Operations whose controller stopped reporting fail first with
- * `controller_lost` and are never handed out again. A build gets a snapshot of the Project's
- * Environment file, held until the operation is final; when the snapshot cannot be made the
- * build fails instead of starting without it.
+ * `null` when nothing is to do. Operations of a controller that stopped reporting fail first and
+ * are never handed out again. A build whose Environment file snapshot fails is failed, not started.
  */
 @Injectable()
 export class ClaimPreviewOperationHandler {

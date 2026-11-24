@@ -28,10 +28,8 @@ export interface ReportPreviewOperationStateInput {
 }
 
 /**
- * `in_progress` is the heartbeat. A final report ends the lease and deletes the operation's
- * Environment file snapshot; a failure's detail is redacted first. Throws
- * {@link PreviewOperationNotFoundError} and, for a controller that does not hold the operation
- * (also one that already reported it final), `PreviewOperationNotHeldError`.
+ * `in_progress` is the heartbeat; a final report deletes the Environment file snapshot. Throws
+ * `PreviewOperationNotFoundError`, and `PreviewOperationNotHeldError` for a final operation too.
  */
 @Injectable()
 export class ReportPreviewOperationStateHandler {

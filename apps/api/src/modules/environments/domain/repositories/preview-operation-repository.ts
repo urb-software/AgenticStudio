@@ -28,10 +28,8 @@ export interface PreviewOperationRepository {
   failLost(rule: LostControllerRule, now: Date): Promise<string[]>;
 
   /**
-   * One atomic statement under a claim lock: hands the oldest `requested` operation of a Project
-   * with no claimed one to the controller (`PreviewOperationHandOutRule`), skipping rows another
-   * claim holds. `null` when there is nothing to do. The partial unique index on a claimed
-   * Project is the backstop.
+   * One atomic statement under a claim lock (`PreviewOperationHandOutRule`), skipping rows another
+   * claim holds. `null` when there is nothing to do; a partial unique index is the backstop.
    */
   claimNext(controllerId: string, now: Date): Promise<PreviewOperation | null>;
 
