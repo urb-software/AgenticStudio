@@ -199,7 +199,12 @@ describe('the Preview rebuild after a merge (PostgreSQL + Redis via Testcontaine
 
   beforeEach(async () => {
     await db().$executeRaw`TRUNCATE TABLE projects CASCADE`;
-    if (linux) devHead = pushFiles(fixture, 'dev', devHead, { 'compose.yaml': COMPOSE });
+    if (linux) {
+      devHead = pushFiles(fixture, 'dev', devHead, {
+        'compose.yaml': COMPOSE,
+        'restored.txt': randomUUID(),
+      });
+    }
   });
 
   describe('what the merge asks of the Preview', () => {
