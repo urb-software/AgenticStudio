@@ -286,7 +286,15 @@ describe('Preview build API (PostgreSQL + Redis via Testcontainers)', () => {
           },
         });
 
-        expectProblem(await requestBuild(id), 409, 'preview-controller-unavailable');
+        const fresh = await startStudioApp(services.config, { environments: { sweeps: false } });
+        try {
+          const answer = await request(fresh.getHttpServer())
+            .post(`${previewUrl(id)}/builds`)
+            .set({ Origin: STUDIO_ORIGIN, Cookie: await signIn(fresh) });
+          expectProblem(answer, 409, 'preview-controller-unavailable');
+        } finally {
+          await fresh.close();
+        }
       });
 
       it('answers 502 preview-source-unavailable when the Compose file cannot be read', async () => {
