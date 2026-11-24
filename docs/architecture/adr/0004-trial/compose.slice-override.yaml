@@ -1,0 +1,10 @@
+# Throwaway: what the controller would inject (and the validation refuse in the Repository's file).
+services:
+  mem1:
+    cgroup_parent: preview-p1.slice
+  mem2:
+    cgroup_parent: preview-p1.slice
+  cpu1:
+    cgroup_parent: preview-p1.slice
+  cpu2:
+    cgroup_parent: preview-p1.slice

@@ -1,0 +1,16 @@
+# Throwaway: a two-service project with per-service limits written two ways, plus two hogs.
+name: lim
+services:
+  mem:
+    image: alpine:3.22
+    mem_limit: 64m
+    cpus: 0.5
+    command: ["sh", "-c", "sleep 3; tail /dev/zero"]
+  cpu:
+    image: alpine:3.22
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+          cpus: '0.5'
+    command: ["sh", "-c", "while :; do :; done"]
