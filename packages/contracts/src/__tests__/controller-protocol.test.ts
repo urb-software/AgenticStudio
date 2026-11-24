@@ -28,10 +28,12 @@ describe('the controller protocol', () => {
     expect(PREVIEW_OPERATION_KINDS).toEqual(['build', 'stop', 'remove_data', 'state']);
   });
 
-  it('lets the API alone record controller_lost', () => {
-    expect(PREVIEW_OPERATION_FAILURE_CODES).toContain('controller_lost');
-    expect(CONTROLLER_REPORTABLE_FAILURE_CODES).not.toContain('controller_lost');
-    expect(PREVIEW_OPERATION_FAILURE_CODES).toHaveLength(15);
+  it('lets the API alone record controller_lost, not_claimed and report_overdue', () => {
+    for (const code of ['controller_lost', 'not_claimed', 'report_overdue']) {
+      expect(PREVIEW_OPERATION_FAILURE_CODES).toContain(code);
+      expect(CONTROLLER_REPORTABLE_FAILURE_CODES).not.toContain(code);
+    }
+    expect(PREVIEW_OPERATION_FAILURE_CODES).toHaveLength(17);
   });
 
   it('names the five problem types', () => {
@@ -146,10 +148,21 @@ describe('the controller protocol', () => {
       ).toBe(false);
     });
 
-    it('refuses controller_lost from the controller, a long detail and too many refusals', () => {
+    it('takes previewRemoved with a failure, as a boolean only', () => {
       const failed = (failure: object) =>
         reportOperationStateRequestSchema.safeParse({ ...base, state: 'failed', failure }).success;
-      expect(failed({ code: 'controller_lost', detail: 'x' })).toBe(false);
+      expect(failed({ code: 'start_failed', detail: 'x', previewRemoved: true })).toBe(true);
+      expect(failed({ code: 'start_failed', detail: 'x', previewRemoved: false })).toBe(true);
+      expect(failed({ code: 'start_failed', detail: 'x' })).toBe(true);
+      expect(failed({ code: 'start_failed', detail: 'x', previewRemoved: 'yes' })).toBe(false);
+    });
+
+    it('refuses the codes only the API sets, a long detail and too many refusals', () => {
+      const failed = (failure: object) =>
+        reportOperationStateRequestSchema.safeParse({ ...base, state: 'failed', failure }).success;
+      for (const code of ['controller_lost', 'not_claimed', 'report_overdue']) {
+        expect(failed({ code, detail: 'x' })).toBe(false);
+      }
       expect(failed({ code: 'build_failed', detail: 'x'.repeat(2001) })).toBe(false);
       const refusal = { code: 'privileged', place: 'services.web', message: 'No.' };
       expect(

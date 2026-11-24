@@ -165,6 +165,51 @@ describe('PreviewOperation', () => {
     });
   });
 
+  it('marks a failed build that removed the Preview', () => {
+    const operation = build();
+    operation.claim(CONTROLLER, T0);
+    operation.fail(CONTROLLER, PreviewOperationFailure.of('start_failed', 'x'), T1, true);
+
+    expect(operation.previewRemoved).toBe(true);
+  });
+
+  it('records previewRemoved false unless a failed build says so', () => {
+    const plain = build();
+    plain.claim(CONTROLLER, T0);
+    plain.fail(CONTROLLER, PreviewOperationFailure.of('build_failed', 'x'), T1);
+    expect(plain.previewRemoved).toBe(false);
+
+    const stop = PreviewOperation.requestOther({
+      id: ID,
+      projectId: PROJECT,
+      kind: 'stop',
+      now: T0,
+    });
+    stop.claim(CONTROLLER, T0);
+    stop.fail(CONTROLLER, PreviewOperationFailure.of('controller_error', 'x'), T1, true);
+    expect(stop.previewRemoved).toBe(false);
+
+    const succeeded = build();
+    expect(succeeded.previewRemoved).toBe(false);
+  });
+
+  it('fails an overdue claimed build and an unclaimed requested one, each only in its status', () => {
+    const overdue = build();
+    expect(() =>
+      overdue.failOverdue(PreviewOperationFailure.of('report_overdue', 'x'), T2),
+    ).toThrow(IllegalPreviewOperationTransitionError);
+    overdue.claim(CONTROLLER, T0);
+    overdue.failOverdue(PreviewOperationFailure.of('report_overdue', 'x'), T2);
+    expect(overdue).toMatchObject({ status: 'failed', finishedAt: T2 });
+
+    const unclaimed = build();
+    unclaimed.failUnclaimed(PreviewOperationFailure.of('not_claimed', 'x'), T2);
+    expect(unclaimed).toMatchObject({ status: 'failed', claimedBy: null, finishedAt: T2 });
+    expect(() => overdue.failUnclaimed(PreviewOperationFailure.of('not_claimed', 'x'), T2)).toThrow(
+      IllegalPreviewOperationTransitionError,
+    );
+  });
+
   it('refuses every change once final', () => {
     const operation = build();
     operation.claim(CONTROLLER, T0);

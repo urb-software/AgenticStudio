@@ -1,4 +1,5 @@
-// The environment controller phase of the smoke test: a SQL-inserted build, then a stop, on Linux.
+// The environment controller phase of the smoke test, on Linux: a build requested through the
+// operator route and read back from the Preview and its log, then a SQL-inserted stop.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 
@@ -72,21 +73,6 @@ export async function runControllerPhase(options) {
   });
   assert(environmentFile.status === 200, `the Environment file answered ${environmentFile.status}`);
 
-  const build = await db.previewOperation.create({
-    data: {
-      projectId,
-      kind: 'build',
-      status: 'requested',
-      commit,
-      composeFile: 'compose.yaml',
-      service: 'web',
-      port: 3000,
-      memoryMiB: 1024,
-      cpuPercent: 100,
-      tasksMax: 512,
-      buildMinutes: 20,
-    },
-  });
   const finished = (id) =>
     until(
       () => db.previewOperation.findUniqueOrThrow({ where: { id } }),
@@ -101,28 +87,84 @@ export async function runControllerPhase(options) {
       })
     ).map((line) => line.text);
 
-  const built = await finished(build.id);
-  assert(
-    built.status === 'succeeded',
-    `the build ${built.status}: ${built.failureCode} ${built.failureDetail}`,
+  const saved = await call(`/api/projects/${projectId}/preview/settings`, {
+    method: 'PUT',
+    body: JSON.stringify({ composeFile: 'compose.yaml', service: 'web', port: 3000 }),
+  });
+  assert(saved.status === 200, `saving the Preview settings answered ${saved.status}`);
+
+  // Every answer an operator route gave: none may hold the Environment file's value.
+  const answers = [];
+  const read = async (path, init) => {
+    const response = await call(path, init);
+    const text = await response.text();
+    answers.push(text);
+    return { status: response.status, body: text === '' ? null : JSON.parse(text) };
+  };
+  const previewOf = async () => (await read(`/api/projects/${projectId}/preview`)).body;
+
+  await until(
+    previewOf,
+    (preview) => preview.controller.connected === true,
+    'the controller to be connected',
+  );
+  const queued = await read(`/api/projects/${projectId}/preview/builds`, { method: 'POST' });
+  assert(queued.status === 202, `requesting the build answered ${queued.status}`);
+  assert(queued.body.status === 'queued', `the new build is ${queued.body.status}`);
+  assert(queued.body.commit === commit, 'the build is not of the commit that was validated');
+  const buildId = queued.body.id;
+
+  const running = await until(
+    previewOf,
+    (preview) =>
+      preview.state === 'running' ||
+      preview.state === 'failed' ||
+      preview.latestBuild?.status === 'failed',
+    `the Preview to run (build ${buildId})`,
   );
   assert(
-    JSON.stringify(built.result) ===
-      JSON.stringify({ services: [{ name: 'web', state: 'running' }] }),
-    `unexpected result ${JSON.stringify(built.result)}`,
+    running.state === 'running',
+    `the Preview is ${running.state}: ${JSON.stringify(running.latestBuild?.failure)}`,
   );
-  const buildLines = await linesOf(build.id);
-  assert(buildLines.includes('fake build of web'), 'the build log is missing the fake build line');
+  assert(running.running.buildId === buildId, 'the running build is not the one requested');
+  assert(running.running.commit === commit, `the Preview runs ${running.running.commit}`);
   assert(
-    buildLines.some((line) => line.startsWith('fake build: using DB_PASSWORD=')),
+    running.running.url === `https://${running.hostname}/` &&
+      running.hostname.endsWith('.preview.smoke.test'),
+    `unexpected link ${running.running.url}`,
+  );
+  assert(running.latestBuild.status === 'succeeded', 'the latest build did not succeed');
+
+  const page = await read(`/api/projects/${projectId}/preview/builds/${buildId}/events?limit=1000`);
+  assert(page.status === 200, `the events route answered ${page.status}`);
+  assert(page.body.final === true && page.body.next === undefined, 'the log is not complete');
+  const texts = page.body.events.map((event) => event.text);
+  assert(texts.includes('fake build of web'), 'the log is missing the fake build line');
+  const echoed = page.body.events.find((event) =>
+    event.text.startsWith('fake build: using DB_PASSWORD='),
+  );
+  assert(
+    echoed,
     'the fake build did not echo the Environment value, so redaction is not exercised',
   );
+  assert(echoed.redacted === true, 'the redacted line is not marked as redacted');
+  for (const answer of answers) {
+    assert(!answer.includes(secret), 'an operator answer holds the Environment value');
+  }
+  const stored = await db.previewOperation.findUniqueOrThrow({ where: { id: buildId } });
+  assert(
+    JSON.stringify(stored.result) ===
+      JSON.stringify({ services: [{ name: 'web', state: 'running' }] }),
+    `unexpected result ${JSON.stringify(stored.result)}`,
+  );
+  const buildLines = await linesOf(buildId);
   assert(!buildLines.join('\n').includes(secret), 'the Environment value was stored unredacted');
   assert(
     buildLines.some((line) => line.startsWith('fake bridge created for preview-')),
     'the fake runtime did not start the socket bridge',
   );
 
+  // Stop has no route yet: it stays a SQL insert.
   const stop = await db.previewOperation.create({
     data: { projectId, kind: 'stop', status: 'requested' },
   });
@@ -132,8 +174,14 @@ export async function runControllerPhase(options) {
     (await linesOf(stop.id)).some((line) => line.startsWith('fake bridge removed for preview-')),
     'the stop did not remove the socket bridge',
   );
+  const after = await until(
+    previewOf,
+    (preview) => preview.state !== 'running',
+    'the Preview to stop',
+  );
+  assert(after.state === 'stopped', `the Preview is ${after.state} after the stop`);
   console.log(
-    '[e2e] controller phase: build succeeded with redacted lines; the bridge was started and removed',
+    '[e2e] controller phase: the Preview was built through the operator routes, then stopped; no answer held the secret',
   );
 }
 

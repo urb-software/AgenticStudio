@@ -30,6 +30,7 @@ describe('SweepPreviewEnvironmentFilesHandler', () => {
       leaseSeconds: 60,
       logMaxBytes: 1024,
       snapshotGraceMs: PREVIEW_SNAPSHOT_GRACE_MS,
+      unclaimedMinutes: 5,
     });
   });
 

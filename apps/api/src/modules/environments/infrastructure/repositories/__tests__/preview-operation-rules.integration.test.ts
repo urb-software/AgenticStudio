@@ -205,6 +205,7 @@ describe('the Preview operation store follows the rules of the domain (PostgreSQ
       leaseSeconds: LEASE_SECONDS,
       logMaxBytes: 1024,
       snapshotGraceMs: 0,
+      unclaimedMinutes: 5,
     });
 
     await sweep.execute();

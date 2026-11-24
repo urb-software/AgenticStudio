@@ -1,3 +1,4 @@
+import { REDACTED } from '@agentic-studio/log-redaction';
 import type { PreviewLogRedaction } from './preview-log-redaction.js';
 
 export const PREVIEW_LOG_STREAMS = ['build', 'start', 'controller'] as const;
@@ -45,6 +46,11 @@ export class PreviewLogLine {
       new TextDecoder().decode(bytes.subarray(0, end)),
       reported.truncated === true || cut,
     );
+  }
+
+  /** Whether the text holds the marker that stands for a removed secret. */
+  get redacted(): boolean {
+    return this.text.includes(REDACTED);
   }
 
   static restore(data: PreviewLogLineData): PreviewLogLine {

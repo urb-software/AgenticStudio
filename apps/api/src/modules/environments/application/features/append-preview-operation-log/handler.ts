@@ -12,6 +12,8 @@ import {
   type PreviewLogStream,
 } from '../../../domain/value-objects/preview-log-line.js';
 import { PreviewLogRedaction } from '../../../domain/value-objects/preview-log-redaction.js';
+import { CLOCK, type Clock } from '../../ports/clock.js';
+import { CONTROLLER_PRESENCE, type ControllerPresence } from '../../ports/controller-presence.js';
 import {
   PREVIEW_OPERATION_LOG,
   type PreviewOperationLog,
@@ -55,10 +57,13 @@ export class AppendPreviewOperationLogHandler {
     @Inject(PREVIEW_OPERATION_LOG) private readonly log: PreviewOperationLog,
     @Inject(PREVIEW_SECRET_VALUES) private readonly secretValues: PreviewSecretValues,
     @Inject(PREVIEW_OPERATION_SETTINGS) private readonly settings: PreviewOperationSettings,
+    @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(CONTROLLER_PRESENCE) private readonly presence: ControllerPresence,
   ) {}
 
   async execute(input: AppendPreviewOperationLogInput): Promise<AppendPreviewOperationLogResult> {
     const { operationId, controllerId } = input;
+    this.presence.record(this.clock.now());
     const redaction = PreviewLogRedaction.of(await this.secretValues.forOperation(operationId));
     const lines = input.lines.map((line) => PreviewLogLine.load(line, redaction));
     const appended = await this.log.append(

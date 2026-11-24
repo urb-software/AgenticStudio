@@ -1,11 +1,31 @@
 import type { PreviewOperation } from '../entities/preview-operation.js';
 import type { LostControllerRule } from '../value-objects/lost-controller-rule.js';
+import type { OverdueBuildRule } from '../value-objects/overdue-build-rule.js';
+import type { UnclaimedOperationRule } from '../value-objects/unclaimed-operation-rule.js';
 
 export const PREVIEW_OPERATION_REPOSITORY = Symbol('PREVIEW_OPERATION_REPOSITORY');
 
+/** What a Project's Preview state is derived from. */
+export interface PreviewFacts {
+  /** The newest build by request time, or `null` when the Project never asked for one. */
+  latestBuild: PreviewOperation | null;
+  /**
+   * The newest finished operation that changes what runs (`PreviewRunningRule`), by finish time
+   * with ties broken by id, or `null`.
+   */
+  runningChange: PreviewOperation | null;
+}
+
 export interface PreviewOperationRepository {
-  /** Stores a new operation; the caller checked that its Project exists. */
+  /**
+   * Stores a new operation; the caller checked that its Project exists. Throws
+   * `PreviewBuildRunningError` when the Project already has a requested or claimed build: a
+   * unique index is the backstop of the caller's check.
+   */
   add(operation: PreviewOperation): Promise<void>;
+
+  /** The facts of the Project's Preview state; both `null` for a Project with no operation. */
+  findPreviewFacts(projectId: string): Promise<PreviewFacts>;
 
   /** The operation, or `null` when none has this id (also an id that is not a UUID). */
   find(id: string): Promise<PreviewOperation | null>;
@@ -26,6 +46,12 @@ export interface PreviewOperationRepository {
    * caller to delete; a lost operation is never handed out again.
    */
   failLost(rule: LostControllerRule, now: Date): Promise<string[]>;
+
+  /** As {@link failLost}, for the claimed builds the rule selects; returns the secret references released. */
+  failOverdue(rule: OverdueBuildRule, now: Date): Promise<string[]>;
+
+  /** One statement: fails every requested operation the rule selects. Returns how many. */
+  failUnclaimed(rule: UnclaimedOperationRule, now: Date): Promise<number>;
 
   /**
    * One atomic statement under a claim lock (`PreviewOperationHandOutRule`), skipping rows another

@@ -1,5 +1,6 @@
 import { CONTROLLER_PROBLEM_TYPES } from '@agentic-studio/contracts';
 import {
+  API_ONLY_FAILURE_CODES,
   CONTROLLER_REPORTABLE_FAILURE_CODES,
   PREVIEW_LIMIT_BOUNDS,
   PREVIEW_LOG_LINE_MAX_BYTES,
@@ -32,9 +33,16 @@ describe('the lists pinned to the controller protocol', () => {
     expect([...PREVIEW_OPERATION_KINDS]).toEqual([...PROTOCOL_KINDS]);
     expect([...PREVIEW_FAILURE_CODES].sort()).toEqual([...PREVIEW_OPERATION_FAILURE_CODES].sort());
     expect([...PREVIEW_LOG_STREAMS]).toEqual([...PROTOCOL_LOG_STREAMS]);
-    expect(PREVIEW_FAILURE_CODES.filter((code) => code !== 'controller_lost').sort()).toEqual(
-      [...CONTROLLER_REPORTABLE_FAILURE_CODES].sort(),
-    );
+    expect(
+      PREVIEW_FAILURE_CODES.filter(
+        (code) => !API_ONLY_FAILURE_CODES.includes(code as never),
+      ).sort(),
+    ).toEqual([...CONTROLLER_REPORTABLE_FAILURE_CODES].sort());
+    expect([...API_ONLY_FAILURE_CODES]).toEqual([
+      'controller_lost',
+      'not_claimed',
+      'report_overdue',
+    ]);
   });
 
   it('has the same limits and bounds', () => {

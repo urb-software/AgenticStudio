@@ -1,5 +1,15 @@
 import { z } from 'zod';
+import {
+  CONTROLLER_REPORTABLE_FAILURE_CODES,
+  PREVIEW_OPERATION_FAILURE_CODES,
+} from './preview-failure-codes.js';
 import { previewRefusalSchema } from './preview.js';
+
+export {
+  API_ONLY_FAILURE_CODES,
+  CONTROLLER_REPORTABLE_FAILURE_CODES,
+  PREVIEW_OPERATION_FAILURE_CODES,
+} from './preview-failure-codes.js';
 
 /**
  * The Studio/environment-controller wire protocol under `/api/controller/`: the API validates
@@ -21,29 +31,6 @@ export const PREVIEW_REPORTED_STATES = ['in_progress', 'succeeded', 'failed'] as
 export const previewReportedStateSchema = z.enum(PREVIEW_REPORTED_STATES);
 export type PreviewReportedState = z.infer<typeof previewReportedStateSchema>;
 
-/** The codes the controller may report. */
-export const CONTROLLER_REPORTABLE_FAILURE_CODES = [
-  'validation_refused',
-  'compose_file_missing',
-  'source_unavailable',
-  'archive_invalid',
-  'environment_file_tracked',
-  'disk_full',
-  'egress_rules_missing',
-  'limits_failed',
-  'build_failed',
-  'build_timed_out',
-  'start_failed',
-  'runtime_failed',
-  'controller_stopped',
-  'controller_error',
-] as const;
-
-/** Why an operation failed: fixed codes. `controller_lost` is set by the API only. */
-export const PREVIEW_OPERATION_FAILURE_CODES = [
-  ...CONTROLLER_REPORTABLE_FAILURE_CODES,
-  'controller_lost',
-] as const;
 export const previewOperationFailureCodeSchema = z.enum(PREVIEW_OPERATION_FAILURE_CODES);
 export type PreviewOperationFailureCode = z.infer<typeof previewOperationFailureCodeSchema>;
 
@@ -163,6 +150,8 @@ const failureSchema = z.strictObject({
   code: z.enum(CONTROLLER_REPORTABLE_FAILURE_CODES),
   detail: z.string().max(PREVIEW_FAILURE_DETAIL_MAX_LENGTH),
   refusals: z.array(previewRefusalSchema).max(PREVIEW_FAILURE_REFUSALS_MAX).optional(),
+  /** True when the failure removed the Project's running Preview (the rollback after `up`). */
+  previewRemoved: z.boolean().optional(),
 });
 export type OperationFailure = z.infer<typeof failureSchema>;
 

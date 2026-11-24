@@ -12,6 +12,14 @@ export const ENVIRONMENTS_PROBLEM_TYPES = {
   unsupportedPlatform: 'urn:agentic-studio:problem:preview-unsupported-platform',
   /** 409: the settings cannot be removed while the Preview runs. */
   previewRunning: 'urn:agentic-studio:problem:preview-running',
+  /** 409: a build was asked for but the Project has no Preview settings. */
+  previewNotConfigured: 'urn:agentic-studio:problem:preview-not-configured',
+  /** 409: a build was asked for but no environment controller is connected. */
+  controllerUnavailable: 'urn:agentic-studio:problem:preview-controller-unavailable',
+  /** 409: a build of the Project is already requested or claimed. */
+  buildRunning: 'urn:agentic-studio:problem:preview-build-running',
+  /** 404: no build of the Project has this id. */
+  buildNotFound: 'urn:agentic-studio:problem:preview-build-not-found',
   /** 422: the Compose file or the choice was refused; `refusals` lists every reason. */
   previewRefused: 'urn:agentic-studio:problem:preview-refused',
   /** 502: the Compose file could not be read from the Repository. */
@@ -52,6 +60,38 @@ export function previewRunning(): ProblemException {
     type: ENVIRONMENTS_PROBLEM_TYPES.previewRunning,
     title: 'Preview running',
     detail: 'The Preview is running. Stop it before you remove its settings.',
+  });
+}
+
+export function previewNotConfigured(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: ENVIRONMENTS_PROBLEM_TYPES.previewNotConfigured,
+    title: 'Preview not configured',
+    detail: 'Set the Preview settings before you build.',
+  });
+}
+
+export function controllerUnavailable(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: ENVIRONMENTS_PROBLEM_TYPES.controllerUnavailable,
+    title: 'No environment controller connected',
+    detail: 'No environment controller is connected. Builds start once it runs.',
+  });
+}
+
+export function buildRunning(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: ENVIRONMENTS_PROBLEM_TYPES.buildRunning,
+    title: 'Build running',
+    detail: 'A build of this Preview is already running.',
+  });
+}
+
+export function buildNotFound(): ProblemException {
+  return new ProblemException(HttpStatus.NOT_FOUND, {
+    type: ENVIRONMENTS_PROBLEM_TYPES.buildNotFound,
+    title: 'Build not found',
+    detail: 'No build of this Project has this id.',
   });
 }
 

@@ -7,6 +7,7 @@ import { PreviewLimits } from '../../../../domain/value-objects/preview-limits.j
 import { PreviewPort } from '../../../../domain/value-objects/preview-port.js';
 import { PreviewService } from '../../../../domain/value-objects/preview-service.js';
 import { InMemoryRunEnvironmentFiles } from '../../../ports/__tests__/in-memory-run-environment-files.js';
+import { FakeControllerPresence } from '../../../ports/__tests__/fake-controller-presence.js';
 import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
 import { PREVIEW_ENVIRONMENT_FILE_SECRET_OWNER } from '../../../ports/preview-environment-file-snapshots.js';
 import { ClaimPreviewOperationHandler } from '../handler.js';
@@ -27,18 +28,21 @@ describe('ClaimPreviewOperationHandler', () => {
   let operations: InMemoryPreviewOperationRepository;
   let environmentFiles: InMemoryRunEnvironmentFiles;
   let secrets: InMemorySecretStore;
+  let presence: FakeControllerPresence;
   let handler: ClaimPreviewOperationHandler;
 
   beforeEach(() => {
     operations = new InMemoryPreviewOperationRepository();
     environmentFiles = new InMemoryRunEnvironmentFiles();
     secrets = new InMemorySecretStore();
+    presence = new FakeControllerPresence(seconds(-1000));
     handler = new ClaimPreviewOperationHandler(
       operations,
       environmentFiles,
       secrets,
-      { leaseSeconds: 60, logMaxBytes: 1024, snapshotGraceMs: 3_600_000 },
+      { leaseSeconds: 60, logMaxBytes: 1024, snapshotGraceMs: 3_600_000, unclaimedMinutes: 5 },
       { now: () => NOW },
+      presence,
     );
   });
 
@@ -180,8 +184,9 @@ describe('ClaimPreviewOperationHandler', () => {
       operations,
       environmentFiles,
       secrets,
-      { leaseSeconds: 60, logMaxBytes: 1024, snapshotGraceMs: 3_600_000 },
+      { leaseSeconds: 60, logMaxBytes: 1024, snapshotGraceMs: 3_600_000, unclaimedMinutes: 5 },
       { now: () => seconds(120) },
+      presence,
     );
 
     const next = await later.execute({ controllerId: CONTROLLER });
@@ -206,5 +211,11 @@ describe('ClaimPreviewOperationHandler', () => {
     expect(await operations.find('00000000-0000-4000-8000-000000000000')).toMatchObject({
       status: 'claimed',
     });
+  });
+
+  it('records that a controller called, whether or not there was work', async () => {
+    await handler.execute({ controllerId: CONTROLLER });
+
+    expect(presence.recorded).toEqual([NOW]);
   });
 });

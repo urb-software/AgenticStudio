@@ -14,6 +14,22 @@ export class PreviewRunningError extends Error {
   }
 }
 
+/** A build of the Project is requested or claimed: no other change can start. */
+export class PreviewBuildRunningError extends Error {
+  constructor() {
+    super('A build of this Preview is already running.');
+    this.name = 'PreviewBuildRunningError';
+  }
+}
+
+/** No environment controller is connected to take a build. */
+export class PreviewControllerUnavailableError extends Error {
+  constructor() {
+    super('No environment controller is connected.');
+    this.name = 'PreviewControllerUnavailableError';
+  }
+}
+
 /** Why the settings were not accepted, as plain data: the code and the place in the request or the file. */
 export interface PreviewRefusalData {
   readonly code: string;

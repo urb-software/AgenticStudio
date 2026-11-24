@@ -2,7 +2,13 @@ import { isUniqueConstraintViolation, Prisma } from '@agentic-studio/database';
 import { Inject, Injectable } from '@nestjs/common';
 import { DATABASE_CLIENT } from '../../../../platform/database/database.module.js';
 import { PreviewOperation } from '../../domain/entities/preview-operation.js';
-import type { PreviewOperationRepository } from '../../domain/repositories/preview-operation-repository.js';
+import { PreviewBuildRunningError } from '../../domain/errors/preview-settings-errors.js';
+import type {
+  PreviewFacts,
+  PreviewOperationRepository,
+} from '../../domain/repositories/preview-operation-repository.js';
+import { OverdueBuildRule } from '../../domain/value-objects/overdue-build-rule.js';
+import type { UnclaimedOperationRule } from '../../domain/value-objects/unclaimed-operation-rule.js';
 import {
   PREVIEW_FAILURE_CODES,
   type PreviewFailureCode,
@@ -25,6 +31,37 @@ export class PrismaPreviewOperationRepository implements PreviewOperationReposit
 
   async add(operation: PreviewOperation): Promise<void> {
     const data = operation.toData();
+    try {
+      await this.insert(data);
+    } catch (error) {
+      // The partial unique index: a build of this Project is already requested or claimed.
+      if (data.kind === 'build' && isUniqueConstraintViolation(error)) {
+        throw new PreviewBuildRunningError();
+      }
+      throw error;
+    }
+  }
+
+  async findPreviewFacts(projectId: string): Promise<PreviewFacts> {
+    const latest = await this.db.previewOperation.findFirst({
+      where: { projectId, kind: 'build' },
+      orderBy: [{ requestedAt: 'desc' }, { id: 'desc' }],
+    });
+    // The statement of PreviewRunningRule.changesRunning, newest finish first.
+    const [change] = await this.db.$queryRaw<{ id: string }[]>`
+      SELECT id FROM preview_operations
+      WHERE project_id = ${projectId}::uuid
+        AND ((status = 'succeeded' AND kind IN ('build', 'stop', 'remove_data'))
+          OR (status = 'failed' AND kind = 'build' AND preview_removed))
+      ORDER BY finished_at DESC, id DESC
+      LIMIT 1`;
+    return {
+      latestBuild: latest === null ? null : toOperation(latest),
+      runningChange: change ? await this.find(change.id) : null,
+    };
+  }
+
+  private async insert(data: ReturnType<PreviewOperation['toData']>): Promise<void> {
     await this.db.previewOperation.create({
       data: {
         id: data.id,
@@ -89,6 +126,36 @@ export class PrismaPreviewOperationRepository implements PreviewOperationReposit
     );
   }
 
+  async failOverdue(rule: OverdueBuildRule, now: Date): Promise<string[]> {
+    const failure = rule.failure.toData();
+    const margin = OverdueBuildRule.MARGIN_MINUTES;
+    const rows = await this.db.$queryRaw<{ environment_file_secret_id: string | null }[]>`
+      WITH overdue AS (
+        SELECT id, environment_file_secret_id FROM preview_operations
+        WHERE status = 'claimed' AND kind = 'build'
+          AND claimed_at + make_interval(mins => build_minutes + ${margin}::int)
+              < ${rule.now}::timestamptz
+        FOR UPDATE)
+      UPDATE preview_operations o
+      SET status = 'failed', failure_code = ${failure.code}, failure_detail = ${failure.detail},
+          finished_at = ${now}::timestamptz, heartbeat_at = NULL,
+          environment_file_secret_id = NULL, environment_file_path = NULL
+      FROM overdue WHERE o.id = overdue.id
+      RETURNING overdue.environment_file_secret_id`;
+    return rows.flatMap((row) =>
+      row.environment_file_secret_id === null ? [] : [row.environment_file_secret_id],
+    );
+  }
+
+  async failUnclaimed(rule: UnclaimedOperationRule, now: Date): Promise<number> {
+    const failure = rule.failure.toData();
+    return this.db.$executeRaw`
+      UPDATE preview_operations
+      SET status = 'failed', failure_code = ${failure.code}, failure_detail = ${failure.detail},
+          finished_at = ${now}::timestamptz
+      WHERE status = 'requested' AND requested_at < ${rule.requestedBefore}::timestamptz`;
+  }
+
   async claimNext(controllerId: string, now: Date): Promise<PreviewOperation | null> {
     try {
       return await inTransaction(this.db, async (tx) => {
@@ -148,6 +215,7 @@ async function save(tx: Prisma.TransactionClient, operation: PreviewOperation): 
       finishedAt: data.finishedAt,
       failureCode: data.failure?.code ?? null,
       failureDetail: data.failure?.detail ?? null,
+      previewRemoved: data.previewRemoved,
       refusals:
         data.failure !== null && data.failure.refusals.length > 0
           ? (data.failure.refusals as unknown as Prisma.InputJsonValue)
@@ -207,6 +275,8 @@ function toOperation(row: Prisma.PreviewOperationGetPayload<object>): PreviewOpe
             detail: row.failureDetail ?? '',
             refusals: (row.refusals ?? []) as unknown as PreviewRefusalFacts[],
           },
+    previewRemoved: row.previewRemoved,
+    log: { bytes: row.logBytes, truncated: row.logTruncated },
     result: row.result === null ? null : (row.result as unknown as PreviewOperationResultData),
     environmentFile:
       row.environmentFileSecretId === null

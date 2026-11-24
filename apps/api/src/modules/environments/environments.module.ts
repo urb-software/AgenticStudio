@@ -5,6 +5,20 @@ import { SecretsModule } from '../../platform/secrets/secrets.module.js';
 import { AppendPreviewOperationLogHandler } from './application/features/append-preview-operation-log/handler.js';
 import { ClaimPreviewOperationHandler } from './application/features/claim-preview-operation/handler.js';
 import { GetPreviewOperationSourceHandler } from './application/features/get-preview-operation-source/handler.js';
+import { GetPreviewBuildEventsHandler } from './application/features/get-preview-build-events/handler.js';
+import { SweepPreviewOperationsHandler } from './application/features/sweep-preview-operations/handler.js';
+import { PreviewComposeJudge } from './application/preview-compose-judge.js';
+import { PreviewStateReader } from './application/preview-state-reader.js';
+import { CONTROLLER_PRESENCE } from './application/ports/controller-presence.js';
+import { InMemoryControllerPresence } from './infrastructure/adapters/in-memory-controller-presence.js';
+import {
+  PREVIEW_SWEEPS_SETTINGS,
+  PreviewSweepsScheduler,
+  previewSweepIntervalMs,
+  type PreviewSweepsSettings,
+} from './entry-points/schedulers/preview-sweeps.js';
+import { RequestPreviewBuildEndpoint } from './entry-points/http/operator/request-preview-build/endpoint.js';
+import { GetPreviewBuildEventsEndpoint } from './entry-points/http/operator/get-preview-build-events/endpoint.js';
 import { ReportPreviewOperationStateHandler } from './application/features/report-preview-operation-state/handler.js';
 import { RequestPreviewOperationHandler } from './application/features/request-preview-operation/handler.js';
 import { SweepPreviewEnvironmentFilesHandler } from './application/features/sweep-preview-environment-files/handler.js';
@@ -57,6 +71,8 @@ export class EnvironmentsModule {
         GetPreviewEndpoint,
         SavePreviewSettingsEndpoint,
         RemovePreviewSettingsEndpoint,
+        RequestPreviewBuildEndpoint,
+        GetPreviewBuildEventsEndpoint,
         ClaimOperationEndpoint,
         ReportOperationStateEndpoint,
         AppendOperationLogEndpoint,
@@ -86,10 +102,24 @@ export class EnvironmentsModule {
             leaseSeconds: config.controllerLeaseSeconds,
             logMaxBytes: config.previewLogMaxBytes,
             snapshotGraceMs: PREVIEW_SNAPSHOT_GRACE_MS,
+            unclaimedMinutes: config.previewUnclaimedMinutes,
           }),
           inject: [APP_CONFIG],
         },
+        { provide: CONTROLLER_PRESENCE, useValue: new InMemoryControllerPresence() },
+        PreviewComposeJudge,
+        PreviewStateReader,
         GetPreviewHandler,
+        GetPreviewBuildEventsHandler,
+        SweepPreviewOperationsHandler,
+        {
+          provide: PREVIEW_SWEEPS_SETTINGS,
+          useFactory: (config: AppConfig): PreviewSweepsSettings => ({
+            intervalMs: previewSweepIntervalMs(config.controllerLeaseSeconds),
+          }),
+          inject: [APP_CONFIG],
+        },
+        PreviewSweepsScheduler,
         RequestPreviewOperationHandler,
         ClaimPreviewOperationHandler,
         ReportPreviewOperationStateHandler,

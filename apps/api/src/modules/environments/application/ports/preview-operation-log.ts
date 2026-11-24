@@ -15,4 +15,14 @@ export interface PreviewOperationLog {
     lines: readonly PreviewLogLine[],
     maxBytes: number,
   ): Promise<{ stored: number; truncated: boolean } | null>;
+
+  /**
+   * The stored lines with `seq` above `after`, in seq order, at most `limit`; `hasMore` says
+   * whether lines remain beyond them. An operation with no lines gives an empty page.
+   */
+  page(
+    operationId: string,
+    after: number,
+    limit: number,
+  ): Promise<{ lines: PreviewLogLine[]; hasMore: boolean }>;
 }

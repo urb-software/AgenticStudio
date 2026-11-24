@@ -1,4 +1,7 @@
-import { PreviewRunningError } from '../errors/preview-settings-errors.js';
+import {
+  PreviewBuildRunningError,
+  PreviewRunningError,
+} from '../errors/preview-settings-errors.js';
 import type { PreviewComposeFile } from '../value-objects/preview-compose-file.js';
 import type { PreviewPort } from '../value-objects/preview-port.js';
 import type { PreviewService } from '../value-objects/preview-service.js';
@@ -43,8 +46,9 @@ export class PreviewSettings {
     return new PreviewSettings(data);
   }
 
-  /** Checks that the settings may be removed; the caller then deletes them. Throws {@link PreviewRunningError}. */
+  /** Checks that the settings may be removed; the caller then deletes them. Throws {@link PreviewRunningError} and {@link PreviewBuildRunningError}. */
   remove(facts: PreviewSettingsRemovalFacts): void {
     if (facts.previewRunning) throw new PreviewRunningError();
+    if (facts.buildActive) throw new PreviewBuildRunningError();
   }
 }

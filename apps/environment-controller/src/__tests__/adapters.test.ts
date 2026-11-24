@@ -18,7 +18,7 @@ import {
   StudioApi,
   StudioApiError,
 } from '../studio-api.js';
-import { renderSlice, SystemdSlices } from '../systemd-slices.js';
+import { BUILD_DAEMON_HEADROOM_MIB, renderSlice, SystemdSlices } from '../systemd-slices.js';
 import { RecordingRunner } from './fixtures/recording-runner.js';
 
 const PROJECT = '8f14e45f-ceea-467a-9575-1a3a8b1c0f10';
@@ -124,6 +124,89 @@ describe('SystemdSlices', () => {
     await slices.remove(identity, signal);
     expect(readdirSync(join(dir, 'user'))).toEqual([]);
     expect(runner.calls).toHaveLength(2);
+  });
+});
+
+describe('SystemdSlices.boundBuild', () => {
+  const slices = (runner: RecordingRunner) =>
+    new SystemdSlices({ runner, directory: join(dir, 'user'), env });
+
+  it('bounds the daemon unit with the memory plus the daemon headroom, no swap and the CPU quota', async () => {
+    const runner = new RecordingRunner();
+
+    await slices(runner).boundBuild(identity, limits, signal);
+
+    expect(BUILD_DAEMON_HEADROOM_MIB).toBe(512);
+    expect(runner.calls).toHaveLength(1);
+    expect(runner.calls[0]).toMatchObject({
+      binary: 'systemctl',
+      args: [
+        '--user',
+        'set-property',
+        '--runtime',
+        'docker.service',
+        'MemoryMax=1536M',
+        'MemorySwapMax=0',
+        'CPUQuota=100%',
+      ],
+      env,
+    });
+  });
+
+  it('uses the limits of the build, and sets no task limit', async () => {
+    const runner = new RecordingRunner();
+
+    await slices(runner).boundBuild(
+      identity,
+      { ...limits, memoryMiB: 4096, cpuPercent: 250, tasksMax: 2048 },
+      signal,
+    );
+
+    expect(runner.argsOf(0)).toEqual([
+      '--user',
+      'set-property',
+      '--runtime',
+      'docker.service',
+      'MemoryMax=4608M',
+      'MemorySwapMax=0',
+      'CPUQuota=250%',
+    ]);
+    expect(runner.argsOf(0).join(' ')).not.toContain('TasksMax');
+  });
+
+  it('writes no slice file and reloads nothing', async () => {
+    const runner = new RecordingRunner();
+
+    await slices(runner).boundBuild(identity, limits, signal);
+
+    expect(runner.argsOf(0)).not.toContain('daemon-reload');
+    expect(() => readdirSync(join(dir, 'user'))).toThrow();
+  });
+
+  it('refuses limits that are not whole numbers in bounds, before it runs anything', async () => {
+    const runner = new RecordingRunner();
+
+    for (const bad of [{ memoryMiB: 1024.5 }, { memoryMiB: 70_000 }, { cpuPercent: 5 }]) {
+      await expect(
+        slices(runner).boundBuild(identity, { ...limits, ...bad }, signal),
+      ).rejects.toMatchObject({
+        code: 'limits_failed',
+      });
+    }
+    expect(runner.calls).toEqual([]);
+  });
+
+  it('reports limits_failed when systemd fails, and aborts when the operation is aborted', async () => {
+    await expect(
+      slices(new RecordingRunner(() => ({ exitCode: 1 }))).boundBuild(identity, limits, signal),
+    ).rejects.toMatchObject({ code: 'limits_failed' });
+    await expect(
+      slices(new RecordingRunner(() => ({ interrupted: 'aborted' }))).boundBuild(
+        identity,
+        limits,
+        signal,
+      ),
+    ).rejects.toBeInstanceOf(OperationAborted);
   });
 });
 

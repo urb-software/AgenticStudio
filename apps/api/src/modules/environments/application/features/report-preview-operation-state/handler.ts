@@ -10,6 +10,7 @@ import { PreviewLogRedaction } from '../../../domain/value-objects/preview-log-r
 import { PreviewOperationFailure } from '../../../domain/value-objects/preview-operation-failure.js';
 import { PreviewOperationResult } from '../../../domain/value-objects/preview-operation-result.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
+import { CONTROLLER_PRESENCE, type ControllerPresence } from '../../ports/controller-presence.js';
 import {
   PREVIEW_SECRET_VALUES,
   type PreviewSecretValues,
@@ -23,6 +24,8 @@ export interface ReportPreviewOperationStateInput {
     code: PreviewFailureCode;
     detail: string;
     refusals?: { code: string; place: string; message: string }[];
+    /** The controller's rollback removed the Project's running Preview. */
+    previewRemoved?: boolean;
   };
   runtime?: { services: { name: string; state: string }[] };
 }
@@ -40,11 +43,13 @@ export class ReportPreviewOperationStateHandler {
     @Inject(PREVIEW_SECRET_VALUES) private readonly secretValues: PreviewSecretValues,
     @Inject(SECRET_STORE) private readonly secrets: SecretStore,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(CONTROLLER_PRESENCE) private readonly presence: ControllerPresence,
   ) {}
 
   async execute(input: ReportPreviewOperationStateInput): Promise<void> {
     const { operationId, controllerId } = input;
     const now = this.clock.now();
+    this.presence.record(now);
     let released: string | undefined;
     let failure: PreviewOperationFailure | null = null;
     if (input.state === 'failed' && input.failure !== undefined) {
@@ -74,6 +79,7 @@ export class ReportPreviewOperationStateHandler {
             failure ??
               PreviewOperationFailure.of('controller_error', 'The controller reported a failure.'),
             now,
+            input.failure?.previewRemoved === true,
           );
       }
     });
