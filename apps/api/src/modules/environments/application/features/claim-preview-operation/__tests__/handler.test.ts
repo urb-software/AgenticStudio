@@ -83,6 +83,7 @@ describe('ClaimPreviewOperationHandler', () => {
       id: '00000000-0000-4000-8000-000000000000',
       projectId: OTHER_PROJECT,
       kind: 'build',
+      previewLabel: `preview-${OTHER_PROJECT.replaceAll('-', '').slice(0, 12)}`,
       build: {
         commit: 'a'.repeat(40),
         composeFile: 'compose.yaml',
@@ -103,6 +104,7 @@ describe('ClaimPreviewOperationHandler', () => {
       id: '11111111-1111-4111-8111-111111111111',
       projectId: PROJECT,
       kind: 'remove_data',
+      previewLabel: `preview-${PROJECT.replaceAll('-', '').slice(0, 12)}`,
       build: null,
       environmentFile: null,
     });

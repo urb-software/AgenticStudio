@@ -9,6 +9,7 @@ import {
   PREVIEW_OPERATION_REPOSITORY,
   type PreviewOperationRepository,
 } from '../../../domain/repositories/preview-operation-repository.js';
+import { PreviewHostname } from '../../../domain/value-objects/preview-hostname.js';
 import { LostControllerRule } from '../../../domain/value-objects/lost-controller-rule.js';
 import { PreviewOperationFailure } from '../../../domain/value-objects/preview-operation-failure.js';
 import type { PreviewOperationKind } from '../../../domain/value-objects/preview-operation-kind.js';
@@ -28,6 +29,8 @@ export interface ClaimedPreviewOperation {
   id: string;
   projectId: string;
   kind: PreviewOperationKind;
+  /** The hostname label of the Project's Preview, the controller's socket name. */
+  previewLabel: string;
   /** Set exactly for a build. */
   build: {
     commit: string;
@@ -133,6 +136,7 @@ function claimed(
     id: operation.id,
     projectId: operation.projectId,
     kind: operation.kind,
+    previewLabel: PreviewHostname.of(operation.projectId, 'preview.invalid').label,
     build:
       operation.build === null
         ? null

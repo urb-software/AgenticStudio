@@ -276,6 +276,7 @@ describe('Environment controller API (PostgreSQL + Redis via Testcontainers)', (
         operationId: id,
         projectId,
         composeProject: `preview-${projectId.replaceAll('-', '')}`,
+        previewLabel: `preview-${projectId.replaceAll('-', '').slice(0, 12)}`,
         kind: 'build',
         commit: 'a'.repeat(40),
         composeFile: 'compose.yaml',
@@ -316,6 +317,7 @@ describe('Environment controller API (PostgreSQL + Redis via Testcontainers)', (
         operationId: id,
         projectId,
         composeProject: `preview-${projectId.replaceAll('-', '')}`,
+        previewLabel: `preview-${projectId.replaceAll('-', '').slice(0, 12)}`,
         kind: 'remove_data',
       });
     });

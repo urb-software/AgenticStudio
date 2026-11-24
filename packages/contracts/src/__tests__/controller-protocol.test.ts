@@ -18,6 +18,7 @@ const controllerId = randomUUID();
 const operationId = randomUUID();
 const projectId = randomUUID();
 const composeProject = `preview-${projectId.replaceAll('-', '')}`;
+const previewLabel = `preview-${projectId.replaceAll('-', '').slice(0, 12)}`;
 const AT = '2026-11-24T10:00:00.000Z';
 
 const line = (seq: number, text = 'step 1/3') => ({ seq, at: AT, stream: 'build', text });
@@ -53,6 +54,7 @@ describe('the controller protocol', () => {
       operationId,
       projectId,
       composeProject,
+      previewLabel,
       kind: 'build',
       commit: 'a'.repeat(40),
       composeFile: 'compose.yaml',
@@ -72,14 +74,20 @@ describe('the controller protocol', () => {
     it('describes the other operations with no further fields', () => {
       for (const kind of ['stop', 'remove_data', 'state']) {
         expect(
-          operationPayloadSchema.safeParse({ operationId, projectId, composeProject, kind })
-            .success,
+          operationPayloadSchema.safeParse({
+            operationId,
+            projectId,
+            composeProject,
+            previewLabel,
+            kind,
+          }).success,
         ).toBe(true);
         expect(
           operationPayloadSchema.safeParse({
             operationId,
             projectId,
             composeProject,
+            previewLabel,
             kind,
             command: 'ls',
           }).success,
@@ -89,6 +97,7 @@ describe('the controller protocol', () => {
 
     it.each([
       ['a Compose project that is not preview-<32 hex>', { composeProject: 'preview-x' }],
+      ['a label that is not preview-<12 hex>', { previewLabel: 'preview-x' }],
       ['a short commit', { commit: 'abc' }],
       ['memory under the bound', { limits: { ...build.limits, memoryMiB: 127 } }],
       ['cpu over the bound', { limits: { ...build.limits, cpuPercent: 6401 } }],

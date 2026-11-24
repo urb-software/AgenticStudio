@@ -82,6 +82,9 @@ export const PREVIEW_COMPOSE_PROJECT_PATTERN = /^preview-[0-9a-f]{32}$/;
 
 const utf8Length = (text: string) => new TextEncoder().encode(text).length;
 
+/** The hostname label of a Preview, the controller's socket name; never derived by the controller. */
+export const PREVIEW_LABEL_PATTERN = /^preview-[0-9a-f]{12}$/;
+
 /** Identifies one controller process; it generates a random UUID when it starts. */
 const controllerIdSchema = z.uuid();
 
@@ -125,6 +128,7 @@ const operationBaseShape = {
   operationId: z.uuid(),
   projectId: z.uuid(),
   composeProject: z.string().regex(PREVIEW_COMPOSE_PROJECT_PATTERN),
+  previewLabel: z.string().regex(PREVIEW_LABEL_PATTERN),
 };
 
 /**

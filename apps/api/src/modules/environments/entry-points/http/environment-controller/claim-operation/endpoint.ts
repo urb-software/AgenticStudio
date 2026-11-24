@@ -48,6 +48,7 @@ function payloadOf(operation: ClaimedPreviewOperation): OperationPayload {
     operationId: operation.id,
     projectId: operation.projectId,
     composeProject: composeProjectOf(operation.projectId),
+    previewLabel: operation.previewLabel,
   };
   if (operation.kind !== 'build' || operation.build === null) {
     return operationPayloadSchema.parse({ ...base, kind: operation.kind });
