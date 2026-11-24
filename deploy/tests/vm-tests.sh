@@ -135,7 +135,7 @@ if [ "$status" -eq 0 ]; then ok "the Preview checks pass (token checks wait for 
 expect_false "no FAIL line" grep -q '^FAIL' <<<"$out"
 for name in not-root not-privileged sudo-needs-password home-private linger system-docker-unreachable \
   agent-docker-unreachable agent-files-unreadable studio-files-unreadable studio-network-unreachable \
-  cgroup-v2 cgroup-delegation preview-user-limits slice-limit-bites docker-unit-memory-limit \
+  cgroup-v2 cgroup-delegation preview-user-limits slice-limit-bites build-slice-memory-limit \
   egress-script-root-owned rootless-docker daemon-dns egress-rules-verify egress-blocked-build-step \
   egress-blocked-compose-network internet-https controller-unit-enabled controller-env-file \
   controller-data-dir controller-settings preview-proxy-dir controller-free-disk; do

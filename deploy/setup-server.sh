@@ -87,6 +87,8 @@ BASE_PACKAGES=(ca-certificates curl gnupg git xz-utils uidmap slirp4netns dbus-u
 FIREWALL_CHAIN="AGENTIC-STUDIO-AGENT"
 PREVIEW_FIREWALL_CHAIN="AGENTIC-STUDIO-PREVIEW"
 PREVIEW_EGRESS_SCRIPT="/usr/local/lib/agentic-studio/preview-egress-rules"
+# The user slice build steps run in (the rootless daemon's cgroup-parent); the controller bounds it per build.
+PREVIEW_BUILD_SLICE="preview-build.slice"
 # Groups besides docker whose members can become root.
 ROOT_EQUIVALENT_GROUPS="lxd incus-admin libvirt disk"
 
@@ -1085,12 +1087,24 @@ step_preview_rootless() {
   unit_dir="$home/.config/systemd/user/docker.service.d"
   daemon_json="$home/.config/docker/daemon.json"
   dropin="$unit_dir/60-agentic-studio-egress.conf"
-  as_preview mkdir -p "$home/.config/docker" "$unit_dir"
-  want="{\"dns\":[\"$dns\"]}"
+  as_preview mkdir -p "$home/.config/docker" "$home/.config/systemd/user" "$unit_dir"
+  # Build steps run in the daemon's cgroup-parent, not in its own unit: a slice without a limit of
+  # its own, which the controller bounds for each build.
+  want="[Unit]
+Description=Builds and containers of the Preview user's daemon (bounded per build by the controller)
+
+[Slice]"
+  have="$(as_preview cat "$home/.config/systemd/user/$PREVIEW_BUILD_SLICE" 2>/dev/null || true)"
+  if [ "$have" != "$want" ]; then
+    printf '%s\n' "$want" | as_preview sh -c 'umask 022 && cat > "$1"' sh "$home/.config/systemd/user/$PREVIEW_BUILD_SLICE"
+    changed "$home/.config/systemd/user/$PREVIEW_BUILD_SLICE"
+    restart=1
+  fi
+  want="{\"dns\":[\"$dns\"],\"cgroup-parent\":\"$PREVIEW_BUILD_SLICE\"}"
   have="$(as_preview cat "$daemon_json" 2>/dev/null || true)"
   if [ "$have" != "$want" ]; then
     printf '%s\n' "$want" | as_preview sh -c 'umask 022 && cat > "$1"' sh "$daemon_json"
-    changed "$daemon_json (the resolver the egress rules allow)"
+    changed "$daemon_json (the resolver the egress rules allow, the build slice as cgroup-parent)"
     restart=1
   fi
   want="# Installed by deploy/setup-server.sh: the egress rules are applied in the daemon's network

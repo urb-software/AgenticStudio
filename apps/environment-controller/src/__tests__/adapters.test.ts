@@ -18,7 +18,7 @@ import {
   StudioApi,
   StudioApiError,
 } from '../studio-api.js';
-import { BUILD_DAEMON_HEADROOM_MIB, renderSlice, SystemdSlices } from '../systemd-slices.js';
+import { BUILD_SLICE, renderSlice, SystemdSlices } from '../systemd-slices.js';
 import { RecordingRunner } from './fixtures/recording-runner.js';
 
 const PROJECT = '8f14e45f-ceea-467a-9575-1a3a8b1c0f10';
@@ -131,12 +131,12 @@ describe('SystemdSlices.boundBuild', () => {
   const slices = (runner: RecordingRunner) =>
     new SystemdSlices({ runner, directory: join(dir, 'user'), env });
 
-  it('bounds the daemon unit with the memory plus the daemon headroom, no swap and the CPU quota', async () => {
+  it('bounds the build slice with the memory, no swap and the CPU quota', async () => {
     const runner = new RecordingRunner();
 
     await slices(runner).boundBuild(identity, limits, signal);
 
-    expect(BUILD_DAEMON_HEADROOM_MIB).toBe(512);
+    expect(BUILD_SLICE).toBe('preview-build.slice');
     expect(runner.calls).toHaveLength(1);
     expect(runner.calls[0]).toMatchObject({
       binary: 'systemctl',
@@ -144,8 +144,8 @@ describe('SystemdSlices.boundBuild', () => {
         '--user',
         'set-property',
         '--runtime',
-        'docker.service',
-        'MemoryMax=1536M',
+        'preview-build.slice',
+        'MemoryMax=1024M',
         'MemorySwapMax=0',
         'CPUQuota=100%',
       ],
@@ -166,8 +166,8 @@ describe('SystemdSlices.boundBuild', () => {
       '--user',
       'set-property',
       '--runtime',
-      'docker.service',
-      'MemoryMax=4608M',
+      'preview-build.slice',
+      'MemoryMax=4096M',
       'MemorySwapMax=0',
       'CPUQuota=250%',
     ]);

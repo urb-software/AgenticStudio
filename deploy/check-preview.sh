@@ -43,6 +43,7 @@ PREVIEW_PROXY_GROUP="${PREVIEW_PROXY_GROUP:-previewproxy}"
 PREVIEW_PROXY_DIR="${PREVIEW_PROXY_DIR:-/run/preview-proxy}"
 EGRESS_SCRIPT="${EGRESS_SCRIPT:-/usr/local/lib/agentic-studio/preview-egress-rules}"
 CONTROLLER_UNIT="${CONTROLLER_UNIT:-agentic-studio-controller.service}"
+BUILD_SLICE="${BUILD_SLICE:-preview-build.slice}"
 CONTROLLER_ENV_FILE="${CONTROLLER_ENV_FILE:-$HOME/.config/agentic-studio-controller/.env}"
 CONTROLLER_MIN_FREE_GB="${CONTROLLER_MIN_FREE_GB:-2}"
 CHECK_IMAGE="${CHECK_IMAGE:-busybox:1.37}"
@@ -276,33 +277,35 @@ check_cgroup() {
     fail slice-limit-bites "limits '${limits:-none}' (expected '67108864 20'), allocation exit $status (expected non-zero)"
   fi
 
-  # The daemon's own unit can be bounded while it builds (the controller does it per build): a
-  # RUN step that allocates above the limit, and below the slice's, is killed by the memory limit
-  # (the cgroup's oom_kill counter rises), and the daemon stays up (OOMPolicy=continue).
+  # The build slice (the daemon's cgroup-parent, where build steps run) can be bounded while it
+  # builds, as the controller does per build: a RUN step that allocates above the limit, and below
+  # the user slice's, is killed by the slice's memory limit (its oom_kill counter rises), and the
+  # daemon stays up and unbounded.
   if ! rootless_up; then
-    fail docker-unit-memory-limit "no rootless daemon at $DOCKER_HOST"
+    fail build-slice-memory-limit "no rootless daemon at $DOCKER_HOST"
     return
   fi
-  local before pid_before pid_after build_status limit_set kills_before kills_after events restored output
-  before="$(systemctl --user show docker.service -p MemoryMax --value 2>/dev/null)"
+  local before pid_before pid_after build_status limit_set kills_before kills_after events restored output cgdir
+  before="$(systemctl --user show "$BUILD_SLICE" -p MemoryMax --value 2>/dev/null)"
   pid_before="$(systemctl --user show docker.service -p MainPID --value 2>/dev/null)"
-  local cgdir
-  cgdir="/sys/fs/cgroup$(systemctl --user show docker.service -p ControlGroup --value 2>/dev/null)"
+  # Keeps the slice (and its counters) alive between build steps.
+  systemctl --user start "$BUILD_SLICE" >/dev/null 2>&1
+  cgdir="/sys/fs/cgroup$(systemctl --user show "$BUILD_SLICE" -p ControlGroup --value 2>/dev/null)"
   events="$cgdir/memory.events"
   WORK_DIR="${WORK_DIR:-$(mktemp -d)}"
   mkdir -p "$WORK_DIR/oom"
   # About 800 MB held in a shell variable (twice while it is copied), above the 512 MiB limit.
-  printf 'FROM %s\nRUN cat /proc/self/cgroup\nRUN x=$(head -c 800000000 /dev/zero | tr "\\0" a) && echo ${#x}\n' "$CHECK_IMAGE" >"$WORK_DIR/oom/Dockerfile"
+  printf 'FROM %s\nRUN x=$(head -c 800000000 /dev/zero | tr "\\0" a) && echo ${#x}\n' "$CHECK_IMAGE" >"$WORK_DIR/oom/Dockerfile"
   timeout 180 docker pull -q "$CHECK_IMAGE" >/dev/null 2>&1
   kills_before="$(sed -n 's/^oom_kill //p' "$events" 2>/dev/null)"
   DOCKER_STATE="${before:-infinity}"
-  systemctl --user set-property --runtime docker.service MemoryMax=512M >/dev/null 2>&1
-  limit_set="$(systemctl --user show docker.service -p MemoryMax --value 2>/dev/null)"
+  systemctl --user set-property --runtime "$BUILD_SLICE" MemoryMax=512M >/dev/null 2>&1
+  limit_set="$(systemctl --user show "$BUILD_SLICE" -p MemoryMax --value 2>/dev/null)"
   output="$(timeout 300 docker build --no-cache --progress plain -t preview-check-oom:probe "$WORK_DIR/oom" 2>&1)"
   build_status=$?
   kills_after="$(sed -n 's/^oom_kill //p' "$events" 2>/dev/null)"
-  systemctl --user set-property --runtime docker.service "MemoryMax=$DOCKER_STATE" >/dev/null 2>&1
-  restored="$(systemctl --user show docker.service -p MemoryMax --value 2>/dev/null)"
+  systemctl --user set-property --runtime "$BUILD_SLICE" "MemoryMax=$DOCKER_STATE" >/dev/null 2>&1
+  restored="$(systemctl --user show "$BUILD_SLICE" -p MemoryMax --value 2>/dev/null)"
   DOCKER_STATE=""
   local up=1 _
   for _ in $(seq 1 15); do
@@ -315,12 +318,11 @@ check_cgroup() {
   pid_after="$(systemctl --user show docker.service -p MainPID --value 2>/dev/null)"
   local killed=1
   if [[ "$kills_before" =~ ^[0-9]+$ && "$kills_after" =~ ^[0-9]+$ ]] && [ "$kills_after" -gt "$kills_before" ]; then killed=0; fi
-  [ "$killed" = 0 ] || ! grep -Eq 'exit code: 137|signal: killed' <<<"$output" || killed=0
   if [ "$limit_set" = 536870912 ] && [ "$build_status" -ne 0 ] && [ "$killed" = 0 ] && [ "$up" = 0 ] &&
     [ "$pid_before" = "$pid_after" ] && [ "$restored" = "${before:-infinity}" ]; then
-    pass docker-unit-memory-limit "MemoryMax=536870912 on docker.service: a RUN step of 800 MB was OOM-killed, the daemon (pid $pid_after) stayed active, MemoryMax restored to $restored"
+    pass build-slice-memory-limit "MemoryMax=536870912 on $BUILD_SLICE: a RUN step of 800 MB was OOM-killed in it (counter $kills_before -> $kills_after), the daemon (pid $pid_after) stayed active, MemoryMax restored to $restored"
   else
-    fail docker-unit-memory-limit "limit ${limit_set:-?} (expected 536870912), build exit $build_status, oom kill $([ "$killed" = 0 ] && echo seen || echo not seen) (counter ${kills_before:-?} -> ${kills_after:-?}), daemon up=$([ "$up" = 0 ] && echo yes || echo no), pid $pid_before -> $pid_after, MemoryMax restored to '${restored:-?}' (was '${before:-?}'); daemon cgroup $cgdir: memory.max $(cat "$cgdir/memory.max" 2>/dev/null) peak $(cat "$cgdir/memory.peak" 2>/dev/null), children: $(find "$cgdir" -mindepth 1 -maxdepth 1 -type d -printf '%f ' 2>/dev/null); build output: $(tail -n 6 <<<"$output" | tr '\n' '|')"
+    fail build-slice-memory-limit "limit ${limit_set:-?} (expected 536870912), build exit $build_status, oom kill $([ "$killed" = 0 ] && echo seen || echo not seen) (counter ${kills_before:-?} -> ${kills_after:-?}), daemon up=$([ "$up" = 0 ] && echo yes || echo no), pid $pid_before -> $pid_after, MemoryMax restored to '${restored:-?}' (was '${before:-?}'); slice cgroup $cgdir: peak $(cat "$cgdir/memory.peak" 2>/dev/null), children: $(find "$cgdir" -mindepth 1 -maxdepth 1 -type d -printf '%f ' 2>/dev/null); daemon cgroup children: $(find "/sys/fs/cgroup$(systemctl --user show docker.service -p ControlGroup --value 2>/dev/null)" -mindepth 1 -maxdepth 1 -type d -printf '%f ' 2>/dev/null); daemon.json: $(tr -d '\n' <"$HOME/.config/docker/daemon.json" 2>/dev/null); build output: $(tail -n 6 <<<"$output" | tr '\n' '|')"
   fi
 }
 
@@ -385,8 +387,8 @@ check_egress() {
   local dns configured
   dns="$(sed -n 's/^DNS_SERVER="\(.*\)"$/\1/p' "$EGRESS_SCRIPT" 2>/dev/null | head -n 1)"
   configured="$(tr -d ' \n' <"$HOME/.config/docker/daemon.json" 2>/dev/null)"
-  if [ -n "$dns" ] && [ "$configured" = "{\"dns\":[\"$dns\"]}" ]; then
-    pass daemon-dns "daemon.json names the resolver the egress rules allow ($dns)"
+  if [ -n "$dns" ] && [ "$configured" = "{\"dns\":[\"$dns\"],\"cgroup-parent\":\"$BUILD_SLICE\"}" ]; then
+    pass daemon-dns "daemon.json names the resolver the egress rules allow ($dns) and $BUILD_SLICE as cgroup-parent"
   else
     fail daemon-dns "daemon.json is '${configured:-missing}', the rules allow '${dns:-none}'"
   fi
