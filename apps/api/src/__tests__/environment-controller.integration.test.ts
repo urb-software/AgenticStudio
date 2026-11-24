@@ -9,6 +9,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { DATABASE_CLIENT, type DatabaseClient } from '../platform/database/database.module.js';
 import { problemDetailsSchema } from '../platform/http/problem-details.js';
+import { SECRET_STORE, type SecretStore } from '../platform/secrets/index.js';
 import { createGitFixture, type GitFixture, pushFiles } from './git-fixture.js';
 import {
   signIn,
@@ -44,11 +45,28 @@ function expectProblem(response: request.Response, status: number, type?: string
   if (type) expect(response.body.type).toBe(`${PROBLEM}${type}`);
 }
 
-function binary(response: request.Response, callback: (error: Error | null, body: Buffer) => void) {
+/** A tar stays a buffer; a problem answer is parsed as JSON. */
+function binary(
+  response: request.Response,
+  callback: (error: Error | null, body: Buffer | object) => void,
+) {
   const stream = response as unknown as NodeJS.ReadableStream;
   const chunks: Buffer[] = [];
   stream.on('data', (chunk: Buffer) => chunks.push(chunk));
-  stream.on('end', () => callback(null, Buffer.concat(chunks)));
+  stream.on('end', () => {
+    const body = Buffer.concat(chunks);
+    const type = String(response.headers['content-type'] ?? '');
+    callback(null, type.includes('json') ? (JSON.parse(body.toString('utf8')) as object) : body);
+  });
+}
+
+/** Polls until the check holds: the archive is removed once the response has been sent. */
+async function eventually(check: () => Promise<boolean>): Promise<boolean> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    if (await check()) return true;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return false;
 }
 
 describe('Environment controller API (PostgreSQL + Redis via Testcontainers)', () => {
@@ -59,6 +77,8 @@ describe('Environment controller API (PostgreSQL + Redis via Testcontainers)', (
   let fixture: GitFixture | undefined;
 
   const db = () => app.get<DatabaseClient>(DATABASE_CLIENT);
+  const snapshots = () =>
+    app.get<SecretStore>(SECRET_STORE).listOlderThan('environments.preview-environment-file', 0);
   const http = () => request(app.getHttpServer());
   const base = '/api/controller/operations';
   const claim = (controllerId = CONTROLLER) =>
@@ -274,8 +294,7 @@ describe('Environment controller API (PostgreSQL + Redis via Testcontainers)', (
       const row = await db().previewOperation.findUniqueOrThrow({ where: { id } });
 
       expect(JSON.stringify(row)).not.toContain(ENVIRONMENT_VALUE);
-      const secrets = await db().$queryRaw<object[]>`SELECT * FROM secrets`;
-      expect(JSON.stringify(secrets)).not.toContain(ENVIRONMENT_VALUE);
+      expect(await snapshots()).toEqual([row.environmentFileSecretId]);
       expect(row.environmentFileSecretId).not.toBeNull();
 
       const other = await createProject();
@@ -347,9 +366,7 @@ describe('Environment controller API (PostgreSQL + Redis via Testcontainers)', (
         environmentFileSecretId: null,
       });
       expect(failed.claimedBy).toBe(CONTROLLER);
-      expect(
-        (await db().$queryRaw<{ count: bigint }[]>`SELECT count(*) FROM secrets`)[0]!.count,
-      ).toBe(0n);
+      expect(await snapshots()).toEqual([]);
       expect((await state(lost, { controllerId: CONTROLLER, state: 'in_progress' })).status).toBe(
         409,
       );
@@ -551,6 +568,8 @@ describe('Environment controller API (PostgreSQL + Redis via Testcontainers)', (
 
   describe.runIf(linux)('GET /api/controller/operations/:id/source', () => {
     const archiveFolder = () => join(dataDir, 'tmp', 'preview-archives');
+    const leftOver = async () =>
+      existsSync(archiveFolder()) ? await readdir(archiveFolder()) : [];
 
     async function readyProject(): Promise<string> {
       const projectId = await createProject();
@@ -606,8 +625,7 @@ describe('Environment controller API (PostgreSQL + Redis via Testcontainers)', (
         .sort();
       expect(entriesOf(body)).toEqual(tracked);
       expect(tracked).toContain('compose.yaml');
-      const left = existsSync(archiveFolder()) ? await readdir(archiveFolder()) : [];
-      expect(left).toEqual([]);
+      expect(await eventually(async () => (await leftOver()).length === 0)).toBe(true);
     });
 
     it('answers 409 source-unavailable for a commit the Clone lacks, leaving no file', async () => {
@@ -616,8 +634,7 @@ describe('Environment controller API (PostgreSQL + Redis via Testcontainers)', (
       await claim();
 
       expectProblem(await source(id), 409, 'preview-operation-source-unavailable');
-      const left = existsSync(archiveFolder()) ? await readdir(archiveFolder()) : [];
-      expect(left).toEqual([]);
+      expect(await leftOver()).toEqual([]);
     });
 
     it('answers 409 to a controller that does not hold the build and for an operation that is not a build', async () => {

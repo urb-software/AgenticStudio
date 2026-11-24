@@ -27,12 +27,13 @@ export class SweepPreviewEnvironmentFilesHandler {
   async execute(): Promise<void> {
     let orphans: string[];
     try {
+      // The database first: with it unreachable the secret store is not touched.
+      const referenced = new Set(await this.operations.listEnvironmentFileSecrets());
       const candidates = await this.secrets.listOlderThan(
         PREVIEW_ENVIRONMENT_FILE_SECRET_OWNER,
         PREVIEW_SNAPSHOT_GRACE_MS,
       );
       if (candidates.length === 0) return;
-      const referenced = new Set(await this.operations.listEnvironmentFileSecrets());
       orphans = candidates.filter((secretId) => !referenced.has(secretId));
     } catch (error) {
       this.logger.warn(

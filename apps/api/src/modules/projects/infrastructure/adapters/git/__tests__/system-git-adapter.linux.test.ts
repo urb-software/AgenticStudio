@@ -295,6 +295,10 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
 
     describe('archiving a commit', () => {
       const archiveFolder = () => join(tempRoot, 'preview-archives');
+
+      afterEach(async () => {
+        await rm(archiveFolder(), { recursive: true, force: true });
+      });
       const listed = (file: string) =>
         spawnSync('tar', ['-tf', file], { encoding: 'utf8' })
           .stdout.split('\n')
