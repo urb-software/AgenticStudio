@@ -33,6 +33,11 @@ export interface MergedRunPreviews {
    */
   merged(merge: MergedRun): Promise<void>;
 
-  /** The Preview's state for the commit the Run's merge made. */
-  forMerge(projectId: string, runId: string, mergedCommit: string): Promise<PreviewOfMerge>;
+  /** The Preview's state for the commit the Run's merge made, at `mergedAt`. */
+  forMerge(
+    projectId: string,
+    runId: string,
+    mergedCommit: string,
+    mergedAt: Date,
+  ): Promise<PreviewOfMerge>;
 }

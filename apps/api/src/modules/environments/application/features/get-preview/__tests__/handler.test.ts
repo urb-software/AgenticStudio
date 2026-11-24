@@ -411,6 +411,22 @@ describe('GetPreviewHandler', () => {
       });
     });
 
+    it('says it waits for a controller when the build is due and none is connected', async () => {
+      await runningAt('b'.repeat(40));
+      sources.statusAnswer = { status: 'ready', commit: 'e'.repeat(40), fetchedAt: minutes(-1) };
+      await recorded('e'.repeat(40), true);
+
+      kit.presence.seen = null;
+      expect((await handler.execute({ projectId: PROJECT })).mergeRebuild?.reason).toBe(
+        'an environment controller',
+      );
+
+      kit.presence.seen = KIT_NOW;
+      expect((await handler.execute({ projectId: PROJECT })).mergeRebuild?.reason).toBe(
+        'the next check',
+      );
+    });
+
     it('shows a failed rebuild with its reason', async () => {
       await runningAt('b'.repeat(40));
       await recorded('e'.repeat(40), false);

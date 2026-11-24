@@ -104,9 +104,11 @@ export class GetRunHandler {
     runId: string,
     approval: MergeApproval | null,
   ): Promise<GetRunResult['previewAfterMerge']> {
-    if (approval === null || !approval.isCarriedOut || approval.mergedCommit === null) return null;
+    if (approval === null || !approval.isCarriedOut) return null;
+    const { mergedCommit, completedAt } = approval;
+    if (mergedCommit === null || completedAt === null) return null;
     try {
-      const { state } = await this.previews.forMerge(projectId, runId, approval.mergedCommit);
+      const { state } = await this.previews.forMerge(projectId, runId, mergedCommit, completedAt);
       return { projectId, state };
     } catch {
       return null;

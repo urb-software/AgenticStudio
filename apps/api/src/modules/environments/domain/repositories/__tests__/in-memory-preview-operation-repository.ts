@@ -195,6 +195,14 @@ export class InMemoryPreviewOperationRepository implements PreviewOperationRepos
     return Promise.resolve(newest ? PreviewOperation.restore(newest.toData()) : null);
   }
 
+  hasBuildSince(projectId: string, since: Date): Promise<boolean> {
+    return Promise.resolve(
+      [...this.operations.values()].some(
+        (op) => op.projectId === projectId && op.kind === 'build' && op.requestedAt >= since,
+      ),
+    );
+  }
+
   find(id: string): Promise<PreviewOperation | null> {
     const found = this.operations.get(id);
     return Promise.resolve(found ? PreviewOperation.restore(found.toData()) : null);

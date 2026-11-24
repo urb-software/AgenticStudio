@@ -7,7 +7,8 @@ export type MergeRebuildWaitReason =
   | 'build_active'
   | 'change_active'
   | 'controller'
-  | 'free_place';
+  | 'free_place'
+  | 'error';
 
 /** The Clone of the Project's Repository, as far as the rule needs it. */
 export type MergeRebuildRuleSource =
@@ -36,6 +37,7 @@ const WAIT_TEXT: Record<MergeRebuildWaitReason, string> = {
   change_active: 'a stop or data removal to finish',
   controller: 'an environment controller',
   free_place: 'a free place of the running Previews limit',
+  error: 'a problem on the Studio side to clear',
 };
 
 /** When a rebuild a merge asked for starts, waits, is dropped or is given up. */

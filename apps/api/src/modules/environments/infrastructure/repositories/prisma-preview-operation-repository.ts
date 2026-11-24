@@ -118,6 +118,14 @@ export class PrismaPreviewOperationRepository implements PreviewOperationReposit
     return row === null ? null : toOperation(row);
   }
 
+  async hasBuildSince(projectId: string, since: Date): Promise<boolean> {
+    const count = await this.db.previewOperation.count({
+      where: { projectId, kind: 'build', requestedAt: { gte: since } },
+      take: 1,
+    });
+    return count > 0;
+  }
+
   async find(id: string): Promise<PreviewOperation | null> {
     return findOperation(this.db, id);
   }

@@ -19,6 +19,8 @@ export interface PreviewAfterMergeRuleFacts {
   readonly rebuild: { runId: string; failed: boolean } | null;
   /** The newest build started by the Run's merge, or made of the merged commit. */
   readonly build: { id: string; status: string } | null;
+  /** A build was requested at or after the merge, and none of them is the Run's. */
+  readonly newerBuild: boolean;
 }
 
 /** What the Preview is for a merged Run's commit, from the rebuild and the builds. */
@@ -28,7 +30,7 @@ export class PreviewAfterMergeRule {
   }
 
   state(facts: PreviewAfterMergeRuleFacts): PreviewAfterMergeStateName {
-    const { runId, configured, runningBuildId, rebuild, build } = facts;
+    const { runId, configured, runningBuildId, rebuild, build, newerBuild } = facts;
     if (!configured) return 'not_configured';
     if (rebuild !== null && rebuild.runId === runId) return rebuild.failed ? 'failed' : 'waiting';
     if (build !== null) {
@@ -36,6 +38,6 @@ export class PreviewAfterMergeRule {
       if (build.status === 'failed') return 'failed';
       return runningBuildId === build.id ? 'running' : 'replaced';
     }
-    return rebuild !== null ? 'replaced' : 'not_started';
+    return rebuild !== null || newerBuild ? 'replaced' : 'not_started';
   }
 }

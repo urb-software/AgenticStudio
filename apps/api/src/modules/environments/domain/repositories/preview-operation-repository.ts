@@ -95,6 +95,9 @@ export interface PreviewOperationRepository {
     commit: string,
   ): Promise<PreviewOperation | null>;
 
+  /** Whether the Project requested a build at or after `since`. */
+  hasBuildSince(projectId: string, since: Date): Promise<boolean>;
+
   /** The operation, or `null` when none has this id (also an id that is not a UUID). */
   find(id: string): Promise<PreviewOperation | null>;
 

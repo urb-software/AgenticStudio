@@ -133,12 +133,16 @@ describe('the Preview rebuild after a merge (PostgreSQL + Redis via Testcontaine
     return queued.body.id as string;
   }
 
+  /** The head of the fixture's Integration branch; every case starts from a valid Compose file. */
+  let devHead = '';
+
   /** A commit on the fixture's Integration branch, as a merge on the Git host makes. */
-  async function mergeOnHost(projectId: string): Promise<string> {
-    return pushFiles(fixture, 'dev', await headOf(projectId), {
+  function mergeOnHost(): string {
+    devHead = pushFiles(fixture, 'dev', devHead, {
       'compose.yaml': COMPOSE,
       [`merged-${randomUUID()}.txt`]: 'merged\n',
     });
+    return devHead;
   }
 
   async function fetchClone(projectId: string, commit: string): Promise<void> {
@@ -152,13 +156,15 @@ describe('the Preview rebuild after a merge (PostgreSQL + Redis via Testcontaine
     );
   }
 
-  const merge = (projectId: string, runId: string, mergedCommit: string) => ({
-    projectId,
-    runId,
-    mergedCommit,
-    mergedAt: new Date(),
-    fetchStartedAt: new Date(),
-  });
+  const mergedAtOf = new Map<string, Date>();
+  const merge = (projectId: string, runId: string, mergedCommit: string) => {
+    const mergedAt = new Date();
+    mergedAtOf.set(runId, mergedAt);
+    return { projectId, runId, mergedCommit, mergedAt, fetchStartedAt: new Date() };
+  };
+  const stateOf = async (projectId: string, runId: string, mergedCommit: string) =>
+    (await previews().forMerge(projectId, runId, mergedCommit, mergedAtOf.get(runId) ?? new Date()))
+      .state;
 
   beforeAll(async () => {
     services = await startStudioServices();
@@ -177,7 +183,7 @@ describe('the Preview rebuild after a merge (PostgreSQL + Redis via Testcontaine
       fixture = createGitFixture(dataDir, 'preview-merge-rebuild-source', {
         branches: ['main', 'dev'],
       });
-      pushFiles(fixture, 'dev', fixture.commits.dev!, { 'compose.yaml': COMPOSE });
+      devHead = pushFiles(fixture, 'dev', fixture.commits.dev!, { 'compose.yaml': COMPOSE });
     }
     app = await startStudioApp(services.config, {
       environments: { sweeps: false, mergeRebuilds: { enabled: true, intervalMs: 250 } },
@@ -193,6 +199,7 @@ describe('the Preview rebuild after a merge (PostgreSQL + Redis via Testcontaine
 
   beforeEach(async () => {
     await db().$executeRaw`TRUNCATE TABLE projects CASCADE`;
+    if (linux) devHead = pushFiles(fixture, 'dev', devHead, { 'compose.yaml': COMPOSE });
   });
 
   describe('what the merge asks of the Preview', () => {
@@ -209,7 +216,9 @@ describe('the Preview rebuild after a merge (PostgreSQL + Redis via Testcontaine
     it('says not_configured for a Project without Preview settings', async () => {
       const id = await createProject();
 
-      await expect(previews().forMerge(id, randomUUID(), 'e'.repeat(40))).resolves.toEqual({
+      await expect(
+        previews().forMerge(id, randomUUID(), 'e'.repeat(40), new Date()),
+      ).resolves.toEqual({
         state: 'not_configured',
       });
     });
@@ -220,7 +229,7 @@ describe('the Preview rebuild after a merge (PostgreSQL + Redis via Testcontaine
       const id = await readyProject();
       const first = await runningPreview(id);
       const runId = randomUUID();
-      const merged = await mergeOnHost(id);
+      const merged = mergeOnHost();
 
       await previews().merged(merge(id, runId, merged));
 
@@ -231,7 +240,7 @@ describe('the Preview rebuild after a merge (PostgreSQL + Redis via Testcontaine
         reason: 'the Clone fetch',
       });
       expect(waiting.behind).toBe(false);
-      expect((await previews().forMerge(id, runId, merged)).state).toBe('waiting');
+      expect(await stateOf(id, runId, merged)).toBe('waiting');
       await settle();
       expect(await builds(id)).toHaveLength(1);
 
@@ -249,7 +258,7 @@ describe('the Preview rebuild after a merge (PostgreSQL + Redis via Testcontaine
         startedBy: { kind: 'merge', runId },
       });
       expect(building.mergeRebuild).toBeNull();
-      expect((await previews().forMerge(id, runId, merged)).state).toBe('building');
+      expect(await stateOf(id, runId, merged)).toBe('building');
 
       const claimed = await claim();
       expect(claimed.body.operationId).toBe(rows[1]!.id);
@@ -260,7 +269,7 @@ describe('the Preview rebuild after a merge (PostgreSQL + Redis via Testcontaine
         behind: false,
         running: { buildId: rows[1]!.id, commit: merged },
       });
-      expect((await previews().forMerge(id, runId, merged)).state).toBe('running');
+      expect(await stateOf(id, runId, merged)).toBe('running');
       await settle();
       expect(await builds(id)).toHaveLength(2);
     });
@@ -276,7 +285,7 @@ describe('the Preview rebuild after a merge (PostgreSQL + Redis via Testcontaine
       await report(claimedStop.body.operationId as string, { state: 'succeeded' });
       expect((await getPreview(id)).state).toBe('stopped');
       const runId = randomUUID();
-      const merged = await mergeOnHost(id);
+      const merged = mergeOnHost();
 
       await previews().merged(merge(id, runId, merged));
       await fetchClone(id, merged);
@@ -285,7 +294,7 @@ describe('the Preview rebuild after a merge (PostgreSQL + Redis via Testcontaine
       expect(await db().previewMergeRebuild.count()).toBe(0);
       expect(await builds(id)).toHaveLength(1);
       expect(await getPreview(id)).toMatchObject({ state: 'stopped', behind: true });
-      expect((await previews().forMerge(id, runId, merged)).state).toBe('not_started');
+      expect(await stateOf(id, runId, merged)).toBe('not_started');
     });
 
     it('waits for a build under way, then builds the Clone head', async () => {
@@ -298,7 +307,7 @@ describe('the Preview rebuild after a merge (PostgreSQL + Redis via Testcontaine
       const claimed = await claim();
       expect(claimed.body.operationId).toBe(queued.body.id);
       const runId = randomUUID();
-      const merged = await mergeOnHost(id);
+      const merged = mergeOnHost();
       await fetchClone(id, merged);
 
       await previews().merged(merge(id, runId, merged));
@@ -324,21 +333,31 @@ describe('the Preview rebuild after a merge (PostgreSQL + Redis via Testcontaine
       const id = await readyProject();
       await runningPreview(id);
       const runs = [randomUUID(), randomUUID(), randomUUID()];
-      const merged = await mergeOnHost(id);
+      const commits = runs.map(() => mergeOnHost());
 
-      for (const runId of runs) await previews().merged(merge(id, runId, merged));
+      for (const [index, runId] of runs.entries()) {
+        await previews().merged(merge(id, runId, commits[index]!));
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
 
       const stored = await db().previewMergeRebuild.findMany({ where: { projectId: id } });
       expect(stored).toHaveLength(1);
       expect(stored[0]!.runId).toBe(runs[2]);
-      expect((await previews().forMerge(id, runs[0]!, merged)).state).toBe('replaced');
-      await fetchClone(id, merged);
+      expect(await stateOf(id, runs[0]!, commits[0]!)).toBe('replaced');
+      await fetchClone(id, commits[2]!);
       await buildCount(id, 2);
       await settle();
 
       const rows = await builds(id);
       expect(rows).toHaveLength(2);
-      expect(rows[1]!.startedByRunId).toBe(runs[2]);
+      expect(rows[1]).toMatchObject({ commit: commits[2], startedByRunId: runs[2] });
+      expect(await db().previewMergeRebuild.count()).toBe(0);
+
+      const claimed = await claim();
+      await report(claimed.body.operationId as string, { state: 'succeeded', runtime: RUNNING });
+      expect(await stateOf(id, runs[0]!, commits[0]!)).toBe('replaced');
+      expect(await stateOf(id, runs[1]!, commits[1]!)).toBe('replaced');
+      expect(await stateOf(id, runs[2]!, commits[2]!)).toBe('running');
     });
 
     it('drops the rebuild when the Preview already runs the Clone commit', async () => {
@@ -359,7 +378,7 @@ describe('the Preview rebuild after a merge (PostgreSQL + Redis via Testcontaine
     it('removes the waiting rebuild with the Project', async () => {
       const id = await readyProject();
       await runningPreview(id);
-      await previews().merged(merge(id, randomUUID(), await mergeOnHost(id)));
+      await previews().merged(merge(id, randomUUID(), mergeOnHost()));
       expect(await db().previewMergeRebuild.count()).toBe(1);
 
       await db().project.delete({ where: { id } });
@@ -367,14 +386,13 @@ describe('the Preview rebuild after a merge (PostgreSQL + Redis via Testcontaine
       expect(await db().previewMergeRebuild.count()).toBe(0);
     });
 
-    // Last: it leaves a refused Compose file on the shared fixture's branch.
     it('fails the rebuild at once when the Compose file is refused at the merged commit', async () => {
       const id = await readyProject();
       await runningPreview(id);
       const runId = randomUUID();
-      const merged = pushFiles(fixture, 'dev', await headOf(id), {
+      const merged = (devHead = pushFiles(fixture, 'dev', devHead, {
         'compose.yaml': 'services:\n  web:\n    image: nginx:1.27\n    privileged: true\n',
-      });
+      }));
       await previews().merged(merge(id, runId, merged));
       await fetchClone(id, merged);
       await until(
@@ -386,7 +404,7 @@ describe('the Preview rebuild after a merge (PostgreSQL + Redis via Testcontaine
       const page = await getPreview(id);
       expect(page.mergeRebuild).toMatchObject({ runId, status: 'failed' });
       expect(page.mergeRebuild.reason).toContain('The Compose file was refused');
-      expect((await previews().forMerge(id, runId, merged)).state).toBe('failed');
+      expect(await stateOf(id, runId, merged)).toBe('failed');
     });
   });
 

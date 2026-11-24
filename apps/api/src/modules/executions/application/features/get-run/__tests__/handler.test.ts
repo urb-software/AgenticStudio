@@ -149,7 +149,7 @@ describe('GetRunHandler Preview after the merge', () => {
       state: 'building',
     });
     expect(previews.reads).toEqual([
-      { projectId: answer.run.projectId, runId: answer.run.id, mergedCommit: MERGED },
+      { projectId: answer.run.projectId, runId: answer.run.id, mergedCommit: MERGED, mergedAt: T0 },
     ]);
   });
 

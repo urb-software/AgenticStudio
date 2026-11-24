@@ -9,6 +9,7 @@ import {
 } from '../domain/repositories/preview-merge-rebuild-repository.js';
 import {
   MergeRebuildRule,
+  type MergeRebuildRuleDecision,
   type MergeRebuildRuleSource,
 } from '../domain/value-objects/merge-rebuild-rule.js';
 import { PreviewHostname } from '../domain/value-objects/preview-hostname.js';
@@ -53,6 +54,22 @@ export class PreviewStateReader {
     const now = this.clock.now();
     const shown = state.running?.commit ?? latestBuild?.build?.commit ?? null;
     const rebuild = await this.rebuilds.find(projectId);
+    const connected = availability.connected(now);
+    const decided =
+      rebuild === null
+        ? null
+        : MergeRebuildRule.create().decide({
+            state: state.name,
+            runningCommit: state.running?.commit ?? null,
+            source,
+            rebuild,
+            now,
+          });
+    // A build the release cannot request without a controller is waiting for one.
+    const decision: MergeRebuildRuleDecision | null =
+      decided?.action === 'build' && !connected
+        ? { action: 'wait', reason: 'controller' }
+        : decided;
     return {
       state: state.name,
       running:
@@ -65,22 +82,11 @@ export class PreviewStateReader {
             },
       latestBuild: latestBuild === null ? null : previewBuildView(latestBuild),
       latestChange: latestChange === null ? null : previewChangeView(latestChange),
-      controller: { connected: availability.connected(this.clock.now()) },
+      controller: { connected },
       buildActive: state.buildActive,
       behind: source.ready && shown !== null && shown !== source.commit,
       mergeRebuild:
-        rebuild === null
-          ? null
-          : previewMergeRebuildView(
-              rebuild,
-              MergeRebuildRule.create().decide({
-                state: state.name,
-                runningCommit: state.running?.commit ?? null,
-                source,
-                rebuild,
-                now,
-              }),
-            ),
+        rebuild === null || decision === null ? null : previewMergeRebuildView(rebuild, decision),
     };
   }
 }

@@ -21,6 +21,7 @@ export interface GetPreviewOfMergeInput {
   projectId: string;
   runId: string;
   mergedCommit: string;
+  mergedAt: Date;
 }
 
 export interface GetPreviewOfMergeResult {
@@ -38,7 +39,7 @@ export class GetPreviewOfMergeHandler {
   ) {}
 
   async execute(input: GetPreviewOfMergeInput): Promise<GetPreviewOfMergeResult> {
-    const { projectId, runId, mergedCommit } = input;
+    const { projectId, runId, mergedCommit, mergedAt } = input;
     const configured = (await this.settings.find(projectId)) !== null;
     const state = PreviewState.of({
       configured,
@@ -46,6 +47,7 @@ export class GetPreviewOfMergeHandler {
     });
     const rebuild = await this.rebuilds.find(projectId);
     const build = await this.operations.findMergeBuild(projectId, runId, mergedCommit);
+    const newerBuild = build === null && (await this.operations.hasBuildSince(projectId, mergedAt));
     return {
       state: PreviewAfterMergeRule.create().state({
         runId,
@@ -53,6 +55,7 @@ export class GetPreviewOfMergeHandler {
         runningBuildId: state.running?.buildId ?? null,
         rebuild: rebuild === null ? null : { runId: rebuild.runId, failed: rebuild.isFailed },
         build: build === null ? null : { id: build.id, status: build.status },
+        newerBuild,
       }),
     };
   }

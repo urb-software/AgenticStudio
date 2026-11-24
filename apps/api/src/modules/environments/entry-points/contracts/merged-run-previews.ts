@@ -28,7 +28,12 @@ export class EnvironmentsMergedRunPreviews implements MergedRunPreviews {
     }
   }
 
-  forMerge(projectId: string, runId: string, mergedCommit: string): Promise<PreviewOfMerge> {
-    return this.preview.execute({ projectId, runId, mergedCommit });
+  forMerge(
+    projectId: string,
+    runId: string,
+    mergedCommit: string,
+    mergedAt: Date,
+  ): Promise<PreviewOfMerge> {
+    return this.preview.execute({ projectId, runId, mergedCommit, mergedAt });
   }
 }

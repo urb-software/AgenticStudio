@@ -37,6 +37,7 @@
       },
       "findPreviewFacts": { "kind": "query" },
       "findMergeBuild": { "kind": "query" },
+      "hasBuildSince": { "kind": "query" },
       "findEnvironmentFileSecret": { "kind": "query" },
       "listEnvironmentFileSecrets": { "kind": "query" }
     },

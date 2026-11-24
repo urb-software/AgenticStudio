@@ -1,4 +1,5 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { redactSecrets } from '../../../../../platform/http/redact.js';
 import {
   RUN_PREVIEW_SOURCES,
   type RunPreviewSources,
@@ -56,6 +57,8 @@ type Refusal = { drop: true } | { fail: string } | { waitFor: MergeRebuildWaitRe
  */
 @Injectable()
 export class ReleaseMergeRebuildsHandler {
+  private readonly logger = new Logger('ReleaseMergeRebuilds');
+
   constructor(
     @Inject(PREVIEW_MERGE_REBUILD_REPOSITORY)
     private readonly rebuilds: PreviewMergeRebuildRepository,
@@ -69,10 +72,29 @@ export class ReleaseMergeRebuildsHandler {
   async execute(): Promise<ReleaseMergeRebuildsResult> {
     const result = { built: 0, dropped: 0, failed: 0 };
     for (const rebuild of await this.rebuilds.list()) {
-      const outcome = await this.release(rebuild);
+      const outcome = await this.releaseOrWait(rebuild);
       if (outcome !== null) result[outcome] += 1;
     }
     return result;
+  }
+
+  /** One row's unexpected error never stops the others; the row still gives up after its wait. */
+  private async releaseOrWait(rebuild: PreviewMergeRebuild): Promise<Outcome> {
+    try {
+      return await this.release(rebuild);
+    } catch (error) {
+      this.logger.warn(
+        `Could not release the Preview rebuild of project ${rebuild.projectId}. ${redactSecrets(String(error))}`,
+      );
+      const now = this.clock.now();
+      const decision = MergeRebuildRule.create().waiting(rebuild, now, 'error');
+      if (decision.action !== 'give_up') return null;
+      try {
+        return await this.fail(rebuild, decision.reason, now);
+      } catch {
+        return null;
+      }
+    }
   }
 
   private async release(rebuild: PreviewMergeRebuild): Promise<Outcome> {

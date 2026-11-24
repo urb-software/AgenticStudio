@@ -200,6 +200,7 @@ const WAITING_FOR: Record<MergeRebuildWaitReason, string> = {
   change_active: 'the current stop or data removal',
   controller: 'an environment controller',
   free_place: 'a free place of the running Previews limit',
+  error: 'a problem on the Studio side',
 };
 
 /** The rebuild as the operator sees it; `decision` is the rule's answer for it now. */

@@ -32,8 +32,8 @@ describe('GetPreviewOfMergeHandler', () => {
     handler = new GetPreviewOfMergeHandler(settings, operations, rebuilds);
   });
 
-  const stateFor = async (runId = RUN) =>
-    (await handler.execute({ projectId: PROJECT, runId, mergedCommit: MERGED })).state;
+  const stateFor = async (runId = RUN, mergedAt = minutes(0)) =>
+    (await handler.execute({ projectId: PROJECT, runId, mergedCommit: MERGED, mergedAt })).state;
   const waiting = (runId: string) =>
     rebuilds.save(
       PreviewMergeRebuild.record({
@@ -96,7 +96,7 @@ describe('GetPreviewOfMergeHandler', () => {
     await seedBuild(operations, PROJECT, MERGE_BUILD, 'succeeded', minutes(1), 'c'.repeat(40), RUN);
 
     expect(await stateFor()).toBe('running');
-    expect(await stateFor(NEWER_RUN)).toBe('not_started');
+    expect(await stateFor(NEWER_RUN, minutes(2))).toBe('not_started');
   });
 
   it('is failed when the build of the merged commit failed', async () => {
@@ -104,5 +104,24 @@ describe('GetPreviewOfMergeHandler', () => {
     await seedBuild(operations, PROJECT, MERGE_BUILD, 'failed', minutes(1), MERGED);
 
     expect(await stateFor()).toBe('failed');
+  });
+
+  it('says replaced for a Run whose commit a later build of another Run replaced', async () => {
+    await savePreviewSettings(settings, PROJECT);
+    await seedBuild(operations, PROJECT, OLD_BUILD, 'succeeded', minutes(-10), 'a'.repeat(40));
+    await seedBuild(
+      operations,
+      PROJECT,
+      NEWER_BUILD,
+      'succeeded',
+      minutes(5),
+      'f'.repeat(40),
+      NEWER_RUN,
+    );
+
+    expect(await stateFor(RUN, minutes(0))).toBe('replaced');
+    expect(await stateFor(RUN, minutes(5))).toBe('replaced');
+    expect(await stateFor(RUN, minutes(6))).toBe('not_started');
+    expect(await stateFor(NEWER_RUN, minutes(4))).toBe('running');
   });
 });

@@ -15,6 +15,7 @@ const state = (overrides: Partial<PreviewAfterMergeRuleFacts> = {}) =>
     runningBuildId: null,
     rebuild: null,
     build: null,
+    newerBuild: false,
     ...overrides,
   });
 
@@ -61,5 +62,10 @@ describe('PreviewAfterMergeRule', () => {
         rebuild: { runId: OTHER_RUN, failed: false },
       }),
     ).toBe('building');
+  });
+
+  it('is replaced when no row and no build belongs to the Run but a build came after the merge', () => {
+    expect(state({ newerBuild: true })).toBe('replaced');
+    expect(state({ newerBuild: false })).toBe('not_started');
   });
 });

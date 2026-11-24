@@ -46,12 +46,13 @@ describe('EnvironmentsMergedRunPreviews', () => {
     const { previews, read } = adapter({});
 
     await expect(
-      previews.forMerge(MERGE.projectId, MERGE.runId, MERGE.mergedCommit),
+      previews.forMerge(MERGE.projectId, MERGE.runId, MERGE.mergedCommit, MERGE.mergedAt),
     ).resolves.toEqual({ state: 'running' });
     expect(read).toHaveBeenCalledWith({
       projectId: MERGE.projectId,
       runId: MERGE.runId,
       mergedCommit: MERGE.mergedCommit,
+      mergedAt: MERGE.mergedAt,
     });
   });
 });

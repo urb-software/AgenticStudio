@@ -217,4 +217,36 @@ describe('ReleaseMergeRebuildsHandler', () => {
     expect(builds()[0]!.build?.startedByRunId).toBe(OTHER);
     expect(await rebuilds.list()).toEqual([]);
   });
+
+  describe('an unexpected error on one row', () => {
+    const failFor = (projectId: string) => {
+      const status = sources.status.getMockImplementation()!;
+      sources.status.mockImplementation((id) =>
+        id === projectId ? Promise.reject(new Error('git is down')) : status(id),
+      );
+    };
+
+    it('does not stop the next row from building', async () => {
+      await savePreviewSettings(settings, OTHER);
+      await seedBuild(operations, OTHER, SECOND, 'succeeded', minutes(-10), OLD);
+      await record(PROJECT, minutes(-1));
+      await record(OTHER, NOW);
+      failFor(PROJECT);
+
+      await expect(handler.execute()).resolves.toEqual({ built: 1, dropped: 0, failed: 0 });
+
+      expect((await rebuilds.find(PROJECT))?.isFailed).toBe(false);
+      expect(await rebuilds.find(OTHER)).toBeNull();
+    });
+
+    it('still gives up on a row that keeps throwing, after 30 minutes', async () => {
+      await record();
+      failFor(PROJECT);
+      arrange(minutes(31));
+
+      await expect(handler.execute()).resolves.toEqual({ built: 0, dropped: 0, failed: 1 });
+
+      expect((await rebuilds.find(PROJECT))?.failure).toContain('a problem on the Studio side');
+    });
+  });
 });
