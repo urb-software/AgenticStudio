@@ -18,6 +18,8 @@ WorkingDirectory=@WORKER_CODE_DIR@/apps/agent-worker
 EnvironmentFile=%h/.config/agentic-studio-worker/.env
 # The agent user's rootless Docker daemon, never the system one.
 Environment=DOCKER_HOST=unix://%t/docker.sock
+# Does not start (and does not fail) until the token in that file is set; exit status 1 skips the unit.
+ExecCondition=/usr/bin/grep -Eq '^STUDIO_WORKER_TOKEN=.{32,}' %h/.config/agentic-studio-worker/.env
 ExecStart=@NODE_BIN@ @WORKER_CODE_DIR@/apps/agent-worker/dist/main.js
 Restart=on-failure
 RestartSec=10s

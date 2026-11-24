@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Preview checks for AI Agent Studio (Issue #286; ADR 0004; security.md section 9).
+# Preview checks for AI Agent Studio (ADR 0004; security.md section 9).
 #
 # Run as the Preview user after every server change; installed by deploy/setup-server.sh as
 # /usr/local/bin/agentic-studio-check-preview:
@@ -195,6 +195,9 @@ check_refused() {
     can_read "$agent_home/.local/share/docker" && reached+=("data-root listed")
     if [ "${#reached[@]}" -gt 0 ]; then
       fail agent-docker-unreachable "the agent's socket or data-root: ${reached[*]}"
+    elif [ ! -d "/run/user/$agent_uid" ] || [ ! -S "$socket" ]; then
+      # A refusal proves nothing about a socket that is not there.
+      fail agent-docker-unreachable "$socket is absent: the agent's rootless daemon is not running, so nothing is refused"
     else
       pass agent-docker-unreachable "$socket and $agent_home/.local/share/docker refused"
     fi
@@ -274,22 +277,30 @@ check_cgroup() {
   fi
 
   # The daemon's own unit can be bounded while it builds (the controller does it per build): a
-  # build whose RUN step allocates above the limit fails and the daemon stays up (OOMPolicy=continue).
+  # RUN step that allocates above the limit, and below the slice's, is killed by the memory limit
+  # (the cgroup's oom_kill counter rises), and the daemon stays up (OOMPolicy=continue).
   if ! rootless_up; then
     fail docker-unit-memory-limit "no rootless daemon at $DOCKER_HOST"
     return
   fi
-  local before pid_before pid_after build_status
+  local before pid_before pid_after build_status limit_set kills_before kills_after events restored output
   before="$(systemctl --user show docker.service -p MemoryMax --value 2>/dev/null)"
   pid_before="$(systemctl --user show docker.service -p MainPID --value 2>/dev/null)"
+  events="/sys/fs/cgroup$(systemctl --user show docker.service -p ControlGroup --value 2>/dev/null)/memory.events"
   WORK_DIR="${WORK_DIR:-$(mktemp -d)}"
   mkdir -p "$WORK_DIR/oom"
-  printf 'FROM %s\nRUN tail /dev/zero\n' "$CHECK_IMAGE" >"$WORK_DIR/oom/Dockerfile"
+  # About 900 MB held in memory by `tail` (a stream without line breaks), above the 512 MiB limit.
+  printf 'FROM %s\nRUN head -c 900000000 /dev/zero | tail >/dev/null\n' "$CHECK_IMAGE" >"$WORK_DIR/oom/Dockerfile"
+  timeout 180 docker pull -q "$CHECK_IMAGE" >/dev/null 2>&1
+  kills_before="$(sed -n 's/^oom_kill //p' "$events" 2>/dev/null)"
   DOCKER_STATE="${before:-infinity}"
   systemctl --user set-property --runtime docker.service MemoryMax=512M >/dev/null 2>&1
-  timeout 300 docker build --no-cache -q -t preview-check-oom:probe "$WORK_DIR/oom" >/dev/null 2>&1
+  limit_set="$(systemctl --user show docker.service -p MemoryMax --value 2>/dev/null)"
+  output="$(timeout 300 docker build --no-cache --progress plain -t preview-check-oom:probe "$WORK_DIR/oom" 2>&1)"
   build_status=$?
+  kills_after="$(sed -n 's/^oom_kill //p' "$events" 2>/dev/null)"
   systemctl --user set-property --runtime docker.service "MemoryMax=$DOCKER_STATE" >/dev/null 2>&1
+  restored="$(systemctl --user show docker.service -p MemoryMax --value 2>/dev/null)"
   DOCKER_STATE=""
   local up=1 _
   for _ in $(seq 1 15); do
@@ -300,10 +311,14 @@ check_cgroup() {
     sleep 1
   done
   pid_after="$(systemctl --user show docker.service -p MainPID --value 2>/dev/null)"
-  if [ "$build_status" -ne 0 ] && [ "$up" = 0 ] && [ "$pid_before" = "$pid_after" ]; then
-    pass docker-unit-memory-limit "a RUN step above MemoryMax=512M on docker.service failed; the daemon (pid $pid_after) stayed active"
+  local killed=1
+  if [[ "$kills_before" =~ ^[0-9]+$ && "$kills_after" =~ ^[0-9]+$ ]] && [ "$kills_after" -gt "$kills_before" ]; then killed=0; fi
+  [ "$killed" = 0 ] || ! grep -Eq 'exit code: 137|signal: killed' <<<"$output" || killed=0
+  if [ "$limit_set" = 536870912 ] && [ "$build_status" -ne 0 ] && [ "$killed" = 0 ] && [ "$up" = 0 ] &&
+    [ "$pid_before" = "$pid_after" ] && [ "$restored" = "${before:-infinity}" ]; then
+    pass docker-unit-memory-limit "MemoryMax=536870912 on docker.service: a RUN step of 900 MB was OOM-killed, the daemon (pid $pid_after) stayed active, MemoryMax restored to $restored"
   else
-    fail docker-unit-memory-limit "build exit $build_status (expected non-zero), daemon up=$([ "$up" = 0 ] && echo yes || echo no), pid $pid_before -> $pid_after (expected unchanged)"
+    fail docker-unit-memory-limit "limit ${limit_set:-?} (expected 536870912), build exit $build_status, oom kill $([ "$killed" = 0 ] && echo seen || echo not seen) (counter ${kills_before:-?} -> ${kills_after:-?}), daemon up=$([ "$up" = 0 ] && echo yes || echo no), pid $pid_before -> $pid_after, MemoryMax restored to '${restored:-?}' (was '${before:-?}')"
   fi
 }
 
@@ -441,8 +456,8 @@ check_controller() {
     fail controller-data-dir "'${data_dir:-unset}' is not a 700 directory of $(id -un)"
   fi
 
-  # The settings production insists on: left at their defaults or unset in the .env, and the unit's
-  # own values; the controller refuses anything else in production.
+  # The settings production insists on: left at their defaults or unset in the .env, and pinned by
+  # the unit's ExecStart (the .env cannot override them); the controller refuses anything else.
   local problems=() name value default environment
   for pair in STUDIO_CONTROLLER_ENVIRONMENT=production STUDIO_CONTROLLER_RUNTIME=docker STUDIO_CONTROLLER_ROOTLESS=true \
     STUDIO_CONTROLLER_EGRESS_RULES_BIN="$EGRESS_SCRIPT"; do
@@ -454,9 +469,9 @@ check_controller() {
   for name in HOME XDG_RUNTIME_DIR DOCKER_HOST STUDIO_WORKER_TOKEN DATABASE_URL REDIS_URL STUDIO_SECRETS_KEY; do
     ! grep -Eq "^[[:space:]]*(export[[:space:]]+)?$name=" "$CONTROLLER_ENV_FILE" 2>/dev/null || problems+=("$name in the .env")
   done
-  environment="$(systemctl --user show "$CONTROLLER_UNIT" -p Environment --value 2>/dev/null)"
-  [[ " $environment " == *" STUDIO_CONTROLLER_ENVIRONMENT=production "* ]] || problems+=("the unit does not set STUDIO_CONTROLLER_ENVIRONMENT=production")
-  [[ " $environment " == *" DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock "* ]] || problems+=("the unit's DOCKER_HOST is not unix://$XDG_RUNTIME_DIR/docker.sock")
+  environment="$(systemctl --user show "$CONTROLLER_UNIT" -p ExecStart --value 2>/dev/null)"
+  [[ "$environment" == *" STUDIO_CONTROLLER_ENVIRONMENT=production "* ]] || problems+=("the unit does not set STUDIO_CONTROLLER_ENVIRONMENT=production in ExecStart")
+  [[ "$environment" == *" DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock "* ]] || problems+=("the unit's DOCKER_HOST is not unix://$XDG_RUNTIME_DIR/docker.sock")
   [ "$(systemctl --user show "$CONTROLLER_UNIT" -p RestrictNamespaces --value 2>/dev/null)" = no ] || problems+=("RestrictNamespaces is set")
   [ "$(systemctl --user show "$CONTROLLER_UNIT" -p NoNewPrivileges --value 2>/dev/null)" = yes ] || problems+=("NoNewPrivileges is not yes")
   [ "$(systemctl --user show "$CONTROLLER_UNIT" -p KillMode --value 2>/dev/null)" = mixed ] || problems+=("KillMode is not mixed")

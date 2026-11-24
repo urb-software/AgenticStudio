@@ -7,7 +7,7 @@
 # Redis from the server Compose file, builds the API and web production images (Issue #132) and
 # starts the whole stack with them (migrations, API, web, reverse proxy), checks the login rate
 # limit per client through the proxy, then runs every boundary check as the agent user, the `api`
-# group included. The Preview side (Issue #286) is covered too: its checks as the Preview user, a
+# group included. The Preview side is covered too: its checks as the Preview user, a
 # third user refused both users' sockets and data-roots, and one real build by the controller in
 # the Preview user's rootless daemon, served through the proxy. Every password, key and token here is a throwaway test value; the domain is a
 # reserved test name served with Caddy's internal CA.
@@ -170,6 +170,24 @@ expect_false "after the restart a container still does not reach the host's addr
   as_preview docker run --rm busybox:1.37 sh -c "nc -w 3 $HOST_ADDR 29191 </dev/null"
 kill "$LISTENER" 2>/dev/null
 wait "$LISTENER" 2>/dev/null
+
+section "Units do not start while their token is empty"
+# Both units are enabled and their tokens are still empty: after the user managers restart (as at
+# boot) the services are inactive because their ExecCondition failed, not failed or restarting.
+systemctl restart "user@$uid.service" "user@$puid.service"
+agent_docker_up() { as_agent systemctl --user is-active --quiet docker.service; }
+preview_docker_up() { as_preview systemctl --user is-active --quiet docker.service; }
+expect_true "the agent's rootless Docker is back" wait_for agent_docker_up
+expect_true "the Preview user's rootless Docker is back" wait_for preview_docker_up
+sleep 5
+for pair in "agent:agentic-studio-worker.service" "preview:agentic-studio-controller.service"; do
+  who="${pair%%:*}"
+  unit="${pair#*:}"
+  state="$(runuser -u "$who" -- env -i XDG_RUNTIME_DIR="/run/user/$(id -u "$who")" systemctl --user show "$unit" -p ActiveState -p ExecCondition 2>&1)"
+  expect_line "$unit is inactive with an empty token" "$state" '^ActiveState=inactive$'
+  expect_line "... because its ExecCondition exited with status 1" "$state" 'status=1'
+  expect_false "... and it is not failed" runuser -u "$who" -- env -i XDG_RUNTIME_DIR="/run/user/$(id -u "$who")" systemctl --user is-failed --quiet "$unit"
+done
 
 section "State (continued)"
 as_agent docker info --format 'rootless daemon: {{json .SecurityOptions}} cgroup v{{.CgroupVersion}} {{.CgroupDriver}}' |
@@ -381,6 +399,7 @@ expect_line "the controller token is on no host command line (holders: ${holders
 out="$(as_agent /usr/local/bin/agentic-studio-check-boundary --skip 'identity,processes,studio-files,docker-socket,sudo,studio-network,host,cgroup,guardrails,rootless,api' 2>&1)"
 expect_line "the agent is refused the Preview side; the worker token gets 401 on claim" "$out" '^PASS  worker-token-not-controller '
 expect_line "the agent is refused the Preview user's socket and data-root" "$out" '^PASS  preview-docker-unreachable '
+expect_line "the agent is not in the proxy group and cannot list the socket directory" "$out" '^PASS  preview-sockets-unreachable '
 
 section "A real build through the Preview user's rootless daemon, served through the proxy"
 # Fixture: a Project whose Repository is `ready`, with a Clone in Studio's data directory holding
@@ -428,6 +447,8 @@ preview_body() { curl -sk --max-time 10 --resolve "$FIX_HOST:443:$HOST_IP" -u "p
 expect_line "the Preview answers 200 through the proxy with the password" \
   "$(curl -sk --max-time 10 --resolve "$FIX_HOST:443:$HOST_IP" -o /dev/null -w '%{http_code}' -u "preview:$PREVIEW_PASSWORD" "https://$FIX_HOST/")" '^200$'
 expect_line "... and serves the built service's page" "$(preview_body)" '^preview-ok$'
+expect_false "the agent cannot connect to the Preview's bridge socket (it would skip the password)"   as_agent curl -fsS --max-time 3 --unix-socket "/run/preview-proxy/$FIX_LABEL.sock" http://localhost/
+expect_false "the agent cannot list the socket directory" as_agent ls /run/preview-proxy
 expect_line "without the password it is still 401" \
   "$(curl -sk --max-time 10 --resolve "$FIX_HOST:443:$HOST_IP" -o /dev/null -w '%{http_code}' "https://$FIX_HOST/")" '^401$'
 expect_stat "/run/preview-proxy/$FIX_LABEL.sock" preview:previewproxy 660
@@ -463,7 +484,7 @@ for name in not-root not-in-docker-group processes-in-user-manager no-studio-con
   studio-postgres-unreachable studio-redis-unreachable studio-app-direct-unreachable no-wsl-escape \
   cgroup-v2 agent-user-limits rootless-docker rootless-container-limits rootless-compose \
   worker-token-works worker-token-nothing-else managed-guardrails managed-guardrails-locked \
-  preview-files-unreadable preview-docker-unreachable worker-token-not-controller; do
+  preview-files-unreadable preview-docker-unreachable preview-sockets-unreachable worker-token-not-controller; do
   expect_line "PASS $name" "$out" "^PASS  $name "
 done
 

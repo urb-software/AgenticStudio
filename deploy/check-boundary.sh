@@ -17,7 +17,7 @@
 # routes with the worker token; that token reaches nothing else on the API. Also: not WSL with
 # interop or automount, cgroup v2 with limits on the agent user's slice, and Studio's managed
 # guardrails for the provider CLIs in place: root-owned, unchangeable by the agent user and equal
-# to the worker's own copies (Issue #134). Group `preview` (Issue #286): the Preview user's rootless
+# to the worker's own copies. Group `preview`: the Preview user's rootless
 # Docker socket and data-root, its home and the controller's .env are refused, and the worker
 # token is refused by the controller's routes.
 # shellcheck disable=SC2016,SC2317 # single-quoted text run by another shell; check_* called by name
@@ -36,8 +36,11 @@ STUDIO_REDIS_ADDRESS="${STUDIO_REDIS_ADDRESS:-172.31.250.11}"
 STUDIO_API_ADDRESS="${STUDIO_API_ADDRESS:-172.31.250.12}"
 STUDIO_WEB_ADDRESS="${STUDIO_WEB_ADDRESS:-172.31.250.13}"
 WORKER_ENV_FILE="${WORKER_ENV_FILE:-$HOME/.config/agentic-studio-worker/.env}"
-# The Preview user (equal to PREVIEW_USER of the setup script).
+# The Preview user and the group of the reverse proxy's access to the Preview sockets (equal to
+# PREVIEW_USER and the group of the setup script).
 PREVIEW_USER="${PREVIEW_USER:-preview}"
+PREVIEW_PROXY_GROUP="${PREVIEW_PROXY_GROUP:-previewproxy}"
+PREVIEW_PROXY_DIR="${PREVIEW_PROXY_DIR:-/run/preview-proxy}"
 # The agent worker's code (root-owned): its guardrails folder lists and holds the managed files.
 WORKER_CODE_DIR="${WORKER_CODE_DIR:-/opt/agentic-studio-worker}"
 # A small public image for the rootless container checks.
@@ -442,12 +445,13 @@ EOF
 }
 
 check_preview() {
-  # Issue #286: the Preview side is the Preview user's. A missing path proves nothing: the user
-  # and its home must exist (the checks run on the set-up server).
+  # The Preview side is the Preview user's. A missing path proves nothing: the user, its home and
+  # its runtime directory must exist (the checks run on the set-up server).
   local uid home
   if ! uid="$(id -u "$PREVIEW_USER" 2>/dev/null)"; then
     fail preview-files-unreadable "the Preview user '$PREVIEW_USER' does not exist: run on the set-up server"
     fail preview-docker-unreachable "not run: no Preview user"
+    fail preview-sockets-unreachable "not run: no Preview user"
     fail worker-token-not-controller "not run: no Preview user"
     return
   fi
@@ -481,8 +485,22 @@ check_preview() {
   can_read "$home/.config/docker" && reached+=("$home/.config/docker listed")
   if [ "${#reached[@]}" -gt 0 ]; then
     fail preview-docker-unreachable "$socket or the Preview user's Docker data: ${reached[*]}"
+  elif [ ! -d "/run/user/$uid" ] || [ ! -S "$socket" ]; then
+    fail preview-docker-unreachable "$socket is absent: the Preview user's rootless daemon is not running, so nothing is refused"
   else
     pass preview-docker-unreachable "the Preview user's Docker socket and data-root refused"
+  fi
+
+  # The Preview sockets belong to the proxy group: the agent must not be in it, nor list their directory.
+  local sockets=()
+  id -nG | tr ' ' '\n' | grep -qx "$PREVIEW_PROXY_GROUP" && sockets+=("in the $PREVIEW_PROXY_GROUP group")
+  can_read "$PREVIEW_PROXY_DIR" && sockets+=("$PREVIEW_PROXY_DIR can be listed")
+  if [ ! -d "$PREVIEW_PROXY_DIR" ]; then
+    fail preview-sockets-unreachable "$PREVIEW_PROXY_DIR not found: run on the set-up server"
+  elif [ "${#sockets[@]}" -gt 0 ]; then
+    fail preview-sockets-unreachable "${sockets[*]}"
+  else
+    pass preview-sockets-unreachable "$(id -un) is not in $PREVIEW_PROXY_GROUP and cannot list $PREVIEW_PROXY_DIR"
   fi
 
   # The controller's routes refuse the worker token (and, before anything is handled, 401).

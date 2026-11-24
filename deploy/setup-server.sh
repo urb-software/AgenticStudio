@@ -7,7 +7,7 @@
 #   - The agent side: the agent user (never in the `docker` group, no passwordless sudo), its
 #     rootless Docker daemon kept running without a login session, the agent worker as its
 #     systemd user service, and resource limits for the user.
-#   - The Preview side (Issue #286; ADR 0004): the Preview user, built the same way, with its own
+#   - The Preview side (ADR 0004): the Preview user, built the same way, with its own
 #     rootless Docker daemon whose network namespace carries egress rules, a firewall of its own,
 #     limits, the Preview proxy socket directory and the environment controller as its user service.
 #
@@ -53,7 +53,7 @@ STUDIO_PROXY_WORKER_PORT="${STUDIO_PROXY_WORKER_PORT:-8080}"
 AGENT_MEMORY_MAX="${AGENT_MEMORY_MAX:-75%}"
 AGENT_TASKS_MAX="${AGENT_TASKS_MAX:-4096}"
 AGENT_CPU_WEIGHT="${AGENT_CPU_WEIGHT:-50}"
-# The Preview user (Issue #286): runs the environment controller and the Previews' own rootless
+# The Preview user: runs the environment controller and the Previews' own rootless
 # Docker daemon. Never the agent user's uid; an existing Preview user below 2000 is refused.
 PREVIEW_USER="${PREVIEW_USER:-preview}"
 PREVIEW_UID="${PREVIEW_UID:-2002}"
@@ -218,6 +218,9 @@ assert_agent_safe() {
       die "the agent user '$AGENT_USER' is in the $group group, which is root-equivalent. Remove it (gpasswd -d $AGENT_USER $group) and run the script again."
     fi
   done
+  if id -nG "$AGENT_USER" | tr ' ' '\n' | grep -qx "$PREVIEW_PROXY_GROUP"; then
+    die "the agent user '$AGENT_USER' is in the $PREVIEW_PROXY_GROUP group: it could reach the Preview sockets and skip the Preview password. Remove it (gpasswd -d $AGENT_USER $PREVIEW_PROXY_GROUP) and run the script again."
+  fi
   if command -v sudo >/dev/null 2>&1; then
     if sudo -n -l -U "$AGENT_USER" 2>/dev/null | grep -Eq 'NOPASSWD|!authenticate'; then
       die "the agent user '$AGENT_USER' has passwordless sudo rules (sudo -l -U $AGENT_USER). Remove them and run the script again."
@@ -245,6 +248,15 @@ validate_preview_settings() {
     die "PREVIEW_UID ($PREVIEW_UID) must differ from the agent user's uid."
   fi
   [ "$PREVIEW_UID" != "$STUDIO_CONTAINER_UID" ] || die "PREVIEW_UID equals STUDIO_CONTAINER_UID ($STUDIO_CONTAINER_UID), the uid of Studio's containers."
+  local taken
+  taken="$(getent passwd "$PREVIEW_UID" | cut -d: -f1 || true)"
+  if [ -n "$taken" ] && [ "$taken" != "$PREVIEW_USER" ]; then
+    die "uid $PREVIEW_UID is already taken by the user '$taken' (PREVIEW_UID)."
+  fi
+  taken="$(getent group "$PREVIEW_UID" | cut -d: -f1 || true)"
+  if [ -n "$taken" ] && [ "$taken" != "$PREVIEW_USER" ]; then
+    die "gid $PREVIEW_UID is already taken by the group '$taken' (PREVIEW_UID)."
+  fi
   if ! [[ "$PREVIEW_PROXY_GID" =~ ^[0-9]+$ ]] || [ "$PREVIEW_PROXY_GID" -lt 2000 ]; then
     die "PREVIEW_PROXY_GID must be a number of 2000 or more."
   fi
@@ -304,6 +316,7 @@ install_content() {
   local dest="$1" mode="$2" tmp
   tmp="$(mktemp)"
   cat >"$tmp" || die "could not stage $dest."
+  [ -s "$tmp" ] || die "refusing to install empty content as $dest."
   if [ -f "$dest" ] && [ ! -L "$dest" ] && cmp -s "$tmp" "$dest" &&
     [ "$(stat -c '%U:%G %a' "$dest")" = "root:root $mode" ]; then
     rm -f "$tmp"
@@ -312,6 +325,17 @@ install_content() {
   install -o root -g root -m "$mode" "$tmp" "$dest" || die "could not install $dest."
   rm -f "$tmp"
   changed "$dest"
+}
+
+# install_template <dest> <mode> <source> <sed expression>...: installs the source with the
+# expressions applied; a failing sed or an empty result stops the script.
+install_template() {
+  local dest="$1" mode="$2" source="$3" expressions=() content
+  shift 3
+  for content in "$@"; do expressions+=(-e "$content"); done
+  content="$(sed "${expressions[@]}" "$source")" || die "could not render $source."
+  [ -n "$content" ] || die "rendering $source gave nothing."
+  printf '%s\n' "$content" | install_content "$dest" "$mode"
 }
 
 # A root-owned directory with an exact mode.
@@ -1056,7 +1080,7 @@ step_preview_rootless() {
   # The egress rules script is root-owned: the controller refuses it otherwise, and the Preview
   # user cannot change what its own containers are held to.
   ensure_root_dir /usr/local/lib/agentic-studio 755
-  install_content "$PREVIEW_EGRESS_SCRIPT" 755 < <(sed -e "s|@PREVIEW_DNS@|$dns|g" "$SCRIPT_DIR/preview-egress-rules.sh") || true
+  install_template "$PREVIEW_EGRESS_SCRIPT" 755 "$SCRIPT_DIR/preview-egress-rules.sh" "s|@PREVIEW_DNS@|$dns|g" || true
 
   unit_dir="$home/.config/systemd/user/docker.service.d"
   daemon_json="$home/.config/docker/daemon.json"
@@ -1126,8 +1150,8 @@ EOF
 step_service() {
   local unit=/etc/systemd/user/agentic-studio-worker.service home
   install -d -m 0755 /etc/systemd/user
-  install_content "$unit" 644 < <(sed -e "s|@WORKER_CODE_DIR@|$WORKER_CODE_DIR|g" \
-    -e "s|@NODE_BIN@|/usr/local/bin/node|g" "$SCRIPT_DIR/systemd/agentic-studio-worker.service") || true
+  install_template "$unit" 644 "$SCRIPT_DIR/systemd/agentic-studio-worker.service" \
+    "s|@WORKER_CODE_DIR@|$WORKER_CODE_DIR|g" "s|@NODE_BIN@|/usr/local/bin/node|g" || true
   wait_for_user_bus
   as_agent systemctl --user daemon-reload
   if ! as_agent systemctl --user is-enabled --quiet agentic-studio-worker.service; then
@@ -1147,9 +1171,9 @@ step_controller_service() {
   local unit=/etc/systemd/user/agentic-studio-controller.service home
   preview_exists || die "the Preview user does not exist yet; run the preview-user step first."
   install -d -m 0755 /etc/systemd/user
-  install_content "$unit" 644 < <(sed -e "s|@CONTROLLER_CODE_DIR@|$CONTROLLER_CODE_DIR|g" \
-    -e "s|@NODE_BIN@|/usr/local/bin/node|g" -e "s|@PREVIEW_USER@|$PREVIEW_USER|g" \
-    "$SCRIPT_DIR/systemd/agentic-studio-controller.service") || true
+  install_template "$unit" 644 "$SCRIPT_DIR/systemd/agentic-studio-controller.service" \
+    "s|@CONTROLLER_CODE_DIR@|$CONTROLLER_CODE_DIR|g" "s|@NODE_BIN@|/usr/local/bin/node|g" \
+    "s|@PREVIEW_USER@|$PREVIEW_USER|g" || true
   wait_for_user_bus "$PREVIEW_USER"
   as_preview systemctl --user daemon-reload
   if ! as_preview systemctl --user is-enabled --quiet agentic-studio-controller.service; then

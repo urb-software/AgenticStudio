@@ -1,7 +1,6 @@
 #!/bin/bash
-# The Previews' egress rules (Issue #286; ADR 0004; security.md section 5). Installed by
-# deploy/setup-server.sh as /usr/local/lib/agentic-studio/preview-egress-rules (root-owned, 0755,
-# not writable by the Preview user), with @PREVIEW_DNS@ filled in.
+# The Previews' egress rules (ADR 0004; security.md section 5). Installed by deploy/setup-server.sh
+# as /usr/local/lib/agentic-studio/preview-egress-rules (root-owned, 0755), @PREVIEW_DNS@ filled in.
 #
 # Keeps Preview containers (and their builds) off every private range, Studio's networks and the
 # host's own addresses, except DNS to the resolver in the daemon's daemon.json. Outbound internet
@@ -17,6 +16,7 @@
 #   verify        Run inside the namespace (the controller runs it through nsenter before every
 #                 build and up): exit 0 only when every expected rule is in place, in order, with
 #                 no other rule, and the namespace has no IPv6 default route. Within 30 seconds.
+#                 (`verify-inside` is its body.)
 #
 # The rules guard the containers, not the Preview user (who owns the namespace and the daemon).
 set -euo pipefail
@@ -104,6 +104,7 @@ apply_outside() {
   [[ "$pid" =~ ^[0-9]+$ ]] || die "the rootless daemon's namespace is unknown (no $RUN_DIR/dockerd-rootless/child_pid)"
   # The host's global IPv4 addresses, read here: inside the namespace they are not visible.
   hosts="$(ip -4 -o addr show scope global | awk '{ split($4, a, "/"); print a[1] }' | sort -u)"
+  [ -n "$hosts" ] || die "the host has no global IPv4 address to reject"
   (
     umask 077
     printf '%s\n' "$hosts" >"$HOSTS_FILE.new"
@@ -116,21 +117,13 @@ case "${1:-}" in
   apply) apply_outside ;;
   apply-inside) apply_inside ;;
   verify)
-    # Within 30 seconds, whatever iptables does: a watchdog ends this process.
-    # Its output is closed: whoever reads this script's output must not wait for the sleep.
-    (
-      sleep 30
-      kill -TERM $$
-    ) </dev/null >/dev/null 2>&1 &
-    watchdog=$!
-    if verify_inside; then
-      kill "$watchdog" 2>/dev/null || true
-      exit 0
-    fi
-    kill "$watchdog" 2>/dev/null || true
-    echo "preview egress rules are missing" >&2
-    exit 1
+    # Within 30 seconds, whatever iptables does.
+    timeout 30 "$(readlink -f "$0")" verify-inside || {
+      echo "preview egress rules are missing" >&2
+      exit 1
+    }
     ;;
+  verify-inside) verify_inside ;;
   *)
     echo "usage: $0 apply|apply-inside|verify" >&2
     exit 2

@@ -57,7 +57,13 @@ expect_fail "refuses a Preview user named like the agent user" "equals the agent
 groupadd --gid 2003 othergroup
 expect_fail "refuses a proxy gid held by another group" "already taken by the group 'othergroup'" bash "$SETUP" --only preflight
 groupdel othergroup
-getent group 2002 >/dev/null || groupadd --gid 2002 preview
+useradd --uid 2002 --no-create-home --no-user-group otheruser
+expect_fail "refuses a Preview uid held by another user" "uid 2002 is already taken by the user 'otheruser'" bash "$SETUP" --only preflight
+userdel otheruser
+groupadd --gid 2002 othergid
+expect_fail "refuses a Preview gid held by another group" "gid 2002 is already taken by the group 'othergid'" bash "$SETUP" --only preflight
+groupdel othergid
+groupadd --gid 2002 preview
 useradd --create-home --uid 2002 --gid 2002 --shell /bin/bash preview
 for group in docker lxd sudo; do
   groupadd -f --gid 3002 "$group" && usermod -aG "$group" preview
@@ -68,6 +74,9 @@ groupadd --gid 2003 previewproxy
 usermod -aG previewproxy preview
 expect_fail "refuses a Preview user in the proxy group" "is in the previewproxy group" bash "$SETUP" --only preflight
 usermod -G "" preview
+usermod -aG previewproxy agent
+expect_fail "refuses an agent user in the proxy group" "agent user 'agent' is in the previewproxy group" bash "$SETUP" --only preflight
+usermod -G "" agent
 groupadd --gid 3003 sharedgroup && usermod -aG sharedgroup agent && usermod -aG sharedgroup preview
 expect_fail "refuses a group shared by the agent and Preview users" "share the group(s) sharedgroup" bash "$SETUP" --only preflight
 usermod -G "" agent && usermod -G "" preview && groupdel sharedgroup
@@ -190,7 +199,7 @@ else
   not_ok "the built worker did not refuse its empty token (exit $status)"
 fi
 
-section "The Preview side (Issue #286)"
+section "The Preview side"
 expect_true "Preview user has uid and gid 2002" bash -c '[ "$(id -u preview):$(id -g preview)" = 2002:2002 ]'
 expect_true "the proxy group has gid 2003" bash -c '[ "$(getent group previewproxy | cut -d: -f3)" = 2003 ]'
 expect_false "Preview user is not in the docker group" bash -c "id -nG preview | tr ' ' '\n' | grep -qx docker"
@@ -273,9 +282,9 @@ done
 for name in rootless-docker agent-user-limits; do
   expect_line "FAIL $name without systemd" "$out" "^FAIL  $name "
 done
-for name in preview-files-unreadable preview-docker-unreachable; do
-  expect_line "PASS $name" "$out" "^PASS  $name "
-done
+expect_line "PASS preview-files-unreadable" "$out" '^PASS  preview-files-unreadable '
+expect_line "no Preview daemon here -> FAIL preview-docker-unreachable (an absent socket proves nothing)" "$out" '^FAIL  preview-docker-unreachable '
+expect_line "no socket directory here -> FAIL preview-sockets-unreachable" "$out" '^FAIL  preview-sockets-unreachable '
 expect_line "no Studio API reachable here -> FAIL worker-token-not-controller" "$out" "^FAIL  worker-token-not-controller "
 expect_line "no Studio running -> FAIL studio-stack-running (positive control)" "$out" '^FAIL  studio-stack-running '
 
@@ -283,6 +292,7 @@ expect_line "SKIP api on request" "$out" '^SKIP  api '
 expect_line "last line is the result" "$(tail -n 1 <<<"$out")" '^RESULT: FAIL '
 
 ONLY_LOCAL=(--skip 'rootless,cgroup,preview,api')
+ONLY_PREVIEW=(--skip 'identity,processes,studio-files,docker-socket,sudo,studio-network,host,cgroup,guardrails,rootless,api')
 section "Each check fails when its rule is broken"
 ONLY_GUARDRAILS=(--skip 'identity,processes,studio-files,docker-socket,sudo,studio-network,host,cgroup,rootless,preview,api')
 guardrails_reinstalled() {
@@ -380,10 +390,11 @@ status=$?
 printf '%s\n' "$out" | sed 's/^/      | /'
 if [ "$status" -ne 0 ]; then ok "fails without a login session here (linger needs systemd)"; else not_ok "exit $status"; fi
 for name in not-root not-privileged sudo-needs-password home-private system-docker-unreachable system-containerd-unreachable \
-  agent-docker-unreachable agent-files-unreadable studio-files-unreadable studio-network-unreachable; do
+  agent-files-unreadable studio-files-unreadable studio-network-unreachable; do
   expect_line "PASS $name" "$out" "^PASS  $name "
 done
 expect_line "FAIL linger without systemd" "$out" '^FAIL  linger '
+expect_line "no agent daemon here -> FAIL agent-docker-unreachable (an absent socket proves nothing)" "$out" '^FAIL  agent-docker-unreachable '
 chmod 0755 /home/agent
 out="$(check_as_preview --skip 'identity,cgroup,egress,internet,controller,api')"
 expect_line "readable agent home -> FAIL agent-files-unreadable" "$out" '^FAIL  agent-files-unreadable '
@@ -414,7 +425,6 @@ stub() {
   sleep 1
 }
 ONLY_API=(--skip 'identity,processes,studio-files,docker-socket,sudo,studio-network,host,cgroup,rootless,preview')
-ONLY_PREVIEW=(--skip 'identity,processes,studio-files,docker-socket,sudo,studio-network,host,cgroup,guardrails,rootless,api')
 stub 0
 out="$(check_as_agent --skip 'identity,processes,studio-files,docker-socket,sudo,host,cgroup,rootless,preview,api')"
 expect_line "Studio answering -> PASS studio-stack-running" "$out" '^PASS  studio-stack-running '
