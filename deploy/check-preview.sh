@@ -322,8 +322,24 @@ check_cgroup() {
     [ "$pid_before" = "$pid_after" ] && [ "$restored" = "${before:-infinity}" ]; then
     pass build-slice-memory-limit "MemoryMax=536870912 on $BUILD_SLICE: a RUN step of 800 MB was OOM-killed in it (counter $kills_before -> $kills_after), the daemon (pid $pid_after) stayed active, MemoryMax restored to $restored"
   else
-    fail build-slice-memory-limit "limit ${limit_set:-?} (expected 536870912), build exit $build_status, oom kill $([ "$killed" = 0 ] && echo seen || echo not seen) (counter ${kills_before:-?} -> ${kills_after:-?}), daemon up=$([ "$up" = 0 ] && echo yes || echo no), pid $pid_before -> $pid_after, MemoryMax restored to '${restored:-?}' (was '${before:-?}'); slice cgroup $cgdir: peak $(cat "$cgdir/memory.peak" 2>/dev/null), children: $(find "$cgdir" -mindepth 1 -maxdepth 1 -type d -printf '%f ' 2>/dev/null); daemon cgroup children: $(find "/sys/fs/cgroup$(systemctl --user show docker.service -p ControlGroup --value 2>/dev/null)" -mindepth 1 -maxdepth 1 -type d -printf '%f ' 2>/dev/null); daemon.json: $(tr -d '\n' <"$HOME/.config/docker/daemon.json" 2>/dev/null); build output: $(tail -n 6 <<<"$output" | tr '\n' '|')"
+    fail build-slice-memory-limit "limit ${limit_set:-?} (expected 536870912), build exit $build_status, oom kill $([ "$killed" = 0 ] && echo seen || echo not seen) (counter ${kills_before:-?} -> ${kills_after:-?}), daemon up=$([ "$up" = 0 ] && echo yes || echo no), pid $pid_before -> $pid_after, MemoryMax restored to '${restored:-?}' (was '${before:-?}'); slice cgroup $cgdir: peak $(cat "$cgdir/memory.peak" 2>/dev/null), children: $(find "$cgdir" -mindepth 1 -maxdepth 1 -type d -printf '%f ' 2>/dev/null); daemon cgroup children: $(find "/sys/fs/cgroup$(systemctl --user show docker.service -p ControlGroup --value 2>/dev/null)" -mindepth 1 -maxdepth 1 -type d -printf '%f ' 2>/dev/null); daemon.json: $(tr -d '\n' <"$HOME/.config/docker/daemon.json" 2>/dev/null); build output: $(tail -n 6 <<<"$output" | tr '\n' '|'); where a build step runs: $(build_step_cgroups)"
   fi
+}
+
+# Evidence for a failed probe: the cgroups of `sleep` processes of this user while a build step
+# sleeps (the step's own, and this function's).
+build_step_cgroups() {
+  local dir pid out=""
+  dir="$(mktemp -d)"
+  printf 'FROM %s\nRUN sleep 30\n' "$CHECK_IMAGE" >"$dir/Dockerfile"
+  (timeout 120 docker build --no-cache -q -t preview-check-where:probe "$dir" >/dev/null 2>&1 &)
+  sleep 12
+  while read -r pid; do
+    out+="$pid:$(tr '\n' ' ' <"/proc/$pid/cgroup" 2>/dev/null)| "
+  done < <(pgrep -u "$UID_NOW" -x sleep)
+  pkill -u "$UID_NOW" -x sleep 2>/dev/null
+  rm -rf "$dir"
+  printf '%s' "${out:-no sleep process seen}"
 }
 
 # The probe run in a container and in a build step: prints OPEN or BLOCKED per target.
