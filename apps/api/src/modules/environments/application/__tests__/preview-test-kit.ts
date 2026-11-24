@@ -1,5 +1,6 @@
 import { PreviewOperation } from '../../domain/entities/preview-operation.js';
 import { PreviewSettings } from '../../domain/entities/preview-settings.js';
+import { InMemoryPreviewMergeRebuildRepository } from '../../domain/repositories/__tests__/in-memory-preview-merge-rebuild-repository.js';
 import type { PreviewOperationRepository } from '../../domain/repositories/preview-operation-repository.js';
 import type { PreviewSettingsRepository } from '../../domain/repositories/preview-settings-repository.js';
 import { PreviewCommit } from '../../domain/value-objects/preview-commit.js';
@@ -32,14 +33,16 @@ export function previewKit(
   now: Date = KIT_NOW,
   /** How long the API instance has run. */
   startedAgoMs = 3_600_000,
+  rebuilds = new InMemoryPreviewMergeRebuildRepository(),
 ) {
   const presence = new FakeControllerPresence(new Date(now.getTime() - startedAgoMs));
   const clock = { now: () => now };
   return {
     presence,
     clock,
+    rebuilds,
     judge: new PreviewComposeJudge(sources),
-    states: new PreviewStateReader(operations, presence, OPERATION_SETTINGS, clock),
+    states: new PreviewStateReader(operations, presence, OPERATION_SETTINGS, clock, rebuilds),
   };
 }
 
@@ -101,6 +104,7 @@ export async function seedBuild(
   status: 'requested' | 'claimed' | 'succeeded' | 'failed',
   requestedAt: Date = KIT_NOW,
   commit = 'c'.repeat(40),
+  startedByRunId?: string,
 ): Promise<void> {
   await operations.add(
     PreviewOperation.requestBuild({
@@ -111,6 +115,7 @@ export async function seedBuild(
       service: PreviewService.of('web'),
       port: PreviewPort.of(8080),
       limits: PreviewLimits.of(BUILD_LIMITS),
+      startedByRunId,
       now: requestedAt,
     }),
   );

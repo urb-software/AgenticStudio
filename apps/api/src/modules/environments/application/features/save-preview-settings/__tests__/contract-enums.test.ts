@@ -1,5 +1,6 @@
 import { REFUSAL_CODES } from '@agentic-studio/compose-validation';
 import {
+  PREVIEW_AFTER_MERGE_STATES,
   PREVIEW_COMPOSE_FILE_MAX_LENGTH,
   PREVIEW_REPOSITORY_REASONS,
   PREVIEW_REFUSAL_CODES,
@@ -8,6 +9,8 @@ import {
   savePreviewSettingsRequestSchema,
 } from '@agentic-studio/contracts';
 import { describe, expect, it } from 'vitest';
+import type { PreviewOfMergeState } from '../../../../contracts/index.js';
+import { PREVIEW_AFTER_MERGE_STATE_NAMES } from '../../../../domain/value-objects/preview-after-merge-rule.js';
 import type { PreviewRepositoryReason } from '../../../../domain/errors/preview-settings-errors.js';
 import { PreviewComposeFile } from '../../../../domain/value-objects/preview-compose-file.js';
 import { PreviewPort } from '../../../../domain/value-objects/preview-port.js';
@@ -28,6 +31,11 @@ describe('the Preview contract and its sources', () => {
   it('lists the reasons a Repository cannot be read, as the domain does', () => {
     const reasons: PreviewRepositoryReason[] = [...PREVIEW_REPOSITORY_REASONS];
     expect(reasons).toEqual(['no_repository', 'repository_not_ready', 'unsupported_platform']);
+  });
+
+  it('lists the states of a Preview for a merged commit, as the domain and the module contract do', () => {
+    const states: PreviewOfMergeState[] = [...PREVIEW_AFTER_MERGE_STATES];
+    expect(states).toEqual([...PREVIEW_AFTER_MERGE_STATE_NAMES]);
   });
 
   it('takes its limits from the domain', () => {

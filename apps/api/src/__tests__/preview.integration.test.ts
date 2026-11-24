@@ -184,6 +184,8 @@ describe('Preview settings API (PostgreSQL + Redis via Testcontainers)', () => {
         latestBuild: null,
         latestChange: null,
         controller: { connected: false },
+        behind: false,
+        mergeRebuild: null,
       });
     });
 
@@ -257,6 +259,8 @@ describe('Preview settings API (PostgreSQL + Redis via Testcontainers)', () => {
           latestBuild: null,
           latestChange: null,
           controller: { connected: false },
+          behind: false,
+          mergeRebuild: null,
           removedPorts: [{ service: 'web', place: 'services.web.ports[0]' }],
         });
         const { removedPorts, ...preview } = saved.body;

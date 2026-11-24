@@ -126,10 +126,18 @@ export const previewBuildFailureSchema = z.strictObject({
 });
 export type PreviewBuildFailure = z.infer<typeof previewBuildFailureSchema>;
 
+/** What started a build: the operator, or the merge of a Run through Studio. Reset counts as the operator. */
+export const previewBuildStartedBySchema = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('operator') }),
+  z.strictObject({ kind: z.literal('merge'), runId: z.uuid() }),
+]);
+export type PreviewBuildStartedBy = z.infer<typeof previewBuildStartedBySchema>;
+
 /** One build of the Project's Preview. */
 export const previewBuildSchema = z.strictObject({
   id: z.uuid(),
   commit: z.string(),
+  startedBy: previewBuildStartedBySchema,
   status: previewBuildStatusSchema,
   requestedAt: z.iso.datetime(),
   startedAt: z.iso.datetime().nullable(),
@@ -161,6 +169,22 @@ export const previewLatestChangeSchema = z.strictObject({
 });
 export type PreviewLatestChange = z.infer<typeof previewLatestChangeSchema>;
 
+export const PREVIEW_MERGE_REBUILD_STATUSES = ['waiting', 'failed'] as const;
+export const previewMergeRebuildStatusSchema = z.enum(PREVIEW_MERGE_REBUILD_STATUSES);
+export type PreviewMergeRebuildStatus = z.infer<typeof previewMergeRebuildStatusSchema>;
+
+/**
+ * The rebuild a merge through Studio asked for that has not started. `reason` finishes the
+ * sentence "waiting for ...": the Clone fetch, the current build; for `failed` it is why.
+ */
+export const previewMergeRebuildSchema = z.strictObject({
+  runId: z.uuid(),
+  status: previewMergeRebuildStatusSchema,
+  reason: z.string(),
+  since: z.iso.datetime(),
+});
+export type PreviewMergeRebuild = z.infer<typeof previewMergeRebuildSchema>;
+
 /** What the Preview page shows: the settings, the hostname, the state and the latest build. */
 export const previewSchema = z.strictObject({
   settings: previewSettingsSchema.nullable(),
@@ -187,8 +211,39 @@ export const previewSchema = z.strictObject({
   /** The newest Stop or Reset, so a failed one stays visible; `null` when there was none. */
   latestChange: previewLatestChangeSchema.nullable(),
   controller: z.strictObject({ connected: z.boolean() }),
+  /**
+   * The Clone is ready and the commit that runs (or ran last) differs from the Integration
+   * branch's commit in the Clone, so the Preview shows older code.
+   */
+  behind: z.boolean(),
+  /** The rebuild a merge through Studio asked for that has not started; `null` when none waits. */
+  mergeRebuild: previewMergeRebuildSchema.nullable(),
 });
 export type Preview = z.infer<typeof previewSchema>;
+
+/**
+ * The Preview's state for a merged Run's commit: `not_configured` and `not_started` (a merge
+ * never starts a stopped Preview), `waiting` for the Clone or a build, `building`, `running`,
+ * `failed`, or `replaced` by a newer build or merge.
+ */
+export const PREVIEW_AFTER_MERGE_STATES = [
+  'not_configured',
+  'not_started',
+  'waiting',
+  'building',
+  'running',
+  'failed',
+  'replaced',
+] as const;
+export const previewAfterMergeStateSchema = z.enum(PREVIEW_AFTER_MERGE_STATES);
+export type PreviewAfterMergeState = z.infer<typeof previewAfterMergeStateSchema>;
+
+/** What a merged Run's page shows of the Project's Preview. */
+export const previewAfterMergeSchema = z.strictObject({
+  projectId: z.uuid(),
+  state: previewAfterMergeStateSchema,
+});
+export type PreviewAfterMerge = z.infer<typeof previewAfterMergeSchema>;
 
 /** The Projects whose Preview takes one of the places: running, or with a build requested or claimed. */
 export const previewsListSchema = z.strictObject({

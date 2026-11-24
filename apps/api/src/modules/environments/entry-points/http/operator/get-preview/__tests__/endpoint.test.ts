@@ -35,6 +35,13 @@ describe('GetPreviewEndpoint', () => {
             failure: { code: 'runtime_failed' as const, detail: 'Docker could not remove.' },
           },
           controller: { connected: true },
+          behind: true,
+          mergeRebuild: {
+            runId: '3c1d8f2a-0b2f-4d6e-8a44-6b3c1d8f2a10',
+            status: 'waiting' as const,
+            reason: 'the Clone fetch',
+            since: new Date('2026-11-23T11:40:00.000Z'),
+          },
         }),
       ),
     };
@@ -46,6 +53,8 @@ describe('GetPreviewEndpoint', () => {
     expect(answer.settings?.updatedAt).toBe('2026-11-23T10:00:00.000Z');
     expect(answer.running?.since).toBe('2026-11-23T11:00:00.000Z');
     expect(answer.latestChange?.requestedAt).toBe('2026-11-23T11:30:00.000Z');
+    expect(answer.behind).toBe(true);
+    expect(answer.mergeRebuild?.since).toBe('2026-11-23T11:40:00.000Z');
     expect(answer.latestChange?.finishedAt).toBe('2026-11-23T11:31:00.000Z');
   });
 

@@ -177,7 +177,7 @@ One piece of work the environment controller claims from Studio for a Project's 
 _Avoid_: Job, task, command
 
 **Preview build**:
-One attempt to build and start a Preview from the Integration branch at a commit, with its status and its redacted, capped log. Its status is `queued` (waiting for the controller), `building` (claimed), `succeeded` or `failed`. A build that fails before the stack starts leaves the previous Preview running; one that fails after it removes that Preview.
+One attempt to build and start a Preview from the Integration branch at a commit, with its status and its redacted, capped log. It is started by the operator (a Rebuild, or a Reset) or by the merge of a named Run through Studio; nothing else starts one. Its status is `queued` (waiting for the controller), `building` (claimed), `succeeded` or `failed`. A build that fails before the stack starts leaves the previous Preview running; one that fails after it removes that Preview.
 _Avoid_: Deploy, pipeline
 
 **Preview settings**:

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { FakeMergedRunPreviews } from '../../../ports/__tests__/fake-merged-run-previews.js';
 import type { InMemoryRunLookupRepository } from '../../../../domain/repositories/__tests__/in-memory-run-lookup-repository.js';
 import { inMemoryExecutions } from '../../../__tests__/in-memory-executions.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
@@ -67,6 +68,7 @@ describe('RefreshPullRequestHandler', () => {
       }),
       { configured: false, allowFileRemotes: false },
       new InMemoryMergeApprovalRepository(),
+      new FakeMergedRunPreviews(),
     );
   });
 

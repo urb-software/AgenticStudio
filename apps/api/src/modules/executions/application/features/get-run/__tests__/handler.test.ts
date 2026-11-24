@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { FakeMergedRunPreviews } from '../../../ports/__tests__/fake-merged-run-previews.js';
 import { inMemoryExecutions } from '../../../__tests__/in-memory-executions.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { deliveredRun, T0 } from '../../../../domain/repositories/__tests__/delivered-run.js';
@@ -12,6 +13,7 @@ async function answerWith(
   settings: MergeSettings,
   approvals = new InMemoryMergeApprovalRepository(),
   seed?: (runId: string) => MergeApproval | undefined,
+  previews = new FakeMergedRunPreviews(),
 ) {
   const runs = new InMemoryRunRepository();
   const run = await deliveredRun(runs);
@@ -31,6 +33,7 @@ async function answerWith(
     }),
     settings,
     approvals,
+    previews,
   );
   return handler.execute({ runId: run.id });
 }
@@ -93,5 +96,75 @@ describe('GetRunHandler latest Merge approval', () => {
       refusal: { code: 'interrupted' },
     });
     expect(approvals.approvals[0]!.result).toBe('pending');
+  });
+});
+
+describe('GetRunHandler Preview after the merge', () => {
+  const configured = { configured: true, allowFileRemotes: false };
+  const MERGED = 'e'.repeat(40);
+  const approvalOf = (runId: string, carriedOut: boolean) => {
+    const approval = MergeApproval.approve(
+      {
+        id: 'e0000000-0000-4000-8000-000000000001',
+        runId,
+        commit: 'b'.repeat(40),
+        integrationBranch: 'dev',
+        method: 'squash',
+        checksSeen: [],
+      },
+      T0,
+    );
+    return carriedOut ? approval.carriedOut(MERGED, T0) : approval;
+  };
+
+  it('is null while no approval was carried out', async () => {
+    const previews = new FakeMergedRunPreviews();
+
+    const never = await answerWith(configured, undefined, undefined, previews);
+    const pending = await answerWith(
+      configured,
+      new InMemoryMergeApprovalRepository(),
+      (runId) => approvalOf(runId, false),
+      previews,
+    );
+
+    expect(never.previewAfterMerge).toBeNull();
+    expect(pending.previewAfterMerge).toBeNull();
+    expect(previews.reads).toEqual([]);
+  });
+
+  it('carries the state the Preview reports for the merged commit', async () => {
+    const previews = new FakeMergedRunPreviews();
+    previews.answer = { state: 'building' };
+
+    const answer = await answerWith(
+      configured,
+      new InMemoryMergeApprovalRepository(),
+      (runId) => approvalOf(runId, true),
+      previews,
+    );
+
+    expect(answer.previewAfterMerge).toEqual({
+      projectId: answer.run.projectId,
+      state: 'building',
+    });
+    expect(previews.reads).toEqual([
+      { projectId: answer.run.projectId, runId: answer.run.id, mergedCommit: MERGED },
+    ]);
+  });
+
+  it('leaves the field out when the Preview cannot be read, and answers the rest', async () => {
+    const previews = new FakeMergedRunPreviews();
+    previews.mode = 'throws';
+
+    const answer = await answerWith(
+      configured,
+      new InMemoryMergeApprovalRepository(),
+      (runId) => approvalOf(runId, true),
+      previews,
+    );
+
+    expect(answer.previewAfterMerge).toBeNull();
+    expect(answer.latestMergeApproval).toMatchObject({ result: 'carried_out' });
   });
 });

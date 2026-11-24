@@ -44,6 +44,7 @@ export class PreviewOperation {
         service: facts.service.value,
         port: facts.port.value,
         limits: facts.limits.toData(),
+        startedByRunId: facts.startedByRunId ?? null,
       },
       requestedAt: facts.now,
       claimedBy: null,

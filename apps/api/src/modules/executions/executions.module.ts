@@ -171,10 +171,14 @@ const LOG_STREAMS_TOTAL = 50;
 
 @Module({})
 export class ExecutionsModule {
-  static register(projects: DynamicModule, options: ExecutionsModuleOptions = {}): DynamicModule {
+  static register(
+    projects: DynamicModule,
+    environments: DynamicModule,
+    options: ExecutionsModuleOptions = {},
+  ): DynamicModule {
     return {
       module: ExecutionsModule,
-      imports: [DatabaseModule, AuthModule, SecretsModule, projects],
+      imports: [DatabaseModule, AuthModule, SecretsModule, projects, environments],
       controllers: [
         StartRunEndpoint,
         ListProjectRunsEndpoint,

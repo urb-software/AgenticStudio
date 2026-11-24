@@ -37,6 +37,7 @@ export const COMMIT = '0123456789abcdef0123456789abcdef01234567';
 export const QUEUED_BUILD: PreviewBuildOutput = {
   id: BUILD_ID,
   commit: COMMIT,
+  startedBy: { kind: 'operator' },
   status: 'queued',
   requestedAt: '2026-11-24T10:00:00.000Z',
   startedAt: null,
@@ -118,6 +119,8 @@ export function fakePreviewApi(
       latestBuild: state.latestBuild,
       latestChange: state.latestChange,
       controller: { connected: state.controllerConnected },
+      behind: false,
+      mergeRebuild: null,
     };
   }
 

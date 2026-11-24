@@ -11,6 +11,8 @@ export interface PreviewBuildData {
   readonly service: string;
   readonly port: number;
   readonly limits: PreviewLimitsData;
+  /** The Run whose merge through Studio started the build; `null` when the operator did. */
+  readonly startedByRunId: string | null;
 }
 
 /** What a Preview operation is restored from. */

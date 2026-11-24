@@ -3,6 +3,10 @@ import { Inject, Injectable } from '@nestjs/common';
 import { PreviewOperation } from '../../../domain/entities/preview-operation.js';
 import { PreviewBusyError } from '../../../domain/errors/preview-settings-errors.js';
 import {
+  PREVIEW_MERGE_REBUILD_REPOSITORY,
+  type PreviewMergeRebuildRepository,
+} from '../../../domain/repositories/preview-merge-rebuild-repository.js';
+import {
   PREVIEW_OPERATION_REPOSITORY,
   type PreviewOperationRepository,
 } from '../../../domain/repositories/preview-operation-repository.js';
@@ -31,10 +35,14 @@ export class RemovePreviewForDisconnectHandler {
     @Inject(PREVIEW_SETTINGS_REPOSITORY) private readonly settings: PreviewSettingsRepository,
     @Inject(PREVIEW_OPERATION_REPOSITORY) private readonly operations: PreviewOperationRepository,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(PREVIEW_MERGE_REBUILD_REPOSITORY)
+    private readonly rebuilds: PreviewMergeRebuildRepository,
   ) {}
 
   async execute(input: RemovePreviewForDisconnectInput): Promise<RemovePreviewForDisconnectResult> {
     const { projectId } = input;
+    // A rebuild that waits for a Repository about to go would only fail.
+    await this.rebuilds.deleteForProject(projectId);
     const rule = PreviewDisconnectRule.create();
     const facts = await this.operations.findDisconnectFacts(projectId);
     switch (rule.next(facts)) {

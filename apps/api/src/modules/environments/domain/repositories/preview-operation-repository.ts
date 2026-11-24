@@ -85,6 +85,16 @@ export interface PreviewOperationRepository {
   /** The facts of the Project's Preview state; both `null` for a Project with no operation. */
   findPreviewFacts(projectId: string): Promise<PreviewReadModel>;
 
+  /**
+   * The Project's newest build (by request time) that the Run's merge started or that built
+   * `commit`, or `null` when there is none.
+   */
+  findMergeBuild(
+    projectId: string,
+    runId: string,
+    commit: string,
+  ): Promise<PreviewOperation | null>;
+
   /** The operation, or `null` when none has this id (also an id that is not a UUID). */
   find(id: string): Promise<PreviewOperation | null>;
 

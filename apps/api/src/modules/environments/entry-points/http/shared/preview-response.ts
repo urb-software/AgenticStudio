@@ -86,5 +86,10 @@ export function toPreviewResponse(view: PreviewView): PreviewDto {
             finishedAt: iso(view.latestChange.finishedAt),
           },
     controller: view.controller,
+    behind: view.behind,
+    mergeRebuild:
+      view.mergeRebuild === null
+        ? null
+        : { ...view.mergeRebuild, since: view.mergeRebuild.since.toISOString() },
   };
 }

@@ -148,6 +148,7 @@ describe('the Preview stop, reset and limit store follows the rules of the domai
                   tasksMax: row.tasksMax!,
                   buildMinutes: row.buildMinutes!,
                 }).toData(),
+                startedByRunId: row.startedByRunId,
               }
             : null,
         requestedAt: row.requestedAt,

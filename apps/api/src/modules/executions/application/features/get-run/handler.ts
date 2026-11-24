@@ -7,6 +7,11 @@ import {
 } from '../../../domain/repositories/prepared-follow-up-repository.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import type { FollowUpView } from '../../../domain/value-objects/follow-up-view.js';
+import {
+  MERGED_RUN_PREVIEWS,
+  type MergedRunPreviews,
+  type PreviewOfMergeState,
+} from '../../../../environments/contracts/index.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { RETENTION_POLICY, type RetentionPolicy } from '../../ports/retention-policy.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
@@ -15,6 +20,7 @@ import {
   MERGE_APPROVAL_REPOSITORY,
   type MergeApprovalRepository,
 } from '../../../domain/repositories/merge-approval-repository.js';
+import type { MergeApproval } from '../../../domain/entities/merge-approval.js';
 import { mergeApprovalView, type MergeApprovalView } from '../../merge-approval-view.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
 import { Lease } from '../../../domain/value-objects/lease.js';
@@ -36,6 +42,8 @@ export interface GetRunResult {
   integrationBranch: string;
   /** `null` when the operator never approved a merge of this Run. */
   latestMergeApproval: MergeApprovalView | null;
+  /** Set only when the latest approval was carried out; `null` when the Preview cannot be read. */
+  previewAfterMerge: { projectId: string; state: PreviewOfMergeState } | null;
 }
 
 /** Throws {@link RunNotFoundError}, also for a non-UUID id. */
@@ -51,6 +59,7 @@ export class GetRunHandler {
     @Inject(RETENTION_POLICY) private readonly retention: RetentionPolicy,
     @Inject(MERGE_SETTINGS) private readonly mergeSettings: MergeSettings,
     @Inject(MERGE_APPROVAL_REPOSITORY) private readonly mergeApprovals: MergeApprovalRepository,
+    @Inject(MERGED_RUN_PREVIEWS) private readonly previews: MergedRunPreviews,
   ) {}
 
   async execute(input: GetRunInput): Promise<GetRunResult> {
@@ -85,7 +94,23 @@ export class GetRunHandler {
       merge: this.mergeAvailability(run.remoteUrl),
       integrationBranch: run.delivery.integrationBranch,
       latestMergeApproval: approval === null ? null : mergeApprovalView(approval.asOf(now)),
+      previewAfterMerge: await this.previewAfterMerge(run.projectId, run.id, approval),
     };
+  }
+
+  /** A Preview that cannot be read leaves the field out: the Run page never fails for it. */
+  private async previewAfterMerge(
+    projectId: string,
+    runId: string,
+    approval: MergeApproval | null,
+  ): Promise<GetRunResult['previewAfterMerge']> {
+    if (approval === null || !approval.isCarriedOut || approval.mergedCommit === null) return null;
+    try {
+      const { state } = await this.previews.forMerge(projectId, runId, approval.mergedCommit);
+      return { projectId, state };
+    } catch {
+      return null;
+    }
   }
 
   private mergeAvailability(remoteUrl: string): GetRunResult['merge'] {

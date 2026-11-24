@@ -207,6 +207,19 @@ export const zMergeApprovalOutput = z.object({
     cloneFetchStartedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional()
 });
 
+export const zRunPreviewAfterMergeOutput = z.object({
+    projectId: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
+    state: z.enum([
+        'not_configured',
+        'not_started',
+        'waiting',
+        'building',
+        'running',
+        'failed',
+        'replaced'
+    ])
+});
+
 export const zRunPullRequestCheckOutput = z.object({
     name: z.string(),
     state: z.enum([
@@ -362,6 +375,7 @@ export const zRunOutput = z.object({
     merge: zRunMergeAvailabilityOutput.optional(),
     integrationBranch: z.string().optional(),
     latestMergeApproval: zMergeApprovalOutput.optional(),
+    previewAfterMerge: zRunPreviewAfterMergeOutput.optional(),
     cancelRequestedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
     cancellation: z.object({
         by: z.enum(['operator', 'system']),
@@ -712,6 +726,15 @@ export const zPreviewOutput = z.object({
     latestBuild: z.object({
         id: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
         commit: z.string(),
+        startedBy: z.union([
+            z.object({
+                kind: z.literal('operator')
+            }),
+            z.object({
+                kind: z.literal('merge'),
+                runId: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/)
+            })
+        ]),
         status: z.enum([
             'queued',
             'building',
@@ -819,7 +842,14 @@ export const zPreviewOutput = z.object({
     }).nullable(),
     controller: z.object({
         connected: z.boolean()
-    })
+    }),
+    behind: z.boolean(),
+    mergeRebuild: z.object({
+        runId: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
+        status: z.enum(['waiting', 'failed']),
+        reason: z.string(),
+        since: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/)
+    }).nullable()
 });
 
 export const zPreviewRefusedProblem = z.object({
@@ -906,6 +936,15 @@ export const zSavePreviewSettingsResponseOutput = z.object({
     latestBuild: z.object({
         id: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
         commit: z.string(),
+        startedBy: z.union([
+            z.object({
+                kind: z.literal('operator')
+            }),
+            z.object({
+                kind: z.literal('merge'),
+                runId: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/)
+            })
+        ]),
         status: z.enum([
             'queued',
             'building',
@@ -1014,6 +1053,13 @@ export const zSavePreviewSettingsResponseOutput = z.object({
     controller: z.object({
         connected: z.boolean()
     }),
+    behind: z.boolean(),
+    mergeRebuild: z.object({
+        runId: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
+        status: z.enum(['waiting', 'failed']),
+        reason: z.string(),
+        since: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/)
+    }).nullable(),
     removedPorts: z.array(z.object({
         service: z.string(),
         place: z.string()
@@ -1044,6 +1090,15 @@ export const zPreviewLimitReachedProblem = z.object({
 export const zPreviewBuildOutput = z.object({
     id: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
     commit: z.string(),
+    startedBy: z.union([
+        z.object({
+            kind: z.literal('operator')
+        }),
+        z.object({
+            kind: z.literal('merge'),
+            runId: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/)
+        })
+    ]),
     status: z.enum([
         'queued',
         'building',

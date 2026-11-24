@@ -29,6 +29,8 @@ const VIEW = {
     failure: null,
   },
   controller: { connected: true },
+  behind: false,
+  mergeRebuild: null,
 };
 
 function endpoint(stop: () => Promise<unknown>) {

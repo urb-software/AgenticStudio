@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  PREVIEW_AFTER_MERGE_STATES,
   PREVIEW_BUILD_STATUSES,
   PREVIEW_STATES,
+  previewAfterMergeSchema,
   previewBuildEventsSchema,
   previewLatestChangeSchema,
   previewLimitReachedProblemSchema,
+  previewMergeRebuildSchema,
   previewsListSchema,
   previewBuildSchema,
   previewRefusalCodeSchema,
@@ -55,6 +58,8 @@ describe('preview contract', () => {
     latestBuild: null,
     latestChange: null,
     controller: { connected: false },
+    behind: false,
+    mergeRebuild: null,
   };
 
   it('answers the settings or null, with the hostname or why there is none', () => {
@@ -84,7 +89,14 @@ describe('preview contract', () => {
 
   it('requires the state, the running build, the latest build and the controller', () => {
     const base = { settings: null, hostname: null, repository: { ready: true } };
-    for (const missing of ['state', 'running', 'latestBuild', 'controller']) {
+    for (const missing of [
+      'state',
+      'running',
+      'latestBuild',
+      'controller',
+      'behind',
+      'mergeRebuild',
+    ]) {
       const rest = Object.fromEntries(Object.entries(STATE).filter(([key]) => key !== missing));
       expect(previewSchema.safeParse({ ...base, ...rest }).success).toBe(false);
     }
@@ -108,6 +120,7 @@ describe('preview contract', () => {
     const BUILD = {
       id: '0b2f6d52-3d0b-4d6e-8a44-6b3c1d8f2a10',
       commit: 'a'.repeat(40),
+      startedBy: { kind: 'operator' },
       status: 'queued',
       requestedAt: '2026-11-24T10:00:00.000Z',
       startedAt: null,
@@ -144,6 +157,23 @@ describe('preview contract', () => {
         }).success,
       ).toBe(false);
       expect(previewBuildSchema.safeParse({ ...BUILD, extra: 1 }).success).toBe(false);
+    });
+
+    it('says whether the operator or the merge of a Run started it', () => {
+      const runId = '3c1d8f2a-0b2f-4d6e-8a44-6b3c1d8f2a10';
+      expect(
+        previewBuildSchema.safeParse({ ...BUILD, startedBy: { kind: 'merge', runId } }).success,
+      ).toBe(true);
+      expect(previewBuildSchema.safeParse({ ...BUILD, startedBy: { kind: 'merge' } }).success).toBe(
+        false,
+      );
+      expect(
+        previewBuildSchema.safeParse({ ...BUILD, startedBy: { kind: 'operator', runId } }).success,
+      ).toBe(false);
+      expect(previewBuildSchema.safeParse({ ...BUILD, startedBy: { kind: 'timer' } }).success).toBe(
+        false,
+      );
+      expect(previewBuildSchema.safeParse({ ...BUILD, startedBy: undefined }).success).toBe(false);
     });
 
     it('takes the three codes the API alone sets', () => {
@@ -239,6 +269,45 @@ describe('preview contract', () => {
       expect(
         previewLimitReachedProblemSchema.safeParse({ ...problem, running: [{}] }).success,
       ).toBe(false);
+    });
+  });
+
+  describe('the rebuild after a merge', () => {
+    const RUN = '3c1d8f2a-0b2f-4d6e-8a44-6b3c1d8f2a10';
+
+    it('is waiting or failed with a reason and the time since', () => {
+      const rebuild = {
+        runId: RUN,
+        status: 'waiting',
+        reason: 'the Clone fetch',
+        since: '2026-11-24T10:00:00.000Z',
+      };
+      expect(previewMergeRebuildSchema.safeParse(rebuild).success).toBe(true);
+      expect(previewMergeRebuildSchema.safeParse({ ...rebuild, status: 'failed' }).success).toBe(
+        true,
+      );
+      expect(previewMergeRebuildSchema.safeParse({ ...rebuild, status: 'queued' }).success).toBe(
+        false,
+      );
+      expect(previewMergeRebuildSchema.safeParse({ ...rebuild, runId: 'x' }).success).toBe(false);
+    });
+
+    it('names the seven states of the Preview for a merged commit', () => {
+      expect([...PREVIEW_AFTER_MERGE_STATES]).toEqual([
+        'not_configured',
+        'not_started',
+        'waiting',
+        'building',
+        'running',
+        'failed',
+        'replaced',
+      ]);
+      expect(previewAfterMergeSchema.safeParse({ projectId: RUN, state: 'replaced' }).success).toBe(
+        true,
+      );
+      expect(previewAfterMergeSchema.safeParse({ projectId: RUN, state: 'stopped' }).success).toBe(
+        false,
+      );
     });
   });
 });

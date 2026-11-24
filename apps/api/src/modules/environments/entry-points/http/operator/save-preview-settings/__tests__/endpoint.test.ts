@@ -50,6 +50,8 @@ describe('SavePreviewSettingsEndpoint', () => {
       latestBuild: null,
       latestChange: null,
       controller: { connected: false },
+      behind: false,
+      mergeRebuild: null,
       removedPorts: [],
     };
 
@@ -63,6 +65,8 @@ describe('SavePreviewSettingsEndpoint', () => {
       latestBuild: null,
       latestChange: null,
       controller: { connected: false },
+      behind: false,
+      mergeRebuild: null,
     });
     const removed = [{ service: 'web', place: 'services.web.ports[0]' }];
     await expect(

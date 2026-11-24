@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { PreviewMergeRebuild } from '../../../../domain/entities/preview-merge-rebuild.js';
 import { PreviewOperation } from '../../../../domain/entities/preview-operation.js';
 import { PreviewOperationFailure } from '../../../../domain/value-objects/preview-operation-failure.js';
+import { InMemoryPreviewMergeRebuildRepository } from '../../../../domain/repositories/__tests__/in-memory-preview-merge-rebuild-repository.js';
 import { InMemoryPreviewOperationRepository } from '../../../../domain/repositories/__tests__/in-memory-preview-operation-repository.js';
 import { InMemoryPreviewSettingsRepository } from '../../../../domain/repositories/__tests__/in-memory-preview-settings-repository.js';
 import {
@@ -20,12 +22,19 @@ const later = (minutes: number) => new Date(NOW.getTime() + minutes * 60_000);
 describe('RemovePreviewForDisconnectHandler', () => {
   let operations: InMemoryPreviewOperationRepository;
   let settings: InMemoryPreviewSettingsRepository;
+  let rebuilds: InMemoryPreviewMergeRebuildRepository;
   let handler: RemovePreviewForDisconnectHandler;
 
   beforeEach(() => {
     operations = new InMemoryPreviewOperationRepository();
     settings = new InMemoryPreviewSettingsRepository();
-    handler = new RemovePreviewForDisconnectHandler(settings, operations, { now: () => later(10) });
+    rebuilds = new InMemoryPreviewMergeRebuildRepository();
+    handler = new RemovePreviewForDisconnectHandler(
+      settings,
+      operations,
+      { now: () => later(10) },
+      rebuilds,
+    );
   });
 
   const run = (projectId = PROJECT) => handler.execute({ projectId });
@@ -50,6 +59,28 @@ describe('RemovePreviewForDisconnectHandler', () => {
       }
     });
   }
+
+  it('deletes the waiting rebuild of a merge, whichever step follows', async () => {
+    await savePreviewSettings(settings, PROJECT);
+    await seedBuild(operations, PROJECT, BUILD, 'succeeded');
+    for (const projectId of [PROJECT, OTHER]) {
+      await rebuilds.save(
+        PreviewMergeRebuild.record({
+          projectId,
+          runId: '5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b',
+          mergedCommit: 'e'.repeat(40),
+          mergedAt: NOW,
+          fetchStartedAt: NOW,
+          now: NOW,
+        }),
+      );
+    }
+
+    await expect(run()).resolves.toBe('pending');
+
+    expect(await rebuilds.find(PROJECT)).toBeNull();
+    expect(await rebuilds.find(OTHER)).not.toBeNull();
+  });
 
   it('step 1: deletes the settings when the Project has no operation', async () => {
     await savePreviewSettings(settings, PROJECT);
@@ -136,9 +167,12 @@ describe('RemovePreviewForDisconnectHandler', () => {
   it('treats a removal requested meanwhile as the one to wait for', async () => {
     const failing = new InMemoryPreviewOperationRepository();
     await seedBuild(failing, PROJECT, BUILD, 'succeeded');
-    const racing = new RemovePreviewForDisconnectHandler(settings, failing, {
-      now: () => later(10),
-    });
+    const racing = new RemovePreviewForDisconnectHandler(
+      settings,
+      failing,
+      { now: () => later(10) },
+      rebuilds,
+    );
     const facts = failing.findDisconnectFacts.bind(failing);
     failing.findDisconnectFacts = async (projectId) => {
       const read = await facts(projectId);

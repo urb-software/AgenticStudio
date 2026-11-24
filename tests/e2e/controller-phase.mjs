@@ -1,6 +1,7 @@
 // The environment controller phase of the smoke test, on Linux: a build requested through the
 // operator route and read back from the Preview and its log, then stop, a second build, reset of
-// the data and the disconnect of the Repository, all through the operator routes.
+// the data, a Run merged through Studio that rebuilds the running Preview, and the disconnect of
+// the Repository, all through the operator routes.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 
@@ -31,10 +32,21 @@ function assert(condition, message) {
  * @param {string} options.operatorPassword
  * @param {string} options.repositoryUrl file:// URL of a fixture whose `dev` branch holds compose.yaml
  * @param {string} options.commit the commit of that branch
+ * @param {string} options.githubStubOrigin the stub of the Git host's API the Run's pull request is on
+ * @param {(commit: string) => void} options.advanceIntegrationBranch moves the fixture's `dev` to the commit
  * @param {import('@agentic-studio/database').DatabaseClient} options.db
  */
 export async function runControllerPhase(options) {
-  const { apiOrigin, studioOrigin, operatorPassword, repositoryUrl, commit, db } = options;
+  const {
+    apiOrigin,
+    studioOrigin,
+    operatorPassword,
+    repositoryUrl,
+    commit,
+    githubStubOrigin,
+    advanceIntegrationBranch,
+    db,
+  } = options;
   // Throwaway value, only to prove redaction: it is never committed or reused.
   const secret = `pw-${randomBytes(9).toString('hex')}`;
 
@@ -227,7 +239,105 @@ export async function runControllerPhase(options) {
     'GET /api/previews does not list the running Preview',
   );
 
-  // 3. Disconnect: the Preview is stopped and its data removed, then the disconnect finishes.
+  // 3. A Run merged through Studio rebuilds the running Preview with no other action: one build,
+  //    started by the merge of that Run, at the commit the Clone fetched.
+  const startedRun = await read(`/api/projects/${projectId}/runs`, {
+    method: 'POST',
+    body: JSON.stringify({
+      task: 'Rebuild after the merge [fake:commit]',
+      provider: 'claude_code',
+    }),
+  });
+  assert(startedRun.status === 201, `starting the Run answered ${startedRun.status}`);
+  const runId = startedRun.body.id;
+  const runOf = async () => (await read(`/api/runs/${runId}`)).body;
+  const delivered = await until(
+    runOf,
+    (run) =>
+      ['failed', 'cancelled', 'timed_out'].includes(run.state) ||
+      (run.state === 'succeeded' && run.pullRequest?.url !== undefined),
+    'the Run to deliver its pull request',
+    120_000,
+  );
+  assert(delivered.state === 'succeeded', `the Run is ${delivered.state}`);
+  const reviewedCommit = delivered.commits?.at(-1)?.id ?? '';
+  assert(/^[0-9a-f]{40}$/.test(reviewedCommit), 'the Run has no commit to merge');
+  const [, owner, repository, pullNumber] =
+    /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)$/.exec(delivered.pullRequest.url) ?? [];
+  assert(pullNumber !== undefined, `unexpected pull request link ${delivered.pullRequest.url}`);
+  // The stub's head is the pushed commit, no check runs, and its merge answers with that same
+  // commit, which the fixture's `dev` then holds, as the Git host's merge would leave it.
+  const controlled = await fetch(
+    `${githubStubOrigin}/__control/pulls/${owner}/${repository}/${pullNumber}`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        headSha: reviewedCommit,
+        checkRuns: [],
+        statuses: [],
+        mergeCommit: reviewedCommit,
+      }),
+    },
+  );
+  assert(controlled.status === 200, `the stub control answered ${controlled.status}`);
+  const reviewRequested = await read(`/api/runs/${runId}/merge-review`, { method: 'POST' });
+  assert(reviewRequested.status === 202, `the merge review answered ${reviewRequested.status}`);
+  await until(
+    async () => (await read(`/api/runs/${runId}/merge-review`)).body,
+    (review) => review.state === 'ready' || review.state === 'failed',
+    'the merge review to be prepared',
+    90_000,
+  ).then((review) => assert(review.state === 'ready', `the merge review is ${review.state}`));
+  advanceIntegrationBranch(reviewedCommit);
+  const merge = await read(`/api/runs/${runId}/merge`, {
+    method: 'POST',
+    body: JSON.stringify({ commit: reviewedCommit }),
+  });
+  assert(merge.status === 200, `merging answered ${merge.status}: ${JSON.stringify(merge.body)}`);
+  assert(merge.body.result === 'carried_out', `the merge is ${merge.body.result}`);
+
+  const rebuiltByMerge = await until(
+    previewOf,
+    (preview) =>
+      preview.latestBuild?.startedBy?.kind === 'merge' &&
+      (preview.state === 'running' || preview.latestBuild.status === 'failed'),
+    'the Preview to rebuild after the merge',
+    90_000,
+  );
+  assert(
+    rebuiltByMerge.state === 'running',
+    `the Preview is ${rebuiltByMerge.state} after the merge: ${JSON.stringify(rebuiltByMerge.latestBuild?.failure)}`,
+  );
+  assert(
+    rebuiltByMerge.latestBuild.startedBy.runId === runId,
+    'the rebuild was not started by the merge of this Run',
+  );
+  assert(
+    rebuiltByMerge.running.commit === reviewedCommit,
+    `the Preview runs ${rebuiltByMerge.running.commit}, not the merged commit`,
+  );
+  assert(
+    rebuiltByMerge.running.buildId !== afterReset.running.buildId &&
+      rebuiltByMerge.running.buildId === rebuiltByMerge.latestBuild.id,
+    'the running build is not the one the merge started',
+  );
+  assert(
+    rebuiltByMerge.behind === false && rebuiltByMerge.mergeRebuild === null,
+    'the Preview still says it is behind or waits for a rebuild',
+  );
+  assert(
+    JSON.stringify((await runOf()).previewAfterMerge) ===
+      JSON.stringify({ projectId, state: 'running' }),
+    'the Run does not say the Preview runs the merged commit',
+  );
+  assert(
+    (await db.previewOperation.count({
+      where: { projectId, kind: 'build', startedByRunId: runId },
+    })) === 1,
+    'the merge did not start exactly one build',
+  );
+
+  // 4. Disconnect: the Preview is stopped and its data removed, then the disconnect finishes.
   const disconnect = await read(`/api/projects/${projectId}/repository`, { method: 'DELETE' });
   assert(
     disconnect.status === 202 || disconnect.status === 204,
@@ -248,7 +358,7 @@ export async function runControllerPhase(options) {
     'the disconnect left Preview operations behind',
   );
   console.log(
-    '[e2e] controller phase: the Preview was built, stopped, rebuilt, reset and removed on disconnect through the operator routes; no answer held the secret',
+    '[e2e] controller phase: the Preview was built, stopped, rebuilt, reset, rebuilt by the merge of a Run and removed on disconnect through the operator routes; no answer held the secret',
   );
 }
 

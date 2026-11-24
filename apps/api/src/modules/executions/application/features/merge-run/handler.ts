@@ -25,6 +25,10 @@ import {
   type RunIntegrationFetches,
   type RunMergeMethods,
 } from '../../../../projects/contracts/index.js';
+import {
+  MERGED_RUN_PREVIEWS,
+  type MergedRunPreviews,
+} from '../../../../environments/contracts/index.js';
 import { mergeApprovalView, type MergeApprovalView } from '../../merge-approval-view.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import {
@@ -61,6 +65,7 @@ export class MergeRunHandler {
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(RUN_INTEGRATION_FETCHES) private readonly integrationFetches: RunIntegrationFetches,
     @Inject(RUN_MERGE_METHODS) private readonly mergeMethods: RunMergeMethods,
+    @Inject(MERGED_RUN_PREVIEWS) private readonly previews: MergedRunPreviews,
   ) {}
 
   /** Throws `RunNotFoundError` or `MergeRefusedError`. */
@@ -251,7 +256,25 @@ export class MergeRunHandler {
     }
     const started = approval.cloneFetchStarted(this.clock.now());
     await this.approvals.save(started);
+    await this.tellPreview(projectId, started);
     return started;
+  }
+
+  /** Only after the merge result and the fetch start are stored; nothing the Preview does reaches the merge. */
+  private async tellPreview(projectId: string, approval: MergeApproval): Promise<void> {
+    if (approval.mergedCommit === null || approval.completedAt === null) return;
+    if (approval.cloneFetchStartedAt === null) return;
+    try {
+      await this.previews.merged({
+        projectId,
+        runId: approval.runId,
+        mergedCommit: approval.mergedCommit,
+        mergedAt: approval.completedAt,
+        fetchStartedAt: approval.cloneFetchStartedAt,
+      });
+    } catch {
+      // The contract does not throw; a Preview that does anyway must not undo a merge.
+    }
   }
 
   private requireAvailable(run: Run): void {

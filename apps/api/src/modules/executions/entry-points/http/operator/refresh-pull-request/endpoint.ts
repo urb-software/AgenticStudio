@@ -52,11 +52,18 @@ export class RefreshPullRequestEndpoint {
         runId,
         onOpen: parsed.data.onOpen === true,
       });
-      const { run, followUp, merge, latestMergeApproval, integrationBranch } =
+      const { run, followUp, merge, latestMergeApproval, integrationBranch, previewAfterMerge } =
         await this.getRun.execute({
           runId,
         });
-      return toRunResponse(run, followUp, merge, latestMergeApproval, integrationBranch);
+      return toRunResponse(
+        run,
+        followUp,
+        merge,
+        latestMergeApproval,
+        integrationBranch,
+        previewAfterMerge,
+      );
     } catch (error) {
       if (error instanceof RunNotFoundError) throw runNotFound();
       if (error instanceof PullRequestNotRefreshableError) throw pullRequestNotRefreshable();

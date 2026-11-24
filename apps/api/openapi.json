@@ -3703,6 +3703,9 @@
           "latestMergeApproval": {
             "$ref": "#/components/schemas/MergeApproval_Output"
           },
+          "previewAfterMerge": {
+            "$ref": "#/components/schemas/RunPreviewAfterMerge_Output"
+          },
           "cancelRequestedAt": {
             "type": "string",
             "format": "date-time",
@@ -4024,6 +4027,33 @@
           "method",
           "checksSeen",
           "result"
+        ],
+        "additionalProperties": false
+      },
+      "RunPreviewAfterMerge_Output": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "not_configured",
+              "not_started",
+              "waiting",
+              "building",
+              "running",
+              "failed",
+              "replaced"
+            ]
+          }
+        },
+        "required": [
+          "projectId",
+          "state"
         ],
         "additionalProperties": false
       },
@@ -5378,6 +5408,42 @@
                   "commit": {
                     "type": "string"
                   },
+                  "startedBy": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "operator"
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "merge"
+                          },
+                          "runId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "runId"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
                   "status": {
                     "type": "string",
                     "enum": [
@@ -5543,6 +5609,7 @@
                 "required": [
                   "id",
                   "commit",
+                  "startedBy",
                   "status",
                   "requestedAt",
                   "startedAt",
@@ -5664,6 +5731,48 @@
               "connected"
             ],
             "additionalProperties": false
+          },
+          "behind": {
+            "type": "boolean"
+          },
+          "mergeRebuild": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "runId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "waiting",
+                      "failed"
+                    ]
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "since": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  }
+                },
+                "required": [
+                  "runId",
+                  "status",
+                  "reason",
+                  "since"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -5674,7 +5783,9 @@
           "running",
           "latestBuild",
           "latestChange",
-          "controller"
+          "controller",
+          "behind",
+          "mergeRebuild"
         ],
         "additionalProperties": false
       },
@@ -5925,6 +6036,42 @@
                   "commit": {
                     "type": "string"
                   },
+                  "startedBy": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "operator"
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "merge"
+                          },
+                          "runId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "runId"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
                   "status": {
                     "type": "string",
                     "enum": [
@@ -6090,6 +6237,7 @@
                 "required": [
                   "id",
                   "commit",
+                  "startedBy",
                   "status",
                   "requestedAt",
                   "startedAt",
@@ -6212,6 +6360,48 @@
             ],
             "additionalProperties": false
           },
+          "behind": {
+            "type": "boolean"
+          },
+          "mergeRebuild": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "runId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "waiting",
+                      "failed"
+                    ]
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "since": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  }
+                },
+                "required": [
+                  "runId",
+                  "status",
+                  "reason",
+                  "since"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "removedPorts": {
             "type": "array",
             "items": {
@@ -6240,7 +6430,9 @@
           "running",
           "latestBuild",
           "latestChange",
-          "controller"
+          "controller",
+          "behind",
+          "mergeRebuild"
         ],
         "additionalProperties": false
       },
@@ -6318,6 +6510,42 @@
           },
           "commit": {
             "type": "string"
+          },
+          "startedBy": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "operator"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "merge"
+                  },
+                  "runId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "runId"
+                ],
+                "additionalProperties": false
+              }
+            ]
           },
           "status": {
             "type": "string",
@@ -6484,6 +6712,7 @@
         "required": [
           "id",
           "commit",
+          "startedBy",
           "status",
           "requestedAt",
           "startedAt",

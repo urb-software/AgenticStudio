@@ -102,6 +102,22 @@ export class PrismaPreviewOperationRepository implements PreviewOperationReposit
     });
   }
 
+  async findMergeBuild(
+    projectId: string,
+    runId: string,
+    commit: string,
+  ): Promise<PreviewOperation | null> {
+    const row = await this.db.previewOperation.findFirst({
+      where: {
+        projectId,
+        kind: 'build',
+        OR: [{ startedByRunId: runId }, { commit }],
+      },
+      orderBy: [{ requestedAt: 'desc' }, { id: 'desc' }],
+    });
+    return row === null ? null : toOperation(row);
+  }
+
   async find(id: string): Promise<PreviewOperation | null> {
     return findOperation(this.db, id);
   }
@@ -317,6 +333,7 @@ async function insert(db: Executor, operation: PreviewOperation): Promise<void> 
               cpuPercent: data.build.limits.cpuPercent,
               tasksMax: data.build.limits.tasksMax,
               buildMinutes: data.build.limits.buildMinutes,
+              startedByRunId: data.build.startedByRunId,
             }),
       },
     });
@@ -386,6 +403,7 @@ function toOperation(row: Prisma.PreviewOperationGetPayload<object>): PreviewOpe
             tasksMax: row.tasksMax!,
             buildMinutes: row.buildMinutes!,
           },
+          startedByRunId: row.startedByRunId,
         }
       : null;
   if (

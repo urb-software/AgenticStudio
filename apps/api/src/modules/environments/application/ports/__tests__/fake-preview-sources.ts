@@ -23,7 +23,7 @@ export const COMMIT = 'c'.repeat(40);
  * test sets another answer.
  */
 export class FakePreviewSources implements RunPreviewSources {
-  statusAnswer: PreviewSourceStatus = { status: 'ready', commit: COMMIT };
+  statusAnswer: PreviewSourceStatus = { status: 'ready', commit: COMMIT, fetchedAt: null };
   archiveAnswer: PreviewArchiveResult = { status: 'commit_missing' };
   fileAnswer: IntegrationFileResult = { status: 'found', text: COMPOSE_TEXT, commit: COMMIT };
 

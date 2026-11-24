@@ -69,6 +69,7 @@ export class SavePreviewSettingsHandler {
           projectId,
           configured: true,
           domain: this.domain.domain,
+          source: { ready: true, commit: source.commit, fetchedAt: source.fetchedAt },
         }),
       }),
       removedPorts: verdict.removedPorts,
