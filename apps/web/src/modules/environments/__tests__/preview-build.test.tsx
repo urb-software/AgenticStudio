@@ -14,8 +14,7 @@ import {
   QUEUED_BUILD,
 } from './fake-preview-api';
 
-// The build card of the Preview page: the state, the Build button's rules, the latest build and
-// its log, with the API faked at `fetch`. Names are example.test ones.
+// The build card of the Preview page, with the API faked at `fetch`.
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
@@ -281,6 +280,56 @@ describe('Preview build card: state and button', () => {
     expect(screen.getByText('The build was not started.')).toBeTruthy();
   });
 
+  it('falls back to the banner when a 422 holds no refusals', async () => {
+    const api = fakePreviewApi({ settings: SETTINGS });
+    renderPage();
+    const region = await card();
+    api.respondNext(422, problem(422, 'Preview refused'));
+
+    await userEvent.click(within(region).getByRole('button', { name: 'Build' }));
+
+    expect(await screen.findByText('Preview refused (test)')).toBeTruthy();
+  });
+
+  it('keeps the button disabled while the request is pending', async () => {
+    const api = fakePreviewApi({ settings: SETTINGS });
+    let release = () => {};
+    api.state.buildGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    renderPage();
+    const region = await card();
+
+    await userEvent.click(within(region).getByRole('button', { name: 'Build' }));
+
+    await waitFor(() => expect(api.builds).toHaveLength(1));
+    expect(within(region).getByRole('button', { name: 'Build' })).toHaveProperty('disabled', true);
+    release();
+    expect(await within(region).findByText('Building')).toBeTruthy();
+  });
+
+  it('keeps the live text the same when the Preview is read again unchanged', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const api = fakePreviewApi({
+      settings: SETTINGS,
+      state: 'running',
+      running: RUNNING,
+      latestBuild: SUCCEEDED,
+    });
+    api.state.logs.set(BUILD_ID, []);
+    api.state.finalBuilds.add(BUILD_ID);
+    renderPage();
+    const region = await card();
+    const live = () => region.querySelector('[aria-live="polite"]')!.textContent;
+    const before = live();
+    expect(before).toContain(COMMIT.slice(0, 7));
+    expect(before).not.toMatch(/ago|minute|hour|now/);
+
+    await act(() => vi.advanceTimersByTimeAsync(16_000));
+
+    expect(live()).toBe(before);
+  });
+
   it('keeps the summary a polite live region', async () => {
     fakePreviewApi({ settings: SETTINGS });
     renderPage();
@@ -351,6 +400,44 @@ describe('Preview build card: polling and log', () => {
     expect(await screen.findByText('3 lines')).toBeTruthy();
     expect(api.eventRequests.at(-1)).toMatchObject({ after: 2 });
 
+    const requests = api.eventRequests.length;
+    await act(() => vi.advanceTimersByTimeAsync(10_000));
+    expect(api.eventRequests).toHaveLength(requests);
+  });
+
+  it('does not read the log while the tab is hidden', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+    const api = fakePreviewApi({
+      settings: SETTINGS,
+      state: 'building',
+      latestBuild: { ...QUEUED_BUILD, status: 'building' },
+    });
+    api.state.logs.set(BUILD_ID, [logLine(1, 'one')]);
+    renderPage();
+    await card();
+
+    await act(() => vi.advanceTimersByTimeAsync(6_000));
+    expect(api.eventRequests).toHaveLength(0);
+
+    hidden.mockReturnValue(false);
+    await act(() => vi.advanceTimersByTimeAsync(2_100));
+    expect(await screen.findByText('1 line')).toBeTruthy();
+    expect(api.eventRequests.length).toBeGreaterThan(0);
+  });
+
+  it('stops and says the log is not available when the server has none', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const api = fakePreviewApi({
+      settings: SETTINGS,
+      state: 'building',
+      latestBuild: { ...QUEUED_BUILD, status: 'building' },
+    });
+    renderPage();
+
+    expect(await screen.findByText('The log is not available.')).toBeTruthy();
+    expect(screen.queryByText('Streaming')).toBeNull();
+    expect(screen.queryByText(/Reconnecting/)).toBeNull();
     const requests = api.eventRequests.length;
     await act(() => vi.advanceTimersByTimeAsync(10_000));
     expect(api.eventRequests).toHaveLength(requests);

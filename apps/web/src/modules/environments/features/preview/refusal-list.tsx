@@ -2,8 +2,8 @@ import { Banner } from '@/shared/components/banner';
 import type { PreviewRefusal } from '../../../../platform/api';
 
 /**
- * Every reason the API refused the settings, each with its place in the Compose file (or the
- * request field). The wording is the API's: fixed per code, never a value from the file.
+ * Every reason the API refused a request about the Compose file, each with its place in the file
+ * (or the request field). The wording is the API's: fixed per code, never a value from the file.
  */
 export function RefusalList({
   refusals,
@@ -11,7 +11,7 @@ export function RefusalList({
   retry = 'save again',
 }: {
   refusals: PreviewRefusal[];
-  /** What was refused: the settings (default) or a build. */
+  /** What was not done: the settings save (default) or a build. */
   title?: string;
   /** What to do once the repository is fixed. */
   retry?: string;

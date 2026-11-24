@@ -31,10 +31,6 @@ function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': contentType } });
 }
 
-/**
- * A fake of the Preview API behind `fetch`: `state` is what the server keeps, and a test scripts
- * the answer of the next save with `respondNextSave`.
- */
 export const BUILD_ID = '7c1d9a52-3b1e-4f6a-8a2d-5e4f3a2b1c0d';
 export const COMMIT = '0123456789abcdef0123456789abcdef01234567';
 
@@ -66,6 +62,10 @@ export function logLine(
   };
 }
 
+/**
+ * A fake of the Preview API behind `fetch`: `state` is what the server keeps, and a test scripts
+ * the answer of the next save, removal, build request or log read with `respondNext`.
+ */
 export function fakePreviewApi(
   initial: {
     settings?: Settings | null;
@@ -90,6 +90,8 @@ export function fakePreviewApi(
     logs: new Map<string, PreviewBuildEventsOutput['events']>(),
     finalBuilds: new Set<string>(),
     logTruncated: false,
+    /** While set, a build request waits for it before it answers. */
+    buildGate: null as Promise<void> | null,
   };
   const saves: unknown[] = [];
   const removes: number[] = [];
@@ -122,6 +124,7 @@ export function fakePreviewApi(
       const scriptedAnswer = scripted.shift();
       if (buildRoute[2] === undefined) {
         builds.push(Date.now());
+        await state.buildGate;
         if (scriptedAnswer) return json(scriptedAnswer.status, scriptedAnswer.body);
         state.latestBuild = { ...QUEUED_BUILD };
         state.stateOverride = 'building';
@@ -171,7 +174,7 @@ export function fakePreviewApi(
     removes,
     builds,
     eventRequests,
-    /** The next save or removal gets this response instead of the default. */
+    /** The next save, removal, build request or log read gets this response instead. */
     respondNext(status: number, body: unknown) {
       scripted.push({ status, body });
     },

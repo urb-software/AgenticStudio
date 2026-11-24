@@ -63,8 +63,8 @@ function Detail({ term, children }: { term: string; children: ReactNode }) {
   );
 }
 
-/** The one sentence that says what the Preview is now. */
-function Summary({ preview, now }: { preview: PreviewOutput; now: number }) {
+/** What the Preview is now: the state and the commit only, so a refetch never re-announces it. */
+function Summary({ preview }: { preview: PreviewOutput }) {
   const { state, running, latestBuild } = preview;
   switch (state) {
     case 'not_configured':
@@ -81,8 +81,7 @@ function Summary({ preview, now }: { preview: PreviewOutput; now: number }) {
     case 'running':
       return running ? (
         <>
-          Running commit <Commit commit={running.commit} /> since{' '}
-          <Time iso={running.since} now={now} />.
+          Running commit <Commit commit={running.commit} />.
         </>
       ) : (
         <>The Preview is running.</>
@@ -94,6 +93,9 @@ function Summary({ preview, now }: { preview: PreviewOutput; now: number }) {
 
 function BuildLog({ projectId, build }: { projectId: string; build: PreviewBuildOutput }) {
   const log = usePreviewBuildLog(projectId, build.id);
+  if (log.unavailable) {
+    return <p className="m-0 text-small text-text-muted">The log is not available.</p>;
+  }
   return (
     <div className="flex flex-col gap-2">
       <LogViewer
@@ -179,10 +181,7 @@ function buttonLabel(state: PreviewOutput['state']): string {
 
 type BuildCardProps = { projectId: string; preview: PreviewOutput; dataUpdatedAt: number };
 
-/**
- * The Preview's state, the Build button, the link to the running Preview and the latest build with
- * its log. Everything shown is what the API says; the page never asks the Preview itself.
- */
+/** The Preview's state, its Build button and link, and the latest build with its log. */
 export function BuildCard({ projectId, preview, dataUpdatedAt }: BuildCardProps) {
   const request = useRequestPreviewBuild(projectId);
   const { state, settings, running, latestBuild } = preview;
@@ -190,8 +189,8 @@ export function BuildCard({ projectId, preview, dataUpdatedAt }: BuildCardProps)
   const configured = settings !== null;
   const canBuild = configured && preview.repository.ready && preview.controller.connected;
   const refusals = previewRefusalsOf(request.error);
-  const conflict =
-    request.error instanceof ApiError && request.error.status !== 422 ? request.error : null;
+  const otherError =
+    request.error instanceof ApiError && refusals.length === 0 ? request.error : null;
 
   return (
     <Card aria-labelledby={TITLE_ID}>
@@ -203,8 +202,13 @@ export function BuildCard({ projectId, preview, dataUpdatedAt }: BuildCardProps)
           <div className="flex flex-wrap items-center gap-3">
             <StatusPill status={pill.status}>{pill.label}</StatusPill>
             <p aria-live="polite" className="m-0 min-w-0 flex-1 text-body">
-              <Summary preview={preview} now={dataUpdatedAt} />
+              <Summary preview={preview} />
             </p>
+            {state === 'running' && running ? (
+              <span className="text-small text-text-muted">
+                since <Time iso={running.since} now={dataUpdatedAt} />
+              </span>
+            ) : null}
           </div>
           {configured && !preview.controller.connected ? (
             <Banner tone="warning">
@@ -218,9 +222,9 @@ export function BuildCard({ projectId, preview, dataUpdatedAt }: BuildCardProps)
               retry="build again"
             />
           ) : null}
-          {conflict ? (
+          {otherError ? (
             <Banner tone="danger" title="The build was not started.">
-              {conflict.message}
+              {otherError.message}
             </Banner>
           ) : null}
           {canBuild || running?.url ? (

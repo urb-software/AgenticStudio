@@ -14,14 +14,10 @@ import {
 /** One project's Preview: its settings, hostname and whether the Repository can be read. */
 const previewKey = (projectId: string) => ['projects', projectId, 'preview'] as const;
 
-/** How often the Preview is read while a build is under way, and otherwise. */
 export const PREVIEW_BUILDING_POLL_MS = 2_000;
 export const PREVIEW_IDLE_POLL_MS = 15_000;
 
-/**
- * Read every 2 s while a build is requested or claimed, otherwise every 15 s (the controller
- * and the sweeps move it), and not in a hidden tab.
- */
+/** Polled fast while a build is under way and slowly otherwise, never in a hidden tab. */
 export function usePreview(projectId: string) {
   return useQuery({
     queryKey: previewKey(projectId),
@@ -32,11 +28,7 @@ export function usePreview(projectId: string) {
   });
 }
 
-/**
- * Asks for a build. The command's answer is the queued build, which the page does not keep: the
- * mutation stays pending until the Preview has been read again, so the page shows the state the
- * server holds (frontend.md �4).
- */
+/** Asks for a build; the mutation stays pending until the Preview has been read again. */
 export function useRequestPreviewBuild(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -45,7 +37,6 @@ export function useRequestPreviewBuild(projectId: string) {
   });
 }
 
-/** How often a build's log is read again while it is not final. */
 export const PREVIEW_LOG_POLL_MS = 2_000;
 const PREVIEW_LOG_PAGE = 500;
 
@@ -57,9 +48,17 @@ export type PreviewBuildLog = {
   truncated: boolean;
   /** True while the last read failed; the next one is tried anyway. */
   failing: boolean;
+  /** True when the server has no such log (404): nothing will come. */
+  unavailable: boolean;
 };
 
-const EMPTY_LOG: PreviewBuildLog = { rows: [], complete: false, truncated: false, failing: false };
+const EMPTY_LOG: PreviewBuildLog = {
+  rows: [],
+  complete: false,
+  truncated: false,
+  failing: false,
+  unavailable: false,
+};
 
 /**
  * A build's log, read by polling: pages after the last `seq` it has, back to back while `next`
@@ -112,9 +111,11 @@ export function usePreviewBuildLog(projectId: string, buildId: string): PreviewB
         timer = setTimeout(() => void read(), page.next === undefined ? PREVIEW_LOG_POLL_MS : 0);
       } catch (error) {
         if (cancelled) return;
+        if (error instanceof ApiError && error.status === 404) {
+          publish({ failing: false, unavailable: true });
+          return;
+        }
         publish({ failing: true });
-        // The build is not there (or not this Project's): nothing will ever come.
-        if (error instanceof ApiError && error.status === 404) return;
         timer = setTimeout(() => void read(), PREVIEW_LOG_POLL_MS);
       }
     };
