@@ -211,6 +211,7 @@ const TOP_LEVEL_LOCK = /\.lock$/;
 
 /** Where archives wait for a Preview build to fetch them, below the temp root. */
 const ARCHIVE_DIR = 'preview-archives';
+const ARCHIVE_ATTRIBUTES = '* -export-ignore -export-subst\n';
 const ARCHIVE_FILE = /^archive-[0-9a-f-]{36}\.tar$/;
 
 const COMMIT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
@@ -924,6 +925,10 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
           const gitDir = `--git-dir=${clone}`;
           const known = await this.git(context, [gitDir, 'cat-file', '-e', `${commit}^{commit}`]);
           if (known.exitCode !== 0) return { status: 'commit_missing' as const };
+          // The tracked tree as stored: the tree's own attributes (`export-ignore`, `export-subst`)
+          // would change it, and this file ranks above them.
+          await mkdir(join(clone, 'info'), { recursive: true });
+          await writeFile(join(clone, 'info', 'attributes'), ARCHIVE_ATTRIBUTES);
           const folder = join(this.tempRoot, ARCHIVE_DIR);
           await mkdir(folder, { recursive: true, mode: 0o700 });
           const file = join(folder, `archive-${randomUUID()}.tar`);

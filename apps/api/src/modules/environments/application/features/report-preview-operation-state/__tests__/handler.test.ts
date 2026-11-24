@@ -149,6 +149,57 @@ describe('ReportPreviewOperationStateHandler', () => {
     expect(secrets.values.has(secretId)).toBe(true);
   });
 
+  it('redacts the place and the message of each refusal', async () => {
+    await claimed();
+    known = ['hunter2-test'];
+
+    await report({
+      state: 'failed',
+      failure: {
+        code: 'validation_refused',
+        detail: 'x',
+        refusals: [
+          { code: 'privileged', place: 'services.hunter2-test', message: 'near hunter2-test' },
+        ],
+      },
+    });
+
+    const refusals = (await operations.find(ID))?.failure?.refusals ?? [];
+    expect(JSON.stringify(refusals)).not.toContain('hunter2-test');
+  });
+
+  it('reads the snapshot values only for the holder of the operation', async () => {
+    await claimed();
+    let reads = 0;
+    const counting = new ReportPreviewOperationStateHandler(
+      operations,
+      {
+        forOperation: () => {
+          reads += 1;
+          return Promise.resolve([]);
+        },
+      },
+      secrets,
+      { now: () => T1 },
+    );
+    const failed = {
+      state: 'failed' as const,
+      failure: { code: 'build_failed' as const, detail: 'x' },
+    };
+
+    await expect(
+      counting.execute({ operationId: ID, controllerId: OTHER, ...failed }),
+    ).rejects.toBeInstanceOf(PreviewOperationNotHeldError);
+    await expect(
+      counting.execute({
+        operationId: '99999999-9999-4999-8999-999999999999',
+        controllerId: CONTROLLER,
+        ...failed,
+      }),
+    ).rejects.toBeInstanceOf(PreviewOperationNotFoundError);
+    expect(reads).toBe(0);
+  });
+
   it('answers not found for an unknown operation', async () => {
     await expect(report({})).rejects.toBeInstanceOf(PreviewOperationNotFoundError);
   });

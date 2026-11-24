@@ -26,7 +26,11 @@ describe('SweepPreviewEnvironmentFilesHandler', () => {
   beforeEach(() => {
     operations = new InMemoryPreviewOperationRepository();
     secrets = new InMemorySecretStore();
-    handler = new SweepPreviewEnvironmentFilesHandler(operations, secrets);
+    handler = new SweepPreviewEnvironmentFilesHandler(operations, secrets, {
+      leaseSeconds: 60,
+      logMaxBytes: 1024,
+      snapshotGraceMs: PREVIEW_SNAPSHOT_GRACE_MS,
+    });
   });
 
   const owner = { owner: PREVIEW_ENVIRONMENT_FILE_SECRET_OWNER };

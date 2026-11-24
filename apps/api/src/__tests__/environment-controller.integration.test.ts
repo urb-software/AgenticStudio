@@ -225,12 +225,17 @@ describe('Environment controller API (PostgreSQL + Redis via Testcontainers)', (
     it('answers 401 on every controller route while no controller token is configured', async () => {
       const closed = await startStudioApp({ ...services.config, controllerToken: null });
       try {
+        const server = closed.getHttpServer();
         for (const [, path, body] of bodies) {
-          expectProblem(
-            await request(closed.getHttpServer()).post(path).set(controllerAuth).send(body),
-            401,
-          );
+          expectProblem(await request(server).post(path).set(controllerAuth).send(body), 401);
         }
+        expectProblem(
+          await request(server)
+            .get(`${base}/${randomUUID()}/source`)
+            .query({ controllerId: CONTROLLER })
+            .set(controllerAuth),
+          401,
+        );
       } finally {
         await closed.close();
       }
@@ -512,6 +517,24 @@ describe('Environment controller API (PostgreSQL + Redis via Testcontainers)', (
       expect(text).not.toContain('abc.def-123');
     });
 
+    it('accepts a legal batch of control characters, whose JSON escaping passes 100 KiB', async () => {
+      const id = await claimed();
+      const control = '\u0001'.repeat(2048);
+      const lines = Array.from({ length: 32 }, (_, index) => line(index + 1, control));
+      expect(JSON.stringify({ controllerId: CONTROLLER, lines }).length).toBeGreaterThan(
+        300 * 1024,
+      );
+
+      const response = await log(id, { controllerId: CONTROLLER, lines });
+
+      expect(response.status).toBe(200);
+      const other = await http()
+        .post(`${base}/${id}/log`)
+        .set(bearer(WORKER_TOKEN))
+        .send({ controllerId: CONTROLLER, lines });
+      expect(other.status).toBe(413);
+    });
+
     it('ignores a re-sent seq, so the same batch twice stores it once', async () => {
       const id = await claimed();
       const batch = { controllerId: CONTROLLER, lines: [line(1, 'one'), line(2, 'two')] };
@@ -652,7 +675,7 @@ describe('Environment controller API (PostgreSQL + Redis via Testcontainers)', (
 
       const stop = await insertOther(projectId, 'stop');
       await claim();
-      expectProblem(await source(stop), 409, 'preview-operation-not-held');
+      expectProblem(await source(stop), 409, 'preview-operation-not-a-build');
     });
 
     it('answers 404 for an unknown operation and 422 without a controller id', async () => {

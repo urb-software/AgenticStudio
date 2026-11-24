@@ -5,10 +5,11 @@ import {
   PREVIEW_OPERATION_REPOSITORY,
   type PreviewOperationRepository,
 } from '../../../domain/repositories/preview-operation-repository.js';
+import { PREVIEW_ENVIRONMENT_FILE_SECRET_OWNER } from '../../ports/preview-environment-file-snapshots.js';
 import {
-  PREVIEW_ENVIRONMENT_FILE_SECRET_OWNER,
-  PREVIEW_SNAPSHOT_GRACE_MS,
-} from '../../ports/preview-environment-file-snapshots.js';
+  PREVIEW_OPERATION_SETTINGS,
+  type PreviewOperationSettings,
+} from '../../ports/preview-operation-settings.js';
 
 /**
  * A snapshot is orphaned when the process stops between storing it and saving its reference, or
@@ -22,6 +23,7 @@ export class SweepPreviewEnvironmentFilesHandler {
   constructor(
     @Inject(PREVIEW_OPERATION_REPOSITORY) private readonly operations: PreviewOperationRepository,
     @Inject(SECRET_STORE) private readonly secrets: SecretStore,
+    @Inject(PREVIEW_OPERATION_SETTINGS) private readonly settings: PreviewOperationSettings,
   ) {}
 
   async execute(): Promise<void> {
@@ -31,7 +33,7 @@ export class SweepPreviewEnvironmentFilesHandler {
       const referenced = new Set(await this.operations.listEnvironmentFileSecrets());
       const candidates = await this.secrets.listOlderThan(
         PREVIEW_ENVIRONMENT_FILE_SECRET_OWNER,
-        PREVIEW_SNAPSHOT_GRACE_MS,
+        this.settings.snapshotGraceMs,
       );
       if (candidates.length === 0) return;
       orphans = candidates.filter((secretId) => !referenced.has(secretId));

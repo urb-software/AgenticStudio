@@ -57,6 +57,12 @@ export const PREVIEW_LOG_LINE_MAX_BYTES = 2048;
 export const PREVIEW_LOG_BATCH_MAX_LINES = 100;
 export const PREVIEW_LOG_BATCH_MAX_BYTES = 64 * 1024;
 
+/**
+ * Largest request body of a log batch: 64 KiB of text escaped as six bytes per control character,
+ * plus the lines' fields.
+ */
+export const PREVIEW_LOG_REQUEST_MAX_BYTES = 512 * 1024;
+
 /** The source archive of a build: at most this many bytes and entries. */
 export const PREVIEW_ARCHIVE_MAX_BYTES = 256 * 1024 * 1024;
 export const PREVIEW_ARCHIVE_MAX_ENTRIES = 50_000;
@@ -75,6 +81,7 @@ export const CONTROLLER_PROBLEM_TYPES = {
   operationNotHeld: 'urn:agentic-studio:problem:preview-operation-not-held',
   sourceUnavailable: 'urn:agentic-studio:problem:preview-operation-source-unavailable',
   sourceTooLarge: 'urn:agentic-studio:problem:preview-operation-source-too-large',
+  operationNotABuild: 'urn:agentic-studio:problem:preview-operation-not-a-build',
 } as const;
 
 /** The Compose project name of a Preview: derived from the Project's id. */

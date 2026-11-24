@@ -2,7 +2,7 @@ import type { ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { operationSourceQuerySchema } from '@agentic-studio/contracts';
-import { Get, Logger, Param, Query, Res } from '@nestjs/common';
+import { Get, HttpStatus, Logger, Param, Query, Res } from '@nestjs/common';
 import { EnvironmentControllerEndpoint } from '../../../../../../platform/auth/controller-route.js';
 import {
   FieldProblemException,
@@ -24,7 +24,6 @@ import {
   operationSourceTooLarge,
   operationSourceUnavailable,
 } from '../../shared/problems.js';
-import { HttpStatus } from '@nestjs/common';
 
 @EnvironmentControllerEndpoint('operations')
 export class GetOperationSourceEndpoint {

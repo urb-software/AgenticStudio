@@ -10,6 +10,15 @@ import {
   startStudioServices,
   type StudioServices,
 } from '../../../../../__tests__/studio-test-app.js';
+import { SECRET_STORE, type SecretStore } from '../../../../../platform/secrets/index.js';
+import {
+  PREVIEW_OPERATION_LOG,
+  type PreviewOperationLog,
+} from '../../../application/ports/preview-operation-log.js';
+import { PREVIEW_ENVIRONMENT_FILE_SECRET_OWNER } from '../../../application/ports/preview-environment-file-snapshots.js';
+import { SweepPreviewEnvironmentFilesHandler } from '../../../application/features/sweep-preview-environment-files/handler.js';
+import { PreviewLogLine } from '../../../domain/value-objects/preview-log-line.js';
+import { PreviewLogRedaction } from '../../../domain/value-objects/preview-log-redaction.js';
 import { RequestPreviewOperationHandler } from '../../../application/features/request-preview-operation/handler.js';
 import { PreviewOperation } from '../../../domain/entities/preview-operation.js';
 import {
@@ -152,6 +161,58 @@ describe('the Preview operation store follows the rules of the domain (PostgreSQ
 
     expect(released).toEqual([secretId]);
     expect(await operations().listEnvironmentFileSecrets()).toEqual([]);
+  });
+
+  it('appends log lines for exactly the holder that the entity accepts', async () => {
+    const indexes = await fixtures(4, [
+      { project: 0, status: 'claimed', requestedAt: -400, heartbeatAt: -5 },
+      { project: 1, status: 'requested', requestedAt: -400 },
+      { project: 2, status: 'succeeded', requestedAt: -400 },
+      { project: 3, status: 'claimed', requestedAt: -400, heartbeatAt: -5 },
+    ]);
+    const log = app.get<PreviewOperationLog>(PREVIEW_OPERATION_LOG);
+    const line = PreviewLogLine.load(
+      { seq: 1, at: NOW, stream: 'build', text: 'x' },
+      PreviewLogRedaction.of([]),
+    );
+
+    for (const id of indexes.keys()) {
+      const operation = (await operations().find(id))!;
+      for (const controllerId of [operation.claimedBy ?? CONTROLLER, randomUUID()]) {
+        let held = true;
+        try {
+          operation.assertHeldBy(controllerId);
+        } catch {
+          held = false;
+        }
+        const appended = await log.append(id, controllerId, [line], 1000);
+        expect(appended !== null, `${operation.status} for ${controllerId}`).toBe(held);
+        if (held) await db().previewOperationLine.deleteMany({ where: { operationId: id } });
+      }
+    }
+  });
+
+  it('sweeps an old snapshot no operation references and keeps a referenced one', async () => {
+    await fixtures(1, [{ project: 0, status: 'claimed', requestedAt: -400, heartbeatAt: -5 }]);
+    const store = app.get<SecretStore>(SECRET_STORE);
+    const owner = { owner: PREVIEW_ENVIRONMENT_FILE_SECRET_OWNER };
+    const orphan = await store.put('DB=orphan-value-0001', owner);
+    const referenced = await store.put('DB=referenced-value-0002', owner);
+    await db().previewOperation.updateMany({
+      data: { environmentFilePath: '.env', environmentFileSecretId: referenced },
+    });
+    const sweep = new SweepPreviewEnvironmentFilesHandler(operations(), store, {
+      leaseSeconds: LEASE_SECONDS,
+      logMaxBytes: 1024,
+      snapshotGraceMs: 0,
+    });
+
+    await sweep.execute();
+
+    const left = await store.listOlderThan(PREVIEW_ENVIRONMENT_FILE_SECRET_OWNER, 0);
+    expect(left).toContain(referenced);
+    expect(left).not.toContain(orphan);
+    await store.delete(referenced);
   });
 
   describe('the migration', () => {

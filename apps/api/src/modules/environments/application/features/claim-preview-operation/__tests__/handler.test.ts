@@ -37,7 +37,7 @@ describe('ClaimPreviewOperationHandler', () => {
       operations,
       environmentFiles,
       secrets,
-      { leaseSeconds: 60, logMaxBytes: 1024 },
+      { leaseSeconds: 60, logMaxBytes: 1024, snapshotGraceMs: 3_600_000 },
       { now: () => NOW },
     );
   });
@@ -83,6 +83,7 @@ describe('ClaimPreviewOperationHandler', () => {
       id: '00000000-0000-4000-8000-000000000000',
       projectId: OTHER_PROJECT,
       kind: 'build',
+      composeProject: `preview-${OTHER_PROJECT.replaceAll('-', '')}`,
       previewLabel: `preview-${OTHER_PROJECT.replaceAll('-', '').slice(0, 12)}`,
       build: {
         commit: 'a'.repeat(40),
@@ -104,6 +105,7 @@ describe('ClaimPreviewOperationHandler', () => {
       id: '11111111-1111-4111-8111-111111111111',
       projectId: PROJECT,
       kind: 'remove_data',
+      composeProject: `preview-${PROJECT.replaceAll('-', '')}`,
       previewLabel: `preview-${PROJECT.replaceAll('-', '').slice(0, 12)}`,
       build: null,
       environmentFile: null,
@@ -178,7 +180,7 @@ describe('ClaimPreviewOperationHandler', () => {
       operations,
       environmentFiles,
       secrets,
-      { leaseSeconds: 60, logMaxBytes: 1024 },
+      { leaseSeconds: 60, logMaxBytes: 1024, snapshotGraceMs: 3_600_000 },
       { now: () => seconds(120) },
     );
 

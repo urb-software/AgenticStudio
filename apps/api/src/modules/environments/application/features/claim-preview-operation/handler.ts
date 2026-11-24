@@ -9,12 +9,13 @@ import {
   PREVIEW_OPERATION_REPOSITORY,
   type PreviewOperationRepository,
 } from '../../../domain/repositories/preview-operation-repository.js';
-import { PreviewHostname } from '../../../domain/value-objects/preview-hostname.js';
+import { PreviewComposeProject } from '../../../domain/value-objects/preview-compose-project.js';
 import { LostControllerRule } from '../../../domain/value-objects/lost-controller-rule.js';
 import { PreviewOperationFailure } from '../../../domain/value-objects/preview-operation-failure.js';
 import type { PreviewOperationKind } from '../../../domain/value-objects/preview-operation-kind.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { PREVIEW_ENVIRONMENT_FILE_SECRET_OWNER } from '../../ports/preview-environment-file-snapshots.js';
+import type { PreviewLimitsSettings } from '../../ports/preview-limits-settings.js';
 import {
   PREVIEW_OPERATION_SETTINGS,
   type PreviewOperationSettings,
@@ -29,6 +30,8 @@ export interface ClaimedPreviewOperation {
   id: string;
   projectId: string;
   kind: PreviewOperationKind;
+  /** The Compose project name of the Project's Preview. */
+  composeProject: string;
   /** The hostname label of the Project's Preview, the controller's socket name. */
   previewLabel: string;
   /** Set exactly for a build. */
@@ -37,7 +40,7 @@ export interface ClaimedPreviewOperation {
     composeFile: string;
     service: string;
     port: number;
-    limits: { memoryMiB: number; cpuPercent: number; tasksMax: number; buildMinutes: number };
+    limits: PreviewLimitsSettings;
   } | null;
   /** Test values only; goes to the claiming controller, never logged. */
   environmentFile: { path: string; content: string } | null;
@@ -136,7 +139,8 @@ function claimed(
     id: operation.id,
     projectId: operation.projectId,
     kind: operation.kind,
-    previewLabel: PreviewHostname.of(operation.projectId, 'preview.invalid').label,
+    composeProject: PreviewComposeProject.of(operation.projectId).value,
+    previewLabel: PreviewComposeProject.of(operation.projectId).label,
     build:
       operation.build === null
         ? null

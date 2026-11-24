@@ -1,3 +1,4 @@
+import { PREVIEW_LIMIT_BOUNDS } from '@agentic-studio/contracts';
 import { createHash, createSecretKey, type KeyObject } from 'node:crypto';
 import { accessSync, constants, existsSync, realpathSync, statSync } from 'node:fs';
 import { isIP } from 'node:net';
@@ -93,6 +94,11 @@ const bearerTokenSchema = z
   .transform((value) =>
     value === undefined ? null : createSecretKey(createHash('sha256').update(value).digest()),
   );
+
+/** A whole-number Preview limit within the controller protocol's bounds. */
+function previewLimit(bounds: { min: number; max: number }, fallback: number) {
+  return z.coerce.number().int().min(bounds.min).max(bounds.max).default(fallback);
+}
 
 /**
  * `STUDIO_MERGE_TOKEN`: the Merge credential. Unset or empty: merging is off. Otherwise one
@@ -273,12 +279,11 @@ const environmentSchema = z.object({
   STUDIO_CONTROLLER_TOKEN: bearerTokenSchema,
   // How long a claimed Preview operation may go without a heartbeat before it fails as controller_lost.
   STUDIO_CONTROLLER_LEASE_SECONDS: z.coerce.number().int().min(10).max(3600).default(60),
-  // Limits copied onto every Preview build; the bounds are the controller protocol's
-  // (`PREVIEW_LIMIT_BOUNDS`).
-  STUDIO_PREVIEW_MEMORY_MB: z.coerce.number().int().min(128).max(65_536).default(1024),
-  STUDIO_PREVIEW_CPU_PERCENT: z.coerce.number().int().min(10).max(6400).default(100),
-  STUDIO_PREVIEW_TASKS_MAX: z.coerce.number().int().min(64).max(32_768).default(512),
-  STUDIO_PREVIEW_BUILD_MINUTES: z.coerce.number().int().min(1).max(120).default(20),
+  // Limits copied onto every Preview build, within the controller protocol's bounds.
+  STUDIO_PREVIEW_MEMORY_MB: previewLimit(PREVIEW_LIMIT_BOUNDS.memoryMiB, 1024),
+  STUDIO_PREVIEW_CPU_PERCENT: previewLimit(PREVIEW_LIMIT_BOUNDS.cpuPercent, 100),
+  STUDIO_PREVIEW_TASKS_MAX: previewLimit(PREVIEW_LIMIT_BOUNDS.tasksMax, 512),
+  STUDIO_PREVIEW_BUILD_MINUTES: previewLimit(PREVIEW_LIMIT_BOUNDS.buildMinutes, 20),
   STUDIO_PREVIEW_LOG_MAX_BYTES: z.coerce
     .number()
     .int()
@@ -356,6 +361,13 @@ function schemaFor(workspaceRoot: string | undefined) {
     });
 }
 
+export interface PreviewLimitsConfig {
+  memoryMiB: number;
+  cpuPercent: number;
+  tasksMax: number;
+  buildMinutes: number;
+}
+
 export interface AppConfig {
   apiPort: number;
   apiHost: string;
@@ -393,7 +405,7 @@ export interface AppConfig {
   /** Seconds a claimed Preview operation may go without a heartbeat before `controller_lost`. */
   controllerLeaseSeconds: number;
   /** Limits copied onto every new Preview build. */
-  previewLimits: { memoryMiB: number; cpuPercent: number; tasksMax: number; buildMinutes: number };
+  previewLimits: PreviewLimitsConfig;
   /** Bytes of Preview operation log kept per operation; later lines are dropped. */
   previewLogMaxBytes: number;
   /** The limits copied onto every new Run. */

@@ -34,8 +34,9 @@ describe('the controller protocol', () => {
     expect(PREVIEW_OPERATION_FAILURE_CODES).toHaveLength(15);
   });
 
-  it('names the four problem types', () => {
+  it('names the five problem types', () => {
     expect(Object.keys(CONTROLLER_PROBLEM_TYPES).sort()).toEqual([
+      'operationNotABuild',
       'operationNotFound',
       'operationNotHeld',
       'sourceTooLarge',

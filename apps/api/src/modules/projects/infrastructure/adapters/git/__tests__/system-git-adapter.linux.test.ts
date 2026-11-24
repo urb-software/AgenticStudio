@@ -355,6 +355,51 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
         expect(existsSync(file)).toBe(false);
       });
 
+      it('archives the tracked tree as stored, whatever attributes the tree itself carries', async () => {
+        const source = createFixture(
+          fixtures,
+          'archive-attributes',
+          {
+            '.gitattributes': 'ignored.txt export-ignore\nsubst.txt export-subst\n',
+            'ignored.txt': 'kept\n',
+            'subst.txt': '$Format:%H$\n',
+            'plain.txt': 'plain\n',
+          },
+          { branch: 'dev' },
+        );
+        const git = adapter();
+        const { commit } = await git.clone(PROJECT_ID, source.url, 'dev');
+
+        const archive = await archived(git, commit);
+        const [name] = await readdir(archiveFolder());
+        const file = join(archiveFolder(), name!);
+        const tracked = spawnSync(
+          'git',
+          [`--git-dir=${clonePath()}`, 'ls-tree', '-r', '--name-only', commit],
+          { encoding: 'utf8' },
+        )
+          .stdout.split('\n')
+          .filter((entry) => entry !== '')
+          .sort();
+        expect(listed(file)).toEqual(tracked);
+        expect(tracked).toContain('ignored.txt');
+        for (const entry of tracked) {
+          const stored = spawnSync(
+            'git',
+            [`--git-dir=${clonePath()}`, 'show', `${commit}:${entry}`],
+            {
+              encoding: 'utf8',
+            },
+          ).stdout;
+          const archivedText = spawnSync('tar', ['-xOf', file, entry], { encoding: 'utf8' }).stdout;
+          expect(archivedText).toBe(stored);
+        }
+        expect(spawnSync('tar', ['-xOf', file, 'subst.txt'], { encoding: 'utf8' }).stdout).toBe(
+          '$Format:%H$\n',
+        );
+        await archive.close();
+      });
+
       it('answers commit_missing for a commit the Clone lacks, leaving no file', async () => {
         const git = adapter();
         await git.clone(PROJECT_ID, fixture.url, 'dev');

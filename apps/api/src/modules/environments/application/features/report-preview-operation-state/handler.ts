@@ -46,10 +46,14 @@ export class ReportPreviewOperationStateHandler {
     const { operationId, controllerId } = input;
     const now = this.clock.now();
     let released: string | undefined;
-    const failure =
-      input.state === 'failed' && input.failure !== undefined
-        ? await this.redacted(operationId, input.failure)
-        : null;
+    let failure: PreviewOperationFailure | null = null;
+    if (input.state === 'failed' && input.failure !== undefined) {
+      // The holder first: only the holder's report decrypts the snapshot.
+      const current = await this.operations.find(operationId);
+      if (current === null) throw new PreviewOperationNotFoundError();
+      current.assertHeldBy(controllerId);
+      failure = await this.redacted(operationId, input.failure);
+    }
     const changed = await this.operations.change(operationId, (held) => {
       released = held.environmentFile?.secretId;
       switch (input.state) {
@@ -90,7 +94,11 @@ export class ReportPreviewOperationStateHandler {
     return PreviewOperationFailure.of(
       failure.code,
       redaction.text(failure.detail),
-      failure.refusals ?? [],
+      (failure.refusals ?? []).map((refusal) => ({
+        ...refusal,
+        place: redaction.text(refusal.place),
+        message: redaction.text(refusal.message),
+      })),
     );
   }
 }

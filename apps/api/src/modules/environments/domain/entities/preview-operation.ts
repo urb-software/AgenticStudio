@@ -56,7 +56,6 @@ export class PreviewOperation {
     });
   }
 
-  /** Stop, remove data or state of the Project's Preview. */
   static requestOther(facts: PreviewOtherRequestFacts): PreviewOperation {
     return new PreviewOperation({
       id: facts.id,
@@ -159,7 +158,6 @@ export class PreviewOperation {
     this.current = { ...this.current, environmentFile: file };
   }
 
-  /** The heartbeat: renews the lease. */
   reportProgress(controllerId: string, now: Date): void {
     this.assertHeldBy(controllerId);
     this.current = { ...this.current, heartbeatAt: now };

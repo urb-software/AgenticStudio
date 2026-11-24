@@ -50,42 +50,49 @@ function flag(key: symbol, handler: object, controller: object): boolean {
   return (onMethod ?? Reflect.getMetadata(key, controller)) === true;
 }
 
+function controllersOf(entry: unknown): Controller[] {
+  if (typeof entry === 'function') {
+    const declared: unknown = Reflect.getMetadata('controllers', entry);
+    return Array.isArray(declared) ? (declared as Controller[]) : [];
+  }
+  if (typeof entry === 'object' && entry !== null && 'module' in entry) {
+    const dynamic = entry as DynamicModule;
+    return [...controllersOf(dynamic.module), ...((dynamic.controllers ?? []) as Controller[])];
+  }
+  return [];
+}
+
+/** Every controller of every module the composition root imports, platform ones included. */
 function allRoutes(): Route[] {
-  const modules = (AppModule.register(testConfig()).imports ?? []).filter(
-    (entry): entry is DynamicModule =>
-      'module' in entry &&
-      ['ProjectsModule', 'ExecutionsModule', 'EnvironmentsModule'].includes(entry.module.name),
-  );
-  return (modules.flatMap((entry) => entry.controllers ?? []) as Controller[]).flatMap(
-    (controller) => {
-      const base = String(Reflect.getMetadata('path', controller));
-      return Object.getOwnPropertyNames(controller.prototype).flatMap((name) => {
-        const handler = (controller.prototype as Record<string, unknown>)[name];
-        if (typeof handler !== 'function') return [];
-        const method: unknown = Reflect.getMetadata('method', handler);
-        if (typeof method !== 'number') return [];
-        if (flag(IS_PUBLIC, handler, controller)) return [];
-        const kind: Kind = flag(IS_CONTROLLER_ROUTE, handler, controller)
-          ? 'controller'
-          : flag(IS_WORKER_ROUTE, handler, controller)
-            ? 'worker'
-            : 'operator';
-        const path = `/api/${base}/${String(Reflect.getMetadata('path', handler))}`
-          .replace(/\/+/g, '/')
-          .replace(/\/$/, '');
-        const verb = RequestMethod[method]!;
-        return [
-          {
-            label: `${verb} ${path}`,
-            kind,
-            method: verb,
-            controller,
-            handler: handler as Route['handler'],
-          },
-        ];
-      });
-    },
-  );
+  const controllers = (AppModule.register(testConfig()).imports ?? []).flatMap(controllersOf);
+  return controllers.flatMap((controller) => {
+    const base = String(Reflect.getMetadata('path', controller));
+    return Object.getOwnPropertyNames(controller.prototype).flatMap((name) => {
+      const handler = (controller.prototype as Record<string, unknown>)[name];
+      if (typeof handler !== 'function') return [];
+      const method: unknown = Reflect.getMetadata('method', handler);
+      if (typeof method !== 'number') return [];
+      if (flag(IS_PUBLIC, handler, controller)) return [];
+      const kind: Kind = flag(IS_CONTROLLER_ROUTE, handler, controller)
+        ? 'controller'
+        : flag(IS_WORKER_ROUTE, handler, controller)
+          ? 'worker'
+          : 'operator';
+      const path = `/api/${base}/${String(Reflect.getMetadata('path', handler))}`
+        .replace(/\/+/g, '/')
+        .replace(/\/$/, '');
+      const verb = RequestMethod[method]!;
+      return [
+        {
+          label: `${verb} ${path}`,
+          kind,
+          method: verb,
+          controller,
+          handler: handler as Route['handler'],
+        },
+      ];
+    });
+  });
 }
 
 type Credential = 'controller token' | 'worker token' | 'session' | 'nothing';
@@ -127,7 +134,8 @@ describe('token matrix over every route', () => {
   const routes = allRoutes();
   const controllerRoutes = routes.filter((route) => route.kind === 'controller');
 
-  it('finds controller, worker and operator routes', () => {
+  it('finds controller, worker and operator routes, platform ones included', () => {
+    expect(routes.some((route) => route.label.includes('/api/auth/'))).toBe(true);
     expect(new Set(routes.map((route) => route.kind))).toEqual(
       new Set(['controller', 'worker', 'operator']),
     );

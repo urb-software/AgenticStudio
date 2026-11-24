@@ -13,7 +13,6 @@ import {
   type ClaimedPreviewOperation,
   ClaimPreviewOperationHandler,
 } from '../../../../application/features/claim-preview-operation/handler.js';
-import { composeProjectOf } from '../compose-project.js';
 
 @EnvironmentControllerEndpoint('operations')
 export class ClaimOperationEndpoint {
@@ -47,7 +46,7 @@ function payloadOf(operation: ClaimedPreviewOperation): OperationPayload {
   const base = {
     operationId: operation.id,
     projectId: operation.projectId,
-    composeProject: composeProjectOf(operation.projectId),
+    composeProject: operation.composeProject,
     previewLabel: operation.previewLabel,
   };
   if (operation.kind !== 'build' || operation.build === null) {

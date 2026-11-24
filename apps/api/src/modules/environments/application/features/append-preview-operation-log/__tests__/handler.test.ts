@@ -53,7 +53,7 @@ describe('AppendPreviewOperationLogHandler', () => {
       operations,
       log,
       { forOperation: () => Promise.resolve(known) },
-      { leaseSeconds: 60, logMaxBytes: 100 },
+      { leaseSeconds: 60, logMaxBytes: 100, snapshotGraceMs: 3_600_000 },
     );
     await operations.add(
       PreviewOperation.requestOther({ id: ID, projectId: PROJECT, kind: 'state', now: AT }),
@@ -94,7 +94,7 @@ describe('AppendPreviewOperationLogHandler', () => {
       operations,
       log,
       { forOperation: () => Promise.resolve(known) },
-      { leaseSeconds: 60, logMaxBytes: 100_000 },
+      { leaseSeconds: 60, logMaxBytes: 100_000, snapshotGraceMs: 3_600_000 },
     );
 
     await roomy.execute({

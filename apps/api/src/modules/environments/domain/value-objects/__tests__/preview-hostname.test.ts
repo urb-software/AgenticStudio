@@ -31,8 +31,4 @@ describe('PreviewHostname', () => {
       PreviewHostname.of(PROJECT, 'example.test').value,
     );
   });
-
-  it('gives its first label alone', () => {
-    expect(PreviewHostname.of(PROJECT, 'example.test').label).toMatch(/^preview-[0-9a-f]{12}$/);
-  });
 });

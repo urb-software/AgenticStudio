@@ -6,4 +6,6 @@ export interface PreviewOperationSettings {
   leaseSeconds: number;
   /** UTF-8 bytes of log text kept per operation. */
   logMaxBytes: number;
+  /** An Environment file snapshot no operation references is swept once it is this old. */
+  snapshotGraceMs: number;
 }

@@ -74,7 +74,6 @@ export function sourceUnavailable(): ProblemException {
   });
 }
 
-/** 404 for an operation id that names none (also for an id that is not a UUID). */
 export function operationNotFound(): ProblemException {
   return new ProblemException(HttpStatus.NOT_FOUND, {
     type: CONTROLLER_PROBLEM_TYPES.operationNotFound,
@@ -92,7 +91,6 @@ export function operationNotHeld(): ProblemException {
   });
 }
 
-/** 409: the build's source cannot be read now. */
 export function operationSourceUnavailable(): ProblemException {
   return new ProblemException(HttpStatus.CONFLICT, {
     type: CONTROLLER_PROBLEM_TYPES.sourceUnavailable,
@@ -101,7 +99,6 @@ export function operationSourceUnavailable(): ProblemException {
   });
 }
 
-/** 409: the build's source archive is over the limit. */
 export function operationSourceTooLarge(): ProblemException {
   return new ProblemException(HttpStatus.CONFLICT, {
     type: CONTROLLER_PROBLEM_TYPES.sourceTooLarge,
@@ -110,10 +107,9 @@ export function operationSourceTooLarge(): ProblemException {
   });
 }
 
-/** 409: only a build has a source. */
 export function operationNotABuild(): ProblemException {
   return new ProblemException(HttpStatus.CONFLICT, {
-    type: CONTROLLER_PROBLEM_TYPES.operationNotHeld,
+    type: CONTROLLER_PROBLEM_TYPES.operationNotABuild,
     title: 'Not a build',
     detail: 'Only a build has a source.',
   });

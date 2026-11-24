@@ -1,5 +1,9 @@
 import type { DynamicModule, INestApplication, NestApplicationOptions, Type } from '@nestjs/common';
-import { RUN_DIFF_REQUEST_MAX_BYTES, WORKER_REQUEST_MAX_BYTES } from '@agentic-studio/contracts';
+import {
+  PREVIEW_LOG_REQUEST_MAX_BYTES,
+  RUN_DIFF_REQUEST_MAX_BYTES,
+  WORKER_REQUEST_MAX_BYTES,
+} from '@agentic-studio/contracts';
 import { NestFactory } from '@nestjs/core';
 import type { IncomingMessage } from 'node:http';
 import type { NestExpressApplication } from '@nestjs/platform-express';
@@ -11,6 +15,7 @@ import { APP_CONFIG, type AppConfig } from './platform/config/config.js';
 const LARGE_BODY_ROUTE =
   /^\/api\/(?:worker\/runs\/[^/]+\/(?:steps|state)|projects\/[^/]+\/environment-file)$/;
 const RUN_DIFF_ROUTE = /^\/api\/worker\/runs\/[^/]+\/diff$/;
+const PREVIEW_LOG_ROUTE = /^\/api\/controller\/operations\/[^/]+\/log$/;
 const JSON_CONTENT_TYPE = /^application\/(?:[\w.+-]+\+)?json\s*(?:;|$)/i;
 
 export async function createApp(
@@ -44,13 +49,22 @@ export async function buildApp(
   });
   // Two diffs of up to RUN_DIFF_MAX_BYTES each; the larger limit needs the worker token, any
   // other request there gets the 100 KiB parser below.
-  const { workerToken } = app.get<AppConfig>(APP_CONFIG);
+  const { workerToken, controllerToken } = app.get<AppConfig>(APP_CONFIG);
   app.useBodyParser('json', {
     limit: RUN_DIFF_REQUEST_MAX_BYTES,
     type: (request: IncomingMessage) =>
       RUN_DIFF_ROUTE.test(request.url?.split('?')[0] ?? '') &&
       JSON_CONTENT_TYPE.test(request.headers['content-type'] ?? '') &&
       verifyBearerToken(workerToken, request.headers.authorization),
+  });
+  // A 64 KiB log batch of control characters escapes to six times its size; only the controller
+  // token gets the larger limit.
+  app.useBodyParser('json', {
+    limit: PREVIEW_LOG_REQUEST_MAX_BYTES,
+    type: (request: IncomingMessage) =>
+      PREVIEW_LOG_ROUTE.test(request.url?.split('?')[0] ?? '') &&
+      JSON_CONTENT_TYPE.test(request.headers['content-type'] ?? '') &&
+      verifyBearerToken(controllerToken, request.headers.authorization),
   });
   app.useBodyParser('json', { limit: '100kb' });
   app.disable('x-powered-by');

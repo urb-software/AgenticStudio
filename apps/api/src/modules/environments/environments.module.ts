@@ -13,6 +13,7 @@ import {
   PREVIEW_LIMITS,
   type PreviewLimitsSettings,
 } from './application/ports/preview-limits-settings.js';
+import { PREVIEW_SNAPSHOT_GRACE_MS } from './application/ports/preview-environment-file-snapshots.js';
 import { PREVIEW_OPERATION_LOG } from './application/ports/preview-operation-log.js';
 import {
   PREVIEW_OPERATION_SETTINGS,
@@ -84,6 +85,7 @@ export class EnvironmentsModule {
           useFactory: (config: AppConfig): PreviewOperationSettings => ({
             leaseSeconds: config.controllerLeaseSeconds,
             logMaxBytes: config.previewLogMaxBytes,
+            snapshotGraceMs: PREVIEW_SNAPSHOT_GRACE_MS,
           }),
           inject: [APP_CONFIG],
         },

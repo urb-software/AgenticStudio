@@ -47,7 +47,6 @@ export class PreviewLogLine {
     );
   }
 
-  /** A line as storage holds it: the text is kept as it is. */
   static restore(data: PreviewLogLineData): PreviewLogLine {
     return new PreviewLogLine(data.seq, data.at, data.stream, data.text, data.truncated);
   }
