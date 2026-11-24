@@ -110,6 +110,7 @@ export async function buildController(
   const operations = new PreviewOperations({
     dataDir: config.dataDir,
     minFreeBytes: config.minFreeBytes,
+    buildCacheMaxBytes: config.buildCacheMaxBytes,
     killGraceMs: config.killGraceMs,
     compose: {
       PATH: process.env.PATH ?? DEFAULT_PATH,

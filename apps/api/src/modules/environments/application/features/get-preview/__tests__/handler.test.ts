@@ -7,6 +7,7 @@ import { InMemoryPreviewSettingsRepository } from '../../../../domain/repositori
 import { PreviewCommit } from '../../../../domain/value-objects/preview-commit.js';
 import { PreviewComposeFile } from '../../../../domain/value-objects/preview-compose-file.js';
 import { PreviewLimits } from '../../../../domain/value-objects/preview-limits.js';
+import { PreviewOperationResult } from '../../../../domain/value-objects/preview-operation-result.js';
 import { PreviewOperationFailure } from '../../../../domain/value-objects/preview-operation-failure.js';
 import { PreviewPort } from '../../../../domain/value-objects/preview-port.js';
 import { PreviewService } from '../../../../domain/value-objects/preview-service.js';
@@ -87,6 +88,7 @@ describe('GetPreviewHandler', () => {
       state: 'not_configured',
       running: null,
       latestBuild: null,
+      latestChange: null,
       controller: { connected: false },
     });
   });
@@ -212,5 +214,118 @@ describe('GetPreviewHandler', () => {
     expect((await handler.execute({ projectId: PROJECT })).controller).toEqual({
       connected: false,
     });
+  });
+
+  describe('a stop or a data removal', () => {
+    const CHANGE = '5b4a3c2d-1e0f-4a9b-8c7d-6e5f4a3b2c1d';
+
+    async function change(kind: 'stop' | 'remove_data', requested: number) {
+      await operations.add(
+        PreviewOperation.requestOther({
+          id: CHANGE,
+          projectId: PROJECT,
+          kind,
+          now: minutes(requested),
+        }),
+      );
+    }
+
+    it('is stopping while a stop is requested, with the build that still runs', async () => {
+      await saveSettings();
+      await build(FIRST, -20);
+      await finish(FIRST, 'succeeded', -15);
+      await change('stop', -1);
+
+      const view = await handler.execute({ projectId: PROJECT });
+
+      expect(view.state).toBe('stopping');
+      expect(view.running?.buildId).toBe(FIRST);
+      expect(view.latestChange).toMatchObject({ kind: 'stop', status: 'queued', failure: null });
+    });
+
+    it('is resetting_data while a data removal is claimed', async () => {
+      await saveSettings();
+      await build(FIRST, -20);
+      await finish(FIRST, 'succeeded', -15);
+      await change('remove_data', -1);
+      await operations.change(CHANGE, (op) => {
+        op.claim(CONTROLLER, minutes(0));
+      });
+
+      const view = await handler.execute({ projectId: PROJECT });
+
+      expect(view.state).toBe('resetting_data');
+      expect(view.latestChange).toMatchObject({ kind: 'reset_data', status: 'in_progress' });
+    });
+
+    it('shows a failed stop as the latest change while the Preview runs on', async () => {
+      await saveSettings();
+      await build(FIRST, -20);
+      await finish(FIRST, 'succeeded', -15);
+      await change('stop', -10);
+      await operations.change(CHANGE, (op) => {
+        op.claim(CONTROLLER, minutes(-9));
+        op.fail(
+          CONTROLLER,
+          PreviewOperationFailure.of('runtime_failed', 'Docker said no'),
+          minutes(-8),
+        );
+      });
+
+      const view = await handler.execute({ projectId: PROJECT });
+
+      expect(view.state).toBe('running');
+      expect(view.latestChange).toMatchObject({
+        kind: 'stop',
+        status: 'failed',
+        failure: { code: 'runtime_failed', detail: 'Docker said no' },
+      });
+    });
+
+    it('is stopped, not running, once the stop succeeded', async () => {
+      await saveSettings();
+      await build(FIRST, -20);
+      await finish(FIRST, 'succeeded', -15);
+      await change('stop', -10);
+      await operations.change(CHANGE, (op) => {
+        op.claim(CONTROLLER, minutes(-9));
+        op.succeed(CONTROLLER, null, minutes(-8));
+      });
+
+      const view = await handler.execute({ projectId: PROJECT });
+
+      expect(view.state).toBe('stopped');
+      expect(view.running).toBeNull();
+      expect(view.latestChange).toMatchObject({ kind: 'stop', status: 'succeeded' });
+    });
+  });
+
+  it('stops showing the old build as running once a state check found nothing after a lost build', async () => {
+    await saveSettings();
+    await build(FIRST, -20);
+    await finish(FIRST, 'succeeded', -15);
+    await build(SECOND, -10);
+    await operations.change(SECOND, (op) => {
+      op.claim(CONTROLLER, minutes(-9));
+      op.loseController(PreviewOperationFailure.of('controller_lost', 'silent'), minutes(-6));
+    });
+    expect((await handler.execute({ projectId: PROJECT })).state).toBe('running');
+
+    const check = PreviewOperation.requestOther({
+      id: '6c5b4a3d-2f1e-4b0c-9d8e-7f6a5b4c3d2e',
+      projectId: PROJECT,
+      kind: 'state',
+      now: minutes(-5),
+    });
+    await operations.add(check);
+    await operations.change(check.id, (op) => {
+      op.claim(CONTROLLER, minutes(-4));
+      op.succeed(CONTROLLER, PreviewOperationResult.of([]), minutes(-3));
+    });
+
+    const view = await handler.execute({ projectId: PROJECT });
+
+    expect(view.state).toBe('failed');
+    expect(view.running).toBeNull();
   });
 });

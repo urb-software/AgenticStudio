@@ -53,6 +53,8 @@ export interface OperationOutcome {
 export interface PreviewOperationsDeps {
   dataDir: string;
   minFreeBytes: number;
+  /** The build cache is pruned to this size after every build. */
+  buildCacheMaxBytes: number;
   killGraceMs: number;
   /** The fixed part of the Compose process environment. */
   compose: Pick<ComposeBase, 'PATH' | 'DOCKER_HOST' | 'XDG_RUNTIME_DIR'>;
@@ -149,7 +151,10 @@ export class PreviewOperations {
     const call = this.adminCall(context);
     await this.deps.desired.clear(op.projectId);
     await this.deps.runtime.removeContainers(identity, call);
-    if (removeData) await this.deps.runtime.removeVolumes(identity, call);
+    if (removeData) {
+      await this.deps.runtime.removeVolumes(identity, call);
+      await this.deps.runtime.removeImages(identity, call, { danglingOnly: false });
+    }
     await this.deps.slices.remove(identity, call.signal);
     await rm(
       removeData
@@ -235,10 +240,13 @@ export class PreviewOperations {
         environmentFilePath: op.environmentFile?.path ?? null,
       });
       await removeOtherBuilds(deps.dataDir, op.projectId, op.operationId);
-      return { runtime: await deps.runtime.state(identity, call) };
+      const runtime = await deps.runtime.state(identity, call);
+      await this.cleanAfterBuild(identity, context);
+      return { runtime };
     } catch (error) {
       if (startAttempted) await this.rollBackStart(identity, op.projectId);
       await rm(layout.buildDir, { recursive: true, force: true }).catch(() => undefined);
+      await this.cleanAfterBuild(identity, context);
       const failure = classify(error, deadline, context.signal);
       if (
         startAttempted &&
@@ -247,6 +255,25 @@ export class PreviewOperations {
         throw failure.afterRollback();
       }
       throw failure;
+    }
+  }
+
+  /** After every build the Project's dangling images go and the build cache is pruned; a failure is logged and never fails the build. */
+  private async cleanAfterBuild(identity: PreviewIdentity, context: OperationContext) {
+    const call: RuntimeCall = {
+      signal: AbortSignal.timeout(ADMIN_TIMEOUT_MS),
+      onLine: context.log,
+      killGraceMs: this.deps.killGraceMs,
+    };
+    try {
+      await this.deps.runtime.removeImages(identity, call, { danglingOnly: true });
+    } catch {
+      context.log('controller', 'The dangling images of the build could not all be removed.');
+    }
+    try {
+      await this.deps.runtime.pruneBuildCache(this.deps.buildCacheMaxBytes, call);
+    } catch {
+      context.log('controller', 'The build cache could not be pruned.');
     }
   }
 

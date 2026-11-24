@@ -34,4 +34,13 @@ export class FakePreviewSources implements RunPreviewSources {
   );
 
   openArchive = vi.fn<RunPreviewSources['openArchive']>(() => Promise.resolve(this.archiveAnswer));
+
+  /** The names of the projects `projectNames` knows, by id. */
+  names = new Map<string, string>();
+
+  projectNames = vi.fn<RunPreviewSources['projectNames']>((ids) =>
+    Promise.resolve(
+      new Map(ids.flatMap((id) => (this.names.has(id) ? [[id, this.names.get(id)!]] : []))),
+    ),
+  );
 }

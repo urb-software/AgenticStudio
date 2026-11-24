@@ -16,10 +16,16 @@ function keysOf(value: unknown): string[] {
     : [];
 }
 
+function buildsImage(services: unknown, name: string): boolean {
+  if (typeof services !== 'object' || services === null) return false;
+  const service: unknown = (services as Record<string, unknown>)[name];
+  return typeof service === 'object' && service !== null && 'build' in service;
+}
+
 /**
  * What the controller forces on top of the stack: every service runs in the Preview's slice and
- * is never restarted by the daemon, and the services, the default network, every declared
- * network and every declared volume carry both ownership labels.
+ * is never restarted, and services, networks, volumes and built images carry both ownership
+ * labels; the long `build` form merges with the short one.
  */
 export function renderOverride(
   stack: ComposeStack,
@@ -29,7 +35,12 @@ export function renderOverride(
   const services = Object.fromEntries(
     keysOf(stack.services).map((name) => [
       name,
-      { cgroup_parent: sliceName(identity.composeProject), restart: 'no', labels },
+      {
+        cgroup_parent: sliceName(identity.composeProject),
+        restart: 'no',
+        labels,
+        ...(buildsImage(stack.services, name) ? { build: { labels } } : {}),
+      },
     ]),
   );
   const networks = Object.fromEntries(

@@ -697,6 +697,8 @@ export const zPreviewOutput = z.object({
     state: z.enum([
         'not_configured',
         'stopped',
+        'stopping',
+        'resetting_data',
         'building',
         'running',
         'failed'
@@ -781,6 +783,39 @@ export const zPreviewOutput = z.object({
             bytes: z.int().gte(-9007199254740991).lte(9007199254740991),
             truncated: z.boolean()
         })
+    }).nullable(),
+    latestChange: z.object({
+        kind: z.enum(['stop', 'reset_data']),
+        status: z.enum([
+            'queued',
+            'in_progress',
+            'succeeded',
+            'failed'
+        ]),
+        requestedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/),
+        finishedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).nullable(),
+        failure: z.object({
+            code: z.enum([
+                'validation_refused',
+                'compose_file_missing',
+                'source_unavailable',
+                'archive_invalid',
+                'environment_file_tracked',
+                'disk_full',
+                'egress_rules_missing',
+                'limits_failed',
+                'build_failed',
+                'build_timed_out',
+                'start_failed',
+                'runtime_failed',
+                'controller_stopped',
+                'controller_error',
+                'controller_lost',
+                'not_claimed',
+                'report_overdue'
+            ]),
+            detail: z.string()
+        }).nullable()
     }).nullable(),
     controller: z.object({
         connected: z.boolean()
@@ -856,6 +891,8 @@ export const zSavePreviewSettingsResponseOutput = z.object({
     state: z.enum([
         'not_configured',
         'stopped',
+        'stopping',
+        'resetting_data',
         'building',
         'running',
         'failed'
@@ -941,6 +978,39 @@ export const zSavePreviewSettingsResponseOutput = z.object({
             truncated: z.boolean()
         })
     }).nullable(),
+    latestChange: z.object({
+        kind: z.enum(['stop', 'reset_data']),
+        status: z.enum([
+            'queued',
+            'in_progress',
+            'succeeded',
+            'failed'
+        ]),
+        requestedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/),
+        finishedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).nullable(),
+        failure: z.object({
+            code: z.enum([
+                'validation_refused',
+                'compose_file_missing',
+                'source_unavailable',
+                'archive_invalid',
+                'environment_file_tracked',
+                'disk_full',
+                'egress_rules_missing',
+                'limits_failed',
+                'build_failed',
+                'build_timed_out',
+                'start_failed',
+                'runtime_failed',
+                'controller_stopped',
+                'controller_error',
+                'controller_lost',
+                'not_claimed',
+                'report_overdue'
+            ]),
+            detail: z.string()
+        }).nullable()
+    }).nullable(),
     controller: z.object({
         connected: z.boolean()
     }),
@@ -948,6 +1018,27 @@ export const zSavePreviewSettingsResponseOutput = z.object({
         service: z.string(),
         place: z.string()
     })).optional()
+});
+
+export const zPreviewLimitReachedProblem = z.object({
+    type: z.string(),
+    title: z.string(),
+    status: z.int().gte(-9007199254740991).lte(9007199254740991),
+    detail: z.string(),
+    correlationId: z.string(),
+    running: z.array(z.object({
+        projectId: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
+        name: z.string(),
+        state: z.enum([
+            'not_configured',
+            'stopped',
+            'stopping',
+            'resetting_data',
+            'building',
+            'running',
+            'failed'
+        ])
+    }))
 });
 
 export const zPreviewBuildOutput = z.object({
@@ -1024,6 +1115,22 @@ export const zPreviewBuildOutput = z.object({
         bytes: z.int().gte(-9007199254740991).lte(9007199254740991),
         truncated: z.boolean()
     })
+});
+
+export const zPreviewsListOutput = z.object({
+    limit: z.int().gte(-9007199254740991).lte(9007199254740991),
+    previews: z.array(z.object({
+        projectId: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
+        state: z.enum([
+            'not_configured',
+            'stopped',
+            'stopping',
+            'resetting_data',
+            'building',
+            'running',
+            'failed'
+        ])
+    }))
 });
 
 export const zPreviewBuildEventsOutput = z.object({
@@ -1372,6 +1479,20 @@ export const zRequestPreviewBuildPath = z.object({
 });
 
 export const zRequestPreviewBuildResponse = zPreviewBuildOutput;
+
+export const zStopPreviewPath = z.object({
+    id: z.string()
+});
+
+export const zStopPreviewResponse = zPreviewOutput;
+
+export const zResetPreviewDataPath = z.object({
+    id: z.string()
+});
+
+export const zResetPreviewDataResponse = zPreviewOutput;
+
+export const zListPreviewsResponse = zPreviewsListOutput;
 
 export const zListPreviewBuildEventsPath = z.object({
     id: z.string(),

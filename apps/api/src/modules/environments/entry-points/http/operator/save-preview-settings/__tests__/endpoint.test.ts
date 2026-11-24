@@ -48,6 +48,7 @@ describe('SavePreviewSettingsEndpoint', () => {
       state: 'stopped' as const,
       running: null,
       latestBuild: null,
+      latestChange: null,
       controller: { connected: false },
       removedPorts: [],
     };
@@ -60,6 +61,7 @@ describe('SavePreviewSettingsEndpoint', () => {
       state: 'stopped',
       running: null,
       latestBuild: null,
+      latestChange: null,
       controller: { connected: false },
     });
     const removed = [{ service: 'web', place: 'services.web.ports[0]' }];

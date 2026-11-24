@@ -6,6 +6,7 @@ import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.
 import { InMemoryDeployKeys } from '../../../ports/__tests__/in-memory-deploy-keys.js';
 import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
 import { RepositoryCleanup } from '../../../repository-cleanup.js';
+import { InMemoryDisconnectSteps } from '../../../ports/__tests__/in-memory-disconnect-steps.js';
 import { ResumeDisconnectsHandler } from '../handler.js';
 
 const A = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
@@ -49,6 +50,7 @@ describe('ResumeDisconnectsHandler', () => {
       connections,
       git,
       new InMemoryDeployKeys(new InMemorySecretStore()),
+      new InMemoryDisconnectSteps(),
     );
     handler = new ResumeDisconnectsHandler(connections, cleanup);
   });

@@ -6,6 +6,7 @@ import { InMemoryDeployKeys } from '../../../application/ports/__tests__/in-memo
 import { InMemoryEnvironmentFileContents } from '../../../application/ports/__tests__/in-memory-environment-file-contents.js';
 import { InMemorySecretStore } from '../../../application/ports/__tests__/in-memory-secret-store.js';
 import { RepositoryCleanup } from '../../../application/repository-cleanup.js';
+import { InMemoryDisconnectSteps } from '../../../application/ports/__tests__/in-memory-disconnect-steps.js';
 import { FailInterruptedClonesHandler } from '../../../application/features/fail-interrupted-clones/handler.js';
 import { FailInterruptedFetchesHandler } from '../../../application/features/fail-interrupted-fetches/handler.js';
 import { ResumeDisconnectsHandler } from '../../../application/features/resume-disconnects/handler.js';
@@ -24,7 +25,7 @@ describe('RepositoryStartupRecovery', () => {
     vi.spyOn(failInterruptedFetches, 'execute');
     const cleanup = new ResumeDisconnectsHandler(
       connections,
-      new RepositoryCleanup(connections, git, deployKeys),
+      new RepositoryCleanup(connections, git, deployKeys, new InMemoryDisconnectSteps()),
     );
     vi.spyOn(cleanup, 'execute');
     const orphanedKeys = new SweepOrphanedDeployKeysHandler(connections, deployKeys, {

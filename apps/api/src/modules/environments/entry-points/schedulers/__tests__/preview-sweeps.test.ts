@@ -1,20 +1,25 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { SweepPreviewOperationsHandler } from '../../../application/features/sweep-preview-operations/handler.js';
+import type {
+  SweepPreviewOperationsHandler,
+  SweepPreviewOperationsResult,
+} from '../../../application/features/sweep-preview-operations/handler.js';
 import { PreviewSweepsScheduler } from '../preview-sweeps.js';
 
-const handler = (execute: () => Promise<{ releasedSnapshots: number; unclaimed: number }>) =>
+const handler = (execute: () => Promise<SweepPreviewOperationsResult>) =>
   ({ execute }) as unknown as SweepPreviewOperationsHandler;
 
 const scheduler = (
   leaseSeconds: number,
-  sweep = handler(() => Promise.resolve({ releasedSnapshots: 0, unclaimed: 0 })),
+  sweep = handler(() => Promise.resolve({ releasedSnapshots: 0, unclaimed: 0, stateChecks: 0 })),
 ) => new PreviewSweepsScheduler(sweep, { enabled: true, intervalMs: leaseSeconds * 500 });
 
 describe('PreviewSweepsScheduler', () => {
   it('runs the sweep on a timer from the start until shutdown', async () => {
     vi.useFakeTimers();
     try {
-      const execute = vi.fn(() => Promise.resolve({ releasedSnapshots: 0, unclaimed: 0 }));
+      const execute = vi.fn(() =>
+        Promise.resolve({ releasedSnapshots: 0, unclaimed: 0, stateChecks: 0 }),
+      );
       const timed = scheduler(60, handler(execute));
 
       timed.onApplicationBootstrap();
@@ -34,7 +39,9 @@ describe('PreviewSweepsScheduler', () => {
   it('starts no timer while the sweep is turned off', async () => {
     vi.useFakeTimers();
     try {
-      const execute = vi.fn(() => Promise.resolve({ releasedSnapshots: 0, unclaimed: 0 }));
+      const execute = vi.fn(() =>
+        Promise.resolve({ releasedSnapshots: 0, unclaimed: 0, stateChecks: 0 }),
+      );
       const off = new PreviewSweepsScheduler(handler(execute), {
         enabled: false,
         intervalMs: 1000,
@@ -51,9 +58,9 @@ describe('PreviewSweepsScheduler', () => {
 
   it('survives a failed sweep and runs again', async () => {
     const execute = vi
-      .fn<() => Promise<{ releasedSnapshots: number; unclaimed: number }>>()
+      .fn<() => Promise<SweepPreviewOperationsResult>>()
       .mockRejectedValueOnce(new Error('database down'))
-      .mockResolvedValue({ releasedSnapshots: 1, unclaimed: 1 });
+      .mockResolvedValue({ releasedSnapshots: 1, unclaimed: 1, stateChecks: 1 });
     const timed = scheduler(60, handler(execute));
 
     await expect(timed.tick()).resolves.toBeUndefined();
@@ -66,8 +73,8 @@ describe('PreviewSweepsScheduler', () => {
     let release: () => void = () => undefined;
     const execute = vi.fn(
       () =>
-        new Promise<{ releasedSnapshots: number; unclaimed: number }>((resolve) => {
-          release = () => resolve({ releasedSnapshots: 0, unclaimed: 0 });
+        new Promise<SweepPreviewOperationsResult>((resolve) => {
+          release = () => resolve({ releasedSnapshots: 0, unclaimed: 0, stateChecks: 0 });
         }),
     );
     const timed = scheduler(60, handler(execute));

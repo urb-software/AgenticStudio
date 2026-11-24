@@ -27,6 +27,13 @@ describe('GetPreviewEndpoint', () => {
             url: 'https://preview-3f2b8c1e4d5a.example.test/',
           },
           latestBuild: null,
+          latestChange: {
+            kind: 'reset_data' as const,
+            status: 'failed' as const,
+            requestedAt: new Date('2026-11-23T11:30:00.000Z'),
+            finishedAt: new Date('2026-11-23T11:31:00.000Z'),
+            failure: { code: 'runtime_failed' as const, detail: 'Docker could not remove.' },
+          },
           controller: { connected: true },
         }),
       ),
@@ -38,6 +45,8 @@ describe('GetPreviewEndpoint', () => {
     expect(previewSchema.safeParse(answer).success).toBe(true);
     expect(answer.settings?.updatedAt).toBe('2026-11-23T10:00:00.000Z');
     expect(answer.running?.since).toBe('2026-11-23T11:00:00.000Z');
+    expect(answer.latestChange?.requestedAt).toBe('2026-11-23T11:30:00.000Z');
+    expect(answer.latestChange?.finishedAt).toBe('2026-11-23T11:31:00.000Z');
   });
 
   it('maps an unknown project to 404', async () => {

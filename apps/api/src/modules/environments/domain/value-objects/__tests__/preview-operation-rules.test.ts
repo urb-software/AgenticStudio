@@ -166,6 +166,12 @@ describe('PreviewRunningRule', () => {
     expect(changes('build', 'failed', false)).toBe(false);
   });
 
+  it('counts a succeeded state check only when it found the Preview gone', () => {
+    expect(changes('state', 'succeeded', true)).toBe(true);
+    expect(changes('state', 'succeeded', false)).toBe(false);
+    expect(changes('state', 'failed', true)).toBe(false);
+  });
+
   it('counts nothing else', () => {
     expect(changes('state', 'succeeded')).toBe(false);
     expect(changes('stop', 'failed', true)).toBe(false);

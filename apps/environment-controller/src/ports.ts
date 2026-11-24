@@ -42,6 +42,17 @@ export interface ContainerRuntime {
   removeContainers(identity: PreviewIdentity, call: RuntimeCall): Promise<void>;
   /** Removes the labelled volumes. */
   removeVolumes(identity: PreviewIdentity, call: RuntimeCall): Promise<void>;
+  /**
+   * Removes the Project's labelled images, by id after an inspect: only the dangling ones when
+   * `danglingOnly`. Throws when an image could not be removed, after trying the others.
+   */
+  removeImages(
+    identity: PreviewIdentity,
+    call: RuntimeCall,
+    options: { danglingOnly: boolean },
+  ): Promise<void>;
+  /** Prunes the daemon's build cache down to `maxBytes`; the cache has no labels. */
+  pruneBuildCache(maxBytes: number, call: RuntimeCall): Promise<void>;
   /** The labelled containers. */
   state(identity: PreviewIdentity, call: RuntimeCall): Promise<OperationRuntime>;
   /** Stops every bridge (the controller shuts down). */

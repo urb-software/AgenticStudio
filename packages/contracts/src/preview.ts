@@ -93,10 +93,15 @@ export const previewSettingsSchema = z.strictObject({
   updatedAt: z.iso.datetime(),
 });
 
-/** What the Preview is: `building` while a build is requested or claimed. */
+/**
+ * What the Preview is. `resetting_data` and `stopping` while that change is requested or claimed,
+ * then `building` while a build is, and so on down the list the state is picked from.
+ */
 export const PREVIEW_STATES = [
   'not_configured',
   'stopped',
+  'stopping',
+  'resetting_data',
   'building',
   'running',
   'failed',
@@ -132,6 +137,27 @@ export const previewBuildSchema = z.strictObject({
 });
 export type PreviewBuild = z.infer<typeof previewBuildSchema>;
 
+export const PREVIEW_CHANGE_KINDS = ['stop', 'reset_data'] as const;
+export const previewChangeKindSchema = z.enum(PREVIEW_CHANGE_KINDS);
+export type PreviewChangeKind = z.infer<typeof previewChangeKindSchema>;
+
+/** `queued` waits for the controller, `in_progress` is claimed, the other two are final. */
+export const PREVIEW_CHANGE_STATUSES = ['queued', 'in_progress', 'succeeded', 'failed'] as const;
+export const previewChangeStatusSchema = z.enum(PREVIEW_CHANGE_STATUSES);
+export type PreviewChangeStatus = z.infer<typeof previewChangeStatusSchema>;
+
+/** The newest Stop or Reset of the Project's Preview. */
+export const previewLatestChangeSchema = z.strictObject({
+  kind: previewChangeKindSchema,
+  status: previewChangeStatusSchema,
+  requestedAt: z.iso.datetime(),
+  finishedAt: z.iso.datetime().nullable(),
+  failure: z
+    .strictObject({ code: z.enum(PREVIEW_OPERATION_FAILURE_CODES), detail: z.string() })
+    .nullable(),
+});
+export type PreviewLatestChange = z.infer<typeof previewLatestChangeSchema>;
+
 /** What the Preview page shows: the settings, the hostname, the state and the latest build. */
 export const previewSchema = z.strictObject({
   settings: previewSettingsSchema.nullable(),
@@ -155,9 +181,32 @@ export const previewSchema = z.strictObject({
     })
     .nullable(),
   latestBuild: previewBuildSchema.nullable(),
+  /** The newest Stop or Reset, so a failed one stays visible; `null` when there was none. */
+  latestChange: previewLatestChangeSchema.nullable(),
   controller: z.strictObject({ connected: z.boolean() }),
 });
 export type Preview = z.infer<typeof previewSchema>;
+
+/** The Projects whose Preview takes one of the places: running, or with a build requested or claimed. */
+export const previewsListSchema = z.strictObject({
+  /** The most Previews that run at the same time. */
+  limit: z.int(),
+  previews: z.array(z.strictObject({ projectId: z.uuid(), state: previewStateSchema })),
+});
+export type PreviewsList = z.infer<typeof previewsListSchema>;
+
+/** The 409 of a build refused because every place is taken. */
+export const previewLimitReachedProblemSchema = z.object({
+  type: z.string(),
+  title: z.string(),
+  status: z.int(),
+  detail: z.string(),
+  correlationId: z.string(),
+  running: z.array(
+    z.strictObject({ projectId: z.uuid(), name: z.string(), state: previewStateSchema }),
+  ),
+});
+export type PreviewLimitReachedProblem = z.infer<typeof previewLimitReachedProblemSchema>;
 
 export const removedPortSchema = z.strictObject({ service: z.string(), place: z.string() });
 

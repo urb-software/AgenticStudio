@@ -2,11 +2,18 @@ import { isUniqueConstraintViolation, Prisma } from '@agentic-studio/database';
 import { Inject, Injectable } from '@nestjs/common';
 import { DATABASE_CLIENT } from '../../../../platform/database/database.module.js';
 import { PreviewOperation } from '../../domain/entities/preview-operation.js';
-import { PreviewBuildRunningError } from '../../domain/errors/preview-settings-errors.js';
+import {
+  PreviewBuildRunningError,
+  PreviewBusyError,
+} from '../../domain/errors/preview-settings-errors.js';
 import type {
+  PreviewDisconnectReadModel,
+  PreviewOccupation,
   PreviewReadModel,
   PreviewOperationRepository,
+  PreviewRequestFacts,
 } from '../../domain/repositories/preview-operation-repository.js';
+import { StateCheckRule } from '../../domain/value-objects/state-check-rule.js';
 import { OverdueBuildRule } from '../../domain/value-objects/overdue-build-rule.js';
 import type { UnclaimedOperationRule } from '../../domain/value-objects/unclaimed-operation-rule.js';
 import {
@@ -21,10 +28,19 @@ import type { PreviewOperationResultData } from '../../domain/value-objects/prev
 import { PREVIEW_OPERATION_STATUSES } from '../../domain/value-objects/preview-operation-status.js';
 import { type Executor, inTransaction } from './executor.js';
 
+/** The operations that change what runs, as `PreviewRunningRule.changesRunning` selects them. */
+const CHANGES_RUNNING = Prisma.sql`(
+  (status = 'succeeded' AND (kind IN ('build', 'stop', 'remove_data')
+    OR (kind = 'state' AND preview_removed)))
+  OR (status = 'failed' AND kind = 'build' AND preview_removed))`;
+
 const ACTIVE_BUILD_INDEX = 'preview_operations_one_active_build_per_project';
 
 /** The serialisation point of claims: a transaction-scoped advisory lock, released at commit. */
 const CLAIM_LOCK = 'studio.environments.claim';
+
+/** The serialisation point of operator requests: one transaction-scoped advisory lock. */
+const REQUEST_LOCK = 'studio.environments.requests';
 
 /** PostgreSQL adapter of {@link PreviewOperationRepository}: `preview_operations`. */
 @Injectable()
@@ -32,64 +48,76 @@ export class PrismaPreviewOperationRepository implements PreviewOperationReposit
   constructor(@Inject(DATABASE_CLIENT) private readonly db: Executor) {}
 
   async add(operation: PreviewOperation): Promise<void> {
-    const data = operation.toData();
-    try {
-      await this.insert(data);
-    } catch (error) {
-      if (data.kind === 'build' && isActiveBuildViolation(error)) {
-        throw new PreviewBuildRunningError();
-      }
-      throw error;
-    }
+    await insert(this.db, operation);
+  }
+
+  async request(
+    projectId: string,
+    decide: (facts: PreviewRequestFacts) => PreviewOperation[],
+  ): Promise<PreviewOperation[]> {
+    return inTransaction(this.db, async (tx) => {
+      await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext(${REQUEST_LOCK}))`;
+      const preview = await readFacts(tx, projectId);
+      const occupying = await readOccupying(tx);
+      const operations = decide({ preview, occupying });
+      for (const operation of operations) await insert(tx, operation);
+      return operations;
+    });
   }
 
   async findPreviewFacts(projectId: string): Promise<PreviewReadModel> {
-    const latest = await this.db.previewOperation.findFirst({
-      where: { projectId, kind: 'build' },
-      orderBy: [{ requestedAt: 'desc' }, { id: 'desc' }],
-    });
-    // The statement of PreviewRunningRule.changesRunning, newest finish first.
-    const [change] = await this.db.$queryRaw<{ id: string }[]>`
-      SELECT id FROM preview_operations
-      WHERE project_id = ${projectId}::uuid
-        AND ((status = 'succeeded' AND kind IN ('build', 'stop', 'remove_data'))
-          OR (status = 'failed' AND kind = 'build' AND preview_removed))
-      ORDER BY finished_at DESC, id DESC
-      LIMIT 1`;
+    return readFacts(this.db, projectId);
+  }
+
+  async findOccupyingProjects(): Promise<PreviewOccupation[]> {
+    return readOccupying(this.db);
+  }
+
+  async findStateCheckProjects(): Promise<string[]> {
+    const codes = Prisma.join([...StateCheckRule.UNCERTAIN_FAILURES]);
+    const rows = await this.db.$queryRaw<{ project_id: string }[]>`
+      SELECT n.project_id::text AS project_id FROM (
+        SELECT DISTINCT ON (project_id) project_id, kind, status, claimed_at, failure_code
+        FROM preview_operations
+        ORDER BY project_id, requested_at DESC, id DESC) n
+      WHERE n.kind = 'build' AND n.status = 'failed' AND n.claimed_at IS NOT NULL
+        AND n.failure_code IN (${codes})
+      ORDER BY n.project_id`;
+    return rows.map((row) => row.project_id);
+  }
+
+  async findDisconnectFacts(projectId: string): Promise<PreviewDisconnectReadModel> {
+    const active = { projectId, status: { in: ['requested', 'claimed'] } };
+    const [operations, claimedBuilds, newest, activeOperations, activeRemovals] = await Promise.all(
+      [
+        this.db.previewOperation.count({ where: { projectId } }),
+        this.db.previewOperation.count({
+          where: { projectId, kind: 'build', claimedAt: { not: null } },
+        }),
+        this.db.previewOperation.findFirst({
+          where: { projectId },
+          orderBy: [{ requestedAt: 'desc' }, { id: 'desc' }],
+          select: { kind: true, status: true },
+        }),
+        this.db.previewOperation.count({ where: active }),
+        this.db.previewOperation.count({ where: { ...active, kind: 'remove_data' } }),
+      ],
+    );
     return {
-      latestBuild: latest === null ? null : toOperation(latest),
-      runningChange: change ? await this.find(change.id) : null,
+      operations,
+      buildEverClaimed: claimedBuilds > 0,
+      newest,
+      activeOperations,
+      removalActive: activeRemovals > 0,
     };
   }
 
-  private async insert(data: ReturnType<PreviewOperation['toData']>): Promise<void> {
-    await this.db.previewOperation.create({
-      data: {
-        id: data.id,
-        projectId: data.projectId,
-        kind: data.kind,
-        status: data.status,
-        requestedAt: data.requestedAt,
-        ...(data.build === null
-          ? {}
-          : {
-              commit: data.build.commit,
-              composeFile: data.build.composeFile,
-              service: data.build.service,
-              port: data.build.port,
-              memoryMiB: data.build.limits.memoryMiB,
-              cpuPercent: data.build.limits.cpuPercent,
-              tasksMax: data.build.limits.tasksMax,
-              buildMinutes: data.build.limits.buildMinutes,
-            }),
-      },
-    });
+  async deleteForProject(projectId: string): Promise<void> {
+    await this.db.previewOperation.deleteMany({ where: { projectId } });
   }
 
   async find(id: string): Promise<PreviewOperation | null> {
-    if (!isPreviewOperationId(id)) return null;
-    const row = await this.db.previewOperation.findUnique({ where: { id } });
-    return row === null ? null : toOperation(row);
+    return findOperation(this.db, id);
   }
 
   async change(
@@ -201,6 +229,95 @@ export class PrismaPreviewOperationRepository implements PreviewOperationReposit
     return rows.flatMap((row) =>
       row.environmentFileSecretId === null ? [] : [row.environmentFileSecretId],
     );
+  }
+}
+
+async function findOperation(db: Executor, id: string): Promise<PreviewOperation | null> {
+  if (!isPreviewOperationId(id)) return null;
+  const row = await db.previewOperation.findUnique({ where: { id } });
+  return row === null ? null : toOperation(row);
+}
+
+async function readFacts(db: Executor, projectId: string): Promise<PreviewReadModel> {
+  const [latestBuild, latestChange] = await Promise.all([
+    db.previewOperation.findFirst({
+      where: { projectId, kind: 'build' },
+      orderBy: [{ requestedAt: 'desc' }, { id: 'desc' }],
+    }),
+    db.previewOperation.findFirst({
+      where: { projectId, kind: { in: ['stop', 'remove_data'] } },
+      orderBy: [{ requestedAt: 'desc' }, { id: 'desc' }],
+    }),
+  ]);
+  // The statement of PreviewRunningRule.changesRunning, newest finish first.
+  const [change] = await db.$queryRaw<{ id: string }[]>`
+    SELECT id FROM preview_operations
+    WHERE project_id = ${projectId}::uuid AND ${CHANGES_RUNNING}
+    ORDER BY finished_at DESC, id DESC
+    LIMIT 1`;
+  return {
+    latestBuild: latestBuild === null ? null : toOperation(latestBuild),
+    runningChange: change ? await findOperation(db, change.id) : null,
+    latestChange: latestChange === null ? null : toOperation(latestChange),
+  };
+}
+
+/** The statement of PreviewRunningLimitRule: a running Preview or an active build. */
+async function readOccupying(db: Executor): Promise<PreviewOccupation[]> {
+  const rows = await db.$queryRaw<{ project_id: string; state: 'building' | 'running' }[]>`
+    WITH latest AS (
+      SELECT DISTINCT ON (project_id) project_id, kind, status
+      FROM preview_operations
+      WHERE ${CHANGES_RUNNING}
+      ORDER BY project_id, finished_at DESC, id DESC),
+    active AS (
+      SELECT DISTINCT project_id FROM preview_operations
+      WHERE kind = 'build' AND status IN ('requested', 'claimed'))
+    SELECT p.project_id::text AS project_id,
+           CASE WHEN p.project_id IN (SELECT project_id FROM active)
+                THEN 'building' ELSE 'running' END AS state
+    FROM (SELECT project_id FROM active
+          UNION
+          SELECT project_id FROM latest WHERE kind = 'build' AND status = 'succeeded') p
+    ORDER BY p.project_id`;
+  return rows.map((row) => ({ projectId: row.project_id, state: row.state }));
+}
+
+async function insert(db: Executor, operation: PreviewOperation): Promise<void> {
+  const data = operation.toData();
+  try {
+    await db.previewOperation.create({
+      data: {
+        id: data.id,
+        projectId: data.projectId,
+        kind: data.kind,
+        status: data.status,
+        requestedAt: data.requestedAt,
+        ...(data.build === null
+          ? {}
+          : {
+              commit: data.build.commit,
+              composeFile: data.build.composeFile,
+              service: data.build.service,
+              port: data.build.port,
+              memoryMiB: data.build.limits.memoryMiB,
+              cpuPercent: data.build.limits.cpuPercent,
+              tasksMax: data.build.limits.tasksMax,
+              buildMinutes: data.build.limits.buildMinutes,
+            }),
+      },
+    });
+  } catch (error) {
+    if (data.kind === 'build' && isActiveBuildViolation(error)) {
+      throw new PreviewBuildRunningError();
+    }
+    if (
+      (data.kind === 'stop' || data.kind === 'remove_data') &&
+      isUniqueConstraintViolation(error)
+    ) {
+      throw new PreviewBusyError();
+    }
+    throw error;
   }
 }
 

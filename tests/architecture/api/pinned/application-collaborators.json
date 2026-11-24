@@ -30,6 +30,9 @@
     },
     "projects/application/environment-file-view.ts": {
       "reason": "Steps 1 to 5 tried: a result shape is no behaviour of the entity (1); no infrastructure capability is involved (2); get and set show the same Environment file, and handlers never call each other, so no one use case holds it (3); it is no job or event (4); copying its fields into each of those features would drift, since a new field must be added to every copy (5). It is a type with a pure mapping from the entity: no rule, no repository or port call."
+    },
+    "environments/application/preview-build-requests.ts": {
+      "reason": "Steps 1 to 5 tried: it reads the Repository's source port, the settings, the controller presence and the Compose judge, so it cannot live in the domain, which holds the refusals and the limit in PreviewState and PreviewStartLimit (1); it is a sequence of several ports, not one infrastructure capability (2); the build route and Reset both prepare and request a build, and handlers never call each other, so no one use case holds it (3); the operator waits for the refusals, so it is no job or event (4); copying its steps into both would let the order of the checks drift (5)."
     }
   }
 }

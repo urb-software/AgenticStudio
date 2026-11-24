@@ -62,6 +62,8 @@ const environmentSchema = z.object({
     .default(30_000),
   STUDIO_CONTROLLER_KILL_GRACE_SECONDS: z.coerce.number().int().min(1).max(300).default(10),
   STUDIO_CONTROLLER_MIN_FREE_GB: z.coerce.number().min(0).max(100_000).default(2),
+  // The build cache is pruned to this size after every build.
+  STUDIO_CONTROLLER_BUILD_CACHE_MAX_GB: z.coerce.number().min(1).max(100_000).default(10),
   STUDIO_CONTROLLER_PROXY_GID: z.coerce
     .number()
     .int()
@@ -96,6 +98,7 @@ export interface ControllerConfig {
   requestTimeoutMs: number;
   killGraceMs: number;
   minFreeBytes: number;
+  buildCacheMaxBytes: number;
   proxyGid: number;
   proxyDir: string;
   egressRulesBin: string;
@@ -170,6 +173,7 @@ export function loadConfig(env: Record<string, string | undefined>): ControllerC
     requestTimeoutMs: value.STUDIO_CONTROLLER_REQUEST_TIMEOUT_MS,
     killGraceMs: value.STUDIO_CONTROLLER_KILL_GRACE_SECONDS * 1000,
     minFreeBytes: Math.round(value.STUDIO_CONTROLLER_MIN_FREE_GB * 1024 ** 3),
+    buildCacheMaxBytes: Math.round(value.STUDIO_CONTROLLER_BUILD_CACHE_MAX_GB * 1024 ** 3),
     proxyGid: value.STUDIO_CONTROLLER_PROXY_GID,
     proxyDir: value.STUDIO_CONTROLLER_PROXY_DIR,
     egressRulesBin: value.STUDIO_CONTROLLER_EGRESS_RULES_BIN,

@@ -1,5 +1,7 @@
+import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { SECRET_STORE, type SecretStore } from '../../../../../platform/secrets/index.js';
+import { PreviewOperation } from '../../../domain/entities/preview-operation.js';
 import {
   PREVIEW_OPERATION_REPOSITORY,
   type PreviewOperationRepository,
@@ -19,9 +21,14 @@ export interface SweepPreviewOperationsResult {
   releasedSnapshots: number;
   /** Requested operations that failed as not claimed. */
   unclaimed: number;
+  /** State checks requested for Projects whose lost build left the Preview unknown. */
+  stateChecks: number;
 }
 
-/** Fails the operations nobody carries and deletes the snapshots they held. */
+/**
+ * Fails the operations nobody carries and deletes the snapshots they held, then asks the
+ * controller what runs for every Project whose newest operation is a build it lost.
+ */
 @Injectable()
 export class SweepPreviewOperationsHandler {
   private readonly logger = new Logger('SweepPreviewOperations');
@@ -48,7 +55,22 @@ export class SweepPreviewOperationsHandler {
           now,
         )
       : 0;
-    return { releasedSnapshots: lost.length + overdue.length, unclaimed };
+    return {
+      releasedSnapshots: lost.length + overdue.length,
+      unclaimed,
+      stateChecks: await this.requestStateChecks(now),
+    };
+  }
+
+  /** The state check is then the newest operation, so a Project is selected once. */
+  private async requestStateChecks(now: Date): Promise<number> {
+    const projectIds = await this.operations.findStateCheckProjects();
+    for (const projectId of projectIds) {
+      await this.operations.add(
+        PreviewOperation.requestOther({ id: randomUUID(), projectId, kind: 'state', now }),
+      );
+    }
+    return projectIds.length;
   }
 
   private async discard(secretId: string): Promise<void> {

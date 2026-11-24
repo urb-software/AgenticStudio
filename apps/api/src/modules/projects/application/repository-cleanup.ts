@@ -5,18 +5,21 @@ import {
   REPOSITORY_CONNECTION_REPOSITORY,
   type RepositoryConnectionRepository,
 } from '../domain/repositories/repository-connection-repository.js';
+import { REPOSITORY_DISCONNECT_STEPS, type RepositoryDisconnectSteps } from '../contracts/index.js';
 import { DEPLOY_KEYS, type DeployKeys } from './ports/deploy-keys.js';
 import { REPOSITORY_GIT, type RepositoryGit } from './ports/repository-git.js';
 
 /** One thing a Disconnect removes; each step is idempotent, so a retry runs them all again. */
 interface CleanupStep {
   readonly name: string;
-  run(repository: RepositoryConnection): Promise<void>;
+  /** `pending`: the step started work another process finishes; a retry asks again. */
+  run(repository: RepositoryConnection): Promise<void | 'done' | 'pending'>;
 }
 
 /**
  * The cleanup of a `disconnecting` Repository, shared by the operator's Disconnect and the
- * start-up resume. A failed step leaves the Repository `disconnecting` for a retry.
+ * start-up resume. A failed or pending step leaves the Repository `disconnecting` for a retry;
+ * the steps other modules added run first.
  */
 @Injectable()
 export class RepositoryCleanup {
@@ -28,6 +31,7 @@ export class RepositoryCleanup {
     private readonly repositories: RepositoryConnectionRepository,
     @Inject(REPOSITORY_GIT) git: RepositoryGit,
     @Inject(DEPLOY_KEYS) deployKeys: DeployKeys,
+    @Inject(REPOSITORY_DISCONNECT_STEPS) private readonly added: RepositoryDisconnectSteps,
   ) {
     this.steps = [
       { name: 'remove the Clone', run: (repository) => git.removeClone(repository.projectId) },
@@ -64,9 +68,16 @@ export class RepositoryCleanup {
       this.logPending(projectId, 'could not read the repository', error);
       return false;
     }
-    for (const step of this.steps) {
+    const addedSteps: CleanupStep[] = this.added.list().map((step) => ({
+      name: step.name,
+      run: (stored) => step.run(stored.projectId),
+    }));
+    for (const step of [...addedSteps, ...this.steps]) {
       try {
-        await step.run(repository);
+        if ((await step.run(repository)) === 'pending') {
+          this.logPending(projectId, `the step to ${step.name} is not done`, 'pending');
+          return false;
+        }
       } catch (error) {
         this.logPending(projectId, `could not ${step.name}`, error);
         return false;

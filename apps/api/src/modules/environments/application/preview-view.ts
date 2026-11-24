@@ -26,11 +26,24 @@ export interface PreviewBuildView {
   log: { bytes: number; truncated: boolean };
 }
 
+export type PreviewChangeKindView = 'stop' | 'reset_data';
+export type PreviewChangeStatusView = 'queued' | 'in_progress' | 'succeeded' | 'failed';
+
+/** What the operator sees of the newest stop or data removal. */
+export interface PreviewChangeView {
+  kind: PreviewChangeKindView;
+  status: PreviewChangeStatusView;
+  requestedAt: Date;
+  finishedAt: Date | null;
+  failure: { code: PreviewFailureCode; detail: string } | null;
+}
+
 /** What the operator sees of a Preview's state. */
 export interface PreviewStateView {
   state: PreviewStateName;
   running: { buildId: string; commit: string; since: Date; url: string | null } | null;
   latestBuild: PreviewBuildView | null;
+  latestChange: PreviewChangeView | null;
   controller: { connected: boolean };
   /** A build is requested or claimed. */
   buildActive: boolean;
@@ -42,6 +55,28 @@ const BUILD_STATUS: Record<PreviewOperationStatus, PreviewBuildStatusView> = {
   succeeded: 'succeeded',
   failed: 'failed',
 };
+
+const CHANGE_STATUS: Record<PreviewOperationStatus, PreviewChangeStatusView> = {
+  requested: 'queued',
+  claimed: 'in_progress',
+  succeeded: 'succeeded',
+  failed: 'failed',
+};
+
+/** The view of a stop or data removal. Throws when the operation is neither. */
+export function previewChangeView(operation: PreviewOperation): PreviewChangeView {
+  if (operation.kind !== 'stop' && operation.kind !== 'remove_data') {
+    throw new Error('Only a stop or a data removal has a change view.');
+  }
+  const failure = operation.failure;
+  return {
+    kind: operation.kind === 'stop' ? 'stop' : 'reset_data',
+    status: CHANGE_STATUS[operation.status],
+    requestedAt: operation.requestedAt,
+    finishedAt: operation.finishedAt,
+    failure: failure === null ? null : { code: failure.code, detail: failure.detail },
+  };
+}
 
 /** The view of a build operation. Throws when the operation is not a build. */
 export function previewBuildView(operation: PreviewOperation): PreviewBuildView {
@@ -88,6 +123,7 @@ export interface PreviewView {
   state: PreviewStateView['state'];
   running: PreviewStateView['running'];
   latestBuild: PreviewStateView['latestBuild'];
+  latestChange: PreviewStateView['latestChange'];
   controller: PreviewStateView['controller'];
 }
 
@@ -121,6 +157,7 @@ export function previewView(input: {
     state: stateView.state,
     running: stateView.running,
     latestBuild: stateView.latestBuild,
+    latestChange: stateView.latestChange,
     controller: stateView.controller,
   };
 }

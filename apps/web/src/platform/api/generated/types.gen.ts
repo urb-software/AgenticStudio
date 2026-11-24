@@ -501,7 +501,7 @@ export type PreviewOutput = {
         reason?: 'no_repository' | 'repository_not_ready' | 'unsupported_platform';
         commit?: string;
     };
-    state: 'not_configured' | 'stopped' | 'building' | 'running' | 'failed';
+    state: 'not_configured' | 'stopped' | 'stopping' | 'resetting_data' | 'building' | 'running' | 'failed';
     running: {
         buildId: string;
         commit: string;
@@ -530,6 +530,16 @@ export type PreviewOutput = {
             bytes: number;
             truncated: boolean;
         };
+    } | null;
+    latestChange: {
+        kind: 'stop' | 'reset_data';
+        status: 'queued' | 'in_progress' | 'succeeded' | 'failed';
+        requestedAt: string;
+        finishedAt: string | null;
+        failure: {
+            code: 'validation_refused' | 'compose_file_missing' | 'source_unavailable' | 'archive_invalid' | 'environment_file_tracked' | 'disk_full' | 'egress_rules_missing' | 'limits_failed' | 'build_failed' | 'build_timed_out' | 'start_failed' | 'runtime_failed' | 'controller_stopped' | 'controller_error' | 'controller_lost' | 'not_claimed' | 'report_overdue';
+            detail: string;
+        } | null;
     } | null;
     controller: {
         connected: boolean;
@@ -578,7 +588,7 @@ export type SavePreviewSettingsResponseOutput = {
         reason?: 'no_repository' | 'repository_not_ready' | 'unsupported_platform';
         commit?: string;
     };
-    state: 'not_configured' | 'stopped' | 'building' | 'running' | 'failed';
+    state: 'not_configured' | 'stopped' | 'stopping' | 'resetting_data' | 'building' | 'running' | 'failed';
     running: {
         buildId: string;
         commit: string;
@@ -608,12 +618,35 @@ export type SavePreviewSettingsResponseOutput = {
             truncated: boolean;
         };
     } | null;
+    latestChange: {
+        kind: 'stop' | 'reset_data';
+        status: 'queued' | 'in_progress' | 'succeeded' | 'failed';
+        requestedAt: string;
+        finishedAt: string | null;
+        failure: {
+            code: 'validation_refused' | 'compose_file_missing' | 'source_unavailable' | 'archive_invalid' | 'environment_file_tracked' | 'disk_full' | 'egress_rules_missing' | 'limits_failed' | 'build_failed' | 'build_timed_out' | 'start_failed' | 'runtime_failed' | 'controller_stopped' | 'controller_error' | 'controller_lost' | 'not_claimed' | 'report_overdue';
+            detail: string;
+        } | null;
+    } | null;
     controller: {
         connected: boolean;
     };
     removedPorts?: Array<{
         service: string;
         place: string;
+    }>;
+};
+
+export type PreviewLimitReachedProblem = {
+    type: string;
+    title: string;
+    status: number;
+    detail: string;
+    correlationId: string;
+    running: Array<{
+        projectId: string;
+        name: string;
+        state: 'not_configured' | 'stopped' | 'stopping' | 'resetting_data' | 'building' | 'running' | 'failed';
     }>;
 };
 
@@ -639,6 +672,14 @@ export type PreviewBuildOutput = {
         bytes: number;
         truncated: boolean;
     };
+};
+
+export type PreviewsListOutput = {
+    limit: number;
+    previews: Array<{
+        projectId: string;
+        state: 'not_configured' | 'stopped' | 'stopping' | 'resetting_data' | 'building' | 'running' | 'failed';
+    }>;
 };
 
 export type PreviewBuildEventsOutput = {
@@ -2187,7 +2228,7 @@ export type RequestPreviewBuildErrors = {
      */
     404: ProblemDetails;
     /**
-     * No Preview settings (urn:agentic-studio:problem:preview-not-configured), the repository cannot be read now (urn:agentic-studio:problem:preview-repository-not-ready), the API is not on Linux (urn:agentic-studio:problem:preview-unsupported-platform), no environment controller is connected (urn:agentic-studio:problem:preview-controller-unavailable), or a build is already running (urn:agentic-studio:problem:preview-build-running)
+     * No Preview settings (urn:agentic-studio:problem:preview-not-configured), the repository cannot be read now (urn:agentic-studio:problem:preview-repository-not-ready), the API is not on Linux (urn:agentic-studio:problem:preview-unsupported-platform), no environment controller is connected (urn:agentic-studio:problem:preview-controller-unavailable), a build is already running (urn:agentic-studio:problem:preview-build-running), a stop or a reset is running (urn:agentic-studio:problem:preview-busy), or every place of the running limit is taken (urn:agentic-studio:problem:preview-limit-reached; `running` lists the projects that hold them)
      */
     409: ProblemDetails;
     /**
@@ -2211,6 +2252,92 @@ export type RequestPreviewBuildResponses = {
 };
 
 export type RequestPreviewBuildResponse = RequestPreviewBuildResponses[keyof RequestPreviewBuildResponses];
+
+export type StopPreviewData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/projects/{id}/preview/stop';
+};
+
+export type StopPreviewErrors = {
+    /**
+     * Unknown project (urn:agentic-studio:problem:project-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * No environment controller is connected (urn:agentic-studio:problem:preview-controller-unavailable), a build is running (urn:agentic-studio:problem:preview-build-running), a stop or a reset is running (urn:agentic-studio:problem:preview-busy) or the Preview is not running (urn:agentic-studio:problem:preview-not-running)
+     */
+    409: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type StopPreviewError = StopPreviewErrors[keyof StopPreviewErrors];
+
+export type StopPreviewResponses = {
+    202: PreviewOutput;
+};
+
+export type StopPreviewResponse = StopPreviewResponses[keyof StopPreviewResponses];
+
+export type ResetPreviewDataData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/projects/{id}/preview/reset-data';
+};
+
+export type ResetPreviewDataErrors = {
+    /**
+     * Unknown project (urn:agentic-studio:problem:project-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * No environment controller is connected (urn:agentic-studio:problem:preview-controller-unavailable), a build is running (urn:agentic-studio:problem:preview-build-running) or a stop or a reset is running (urn:agentic-studio:problem:preview-busy)
+     */
+    409: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type ResetPreviewDataError = ResetPreviewDataErrors[keyof ResetPreviewDataErrors];
+
+export type ResetPreviewDataResponses = {
+    202: PreviewOutput;
+};
+
+export type ResetPreviewDataResponse = ResetPreviewDataResponses[keyof ResetPreviewDataResponses];
+
+export type ListPreviewsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/previews';
+};
+
+export type ListPreviewsErrors = {
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type ListPreviewsError = ListPreviewsErrors[keyof ListPreviewsErrors];
+
+export type ListPreviewsResponses = {
+    200: PreviewsListOutput;
+};
+
+export type ListPreviewsResponse = ListPreviewsResponses[keyof ListPreviewsResponses];
 
 export type ListPreviewBuildEventsData = {
     body?: never;

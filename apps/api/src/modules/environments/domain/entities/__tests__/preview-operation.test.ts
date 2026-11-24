@@ -193,6 +193,45 @@ describe('PreviewOperation', () => {
     expect(succeeded.previewRemoved).toBe(false);
   });
 
+  describe('a state check', () => {
+    const check = (kind: 'state' | 'stop' = 'state') => {
+      const operation = PreviewOperation.requestOther({
+        id: ID,
+        projectId: PROJECT,
+        kind,
+        now: T0,
+      });
+      operation.claim(CONTROLLER, T0);
+      return operation;
+    };
+
+    it('records previewRemoved when it finds no service running', () => {
+      const none = check();
+      none.succeed(CONTROLLER, PreviewOperationResult.of([]), T1);
+      expect(none.previewRemoved).toBe(true);
+
+      const exited = check();
+      exited.succeed(CONTROLLER, PreviewOperationResult.of([{ name: 'web', state: 'exited' }]), T1);
+      expect(exited.previewRemoved).toBe(true);
+    });
+
+    it('does not record it while a service runs, or without a result', () => {
+      const up = check();
+      up.succeed(CONTROLLER, PreviewOperationResult.of([{ name: 'web', state: 'running' }]), T1);
+      expect(up.previewRemoved).toBe(false);
+
+      const blank = check();
+      blank.succeed(CONTROLLER, null, T1);
+      expect(blank.previewRemoved).toBe(false);
+    });
+
+    it('is never recorded for another kind that succeeds with nothing running', () => {
+      const stop = check('stop');
+      stop.succeed(CONTROLLER, PreviewOperationResult.of([]), T1);
+      expect(stop.previewRemoved).toBe(false);
+    });
+  });
+
   it('fails an overdue claimed build and an unclaimed requested one, each only in its status', () => {
     const overdue = build();
     expect(() =>

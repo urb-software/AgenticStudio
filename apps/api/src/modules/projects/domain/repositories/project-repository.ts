@@ -18,6 +18,9 @@ export interface ProjectRepository {
   /** The project with this id, or `null`. */
   findById(id: string): Promise<Project | null>;
 
+  /** The projects with these ids, in no order; an unknown id, or one that is not a UUID, is left out. */
+  findByIds(ids: readonly string[]): Promise<Project[]>;
+
   /**
    * Writes the Project's merge method and no other field. `false` when the project no longer
    * exists.

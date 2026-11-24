@@ -447,6 +447,7 @@ describe('the controller writes no secret to its own log', () => {
     const operations = new PreviewOperations({
       dataDir,
       minFreeBytes: 1,
+      buildCacheMaxBytes: 1024,
       killGraceMs: 10,
       compose: { PATH: '/usr/bin', DOCKER_HOST: 'unix:///x', XDG_RUNTIME_DIR: '/x' },
       fetchSource: async () => ({ stream: chunked(archive), length: archive.length }),
@@ -484,5 +485,105 @@ describe('the controller writes no secret to its own log', () => {
         ),
       ).toBe(true);
     }
+  });
+});
+
+describe('the controller after a restart of the Preview daemon', () => {
+  let dataDir: string;
+  beforeEach(() => {
+    dataDir = mkdtempSync(join(tmpdir(), 'controller-restart-'));
+  });
+  afterEach(() => {
+    rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  const operationsOver = (fake: FakeRuntime) => {
+    const archive = tar(
+      file(
+        'compose.yaml',
+        ['services:', '  web:', '    image: nginx:1.27', ''].join(String.fromCharCode(10)),
+      ),
+    );
+    return new PreviewOperations({
+      dataDir,
+      minFreeBytes: 1,
+      buildCacheMaxBytes: 1024,
+      killGraceMs: 10,
+      compose: { PATH: '/usr/bin', DOCKER_HOST: 'unix:///x', XDG_RUNTIME_DIR: '/x' },
+      fetchSource: async () => ({ stream: chunked(archive), length: archive.length }),
+      runtime: fake,
+      slices: fake,
+      egress: fake,
+      desired: new DesiredStates(dataDir),
+    });
+  };
+
+  const build = () =>
+    ({
+      ...op('build'),
+      kind: 'build',
+      commit: 'b'.repeat(40),
+      composeFile: 'compose.yaml',
+      service: 'web',
+      port: 80,
+      environmentFile: null,
+      limits: { memoryMiB: 1024, cpuPercent: 100, tasksMax: 512, buildMinutes: 20 },
+    }) as OperationPayload;
+
+  it('starts again, once the egress rules check out, the Previews meant to run, and a state check then agrees', async () => {
+    const before = new FakeRuntime();
+    const first = new FakeApi();
+    const built = build();
+    first.queue.push(built);
+    const running = start(first, operationsOver(before));
+    await until(() => first.final(built.operationId).length === 1);
+    await running.stop();
+    expect(first.final(built.operationId)[0]).toMatchObject({ state: 'succeeded' });
+    expect(before.bridges.open).toHaveLength(1);
+
+    // The daemon and the controller restart together: nothing runs, only the desired state is left.
+    const after = new FakeRuntime();
+    expect(after.bridges.open).toEqual([]);
+    const second = new FakeApi();
+    const check = op('state');
+    second.queue.push(check);
+    const logger = new Recorder();
+    const restarted = start(second, operationsOver(after), logger);
+    await until(() => second.final(check.operationId).length === 1);
+    await restarted.stop();
+
+    expect(after.events.slice(0, 2)).toEqual(['egress.verify', `start ${COMPOSE_PROJECT}`]);
+    expect(after.bridges.open).toEqual(['preview-8f14e45fceea']);
+    expect(logger.events.find((event) => event.name === 'previews_resumed')?.fields).toMatchObject({
+      outcome: '1 started, 0 failed',
+    });
+    expect(second.final(check.operationId)).toEqual([
+      { state: 'succeeded', runtime: { services: [{ name: 'web', state: 'running' }] } },
+    ]);
+  });
+
+  it('starts nothing while the egress rules are missing, and a state check then reports what really runs', async () => {
+    const before = new FakeRuntime();
+    const first = new FakeApi();
+    const built = build();
+    first.queue.push(built);
+    const running = start(first, operationsOver(before));
+    await until(() => first.final(built.operationId).length === 1);
+    await running.stop();
+
+    const blocked = new FakeRuntime({ egressMissing: true });
+    const second = new FakeApi();
+    const check = op('state');
+    second.queue.push(check);
+    const logger = new Recorder();
+    const restarted = start(second, operationsOver(blocked), logger);
+    await until(() => second.final(check.operationId).length === 1);
+    await restarted.stop();
+
+    expect(logger.events.map((event) => event.name)).toContain('resume_blocked');
+    expect(blocked.bridges.open).toEqual([]);
+    expect(second.final(check.operationId)).toEqual([
+      { state: 'succeeded', runtime: { services: [] } },
+    ]);
   });
 });

@@ -2,8 +2,10 @@ import {
   type PreviewRefusal,
   previewBuildEventsSchema,
   previewBuildSchema,
+  previewLimitReachedProblemSchema,
   previewRefusedProblemSchema,
   previewSchema,
+  previewsListSchema,
   savePreviewSettingsResponseSchema,
 } from '@agentic-studio/contracts';
 import { createZodDto } from 'nestjs-zod';
@@ -19,6 +21,15 @@ export class SavePreviewSettingsResponseDto extends createZodDto(
 /** The 422 of a save, for the OpenAPI document. */
 export class PreviewRefusedProblemDto extends createZodDto(
   previewRefusedProblemSchema.meta({ id: 'PreviewRefusedProblem' }),
+) {}
+
+export class PreviewsListDto extends createZodDto(
+  previewsListSchema.meta({ id: 'PreviewsList' }),
+) {}
+
+/** The 409 of a build refused by the running limit, for the OpenAPI document. */
+export class PreviewLimitReachedProblemDto extends createZodDto(
+  previewLimitReachedProblemSchema.meta({ id: 'PreviewLimitReachedProblem' }),
 ) {}
 
 export class PreviewBuildDto extends createZodDto(
@@ -66,6 +77,14 @@ export function toPreviewResponse(view: PreviewView): PreviewDto {
     running:
       view.running === null ? null : { ...view.running, since: view.running.since.toISOString() },
     latestBuild: view.latestBuild === null ? null : toPreviewBuildResponse(view.latestBuild),
+    latestChange:
+      view.latestChange === null
+        ? null
+        : {
+            ...view.latestChange,
+            requestedAt: view.latestChange.requestedAt.toISOString(),
+            finishedAt: iso(view.latestChange.finishedAt),
+          },
     controller: view.controller,
   };
 }

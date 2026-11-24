@@ -45,6 +45,7 @@ describe('operations only', () => {
     const operations = new PreviewOperations({
       dataDir: dir,
       minFreeBytes: 1,
+      buildCacheMaxBytes: 1024,
       killGraceMs: 1,
       compose: { PATH: '/usr/bin', DOCKER_HOST: 'unix:///x', XDG_RUNTIME_DIR: '/x' },
       fetchSource: async () => {

@@ -72,6 +72,7 @@ function setup(options: Setup = {}) {
   const ops = new PreviewOperations({
     dataDir,
     minFreeBytes: 1,
+    buildCacheMaxBytes: 10 * 1024 ** 3,
     killGraceMs: 10,
     compose: {
       PATH: '/usr/bin',
@@ -105,6 +106,8 @@ const failureOf = async (promise: Promise<unknown>) => {
   throw new Error('expected a failure');
 };
 
+const CLEANUP = [`removeImages ${COMPOSE_PROJECT} dangling`, `pruneBuildCache ${10 * 1024 ** 3}`];
+
 describe('build', () => {
   it('extracts, validates, applies the slice, verifies twice, builds, starts and records the state', async () => {
     const { fake, ops, context } = setup();
@@ -119,6 +122,7 @@ describe('build', () => {
       'egress.verify',
       `start ${COMPOSE_PROJECT}`,
       `state ${COMPOSE_PROJECT}`,
+      ...CLEANUP,
     ]);
     expect(outcome.runtime).toEqual({ services: [{ name: 'web', state: 'running' }] });
     expect(fake.limits[0]).toEqual(op.limits);
@@ -197,7 +201,7 @@ describe('build', () => {
       message: expect.any(String),
     });
     expect(Object.keys(refusals[0]!).sort()).toEqual(['code', 'message', 'place']);
-    expect(fake.events).toEqual([]);
+    expect(fake.events).toEqual(CLEANUP);
     expect(existsSync(buildLayout(dataDir, PROJECT, op.operationId).buildDir)).toBe(false);
   });
 
@@ -228,7 +232,7 @@ describe('build', () => {
     expect(await failureOf(ops.execute(op, context() as never))).toMatchObject({
       code: 'environment_file_tracked',
     });
-    expect(fake.events).toEqual([]);
+    expect(fake.events).toEqual(CLEANUP);
   });
 
   it('reports an invalid archive as archive_invalid', async () => {
@@ -310,7 +314,7 @@ describe('build', () => {
     expect(await failureOf(ops.execute(build(), context() as never))).toMatchObject({
       code: 'limits_failed',
     });
-    expect(fake.events).toEqual([]);
+    expect(fake.events).toEqual(CLEANUP);
   });
 
   it('reports limits_failed when the build cannot be bounded, and builds nothing', async () => {
@@ -328,7 +332,7 @@ describe('build', () => {
     expect(await failureOf(ops.execute(op, context() as never))).toMatchObject({
       code: 'limits_failed',
     });
-    expect(fake.events).toEqual([`slice.apply ${COMPOSE_PROJECT}`]);
+    expect(fake.events).toEqual([`slice.apply ${COMPOSE_PROJECT}`, ...CLEANUP]);
     expect(existsSync(buildLayout(dataDir, PROJECT, op.operationId).buildDir)).toBe(false);
   });
 
@@ -409,9 +413,65 @@ describe('stop, remove data, state', () => {
     expect(fake.events).toEqual([
       `removeContainers ${COMPOSE_PROJECT}`,
       `removeVolumes ${COMPOSE_PROJECT}`,
+      `removeImages ${COMPOSE_PROJECT} all`,
       `slice.remove ${COMPOSE_PROJECT}`,
     ]);
     expect(existsSync(join(dataDir, 'previews', PROJECT))).toBe(false);
+  });
+
+  it('stop keeps the images and the volumes, and reset logs what it removed', async () => {
+    const { fake, ops, context } = await running();
+    fake.events.length = 0;
+    await ops.execute(other('stop'), context() as never);
+    expect(fake.events.some((event) => event.startsWith('removeImages'))).toBe(false);
+    expect(fake.events.some((event) => event.startsWith('removeVolumes'))).toBe(false);
+
+    const lines: [string, string][] = [];
+    await ops.execute(other('remove_data'), {
+      signal: new AbortController().signal,
+      log: (stream: string, text: string) => void lines.push([stream, text]),
+    } as never);
+    expect(lines.map(([, text]) => text)).toEqual(
+      expect.arrayContaining([
+        `fake volumes removed for ${LABEL}`,
+        `fake images removed for ${LABEL}`,
+      ]),
+    );
+  });
+
+  it('prunes the build cache to the setting after a succeeded and after a failed build', async () => {
+    const ok = setup({ deps: { buildCacheMaxBytes: 12_345 } });
+    await ok.ops.execute(build(), ok.context() as never);
+    expect(ok.fake.events.at(-1)).toBe('pruneBuildCache 12345');
+    expect(ok.fake.events.at(-2)).toBe(`removeImages ${COMPOSE_PROJECT} dangling`);
+
+    const failing = setup({
+      fakeOptions: { failBuild: 'exit 1' },
+      deps: { buildCacheMaxBytes: 6 },
+    });
+    await failureOf(failing.ops.execute(build(), failing.context() as never));
+    expect(failing.fake.events.at(-1)).toBe('pruneBuildCache 6');
+  });
+
+  it('does not fail a build whose clean-up fails, and says so in the log', async () => {
+    const fake = new FakeRuntime();
+    fake.removeImages = async () => {
+      throw new OperationFailure('runtime_failed', 'Docker could not remove 1 image(s).');
+    };
+    fake.pruneBuildCache = async () => {
+      throw new OperationFailure('runtime_failed', 'Docker could not prune the build cache.');
+    };
+    const { ops, logged, context } = setup({ fake });
+
+    const outcome = await ops.execute(build(), context() as never);
+
+    expect(outcome.runtime?.services).toHaveLength(1);
+    expect(logged.map(([, text]) => text)).toEqual(
+      expect.arrayContaining([
+        'The dangling images of the build could not all be removed.',
+        'The build cache could not be pruned.',
+      ]),
+    );
   });
 
   it('stop, remove_data and state still run when the egress rules are missing', async () => {

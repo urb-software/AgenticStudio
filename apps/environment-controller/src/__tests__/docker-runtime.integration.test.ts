@@ -103,7 +103,12 @@ describe.skipIf(!available)('Docker Compose runtime on a real daemon', () => {
   let runtime: DockerComposeRuntime;
   let bridges: NodeProxyBridges;
   let operations: PreviewOperations;
-  const created = { containers: [] as string[], networks: [] as string[], volumes: [] as string[] };
+  const created = {
+    containers: [] as string[],
+    networks: [] as string[],
+    volumes: [] as string[],
+    images: [] as string[],
+  };
   const projects: string[] = [];
 
   const build = (projectId: string, overrides: Record<string, unknown> = {}): OperationPayload =>
@@ -128,6 +133,7 @@ describe.skipIf(!available)('Docker Compose runtime on a real daemon', () => {
     return new PreviewOperations({
       dataDir,
       minFreeBytes: 1,
+      buildCacheMaxBytes: 10 * 1024 ** 3,
       killGraceMs: 2000,
       compose: {
         PATH: process.env.PATH ?? '/usr/bin',
@@ -168,10 +174,12 @@ describe.skipIf(!available)('Docker Compose runtime on a real daemon', () => {
       const call = { signal: AbortSignal.timeout(120_000), onLine: () => undefined };
       await runtime?.removeContainers(identity, call).catch(() => undefined);
       await runtime?.removeVolumes(identity, call).catch(() => undefined);
+      await runtime?.removeImages(identity, call, { danglingOnly: false }).catch(() => undefined);
     }
     if (created.containers.length) docker(['rm', '-f', '-v', ...created.containers]);
     if (created.networks.length) docker(['network', 'rm', ...created.networks]);
     if (created.volumes.length) docker(['volume', 'rm', '-f', ...created.volumes]);
+    if (created.images.length) docker(['image', 'rm', '-f', ...created.images]);
     if (dataDir) rmSync(dataDir, { recursive: true, force: true });
   });
 
@@ -360,6 +368,111 @@ describe.skipIf(!available)('Docker Compose runtime on a real daemon', () => {
     expect(read.stdout.trim()).toBe(mark);
     expect(volumes()).toEqual([volume]);
   }, 600_000);
+
+  const imagesOf = (projectId: string, extra: string[] = []) =>
+    ids([
+      'image',
+      'ls',
+      '--all',
+      '--no-trunc',
+      '--quiet',
+      ...extra,
+      '--filter',
+      `label=${OWNER}`,
+      '--filter',
+      `label=${projectLabel(projectId)}`,
+    ]);
+
+  const archiveOf = (compose: string, page: string) =>
+    tar(
+      directory('app/'),
+      file('compose.yaml', compose),
+      file('app/Dockerfile', DOCKERFILE),
+      file('app/index.html', page),
+    );
+
+  it.each([
+    [
+      'the long build syntax',
+      'services:\n  web:\n    build:\n      context: ./app\n    expose: ["3000"]\n',
+    ],
+    ['the short build syntax', 'services:\n  web:\n    build: ./app\n    expose: ["3000"]\n'],
+  ])(
+    'labels the image it builds with both ownership labels, for %s',
+    async (_name, compose) => {
+      const projectId = randomUUID();
+      projects.push(projectId);
+
+      await operationsFor(archiveOf(compose, 'one\n')).execute(
+        build(projectId, { environmentFile: null }),
+        context(),
+      );
+
+      const images = imagesOf(projectId);
+      expect(images.length).toBeGreaterThan(0);
+      for (const id of new Set(images)) {
+        const [image] = inspect('image', id);
+        expect(image!.Config.Labels['io.agentic-studio.owner']).toBe('environment-controller');
+        expect(image!.Config.Labels['io.agentic-studio.project']).toBe(projectId);
+      }
+    },
+    600_000,
+  );
+
+  it('removes the dangling images of a rebuild, keeps the current one, and removes all on remove_data', async () => {
+    const projectId = randomUUID();
+    projects.push(projectId);
+    const compose = 'services:\n  web:\n    build:\n      context: ./app\n    expose: ["3000"]\n';
+    const suffix = randomUUID().slice(0, 8);
+    const decoy = `decoy-image-${suffix}`;
+    const other = `decoy-other-image-${suffix}`;
+    const labelled = (labels: string[]) =>
+      docker(
+        [
+          'build',
+          '--tag',
+          labels.length ? other : decoy,
+          ...labels.flatMap((l) => ['--label', l]),
+          '-',
+        ],
+        'FROM busybox:1.37\n',
+      );
+    expect(labelled([]).status).toBe(0);
+    expect(labelled([OWNER, projectLabel(randomUUID())]).status).toBe(0);
+    created.images.push(decoy, other);
+
+    await operationsFor(archiveOf(compose, 'one\n')).execute(
+      build(projectId, { environmentFile: null }),
+      context(),
+    );
+    const first = new Set(imagesOf(projectId));
+    await operationsFor(archiveOf(compose, 'two\n')).execute(
+      build(projectId, { environmentFile: null }),
+      context(),
+    );
+
+    expect(imagesOf(projectId, ['--filter', 'dangling=true'])).toEqual([]);
+    const current = new Set(imagesOf(projectId));
+    expect(current.size).toBeGreaterThan(0);
+    for (const id of first) expect(current.has(id)).toBe(false);
+
+    await operations.execute(simple('stop', projectId), context());
+    expect(new Set(imagesOf(projectId))).toEqual(current);
+
+    await operations.execute(simple('remove_data', projectId), context());
+    expect(imagesOf(projectId)).toEqual([]);
+    expect(inspect('image', decoy)).toHaveLength(1);
+    expect(inspect('image', other)).toHaveLength(1);
+  }, 900_000);
+
+  it('prunes the build cache with arguments the daemon accepts', async () => {
+    await expect(
+      runtime.pruneBuildCache(10 * 1024 ** 3, {
+        signal: AbortSignal.timeout(120_000),
+        onLine: () => undefined,
+      }),
+    ).resolves.toBeUndefined();
+  }, 180_000);
 
   it('reports the state of a stopped Project as empty', async () => {
     const projectId = randomUUID();

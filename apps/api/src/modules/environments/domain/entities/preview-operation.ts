@@ -180,6 +180,7 @@ export class PreviewOperation {
     this.current = { ...this.current, heartbeatAt: now };
   }
 
+  /** A state check that finds no service running records that the Preview is gone. */
   succeed(controllerId: string, result: PreviewOperationResult | null, now: Date): void {
     this.assertHeldBy(controllerId);
     this.current = {
@@ -187,6 +188,10 @@ export class PreviewOperation {
       status: 'succeeded',
       heartbeatAt: null,
       finishedAt: now,
+      previewRemoved:
+        this.current.kind === 'state' &&
+        result !== null &&
+        !result.services.some((service) => service.state === 'running'),
       result: result === null ? null : result.toData(),
       environmentFile: null,
     };

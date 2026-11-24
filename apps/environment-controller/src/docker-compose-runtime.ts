@@ -62,6 +62,11 @@ export function composeArguments(run: PreviewRun, subcommand: readonly string[])
   ];
 }
 
+/** The size cap is the pinned Docker's `--keep-storage`; `--all` so that cache no build uses goes too. */
+export function buildCachePruneArguments(maxBytes: number): string[] {
+  return ['builder', 'prune', '--all', '--force', '--keep-storage', String(maxBytes)];
+}
+
 /**
  * Drives the Preview user's Docker through the Compose CLI. Everything that is removed or listed
  * is found by both ownership labels, re-checked in the inspected JSON and acted on by explicit
@@ -135,6 +140,41 @@ export class DockerComposeRuntime implements ContainerRuntime {
       env,
       call,
     );
+  }
+
+  async removeImages(
+    identity: PreviewIdentity,
+    call: RuntimeCall,
+    options: { danglingOnly: boolean },
+  ): Promise<void> {
+    const env = await this.adminEnvironmentFor();
+    const images = await this.ownedResources('image', identity, env, call, options.danglingOnly);
+    let failed = 0;
+    for (const id of new Set(images.map((image) => image.Id))) {
+      const result = await this.execute(
+        ['image', 'rm', id],
+        env,
+        call,
+        undefined,
+        REMOVAL_TIMEOUT_MS,
+      );
+      if (result.exitCode !== 0) failed += 1;
+    }
+    if (failed > 0) {
+      throw new OperationFailure('runtime_failed', `Docker could not remove ${failed} image(s).`);
+    }
+  }
+
+  async pruneBuildCache(maxBytes: number, call: RuntimeCall): Promise<void> {
+    const env = await this.adminEnvironmentFor();
+    const result = await this.execute(
+      buildCachePruneArguments(maxBytes),
+      env,
+      call,
+      undefined,
+      REMOVAL_TIMEOUT_MS,
+    );
+    this.require(result, 'runtime_failed', 'Docker could not prune the build cache');
   }
 
   async state(identity: PreviewIdentity, call: RuntimeCall): Promise<OperationRuntime> {
@@ -232,21 +272,36 @@ export class DockerComposeRuntime implements ContainerRuntime {
 
   /** The ids the daemon lists for both labels, then the inspected JSON checked for both again. */
   private async ownedResources(
-    kind: 'container' | 'network' | 'volume',
+    kind: 'container' | 'network' | 'volume' | 'image',
     identity: PreviewIdentity,
     env: Record<string, string>,
     call: RuntimeCall,
+    danglingOnly = false,
   ): Promise<{ Id: string; Name: string; item: Inspected }[]> {
     const listing =
       kind === 'container'
         ? ['ps', '--all', '--no-trunc', '--quiet', ...this.labelFilters(identity)]
-        : [kind, 'ls', '--quiet', ...this.labelFilters(identity)];
+        : kind === 'image'
+          ? [
+              'image',
+              'ls',
+              '--all',
+              '--no-trunc',
+              '--quiet',
+              ...(danglingOnly ? ['--filter', 'dangling=true'] : []),
+              ...this.labelFilters(identity),
+            ]
+          : [kind, 'ls', '--quiet', ...this.labelFilters(identity)];
     const listed = await this.execute(listing, env, call);
     this.require(listed, 'runtime_failed', `Docker could not list ${kind}s`);
-    const ids = listed.stdout
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line !== '');
+    const ids = [
+      ...new Set(
+        listed.stdout
+          .split('\n')
+          .map((line) => line.trim())
+          .filter((line) => line !== ''),
+      ),
+    ];
     if (ids.length === 0) return [];
     const inspected = await this.execute([kind, 'inspect', ...ids], env, call);
     this.require(inspected, 'runtime_failed', `Docker could not inspect ${kind}s`);

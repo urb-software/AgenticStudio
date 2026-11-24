@@ -28,7 +28,7 @@ export interface PreviewOperationData {
   readonly finishedAt: Date | null;
   /** Set exactly when the status is `failed`. */
   readonly failure: PreviewOperationFailureData | null;
-  /** True only for a failed build whose rollback removed the Project's running Preview. */
+  /** True only for a failed build whose rollback removed the running Preview, or a state check that found none. */
   readonly previewRemoved: boolean;
   readonly result: PreviewOperationResultData | null;
   /** The Environment file snapshot a build holds: its path and its secret store reference. */

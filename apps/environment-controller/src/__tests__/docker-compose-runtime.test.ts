@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { DockerComposeRuntime } from '../docker-compose-runtime.js';
+import { buildCachePruneArguments, DockerComposeRuntime } from '../docker-compose-runtime.js';
 import { OperationAborted, OperationFailure } from '../failure.js';
 import { buildLayout } from '../layout.js';
 import type { PreviewRun, RuntimeCall } from '../ports.js';
@@ -47,6 +47,7 @@ function daemon(world: {
   containers?: object[];
   networks?: object[];
   volumes?: object[];
+  images?: object[];
   failing?: (call: Call) => boolean;
 }) {
   return new RecordingRunner((c) => {
@@ -57,13 +58,19 @@ function daemon(world: {
     if (first === 'ps') return { stdout: ids(world.containers, 'Id') };
     if (first === 'network' && second === 'ls') return { stdout: ids(world.networks, 'Id') };
     if (first === 'volume' && second === 'ls') return { stdout: ids(world.volumes, 'Name') };
+    if (first === 'image' && second === 'ls') {
+      // A listing repeats the id of an image that has several tags.
+      return { stdout: `${ids(world.images, 'Id')}\n${ids(world.images, 'Id')}` };
+    }
     if (second === 'inspect') {
       const items =
         first === 'container'
           ? world.containers
           : first === 'network'
             ? world.networks
-            : world.volumes;
+            : first === 'image'
+              ? world.images
+              : world.volumes;
       return { stdout: JSON.stringify(items ?? []) };
     }
     return {};
@@ -335,6 +342,113 @@ describe('ownership', () => {
         .filter((c) => c.args[0] === 'volume' && c.args[1] === 'rm')
         .map((c) => [...c.args]),
     ).toEqual([['volume', 'rm', 'vol-mine']]);
+  });
+
+  describe('images and the build cache', () => {
+    const image = (id: string, labels: Record<string, string> | null) => ({
+      Id: id,
+      Config: { Labels: labels },
+    });
+    const removals = (runner: RecordingRunner) =>
+      runner.calls
+        .filter((c) => c.args[0] === 'image' && c.args[1] === 'rm')
+        .map((c) => [...c.args]);
+
+    it('lists the labelled images of the Project, inspects them and removes each by id', async () => {
+      const runner = daemon({
+        images: [
+          image('sha256:mine', ownedLabels),
+          image('sha256:other-project', {
+            ...ownedLabels,
+            'io.agentic-studio.project': OTHER_PROJECT,
+          }),
+          image('sha256:unlabelled', null),
+        ],
+      });
+
+      await runtime(runner).runtime.removeImages(run, call(), { danglingOnly: false });
+
+      const listing = runner.calls.find((c) => c.args[0] === 'image' && c.args[1] === 'ls')!;
+      expect([...listing.args]).toEqual([
+        'image',
+        'ls',
+        '--all',
+        '--no-trunc',
+        '--quiet',
+        '--filter',
+        `label=${OWNER}`,
+        '--filter',
+        `label=${PROJECT_LABEL}`,
+      ]);
+      const inspect = runner.calls.find((c) => c.args[0] === 'image' && c.args[1] === 'inspect')!;
+      expect([...inspect.args]).toEqual([
+        'image',
+        'inspect',
+        'sha256:mine',
+        'sha256:other-project',
+        'sha256:unlabelled',
+      ]);
+      expect(removals(runner)).toEqual([['image', 'rm', 'sha256:mine']]);
+    });
+
+    it('adds the dangling filter when only dangling images go', async () => {
+      const runner = daemon({ images: [image('sha256:mine', ownedLabels)] });
+
+      await runtime(runner).runtime.removeImages(run, call(), { danglingOnly: true });
+
+      const listing = runner.calls.find((c) => c.args[0] === 'image' && c.args[1] === 'ls')!;
+      expect(listing.args).toContain('dangling=true');
+      expect(removals(runner)).toEqual([['image', 'rm', 'sha256:mine']]);
+    });
+
+    it('removes nothing without a labelled image, and tries the rest before it fails', async () => {
+      const none = daemon({});
+      await runtime(none).runtime.removeImages(run, call(), { danglingOnly: false });
+      expect(removals(none)).toEqual([]);
+
+      const runner = daemon({
+        images: [image('sha256:a', ownedLabels), image('sha256:b', ownedLabels)],
+        failing: (c) => c.args[0] === 'image' && c.args[1] === 'rm' && c.args[2] === 'sha256:a',
+      });
+      await expect(
+        runtime(runner).runtime.removeImages(run, call(), { danglingOnly: false }),
+      ).rejects.toMatchObject({ code: 'runtime_failed' });
+      expect(removals(runner)).toEqual([
+        ['image', 'rm', 'sha256:a'],
+        ['image', 'rm', 'sha256:b'],
+      ]);
+    });
+
+    it('prunes the build cache with the pinned arguments', async () => {
+      const runner = daemon({});
+
+      await runtime(runner).runtime.pruneBuildCache(10 * 1024 ** 3, call());
+
+      expect(runner.argsOf(0)).toEqual([
+        'builder',
+        'prune',
+        '--all',
+        '--force',
+        '--keep-storage',
+        '10737418240',
+      ]);
+      expect(buildCachePruneArguments(1)).toEqual([
+        'builder',
+        'prune',
+        '--all',
+        '--force',
+        '--keep-storage',
+        '1',
+      ]);
+    });
+
+    it('fails when Docker cannot prune the cache', async () => {
+      const runner = daemon({ failing: (c) => c.args[0] === 'builder' });
+
+      await expect(runtime(runner).runtime.pruneBuildCache(1, call())).rejects.toMatchObject({
+        code: 'runtime_failed',
+      });
+    });
   });
 
   it('removes nothing and runs no removal when nothing is labelled', async () => {

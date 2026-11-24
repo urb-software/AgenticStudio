@@ -6,6 +6,7 @@ import {
 } from '../../../../platform/database/database.module.js';
 import { Project } from '../../domain/entities/project.js';
 import { type ProjectRepository } from '../../domain/repositories/project-repository.js';
+import { isProjectId } from '../../domain/value-objects/project-id.js';
 import { isMergeMethod } from '../../domain/value-objects/merge-method.js';
 import type { ProjectName } from '../../domain/value-objects/project-name.js';
 import { ProjectNameTakenError } from '../../domain/errors/project-errors.js';
@@ -64,6 +65,16 @@ export class PrismaProjectRepository implements ProjectRepository {
   async findById(id: string): Promise<Project | null> {
     const row = await this.db.project.findUnique({ where: { id }, select: PROJECT_FIELDS });
     return row ? toProject(row) : null;
+  }
+
+  async findByIds(ids: readonly string[]): Promise<Project[]> {
+    const valid = ids.filter((id) => isProjectId(id));
+    if (valid.length === 0) return [];
+    const rows = await this.db.project.findMany({
+      where: { id: { in: valid } },
+      select: PROJECT_FIELDS,
+    });
+    return rows.map(toProject);
   }
 
   async saveMergeMethod(project: Project): Promise<boolean> {
