@@ -619,7 +619,15 @@ expect_true "... rootless Docker is back" wait_for preview_side_up
 expect_true "... with its egress rules applied again" \
   as_preview nsenter -U --preserve-credentials -n -t "$(cat "/run/user/$puid/dockerd-rootless/child_pid")" \
   /usr/local/lib/agentic-studio/preview-egress-rules verify
-expect_true "... and the controller is back (it follows the daemon)" wait_for controller_active
+controller_active_for_a_minute() {
+  local _
+  for _ in $(seq 1 60); do controller_active && return 0; sleep 1; done
+  return 1
+}
+if expect_true "... and the controller is back (it follows the daemon)" controller_active_for_a_minute; then :; else
+  as_preview systemctl --user status agentic-studio-controller.service --no-pager 2>&1 | sed 's/^/      | /'
+  journalctl _SYSTEMD_USER_UNIT=agentic-studio-controller.service _UID="$puid" -n 30 --no-pager 2>&1 | sed 's/^/      | /'
+fi
 "$preview_firewall" remove
 systemctl start agentic-studio-preview-firewall-verify.service
 expect_false "Preview rules missing -> the verify run stops the Preview firewall unit" \
