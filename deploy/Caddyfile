@@ -10,8 +10,7 @@
 #   Studio's network (not published on the host), /api only.
 # - X-Forwarded-For: Caddy trusts no incoming X-Forwarded-* header (no trusted proxy is set) and
 #   sets it to the address the connection came from; the API trusts it from this proxy only.
-# - The Preview site (Issue #277) is a separate file, imported when present. It is the wildcard
-#   `*.STUDIO_PREVIEW_DOMAIN`, which matches one label only, so it never overlaps this exact site.
+# - The Preview site is a separate file, imported when present (deploy/Caddyfile.preview).
 # - No response buffering or compression: live Run logs (server-sent events) stream as they come.
 {
 	admin off
@@ -27,7 +26,7 @@
 }
 
 # The Preview site, only when compose.server.preview.yaml mounts it (STUDIO_PREVIEW_DOMAIN is
-# set); an empty glob changes nothing. See deploy/Caddyfile.preview.
+# set); an empty glob changes nothing.
 import /etc/caddy/preview-site*.caddy
 
 {$STUDIO_DOMAIN} {

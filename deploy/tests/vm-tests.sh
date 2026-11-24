@@ -215,7 +215,7 @@ cookie="$(public -D - -o /dev/null -X POST -H "Origin: https://$DOMAIN" -H 'Cont
 expect_line "the session cookie is Secure (https origin)" "$cookie" '; *secure'
 expect_line "the session cookie is HttpOnly" "$cookie" '; *httponly'
 
-section "Preview site of the reverse proxy (Issue #277): domain, hash, wildcard certificate"
+section "Preview site of the reverse proxy: domain, hash, wildcard certificate"
 PREVIEW_DOMAIN=preview.example.test
 PREVIEW_LABEL=preview-aaaaaaaaaaaa
 PREVIEW_HOST="$PREVIEW_LABEL.$PREVIEW_DOMAIN"

@@ -1,15 +1,4 @@
-// The Preview site of the reverse proxy (Issue #277): Caddy from the pinned image, with the real
-// deploy/Caddyfile and deploy/Caddyfile.preview and the Compose hardening flags, in front of
-// stand-ins: Studio's api and web (counters) and the Preview bridges (deploy/tests/
-// preview-standin.mjs, Unix sockets in a 0750 directory of uid 2002, group 2003).
-//
-//   node --test deploy/tests/preview-proxy.test.mjs
-//
-// Linux with Docker only (CI job deploy:server); it skips elsewhere with a reason, and fails
-// when CI=true and Docker is missing. Needs root or `sudo -n` (to run the stand-in as uid 2002
-// and to make the socket directory). Everything is throwaway: a self-signed wildcard certificate,
-// a random Preview password hashed with `caddy hash-password`, ports on 127.0.0.1 only. Nothing
-// is committed and no real hostname is used (`.test` names).
+// Runs the real Caddy with the Preview site against stand-in sockets (docs/engineering/deployment.md, "What CI covers").
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -151,7 +140,7 @@ const proxies = [];
 const dockerOut = (args) => execFileSync('docker', args, { encoding: 'utf8' }).trim();
 
 /** Starts the proxy like deploy/compose.server*.yaml does; returns its published ports. */
-async function startProxy({ studioDomain, previewDomain }) {
+async function startProxy({ studioDomain, previewDomain, tlsDir = certDir, refuses = false }) {
   const name = `preview-proxy-test-${randomBytes(4).toString('hex')}`;
   const args = [
     'run', '-d', '--name', name,
@@ -170,7 +159,7 @@ async function startProxy({ studioDomain, previewDomain }) {
       '-e', `STUDIO_PREVIEW_PASSWORD_HASH=${passwordHash}`,
       '-v', `${file('Caddyfile.preview')}:/etc/caddy/preview-site.caddy:ro`,
       '-v', `${socketDir}:/run/preview-proxy:ro`,
-      '-v', `${certDir}:/data/preview-tls:ro`,
+      '-v', `${tlsDir}:/data/preview-tls:ro`,
     ); // prettier-ignore
   }
   args.push(image, 'caddy', 'run', '--config', '/etc/caddy/Caddyfile', '--adapter', 'caddyfile');
@@ -180,7 +169,13 @@ async function startProxy({ studioDomain, previewDomain }) {
   const proxy = { name, https: port(443), http: port(80), ca: [] };
   for (let attempt = 0; ; attempt++) {
     const running = dockerOut(['inspect', '-f', '{{.State.Running}}', name]) === 'true';
-    if (!running) throw new Error(`proxy stopped:\n${dockerOut(['logs', name])}`);
+    if (!running) {
+      if (refuses) {
+        const exitCode = Number(dockerOut(['inspect', '-f', '{{.State.ExitCode}}', name]));
+        return { name, exitCode, logs: dockerOut(['logs', name]) };
+      }
+      throw new Error(`proxy stopped:\n${dockerOut(['logs', name])}`);
+    }
     try {
       // Trust only the throwaway wildcard certificate and this proxy's own internal CA.
       const root = dockerOut(['exec', name, 'cat', '/data/caddy/pki/authorities/local/root.crt']);
@@ -190,6 +185,7 @@ async function startProxy({ studioDomain, previewDomain }) {
     } catch {
       // Not listening yet.
     }
+    if (attempt > 80 && refuses) throw new Error('the proxy did not refuse to start');
     if (attempt > 80) throw new Error(`proxy not ready:\n${dockerOut(['logs', name])}`);
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
@@ -461,20 +457,23 @@ describe('Preview site of the reverse proxy', { skip }, () => {
   });
 
   it('shows the Preview its own headers only: no Authorization, no Studio cookie, no client address', async () => {
-    const forged = {
-      Cookie:
-        'studio_session=studiovalue; app=keep; __Host-studio_session=studiovalue2; theme=dark',
+    const address = {
       'X-Forwarded-For': '203.0.113.9',
       Forwarded: 'for=203.0.113.9;proto=http',
       'X-Real-IP': '203.0.113.9',
     };
-    const check = (answer) => {
+    const names = (cookie) =>
+      (cookie ?? '')
+        .split(';')
+        .map((pair) => pair.trim().split('=')[0])
+        .filter(Boolean);
+    const check = (answer, keep) => {
       assert.equal(answer.status, 200);
       const seen = answer.json().headers;
       assert.equal(seen.authorization, undefined);
-      assert.match(seen.cookie, /(^|; )app=keep(;|$)/);
-      assert.match(seen.cookie, /(^|; )theme=dark(;|$)/);
-      assert.doesNotMatch(seen.cookie, /studio_session|studiovalue/);
+      const cookies = names(seen.cookie);
+      assert.deepEqual(cookies.sort(), [...keep].sort(), String(seen.cookie));
+      assert.doesNotMatch(seen.cookie ?? '', /studiovalue/);
       for (const name of ['x-forwarded-for', 'forwarded', 'x-real-ip']) {
         assert.equal(seen[name], undefined, name);
       }
@@ -482,18 +481,30 @@ describe('Preview site of the reverse proxy', { skip }, () => {
       assert.equal(seen['x-forwarded-host'], answer.host);
       assert.equal(seen.host, answer.host);
     };
-    check(await ask(LABEL.one, { headers: forged }));
+    // The Studio cookie under both names is removed wherever it stands; look-alikes stay.
+    const cases = [
+      ['studio_session=studiovalue; app=keep; __Host-studio_session=studiovalue2; theme=dark', ['app', 'theme']],
+      ['app=keep; theme=dark; studio_session=studiovalue', ['app', 'theme']],
+      ['app=keep; __Host-studio_session=studiovalue', ['app']],
+      ['studio_session=studiovalue', []],
+      ['__Host-studio_session=studiovalue', []],
+      ['xstudio_session=keep; studio_session=studiovalue; studio_session_x=keep', ['xstudio_session', 'studio_session_x']],
+    ]; // prettier-ignore
+    for (const [cookie, keep] of cases) {
+      check(await ask(LABEL.one, { headers: { Cookie: cookie, ...address } }), keep);
+    }
     check(
       await request2(main, {
         host: previewHost(LABEL.one),
         secret: password,
         headers: {
           cookie: ['studio_session=studiovalue; app=keep', '__Host-studio_session=studiovalue2; theme=dark'],
-          'x-forwarded-for': forged['X-Forwarded-For'],
-          forwarded: forged.Forwarded,
-          'x-real-ip': forged['X-Real-IP'],
+          'x-forwarded-for': address['X-Forwarded-For'],
+          forwarded: address.Forwarded,
+          'x-real-ip': address['X-Real-IP'],
         },
       }),
+      ['app', 'theme'],
     ); // prettier-ignore
   });
 
@@ -586,12 +597,19 @@ describe('Preview site of the reverse proxy', { skip }, () => {
     const socket = await webSocket(main, {
       host: previewHost(LABEL.two),
       secret: password,
-      headers: { Cookie: 'studio_session=studiovalue; app=keep', 'X-Forwarded-For': '203.0.113.9' },
+      headers: {
+        Cookie: 'studio_session=studiovalue; app=keep',
+        'X-Forwarded-For': '203.0.113.9',
+        Forwarded: 'for=203.0.113.9',
+        'X-Real-IP': '203.0.113.9',
+      },
     });
     assert.equal(socket.status, 101);
     const seen = JSON.parse(await socket.next()).headers;
     assert.equal(seen.authorization, undefined);
-    assert.equal(seen['x-forwarded-for'], undefined);
+    for (const name of ['x-forwarded-for', 'forwarded', 'x-real-ip']) {
+      assert.equal(seen[name], undefined, name);
+    }
     assert.match(seen.cookie, /app=keep/);
     assert.doesNotMatch(seen.cookie, /studio_session/);
     socket.send('hello-preview');
@@ -616,6 +634,20 @@ describe('Preview site of the reverse proxy', { skip }, () => {
     assert.equal(run(null), 'EACCES');
     // Control: the same user with the proxy's group connects, so the refusal is the mode.
     assert.equal(run(PROXY_GID), 'connected');
+  });
+
+  it('refuses to start when the certificate files are missing', async () => {
+    const empty = join(tmp, 'no-certs');
+    mkdirSync(empty, { mode: 0o755 });
+    chmodSync(empty, 0o755);
+    const stopped = await startProxy({
+      studioDomain: STUDIO_DOMAIN,
+      previewDomain: PREVIEW_DOMAIN,
+      tlsDir: empty,
+      refuses: true,
+    });
+    assert.notEqual(stopped.exitCode, 0);
+    assert.match(stopped.logs, /preview-tls|fullchain|certificate/i);
   });
 
   it('starts and serves Studio without the Preview site when Previews are off', async () => {

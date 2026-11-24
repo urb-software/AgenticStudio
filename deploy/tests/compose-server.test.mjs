@@ -46,7 +46,7 @@ const TEST_ENV = {
   DATABASE_URL: 'postgresql://studio:test-only-not-a-secret@postgres:5432/agentic_studio',
 };
 
-/** Previews (Issue #277): test-only placeholders; the hash is not a real bcrypt hash of anything. */
+/** Previews: test-only placeholders; the hash is not a real bcrypt hash of anything. */
 const PREVIEW_ENV = {
   ...TEST_ENV,
   STUDIO_PREVIEW_DOMAIN: 'preview.example.invalid',
@@ -216,7 +216,7 @@ describe(
       assert.ok(!redis.healthcheck.test.join(' ').includes(TEST_ENV.REDIS_PASSWORD));
     });
 
-    describe('with the Preview overlay (Issue #277)', () => {
+    describe('with the Preview overlay', () => {
       const files = [base, app, preview];
 
       it('changes nothing for the proxy without it', () => {
@@ -286,7 +286,7 @@ describe(
             assert.equal(service.environment?.STUDIO_PREVIEW_PASSWORD_HASH, undefined, name);
           }
         }
-        // One variable for both: the API reads the same env file (its start-up guard, #276).
+        // One variable for both: the API reads the same env file (its start-up guard).
         assert.equal(services.api.environment.STUDIO_PREVIEW_DOMAIN, 'preview.example.invalid');
         assert.equal(proxy.depends_on.api.condition, 'service_healthy');
         assert.equal(proxy.depends_on.web.condition, 'service_healthy');
@@ -359,7 +359,7 @@ describe('fixed network defaults', () => {
   });
 });
 
-describe('Preview proxy files (Issue #277)', () => {
+describe('Preview proxy files', () => {
   const caddyfile = read('Caddyfile');
   const site = read('Caddyfile.preview');
   const code = (text) =>

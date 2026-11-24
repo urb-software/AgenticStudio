@@ -1,18 +1,4 @@
-// A stand-in for the Preview bridges (#285), for deploy/tests/preview-proxy.test.mjs. Node core only.
-//
-//   node preview-standin.mjs <socket directory>
-//
-// It listens on one Unix socket per label, named `<label>.sock` in the directory, and answers
-// every HTTP request with the request's headers as JSON (plus its label), and every WebSocket
-// upgrade with the handshake, the headers as the first text frame, and then an echo of every
-// text frame. Control lines on stdin, one reply line on stdout each:
-//
-//   up <label>     start listening (sockets are made with mode 0660)
-//   down <label>   stop listening; the socket file goes with it
-//   stale <label>  leave a socket file nobody listens on (a bridge that was killed)
-//   quit
-//
-// Every request also prints `hit <label>` first, so the test can count what reached it.
+// Stand-in Preview sockets for preview-proxy.test.mjs; control lines on stdin: up|down|stale <label>, quit.
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { rmSync } from 'node:fs';
