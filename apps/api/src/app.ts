@@ -4,7 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import type { IncomingMessage } from 'node:http';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module.js';
-import { verifyWorkerToken } from './platform/auth/worker-token.js';
+import { verifyBearerToken } from './platform/auth/bearer-token.js';
 import { APP_CONFIG, type AppConfig } from './platform/config/config.js';
 
 /** Routes whose JSON bodies may exceed 100 KiB: worker step/state reports, Environment file. */
@@ -50,7 +50,7 @@ export async function buildApp(
     type: (request: IncomingMessage) =>
       RUN_DIFF_ROUTE.test(request.url?.split('?')[0] ?? '') &&
       JSON_CONTENT_TYPE.test(request.headers['content-type'] ?? '') &&
-      verifyWorkerToken(workerToken, request.headers.authorization),
+      verifyBearerToken(workerToken, request.headers.authorization),
   });
   app.useBodyParser('json', { limit: '100kb' });
   app.disable('x-powered-by');

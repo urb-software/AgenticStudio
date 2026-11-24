@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { type DynamicModule, RequestMethod } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
 import { AppModule } from '../app.module.js';
+import { IS_CONTROLLER_ROUTE } from '../platform/auth/controller-route.js';
 import { IS_PUBLIC } from '../platform/auth/public.decorator.js';
 import { IS_WORKER_ROUTE } from '../platform/auth/worker-route.js';
 import { testConfig } from './test-config.js';
@@ -32,9 +33,10 @@ function routes(controllers: Controller[]): string[] {
         if (typeof method !== 'number') return [];
         const path = String(Reflect.getMetadata('path', handler));
         const worker = flag(IS_WORKER_ROUTE, handler, controller);
+        const environmentController = flag(IS_CONTROLLER_ROUTE, handler, controller);
         const isPublic = flag(IS_PUBLIC, handler, controller);
         const flags = [
-          worker ? 'worker-token' : 'session',
+          environmentController ? 'controller-token' : worker ? 'worker-token' : 'session',
           ...(isPublic ? ['public'] : []),
           ...guards(controller).map((guard) => `class-guard:${guard}`),
           ...guards(handler).map((guard) => `guard:${guard}`),
@@ -64,6 +66,7 @@ describe('route and guard inventory', () => {
         "DELETE /api/projects/:id/repository [session]",
         "DELETE /api/runs/:runId/pull-request/failing-checks/prepared [session]",
         "GET /api/agent-worker [session]",
+        "GET /api/controller/operations/:operationId/source [controller-token]",
         "GET /api/projects [session]",
         "GET /api/projects/:id [session]",
         "GET /api/projects/:id/environment-file [session]",
@@ -83,6 +86,9 @@ describe('route and guard inventory', () => {
         "GET /api/runs/:runId/pull-request/review-comments [session]",
         "GET /api/runs/:runId/steps [session]",
         "GET /api/runs/summary [session]",
+        "POST /api/controller/operations/:operationId/log [controller-token]",
+        "POST /api/controller/operations/:operationId/state [controller-token]",
+        "POST /api/controller/operations/claim [controller-token]",
         "POST /api/projects [session]",
         "POST /api/projects/:id/repository [session]",
         "POST /api/projects/:id/repository/fetch [session]",

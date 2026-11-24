@@ -1,18 +1,18 @@
 import { createHash, createSecretKey, randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { verifyWorkerToken } from '../worker-token.js';
+import { verifyBearerToken } from '../bearer-token.js';
 
-// The worker token check; throwaway tokens generated per run, none committed.
+// The bearer token check, shared by the worker and controller routes; throwaway tokens generated per run, none committed.
 const TOKEN = randomBytes(32).toString('base64');
 const DIGEST = createSecretKey(createHash('sha256').update(TOKEN).digest());
 
-describe('verifyWorkerToken', () => {
+describe('verifyBearerToken', () => {
   it('accepts the configured token as a Bearer credential', () => {
-    expect(verifyWorkerToken(DIGEST, `Bearer ${TOKEN}`)).toBe(true);
+    expect(verifyBearerToken(DIGEST, `Bearer ${TOKEN}`)).toBe(true);
   });
 
   it('accepts the scheme in any case (RFC 9110 §11.1)', () => {
-    expect(verifyWorkerToken(DIGEST, `bearer ${TOKEN}`)).toBe(true);
+    expect(verifyBearerToken(DIGEST, `bearer ${TOKEN}`)).toBe(true);
   });
 
   it.each([
@@ -25,11 +25,11 @@ describe('verifyWorkerToken', () => {
     ['another scheme', `Basic ${TOKEN}`],
     ['an empty credential', 'Bearer '],
   ])('rejects %s', (_case, header) => {
-    expect(verifyWorkerToken(DIGEST, header)).toBe(false);
+    expect(verifyBearerToken(DIGEST, header)).toBe(false);
   });
 
   it('rejects everything when no token is configured (fail closed)', () => {
-    expect(verifyWorkerToken(null, `Bearer ${TOKEN}`)).toBe(false);
-    expect(verifyWorkerToken(null, undefined)).toBe(false);
+    expect(verifyBearerToken(null, `Bearer ${TOKEN}`)).toBe(false);
+    expect(verifyBearerToken(null, undefined)).toBe(false);
   });
 });
