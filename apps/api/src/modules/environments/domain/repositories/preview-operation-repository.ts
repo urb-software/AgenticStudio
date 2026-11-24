@@ -6,7 +6,7 @@ import type { UnclaimedOperationRule } from '../value-objects/unclaimed-operatio
 export const PREVIEW_OPERATION_REPOSITORY = Symbol('PREVIEW_OPERATION_REPOSITORY');
 
 /** What a Project's Preview state is derived from. */
-export interface PreviewFacts {
+export interface PreviewReadModel {
   /** The newest build by request time, or `null` when the Project never asked for one. */
   latestBuild: PreviewOperation | null;
   /**
@@ -25,7 +25,7 @@ export interface PreviewOperationRepository {
   add(operation: PreviewOperation): Promise<void>;
 
   /** The facts of the Project's Preview state; both `null` for a Project with no operation. */
-  findPreviewFacts(projectId: string): Promise<PreviewFacts>;
+  findPreviewFacts(projectId: string): Promise<PreviewReadModel>;
 
   /** The operation, or `null` when none has this id (also an id that is not a UUID). */
   find(id: string): Promise<PreviewOperation | null>;

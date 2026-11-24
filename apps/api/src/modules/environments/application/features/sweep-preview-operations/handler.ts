@@ -21,11 +21,7 @@ export interface SweepPreviewOperationsResult {
   unclaimed: number;
 }
 
-/**
- * Fails the operations nobody carries: a claimed one whose controller stopped reporting, a build
- * past its time limit and margin, and, while no controller is known to exist, a requested one
- * that waited too long. The snapshot of a failed claimed operation is deleted.
- */
+/** Fails the operations nobody carries and deletes the snapshots they held. */
 @Injectable()
 export class SweepPreviewOperationsHandler {
   private readonly logger = new Logger('SweepPreviewOperations');

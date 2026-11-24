@@ -244,7 +244,7 @@ export class PreviewOperations {
         startAttempted &&
         (failure instanceof OperationFailure || failure instanceof OperationAborted)
       ) {
-        failure.previewRemoved = true;
+        throw failure.afterRollback();
       }
       throw failure;
     }

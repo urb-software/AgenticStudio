@@ -87,12 +87,6 @@ export async function runControllerPhase(options) {
       })
     ).map((line) => line.text);
 
-  const saved = await call(`/api/projects/${projectId}/preview/settings`, {
-    method: 'PUT',
-    body: JSON.stringify({ composeFile: 'compose.yaml', service: 'web', port: 3000 }),
-  });
-  assert(saved.status === 200, `saving the Preview settings answered ${saved.status}`);
-
   // Every answer an operator route gave: none may hold the Environment file's value.
   const answers = [];
   const read = async (path, init) => {
@@ -101,6 +95,11 @@ export async function runControllerPhase(options) {
     answers.push(text);
     return { status: response.status, body: text === '' ? null : JSON.parse(text) };
   };
+  const saved = await read(`/api/projects/${projectId}/preview/settings`, {
+    method: 'PUT',
+    body: JSON.stringify({ composeFile: 'compose.yaml', service: 'web', port: 3000 }),
+  });
+  assert(saved.status === 200, `saving the Preview settings answered ${saved.status}`);
   const previewOf = async () => (await read(`/api/projects/${projectId}/preview`)).body;
 
   await until(

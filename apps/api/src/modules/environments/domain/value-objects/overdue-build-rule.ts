@@ -1,10 +1,6 @@
 import { PreviewOperationFailure } from './preview-operation-failure.js';
 
-/**
- * A claimed build still unreported this long after its time limit is failed, even when its
- * heartbeat keeps the lease alive. `selects` is the same selection over one operation as the
- * statement makes, which a test uses to prove the statement follows it.
- */
+/** Fails a claimed build that reported no end past its time limit plus a margin, whatever its heartbeat. */
 export class OverdueBuildRule {
   /** Minutes added to a build's own time limit before it counts as overdue. */
   static readonly MARGIN_MINUTES = 5;

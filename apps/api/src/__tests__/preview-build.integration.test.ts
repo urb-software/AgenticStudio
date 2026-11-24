@@ -268,6 +268,36 @@ describe('Preview build API (PostgreSQL + Redis via Testcontainers)', () => {
         });
       });
 
+      it('answers 409 preview-controller-unavailable before preview-build-running', async () => {
+        const id = await readyProject();
+        await db().previewOperation.create({
+          data: {
+            projectId: id,
+            kind: 'build',
+            status: 'requested',
+            commit: 'a'.repeat(40),
+            composeFile: 'compose.yaml',
+            service: 'web',
+            port: 80,
+            memoryMiB: 1024,
+            cpuPercent: 100,
+            tasksMax: 512,
+            buildMinutes: 20,
+          },
+        });
+
+        expectProblem(await requestBuild(id), 409, 'preview-controller-unavailable');
+      });
+
+      it('answers 502 preview-source-unavailable when the Compose file cannot be read', async () => {
+        const id = await readyProject();
+        await connectController();
+        await rm(join(dataDir, 'clones', `${id}.git`, 'objects'), { recursive: true, force: true });
+
+        expectProblem(await requestBuild(id), 502, 'preview-source-unavailable');
+        expect(await db().previewOperation.count({ where: { projectId: id } })).toBe(0);
+      });
+
       it('answers 409 preview-build-running for a second build', async () => {
         const id = await readyProject();
         await connectController();
@@ -320,6 +350,19 @@ describe('Preview build API (PostgreSQL + Redis via Testcontainers)', () => {
         ]);
       });
     });
+
+    it.skipIf(linux)(
+      'answers 409 preview-unsupported-platform where the API is not on Linux',
+      async () => {
+        const id = await createProject();
+        await db().previewSettings.create({
+          data: { projectId: id, composeFile: 'compose.yaml', service: 'web', port: 80 },
+        });
+        await connectController();
+
+        expectProblem(await requestBuild(id), 409, 'preview-unsupported-platform');
+      },
+    );
 
     it('answers 409 preview-repository-not-ready while the project has no repository', async () => {
       const id = await createProject();

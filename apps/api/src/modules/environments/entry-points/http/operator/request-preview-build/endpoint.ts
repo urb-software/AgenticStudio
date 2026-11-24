@@ -42,10 +42,7 @@ function toHttpError(error: unknown): unknown {
   return error;
 }
 
-/**
- * `POST /api/projects/:id/preview/builds`, behind the global session and mutation Origin guards:
- * an operator route only, with no body. The build is of the commit whose Compose file was judged.
- */
+/** `POST /api/projects/:id/preview/builds`, behind the global session and mutation Origin guards. */
 @ApiTags('environments')
 @ApiExtraModels(PreviewRefusedProblemDto)
 @Controller('projects')

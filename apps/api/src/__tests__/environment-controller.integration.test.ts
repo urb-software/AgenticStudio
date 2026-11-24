@@ -599,12 +599,12 @@ describe('Environment controller API (PostgreSQL + Redis via Testcontainers)', (
     const leftOver = async () =>
       existsSync(archiveFolder()) ? await readdir(archiveFolder()) : [];
 
-    async function readyProject(): Promise<string> {
+    async function readyProject(from: GitFixture = fixture!): Promise<string> {
       const projectId = await createProject();
       const connected = await http()
         .post(`/api/projects/${projectId}/repository`)
         .set({ Origin: STUDIO_ORIGIN, Cookie: cookie })
-        .send({ url: fixture!.url, integrationBranch: 'dev' });
+        .send({ url: from.url, integrationBranch: 'dev' });
       expect(connected.status).toBe(201);
       const deadline = Date.now() + 30_000;
       for (;;) {
@@ -676,6 +676,54 @@ describe('Environment controller API (PostgreSQL + Redis via Testcontainers)', (
       const stop = await insertOther(projectId, 'stop');
       await claim();
       expectProblem(await source(stop), 409, 'preview-operation-not-a-build');
+    });
+
+    it('serves each build the tree of its own Project at its own commit, and no other controller its source', async () => {
+      const other = createGitFixture(dataDir, 'controller-source-b', { branches: ['main', 'dev'] });
+      pushFiles(other, 'dev', other.commits.dev!, { 'only-in-b.txt': 'b\n' });
+      const projectA = await readyProject();
+      const projectB = await readyProject(other);
+      const headOf = (from: GitFixture) =>
+        spawnSync('git', ['--git-dir', from.bare, 'rev-parse', 'dev'], {
+          encoding: 'utf8',
+        }).stdout.trim();
+      const treeOf = (from: GitFixture, commit: string) =>
+        spawnSync('git', ['--git-dir', from.bare, 'ls-tree', '-r', '-t', '--name-only', commit], {
+          encoding: 'utf8',
+        })
+          .stdout.split('\n')
+          .filter((entry) => entry !== '')
+          .sort();
+      const buildA = await insertBuild(projectA, headOf(fixture!));
+      const buildB = await insertBuild(projectB, headOf(other));
+      expect((await claim(CONTROLLER)).body.operationId).toBe(buildA);
+      expect((await claim(OTHER_CONTROLLER)).body.operationId).toBe(buildB);
+
+      const sourceA = entriesOf((await source(buildA, CONTROLLER)).body as Buffer);
+      const sourceB = entriesOf((await source(buildB, OTHER_CONTROLLER)).body as Buffer);
+
+      expect(sourceA).toEqual(treeOf(fixture!, headOf(fixture!)));
+      expect(sourceA).not.toContain('only-in-b.txt');
+      expect(sourceB).toEqual(treeOf(other, headOf(other)));
+      expect(sourceB).toContain('only-in-b.txt');
+      expectProblem(await source(buildB, CONTROLLER), 409, 'preview-operation-not-held');
+      expectProblem(await source(buildA, OTHER_CONTROLLER), 409, 'preview-operation-not-held');
+    });
+
+    it('takes no Project or commit in the source request', async () => {
+      const projectId = await readyProject();
+      const build = await insertBuild(projectId, fixture!.commits.dev!);
+      await claim();
+
+      for (const extra of [{ projectId }, { commit: 'f'.repeat(40) }]) {
+        expectProblem(
+          await http()
+            .get(`${base}/${build}/source`)
+            .query({ controllerId: CONTROLLER, ...extra })
+            .set(controllerAuth),
+          422,
+        );
+      }
     });
 
     it('answers 404 for an unknown operation and 422 without a controller id', async () => {

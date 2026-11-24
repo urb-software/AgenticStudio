@@ -1,8 +1,4 @@
-/**
- * Which finished operations change what runs: a succeeded build, stop or data removal, and a
- * failed build that removed the Preview. The store's statement for the newest such operation
- * follows this rule, which a fixture test proves.
- */
+/** Which finished operations change what runs, the selection the store's statement follows. */
 export class PreviewRunningRule {
   private constructor() {}
 

@@ -39,10 +39,7 @@ export interface GetPreviewBuildEventsResult {
   truncated: boolean;
 }
 
-/**
- * One page of a build's stored log, already redacted when it was stored. An unknown id, an
- * operation that is not a build and another Project's build are the same {@link PreviewBuildNotFoundError}.
- */
+/** One page of a build's stored log; an unknown id, a non-build and another Project's build are one not-found error. */
 @Injectable()
 export class GetPreviewBuildEventsHandler {
   constructor(
@@ -61,7 +58,7 @@ export class GetPreviewBuildEventsHandler {
       throw new PreviewBuildNotFoundError();
     }
     // Read before the lines: a build that is final here has all its lines stored.
-    const final = build.status === 'succeeded' || build.status === 'failed';
+    const final = build.isFinished;
     const page = await this.log.page(buildId, after, limit);
     const last = page.lines.at(-1);
     return {

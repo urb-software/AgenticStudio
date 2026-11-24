@@ -11,15 +11,8 @@ import { SweepPreviewOperationsHandler } from '../../application/features/sweep-
 export const PREVIEW_SWEEPS_SETTINGS = Symbol('PREVIEW_SWEEPS_SETTINGS');
 
 export interface PreviewSweepsSettings {
+  enabled: boolean;
   intervalMs: number;
-}
-
-/** The longest pause between sweeps, in milliseconds. */
-const MAX_INTERVAL_MS = 30_000;
-
-/** The pause between sweeps: 30 seconds, or half the lease when that is shorter. */
-export function previewSweepIntervalMs(leaseSeconds: number): number {
-  return Math.min(MAX_INTERVAL_MS, (leaseSeconds * 1000) / 2);
 }
 
 /** Runs the Preview operation sweep at the interval of its settings. */
@@ -35,6 +28,7 @@ export class PreviewSweepsScheduler implements OnApplicationBootstrap, OnApplica
   ) {}
 
   onApplicationBootstrap(): void {
+    if (!this.settings.enabled) return;
     this.timer = setInterval(() => void this.tick(), this.settings.intervalMs);
     this.timer.unref();
   }

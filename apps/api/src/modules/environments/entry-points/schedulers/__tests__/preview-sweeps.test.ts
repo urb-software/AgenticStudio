@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { SweepPreviewOperationsHandler } from '../../../application/features/sweep-preview-operations/handler.js';
-import { PreviewSweepsScheduler, previewSweepIntervalMs } from '../preview-sweeps.js';
+import { PreviewSweepsScheduler } from '../preview-sweeps.js';
 
 const handler = (execute: () => Promise<{ releasedSnapshots: number; unclaimed: number }>) =>
   ({ execute }) as unknown as SweepPreviewOperationsHandler;
@@ -8,16 +8,9 @@ const handler = (execute: () => Promise<{ releasedSnapshots: number; unclaimed: 
 const scheduler = (
   leaseSeconds: number,
   sweep = handler(() => Promise.resolve({ releasedSnapshots: 0, unclaimed: 0 })),
-) => new PreviewSweepsScheduler(sweep, { intervalMs: previewSweepIntervalMs(leaseSeconds) });
+) => new PreviewSweepsScheduler(sweep, { enabled: true, intervalMs: leaseSeconds * 500 });
 
 describe('PreviewSweepsScheduler', () => {
-  it('sweeps every 30 seconds, or every half lease when that is shorter', () => {
-    expect(previewSweepIntervalMs(60)).toBe(30_000);
-    expect(previewSweepIntervalMs(600)).toBe(30_000);
-    expect(previewSweepIntervalMs(20)).toBe(10_000);
-    expect(previewSweepIntervalMs(10)).toBe(5_000);
-  });
-
   it('runs the sweep on a timer from the start until shutdown', async () => {
     vi.useFakeTimers();
     try {
@@ -33,6 +26,24 @@ describe('PreviewSweepsScheduler', () => {
       timed.onApplicationShutdown();
       await vi.advanceTimersByTimeAsync(120_000);
       expect(execute).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('starts no timer while the sweep is turned off', async () => {
+    vi.useFakeTimers();
+    try {
+      const execute = vi.fn(() => Promise.resolve({ releasedSnapshots: 0, unclaimed: 0 }));
+      const off = new PreviewSweepsScheduler(handler(execute), {
+        enabled: false,
+        intervalMs: 1000,
+      });
+
+      off.onApplicationBootstrap();
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      expect(execute).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }

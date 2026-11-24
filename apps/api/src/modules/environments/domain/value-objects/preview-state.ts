@@ -27,10 +27,7 @@ export class PreviewState {
     readonly buildActive: boolean,
   ) {}
 
-  /**
-   * Precedence: building, running, not configured, failed, stopped. A failed build beside an
-   * earlier one that still runs leaves the Preview running.
-   */
+  /** Precedence: building, running, not configured, failed, stopped. */
   static of(facts: PreviewStateFacts): PreviewState {
     const { configured, latestBuild, runningChange } = facts;
     const running =

@@ -14,7 +14,6 @@ import { InMemoryControllerPresence } from './infrastructure/adapters/in-memory-
 import {
   PREVIEW_SWEEPS_SETTINGS,
   PreviewSweepsScheduler,
-  previewSweepIntervalMs,
   type PreviewSweepsSettings,
 } from './entry-points/schedulers/preview-sweeps.js';
 import { RequestPreviewBuildEndpoint } from './entry-points/http/operator/request-preview-build/endpoint.js';
@@ -56,6 +55,12 @@ import { RemovePreviewSettingsEndpoint } from './entry-points/http/operator/remo
 import { SavePreviewSettingsEndpoint } from './entry-points/http/operator/save-preview-settings/endpoint.js';
 import { PrismaPreviewSettingsRepository } from './infrastructure/repositories/prisma-preview-settings-repository.js';
 
+/** Test seams of the module; production passes none. */
+export interface EnvironmentsModuleOptions {
+  /** `false` leaves the periodic Preview sweep off. */
+  sweeps?: boolean;
+}
+
 /**
  * `environments` business module: a Project's Preview settings, and the work the environment
  * controller claims over the controller routes. It reaches the Repository only
@@ -63,7 +68,7 @@ import { PrismaPreviewSettingsRepository } from './infrastructure/repositories/p
  */
 @Module({})
 export class EnvironmentsModule {
-  static register(projects: DynamicModule): DynamicModule {
+  static register(projects: DynamicModule, options: EnvironmentsModuleOptions = {}): DynamicModule {
     return {
       module: EnvironmentsModule,
       imports: [DatabaseModule, SecretsModule, projects],
@@ -115,7 +120,10 @@ export class EnvironmentsModule {
         {
           provide: PREVIEW_SWEEPS_SETTINGS,
           useFactory: (config: AppConfig): PreviewSweepsSettings => ({
-            intervalMs: previewSweepIntervalMs(config.controllerLeaseSeconds),
+            enabled: options.sweeps !== false,
+            // Half the lease, at most every 30 s: a lost controller is noticed within half a
+            // lease after its lease expires.
+            intervalMs: Math.min(30_000, (config.controllerLeaseSeconds * 1000) / 2),
           }),
           inject: [APP_CONFIG],
         },

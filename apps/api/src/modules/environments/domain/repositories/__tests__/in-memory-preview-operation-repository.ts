@@ -5,7 +5,10 @@ import { PreviewRunningRule } from '../../value-objects/preview-running-rule.js'
 import type { UnclaimedOperationRule } from '../../value-objects/unclaimed-operation-rule.js';
 import { PreviewOperationHandOutRule } from '../../value-objects/preview-operation-hand-out-rule.js';
 import type { LostControllerRule } from '../../value-objects/lost-controller-rule.js';
-import type { PreviewFacts, PreviewOperationRepository } from '../preview-operation-repository.js';
+import type {
+  PreviewReadModel,
+  PreviewOperationRepository,
+} from '../preview-operation-repository.js';
 
 /** The repository in memory: the rules of the domain are the whole behaviour. */
 export class InMemoryPreviewOperationRepository implements PreviewOperationRepository {
@@ -29,7 +32,7 @@ export class InMemoryPreviewOperationRepository implements PreviewOperationRepos
     return Promise.resolve();
   }
 
-  findPreviewFacts(projectId: string): Promise<PreviewFacts> {
+  findPreviewFacts(projectId: string): Promise<PreviewReadModel> {
     const own = [...this.operations.values()].filter((op) => op.projectId === projectId);
     const byId = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
     const latestBuild =

@@ -1,10 +1,6 @@
 import { PreviewOperationFailure } from './preview-operation-failure.js';
 
-/**
- * A requested operation nobody claimed for this long is failed; it only applies while no
- * controller is known to exist. `selects` is the same selection over one operation as the
- * statement makes.
- */
+/** Fails a requested operation that nobody claimed for too long, the cut-off the statement uses. */
 export class UnclaimedOperationRule {
   private constructor(
     readonly requestedBefore: Date,

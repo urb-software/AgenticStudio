@@ -42,7 +42,7 @@ describe('the Preview operation store follows the rules of the domain (PostgreSQ
 
   beforeAll(async () => {
     services = await startStudioServices();
-    app = await startStudioApp(services.config);
+    app = await startStudioApp(services.config, { environments: { sweeps: false } });
   });
 
   afterAll(async () => {

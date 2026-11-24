@@ -86,6 +86,11 @@ export class PreviewOperation {
     return this.current.status;
   }
 
+  /** Succeeded or failed: nothing changes it any more. */
+  get isFinished(): boolean {
+    return this.current.status === 'succeeded' || this.current.status === 'failed';
+  }
+
   get claimedBy(): string | null {
     return this.current.claimedBy;
   }

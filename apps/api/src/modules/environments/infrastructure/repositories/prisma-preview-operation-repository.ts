@@ -4,7 +4,7 @@ import { DATABASE_CLIENT } from '../../../../platform/database/database.module.j
 import { PreviewOperation } from '../../domain/entities/preview-operation.js';
 import { PreviewBuildRunningError } from '../../domain/errors/preview-settings-errors.js';
 import type {
-  PreviewFacts,
+  PreviewReadModel,
   PreviewOperationRepository,
 } from '../../domain/repositories/preview-operation-repository.js';
 import { OverdueBuildRule } from '../../domain/value-objects/overdue-build-rule.js';
@@ -21,6 +21,8 @@ import type { PreviewOperationResultData } from '../../domain/value-objects/prev
 import { PREVIEW_OPERATION_STATUSES } from '../../domain/value-objects/preview-operation-status.js';
 import { type Executor, inTransaction } from './executor.js';
 
+const ACTIVE_BUILD_INDEX = 'preview_operations_one_active_build_per_project';
+
 /** The serialisation point of claims: a transaction-scoped advisory lock, released at commit. */
 const CLAIM_LOCK = 'studio.environments.claim';
 
@@ -34,15 +36,14 @@ export class PrismaPreviewOperationRepository implements PreviewOperationReposit
     try {
       await this.insert(data);
     } catch (error) {
-      // The partial unique index: a build of this Project is already requested or claimed.
-      if (data.kind === 'build' && isUniqueConstraintViolation(error)) {
+      if (data.kind === 'build' && isActiveBuildViolation(error)) {
         throw new PreviewBuildRunningError();
       }
       throw error;
     }
   }
 
-  async findPreviewFacts(projectId: string): Promise<PreviewFacts> {
+  async findPreviewFacts(projectId: string): Promise<PreviewReadModel> {
     const latest = await this.db.previewOperation.findFirst({
       where: { projectId, kind: 'build' },
       orderBy: [{ requestedAt: 'desc' }, { id: 'desc' }],
@@ -201,6 +202,13 @@ export class PrismaPreviewOperationRepository implements PreviewOperationReposit
       row.environmentFileSecretId === null ? [] : [row.environmentFileSecretId],
     );
   }
+}
+
+/** The partial unique index; a violation that names another constraint is not this one. */
+function isActiveBuildViolation(error: unknown): boolean {
+  if (!isUniqueConstraintViolation(error)) return false;
+  const named = JSON.stringify((error as { meta?: unknown }).meta ?? '');
+  return named.includes(ACTIVE_BUILD_INDEX) || !named.includes('preview_operations_');
 }
 
 async function save(tx: Prisma.TransactionClient, operation: PreviewOperation): Promise<void> {

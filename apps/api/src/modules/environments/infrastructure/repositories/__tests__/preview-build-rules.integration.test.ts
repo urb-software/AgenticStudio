@@ -64,7 +64,7 @@ describe('the Preview build store follows the rules of the domain (PostgreSQL + 
 
   beforeAll(async () => {
     services = await startStudioServices();
-    app = await startStudioApp(services.config);
+    app = await startStudioApp(services.config, { environments: { sweeps: false } });
   });
 
   afterAll(async () => {
@@ -127,19 +127,28 @@ describe('the Preview build store follows the rules of the domain (PostgreSQL + 
   const rows = () => db().previewOperation.findMany({ orderBy: { id: 'asc' } });
 
   describe('the migration', () => {
+    const ACTIVE_BUILD_INDEX = /preview_operations_one_active_build_per_project/;
+
+    async function insertRawBuild(projectId: string, status: 'requested' | 'claimed') {
+      const holder = status === 'claimed' ? randomUUID() : null;
+      await db().$executeRaw`
+        INSERT INTO preview_operations (project_id, kind, status, commit, compose_file, service,
+          port, memory_mib, cpu_percent, tasks_max, build_minutes, claimed_by, claimed_at,
+          heartbeat_at)
+        VALUES (${projectId}::uuid, 'build', ${status}, ${'a'.repeat(40)}, 'compose.yaml', 'web',
+          3000, 1024, 100, 512, 20, ${holder}::uuid,
+          ${holder === null ? null : NOW}::timestamptz, ${holder === null ? null : NOW}::timestamptz)`;
+    }
+
     it('allows one requested or claimed build per Project, and any number of other operations', async () => {
       const ids = await projects(2);
-      await insert(ids, { project: 0, status: 'requested', requestedAt: -10 });
+      await insertRawBuild(ids[0]!, 'requested');
 
-      await expect(
-        insert(ids, { project: 0, status: 'requested', requestedAt: -9 }),
-      ).rejects.toThrow();
-      await expect(
-        insert(ids, { project: 0, status: 'claimed', requestedAt: -9, claimedAt: -8 }),
-      ).rejects.toThrow();
+      await expect(insertRawBuild(ids[0]!, 'requested')).rejects.toThrow(ACTIVE_BUILD_INDEX);
+      await expect(insertRawBuild(ids[0]!, 'claimed')).rejects.toThrow(ACTIVE_BUILD_INDEX);
       await insert(ids, { project: 0, kind: 'stop', status: 'requested', requestedAt: -8 });
       await insert(ids, { project: 0, kind: 'stop', status: 'requested', requestedAt: -7 });
-      await insert(ids, { project: 1, status: 'requested', requestedAt: -10 });
+      await insertRawBuild(ids[1]!, 'requested');
       await insert(ids, { project: 0, status: 'succeeded', requestedAt: -20 });
       await insert(ids, { project: 0, status: 'failed', requestedAt: -19 });
     });
@@ -164,10 +173,13 @@ describe('the Preview build store follows the rules of the domain (PostgreSQL + 
           UPDATE preview_operations SET preview_removed = true WHERE id = ${id}::uuid`;
       };
 
+      const CHECK = /preview_operations_preview_removed_check/;
       await expect(
         bad({ project: 0, kind: 'stop', status: 'failed', requestedAt: -5 }),
-      ).rejects.toThrow();
-      await expect(bad({ project: 0, status: 'succeeded', requestedAt: -6 })).rejects.toThrow();
+      ).rejects.toThrow(CHECK);
+      await expect(bad({ project: 0, status: 'succeeded', requestedAt: -6 })).rejects.toThrow(
+        CHECK,
+      );
       const failedBuild = await insert(ids, {
         project: 0,
         status: 'failed',

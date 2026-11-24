@@ -179,9 +179,7 @@ describe('EnvironmentController', () => {
     const controller = start(
       api,
       operationsOf(async () => {
-        const failure = new OperationFailure('start_failed', 'The stack did not start.');
-        failure.previewRemoved = true;
-        throw failure;
+        throw new OperationFailure('start_failed', 'The stack did not start.', undefined, true);
       }),
     );
     await until(() => api.final(claimed.operationId).length === 1);
@@ -199,9 +197,7 @@ describe('EnvironmentController', () => {
     const controller = start(
       api,
       operationsOf(async () => {
-        const aborted = new OperationAborted();
-        aborted.previewRemoved = true;
-        throw aborted;
+        throw new OperationAborted(true);
       }),
     );
     await until(() => api.final(claimed.operationId).length === 1);

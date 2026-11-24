@@ -25,6 +25,7 @@ import { PreviewLimits } from '../../../domain/value-objects/preview-limits.js';
 import type { PreviewOperationKind } from '../../../domain/value-objects/preview-operation-kind.js';
 import { PreviewPort } from '../../../domain/value-objects/preview-port.js';
 import { PreviewService } from '../../../domain/value-objects/preview-service.js';
+import { PreviewState } from '../../../domain/value-objects/preview-state.js';
 import { PreviewComposeFile } from '../../../domain/value-objects/preview-compose-file.js';
 import { type PreviewBuildView, previewBuildView } from '../../preview-view.js';
 import { PreviewComposeJudge } from '../../preview-compose-judge.js';
@@ -47,10 +48,7 @@ export interface RequestPreviewOperationResult {
   build: PreviewBuildView | null;
 }
 
-/**
- * Asks the controller for a build, stop, data removal or state. A build snapshots the commit read
- * when its Compose file was judged. Throws the errors of the checks listed in backend.md section 7.
- */
+/** Asks the controller for a build, stop, data removal or state, checking a build as backend.md section 7 lists. */
 @Injectable()
 export class RequestPreviewOperationHandler {
   constructor(
@@ -81,11 +79,8 @@ export class RequestPreviewOperationHandler {
     if (!this.presence.availability(this.operationSettings.leaseSeconds).connected(now)) {
       throw new PreviewControllerUnavailableError();
     }
-    const { latestBuild } = await this.operations.findPreviewFacts(projectId);
-    if (
-      latestBuild !== null &&
-      (latestBuild.status === 'requested' || latestBuild.status === 'claimed')
-    ) {
+    const facts = await this.operations.findPreviewFacts(projectId);
+    if (PreviewState.of({ configured: true, ...facts }).buildActive) {
       throw new PreviewBuildRunningError();
     }
     const composeFile = PreviewComposeFile.of(settings.composeFile);

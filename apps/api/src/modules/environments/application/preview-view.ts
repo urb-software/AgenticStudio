@@ -3,6 +3,7 @@ import type { PreviewSettings } from '../domain/entities/preview-settings.js';
 import { PreviewHostname } from '../domain/value-objects/preview-hostname.js';
 import type { PreviewOperation } from '../domain/entities/preview-operation.js';
 import type { PreviewFailureCode } from '../domain/value-objects/preview-failure-code.js';
+import type { PreviewOperationStatus } from '../domain/value-objects/preview-operation-status.js';
 import type { PreviewStateName } from '../domain/value-objects/preview-state.js';
 
 export type PreviewBuildStatusView = 'queued' | 'building' | 'succeeded' | 'failed';
@@ -35,7 +36,7 @@ export interface PreviewStateView {
   buildActive: boolean;
 }
 
-const BUILD_STATUS: Record<string, PreviewBuildStatusView> = {
+const BUILD_STATUS: Record<PreviewOperationStatus, PreviewBuildStatusView> = {
   requested: 'queued',
   claimed: 'building',
   succeeded: 'succeeded',
@@ -50,7 +51,7 @@ export function previewBuildView(operation: PreviewOperation): PreviewBuildView 
   return {
     id: operation.id,
     commit: build.commit,
-    status: BUILD_STATUS[operation.status] ?? 'failed',
+    status: BUILD_STATUS[operation.status],
     requestedAt: operation.requestedAt,
     startedAt: operation.claimedAt,
     finishedAt: operation.finishedAt,
