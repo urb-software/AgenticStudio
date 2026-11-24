@@ -135,7 +135,7 @@ if [ "$status" -eq 0 ]; then ok "the Preview checks pass (token checks wait for 
 expect_false "no FAIL line" grep -q '^FAIL' <<<"$out"
 for name in not-root not-privileged sudo-needs-password home-private linger system-docker-unreachable \
   agent-docker-unreachable agent-files-unreadable studio-files-unreadable studio-network-unreachable \
-  cgroup-v2 cgroup-delegation preview-user-limits slice-limit-bites build-slice-memory-limit \
+  cgroup-v2 cgroup-delegation preview-user-limits slice-limit-bites build-memory-limit \
   egress-script-root-owned rootless-docker daemon-dns egress-rules-verify egress-blocked-build-step \
   egress-blocked-compose-network internet-https controller-unit-enabled controller-env-file \
   controller-data-dir controller-settings preview-proxy-dir controller-free-disk; do
@@ -378,6 +378,9 @@ printf '%s\n' "$out" | sed 's/^/      | /'
 expect_line "the controller service step restarted the controller" "$out" '^\[controller-service\] ok \(environment controller restarted\)'
 controller_active() { as_preview systemctl --user is-active --quiet agentic-studio-controller.service; }
 expect_true "the controller is active" wait_for controller_active
+controller_cgroup="$(cat "/proc/$(as_preview systemctl --user show agentic-studio-controller.service -p MainPID --value)/cgroup" 2>/dev/null)"
+expect_line "the controller runs in its own slice" "$controller_cgroup" 'user@2002\.service/.*agentic-studio-controller\.slice'
+expect_false "... outside app.slice, which holds the daemon and the builds and is bounded per build" grep -q '/app\.slice' <<<"$controller_cgroup"
 out="$(check_preview --claim)"
 status=$?
 printf '%s\n' "$out" | sed 's/^/      | /'

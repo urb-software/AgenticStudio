@@ -15,6 +15,9 @@ PartOf=docker.service
 
 [Service]
 Type=simple
+# Not in app.slice, which holds the rootless daemon and the builds and is bounded per build: a
+# build that runs out of memory must never take the controller with it.
+Slice=agentic-studio-controller.slice
 # Root-owned code the Preview user can read but not change.
 WorkingDirectory=@CONTROLLER_CODE_DIR@/apps/environment-controller
 # The controller's own settings (Preview user, 0600). It refuses to start if a Studio-side or
