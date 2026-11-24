@@ -510,7 +510,12 @@ describe('the Preview stop, reset and limit store follows the rules of the domai
 
     it('deletes the operations of one Project with their log lines, and no other', async () => {
       const ids = await projects(2);
-      const mine = await insert(ids, { project: 0, status: 'succeeded', requestedAt: -60 });
+      const mine = await insert(ids, {
+        project: 0,
+        kind: 'remove_data',
+        status: 'succeeded',
+        requestedAt: -60,
+      });
       const theirs = await insert(ids, { project: 1, status: 'succeeded', requestedAt: -60 });
       await db().previewOperationLine.create({
         data: { operationId: mine, seq: 1, at: NOW, stream: 'build', text: 'x' },
