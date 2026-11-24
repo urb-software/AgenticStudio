@@ -13,6 +13,10 @@ describeGate('monorepo', monorepoGate, '.', [
     expected: ['mono-web-no-server-implementations'],
   },
   {
+    fixture: 'web-imports-log-redaction-package',
+    expected: ['mono-web-no-server-implementations'],
+  },
+  {
     fixture: 'web-manifest-depends-on-database',
     expected: ['mono-manifest-web-no-server-packages'],
   },
