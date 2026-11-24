@@ -1,10 +1,14 @@
 import { environmentFilePathProblem } from '@agentic-studio/contracts';
 import { Logger, type OnModuleInit } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import { createReadStream } from 'node:fs';
 import { lstat, mkdir, mkdtemp, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { type AppConfig, SHELL_SAFE_PATH } from '../../../../../platform/config/config.js';
 import { parseSshHostKey } from '../../../../../platform/config/ssh-known-hosts.js';
 import {
+  type CommitArchive,
+  type CommitArchiveOutcome,
   type CommitFileOutcome,
   GitCloneMissingError,
   type GitOperationOptions,
@@ -205,6 +209,10 @@ const OPERATION_DIR_PREFIX = 'studio-git-';
 const STALE_MARGIN_MS = 5 * 60 * 1000;
 const TOP_LEVEL_LOCK = /\.lock$/;
 
+/** Where archives wait for a Preview build to fetch them, below the temp root. */
+const ARCHIVE_DIR = 'preview-archives';
+const ARCHIVE_FILE = /^archive-[0-9a-f-]{36}\.tar$/;
+
 const COMMIT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
 /** Enough for a thousand long paths; a longer file list is cut. */
@@ -325,11 +333,30 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
         (name) => name.startsWith(OPERATION_DIR_PREFIX),
         this.ownsTempRoot,
       );
+      await this.sweepArchives(staleBefore);
       if (await this.paths.verifyClonesFolder()) {
         await sweep(this.paths.clonesFolder, (name) => /\.git\.partial-[\da-f]+$/.test(name), true);
       }
     } catch (error) {
       this.log(`start-up sweep failed: ${redactGitOutput(String(error))}`);
+    }
+  }
+
+  /** Removes archives a crash left behind: all of them in the API's own temp root. */
+  private async sweepArchives(staleBefore: number): Promise<void> {
+    const folder = join(this.tempRoot, ARCHIVE_DIR);
+    let names: string[];
+    try {
+      names = await readdir(folder);
+    } catch {
+      return;
+    }
+    for (const name of names.filter((candidate) => ARCHIVE_FILE.test(candidate))) {
+      const path = join(folder, name);
+      const stats = await lstat(path).catch(() => null);
+      if (stats?.isFile() && (this.ownsTempRoot || stats.mtimeMs < staleBefore)) {
+        await rm(path, { force: true });
+      }
     }
   }
 
@@ -876,6 +903,64 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     );
   }
 
+  async archiveCommit(
+    projectId: string,
+    commit: string,
+    maxBytes: number,
+    options: GitOperationOptions = {},
+  ): Promise<CommitArchiveOutcome> {
+    this.assertSupportedPlatform();
+    if (!COMMIT_ID.test(commit)) {
+      throw new GitRequestRejectedError('The commit id is not a full commit id.');
+    }
+    this.paths.clone(projectId);
+    return this.guarded('archive', () =>
+      this.queued(projectId, this.settings.fetchTimeoutMs, options, async (options) => {
+        const clone = await this.paths.existingClone(projectId);
+        if (!clone) {
+          throw new GitCloneMissingError();
+        }
+        return this.withOperation(this.settings.fetchTimeoutMs, options, async (context) => {
+          const gitDir = `--git-dir=${clone}`;
+          const known = await this.git(context, [gitDir, 'cat-file', '-e', `${commit}^{commit}`]);
+          if (known.exitCode !== 0) return { status: 'commit_missing' as const };
+          const folder = join(this.tempRoot, ARCHIVE_DIR);
+          await mkdir(folder, { recursive: true, mode: 0o700 });
+          const file = join(folder, `archive-${randomUUID()}.tar`);
+          // Owner-only before Git writes to it; the folder is owner-only too.
+          await writeFile(file, '', { mode: 0o600, flag: 'wx' });
+          let keep = false;
+          try {
+            // No `--remote`, no `--worktree-attributes`, no filter: the stored objects only.
+            const archived = await this.git(
+              context,
+              [gitDir, 'archive', '--format=tar', `--output=${file}`, commit],
+              {
+                path: file,
+                maxBytes,
+                intervalMs: Math.min(this.sizePollIntervalMs, 200),
+              },
+            );
+            if (archived.exitCode !== 0) {
+              throw new GitOperationError('unknown', redactGitOutput(archived.stderr));
+            }
+            const { size } = await lstat(file);
+            if (size > maxBytes) return { status: 'too_large' as const };
+            keep = true;
+            return { status: 'archived' as const, archive: archiveFile(file, size) };
+          } catch (error) {
+            if (error instanceof GitOperationError && error.reason === 'size_limit') {
+              return { status: 'too_large' as const };
+            }
+            throw error;
+          } finally {
+            if (!keep) await rm(file, { force: true });
+          }
+        });
+      }),
+    );
+  }
+
   async removeClone(projectId: string, options: GitOperationOptions = {}): Promise<void> {
     this.assertSupportedPlatform();
     const target = this.paths.clone(projectId);
@@ -1293,6 +1378,16 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
       throw error;
     }
   }
+}
+
+/** The archive in `file`, removed by the first `close`. */
+function archiveFile(file: string, sizeBytes: number): CommitArchive {
+  let closing: Promise<void> | undefined;
+  return {
+    sizeBytes,
+    chunks: () => createReadStream(file),
+    close: () => (closing ??= rm(file, { force: true })),
+  };
 }
 
 /**

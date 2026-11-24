@@ -12,6 +12,7 @@ const OPERATIONS = [
   'fetchForReview',
   'mergeDiff',
   'readFileAtCommit',
+  'archiveCommit',
 ] as const;
 
 /**
@@ -46,6 +47,10 @@ export class FakeRepositoryGit implements RepositoryGit {
   mergeDiff = vi.fn<RepositoryGit['mergeDiff']>(() => Promise.reject(new Error('not used')));
 
   readFileAtCommit = vi.fn<RepositoryGit['readFileAtCommit']>(() =>
+    Promise.reject(new Error('not used')),
+  );
+
+  archiveCommit = vi.fn<RepositoryGit['archiveCommit']>(() =>
     Promise.reject(new Error('not used')),
   );
 

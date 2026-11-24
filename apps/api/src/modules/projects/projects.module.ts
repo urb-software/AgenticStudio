@@ -11,6 +11,7 @@ import {
   RUN_START_POINTS,
 } from './contracts/index.js';
 import { GetPreviewSourceStatusHandler } from './application/features/get-preview-source-status/handler.js';
+import { OpenPreviewArchiveHandler } from './application/features/open-preview-archive/handler.js';
 import { ReadIntegrationFileHandler } from './application/features/read-integration-file/handler.js';
 import { ProjectRunPreviewSources } from './entry-points/contracts/run-preview-sources.js';
 import { ProjectRunIntegrationFetches } from './entry-points/contracts/run-integration-fetches.js';
@@ -218,6 +219,7 @@ export class ProjectsModule {
         { provide: RUN_MERGE_METHODS, useClass: ProjectRunMergeMethods },
         GetPreviewSourceStatusHandler,
         ReadIntegrationFileHandler,
+        OpenPreviewArchiveHandler,
         { provide: RUN_PREVIEW_SOURCES, useClass: ProjectRunPreviewSources },
       ],
       exports: [
