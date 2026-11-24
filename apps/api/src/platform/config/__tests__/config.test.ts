@@ -71,6 +71,7 @@ describe('loadConfig', () => {
       controllerLeaseSeconds: 60,
       previewLimits: { memoryMiB: 1024, cpuPercent: 100, tasksMax: 512, buildMinutes: 20 },
       previewLogMaxBytes: 2 * 1024 * 1024,
+      previewUnclaimedMinutes: 5,
       runLimits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
       runLogMaxBytes: 8 * 1024 * 1024,
       runSnapshotRetentionDays: 7,
@@ -575,6 +576,23 @@ describe('loadConfig', () => {
     ])('refuse %s=%s', (name, value) => {
       const error = captureError(() => loadConfig({ ...requiredEnv, [name]: value }));
       expect(error.message).toContain(name);
+    });
+  });
+
+  describe('Preview unclaimed minutes', () => {
+    it('defaults to 5 and is set from the environment', () => {
+      expect(loadConfig(requiredEnv).previewUnclaimedMinutes).toBe(5);
+      expect(
+        loadConfig({ ...requiredEnv, STUDIO_PREVIEW_UNCLAIMED_MINUTES: '30' })
+          .previewUnclaimedMinutes,
+      ).toBe(30);
+    });
+
+    it.each(['0', '1441', '1.5', 'abc'])('refuses %j (whole minutes, 1-1440)', (value) => {
+      const error = captureError(() =>
+        loadConfig({ ...requiredEnv, STUDIO_PREVIEW_UNCLAIMED_MINUTES: value }),
+      );
+      expect(error.message).toContain('STUDIO_PREVIEW_UNCLAIMED_MINUTES');
     });
   });
 

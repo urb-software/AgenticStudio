@@ -52,6 +52,10 @@ export function fakePreviewApi(
       hostname: state.hostname,
       ...(state.hostname === null ? { hostnameUnavailable: 'not_configured' as const } : {}),
       repository: state.repository,
+      state: state.settings === null ? ('not_configured' as const) : ('stopped' as const),
+      running: null,
+      latestBuild: null,
+      controller: { connected: false },
     };
   }
 

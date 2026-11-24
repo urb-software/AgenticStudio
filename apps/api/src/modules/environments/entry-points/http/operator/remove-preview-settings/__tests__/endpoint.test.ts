@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ProblemException } from '../../../../../../../platform/http/problem-details.js';
 import type { RemovePreviewSettingsHandler } from '../../../../../application/features/remove-preview-settings/handler.js';
 import {
+  PreviewBuildRunningError,
   PreviewRunningError,
   ProjectNotFoundError,
 } from '../../../../../domain/errors/preview-settings-errors.js';
@@ -33,7 +34,6 @@ describe('RemovePreviewSettingsEndpoint', () => {
     expect((error as ProblemException).getStatus()).toBe(404);
   });
 
-  // The seam for the Preview state: once a Preview can run, removing its settings is refused (409).
   it('maps a running Preview to 409', async () => {
     const error = await endpointFailing(new PreviewRunningError())
       .remove('id')
@@ -44,5 +44,14 @@ describe('RemovePreviewSettingsEndpoint', () => {
     expect((error as ProblemException).problem.type).toBe(
       ENVIRONMENTS_PROBLEM_TYPES.previewRunning,
     );
+  });
+
+  it('maps a running build to 409 with its own type', async () => {
+    const error = await endpointFailing(new PreviewBuildRunningError())
+      .remove('id')
+      .catch((reason: unknown) => reason);
+
+    expect((error as ProblemException).getStatus()).toBe(409);
+    expect((error as ProblemException).problem.type).toBe(ENVIRONMENTS_PROBLEM_TYPES.buildRunning);
   });
 });

@@ -6,6 +6,7 @@ import {
   PreviewSourceUnavailableError,
   ProjectNotFoundError,
 } from '../../../../domain/errors/preview-settings-errors.js';
+import { InMemoryPreviewOperationRepository } from '../../../../domain/repositories/__tests__/in-memory-preview-operation-repository.js';
 import { InMemoryPreviewSettingsRepository } from '../../../../domain/repositories/__tests__/in-memory-preview-settings-repository.js';
 import { InvalidPreviewPortError } from '../../../../domain/value-objects/preview-port.js';
 import { InvalidPreviewServiceError } from '../../../../domain/value-objects/preview-service.js';
@@ -14,6 +15,7 @@ import {
   COMPOSE_TEXT,
   FakePreviewSources,
 } from '../../../ports/__tests__/fake-preview-sources.js';
+import { previewKit } from '../../../__tests__/preview-test-kit.js';
 import { SavePreviewSettingsHandler } from '../handler.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
@@ -29,7 +31,8 @@ describe('SavePreviewSettingsHandler', () => {
     sources = new FakePreviewSources();
     settings = new InMemoryPreviewSettingsRepository();
     domain = { domain: 'preview.example.test' };
-    handler = new SavePreviewSettingsHandler(sources, settings, domain);
+    const kit = previewKit(new InMemoryPreviewOperationRepository(), sources);
+    handler = new SavePreviewSettingsHandler(sources, settings, domain, kit.judge, kit.states);
   });
 
   async function refusalsOf(input = INPUT) {
@@ -52,7 +55,11 @@ describe('SavePreviewSettingsHandler', () => {
         updatedAt: settings.now,
       },
       hostname: 'preview-3f2b8c1e4d5a.preview.example.test',
-      repository: { ready: true },
+      repository: { ready: true, commit: COMMIT },
+      state: 'stopped',
+      running: null,
+      latestBuild: null,
+      controller: { connected: false },
       removedPorts: [{ service: 'web', place: 'services.web.ports[0]' }],
     });
     expect(settings.settings.get(PROJECT)).toMatchObject({ composeFile: 'compose.yaml', port: 80 });

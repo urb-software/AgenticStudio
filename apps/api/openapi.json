@@ -2648,7 +2648,7 @@
     },
     "/api/projects/{id}/preview": {
       "get": {
-        "description": "The project's Preview: its settings or `null`, the hostname it will be served at (or why there is none), and whether the repository is ready to be read.",
+        "description": "The project's Preview: its settings or `null`, the hostname it will be served at (or why there is none), whether the repository is ready to be read, its state, the build that runs, the latest build and whether an environment controller is connected.",
         "operationId": "getPreview",
         "parameters": [
           {
@@ -2817,7 +2817,181 @@
             }
           },
           "409": {
-            "description": "The Preview is running (urn:agentic-studio:problem:preview-running)",
+            "description": "The Preview is running (urn:agentic-studio:problem:preview-running) or a build is running (urn:agentic-studio:problem:preview-build-running)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/projects/{id}/preview/builds": {
+      "post": {
+        "description": "Asks the environment controller to build and start the project's Preview from the commit its Clone holds. The Compose file is judged again at that commit first. The answer is the queued build; the Preview and the build log are read from the other routes.",
+        "operationId": "requestPreviewBuild",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewBuild_Output"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown project (urn:agentic-studio:problem:project-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No Preview settings (urn:agentic-studio:problem:preview-not-configured), the repository cannot be read now (urn:agentic-studio:problem:preview-repository-not-ready), the API is not on Linux (urn:agentic-studio:problem:preview-unsupported-platform), no environment controller is connected (urn:agentic-studio:problem:preview-controller-unavailable), or a build is already running (urn:agentic-studio:problem:preview-build-running)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The Compose file was refused at this commit (urn:agentic-studio:problem:preview-refused); `refusals` lists every reason with its place",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewRefusedProblem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The Compose file could not be read (urn:agentic-studio:problem:preview-source-unavailable)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/projects/{id}/preview/builds/{buildId}/events": {
+      "get": {
+        "description": "One page of a build's log, already redacted. Read the next page with `after` set to `next`; the log is complete when `final` is true and there is no `next`.",
+        "operationId": "listPreviewBuildEvents",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "buildId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "after",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 2147483647,
+              "default": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 500,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewBuildEvents_Output"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid after or limit",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown project (urn:agentic-studio:problem:project-not-found) or unknown build (urn:agentic-studio:problem:preview-build-not-found)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4974,10 +5148,266 @@
                   "repository_not_ready",
                   "unsupported_platform"
                 ]
+              },
+              "commit": {
+                "type": "string"
               }
             },
             "required": [
               "ready"
+            ],
+            "additionalProperties": false
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "not_configured",
+              "stopped",
+              "building",
+              "running",
+              "failed"
+            ]
+          },
+          "running": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "buildId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "commit": {
+                    "type": "string"
+                  },
+                  "since": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  },
+                  "url": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "buildId",
+                  "commit",
+                  "since",
+                  "url"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "latestBuild": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "commit": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "queued",
+                      "building",
+                      "succeeded",
+                      "failed"
+                    ]
+                  },
+                  "requestedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  },
+                  "startedAt": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "finishedAt": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "timeLimitMinutes": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "failure": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "code": {
+                            "type": "string",
+                            "enum": [
+                              "validation_refused",
+                              "compose_file_missing",
+                              "source_unavailable",
+                              "archive_invalid",
+                              "environment_file_tracked",
+                              "disk_full",
+                              "egress_rules_missing",
+                              "limits_failed",
+                              "build_failed",
+                              "build_timed_out",
+                              "start_failed",
+                              "runtime_failed",
+                              "controller_stopped",
+                              "controller_error",
+                              "controller_lost",
+                              "not_claimed",
+                              "report_overdue"
+                            ]
+                          },
+                          "detail": {
+                            "type": "string"
+                          },
+                          "refusals": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "code": {
+                                  "type": "string",
+                                  "enum": [
+                                    "text_too_large",
+                                    "too_many_nodes",
+                                    "too_many_services",
+                                    "yaml_syntax",
+                                    "custom_tag",
+                                    "not_a_mapping",
+                                    "duplicate_key",
+                                    "alias_limit",
+                                    "unjudgeable",
+                                    "unknown_key",
+                                    "invalid_value",
+                                    "interpolation",
+                                    "privileged",
+                                    "host_namespace",
+                                    "capability_added",
+                                    "device",
+                                    "mount_outside_source",
+                                    "docker_socket",
+                                    "external_network",
+                                    "external_volume",
+                                    "path_outside_source",
+                                    "build_context_not_local",
+                                    "external_file",
+                                    "entry_service_missing",
+                                    "entry_port_invalid",
+                                    "compose_file_missing",
+                                    "compose_file_too_large",
+                                    "invalid_path"
+                                  ]
+                                },
+                                "place": {
+                                  "type": "string"
+                                },
+                                "message": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "code",
+                                "place",
+                                "message"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "previewRemoved": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "code",
+                          "detail",
+                          "refusals",
+                          "previewRemoved"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "log": {
+                    "type": "object",
+                    "properties": {
+                      "bytes": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "truncated": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "bytes",
+                      "truncated"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "id",
+                  "commit",
+                  "status",
+                  "requestedAt",
+                  "startedAt",
+                  "finishedAt",
+                  "timeLimitMinutes",
+                  "failure",
+                  "log"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "controller": {
+            "type": "object",
+            "properties": {
+              "connected": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "connected"
             ],
             "additionalProperties": false
           }
@@ -4985,7 +5415,11 @@
         "required": [
           "settings",
           "hostname",
-          "repository"
+          "repository",
+          "state",
+          "running",
+          "latestBuild",
+          "controller"
         ],
         "additionalProperties": false
       },
@@ -5163,10 +5597,266 @@
                   "repository_not_ready",
                   "unsupported_platform"
                 ]
+              },
+              "commit": {
+                "type": "string"
               }
             },
             "required": [
               "ready"
+            ],
+            "additionalProperties": false
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "not_configured",
+              "stopped",
+              "building",
+              "running",
+              "failed"
+            ]
+          },
+          "running": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "buildId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "commit": {
+                    "type": "string"
+                  },
+                  "since": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  },
+                  "url": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "buildId",
+                  "commit",
+                  "since",
+                  "url"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "latestBuild": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "commit": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "queued",
+                      "building",
+                      "succeeded",
+                      "failed"
+                    ]
+                  },
+                  "requestedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  },
+                  "startedAt": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "finishedAt": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "timeLimitMinutes": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "failure": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "code": {
+                            "type": "string",
+                            "enum": [
+                              "validation_refused",
+                              "compose_file_missing",
+                              "source_unavailable",
+                              "archive_invalid",
+                              "environment_file_tracked",
+                              "disk_full",
+                              "egress_rules_missing",
+                              "limits_failed",
+                              "build_failed",
+                              "build_timed_out",
+                              "start_failed",
+                              "runtime_failed",
+                              "controller_stopped",
+                              "controller_error",
+                              "controller_lost",
+                              "not_claimed",
+                              "report_overdue"
+                            ]
+                          },
+                          "detail": {
+                            "type": "string"
+                          },
+                          "refusals": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "code": {
+                                  "type": "string",
+                                  "enum": [
+                                    "text_too_large",
+                                    "too_many_nodes",
+                                    "too_many_services",
+                                    "yaml_syntax",
+                                    "custom_tag",
+                                    "not_a_mapping",
+                                    "duplicate_key",
+                                    "alias_limit",
+                                    "unjudgeable",
+                                    "unknown_key",
+                                    "invalid_value",
+                                    "interpolation",
+                                    "privileged",
+                                    "host_namespace",
+                                    "capability_added",
+                                    "device",
+                                    "mount_outside_source",
+                                    "docker_socket",
+                                    "external_network",
+                                    "external_volume",
+                                    "path_outside_source",
+                                    "build_context_not_local",
+                                    "external_file",
+                                    "entry_service_missing",
+                                    "entry_port_invalid",
+                                    "compose_file_missing",
+                                    "compose_file_too_large",
+                                    "invalid_path"
+                                  ]
+                                },
+                                "place": {
+                                  "type": "string"
+                                },
+                                "message": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "code",
+                                "place",
+                                "message"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "previewRemoved": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "code",
+                          "detail",
+                          "refusals",
+                          "previewRemoved"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "log": {
+                    "type": "object",
+                    "properties": {
+                      "bytes": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "truncated": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "bytes",
+                      "truncated"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "id",
+                  "commit",
+                  "status",
+                  "requestedAt",
+                  "startedAt",
+                  "finishedAt",
+                  "timeLimitMinutes",
+                  "failure",
+                  "log"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "controller": {
+            "type": "object",
+            "properties": {
+              "connected": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "connected"
             ],
             "additionalProperties": false
           },
@@ -5193,7 +5883,263 @@
         "required": [
           "settings",
           "hostname",
-          "repository"
+          "repository",
+          "state",
+          "running",
+          "latestBuild",
+          "controller"
+        ],
+        "additionalProperties": false
+      },
+      "PreviewBuild_Output": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "commit": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "building",
+              "succeeded",
+              "failed"
+            ]
+          },
+          "requestedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "startedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "finishedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timeLimitMinutes": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "failure": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": [
+                      "validation_refused",
+                      "compose_file_missing",
+                      "source_unavailable",
+                      "archive_invalid",
+                      "environment_file_tracked",
+                      "disk_full",
+                      "egress_rules_missing",
+                      "limits_failed",
+                      "build_failed",
+                      "build_timed_out",
+                      "start_failed",
+                      "runtime_failed",
+                      "controller_stopped",
+                      "controller_error",
+                      "controller_lost",
+                      "not_claimed",
+                      "report_overdue"
+                    ]
+                  },
+                  "detail": {
+                    "type": "string"
+                  },
+                  "refusals": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "text_too_large",
+                            "too_many_nodes",
+                            "too_many_services",
+                            "yaml_syntax",
+                            "custom_tag",
+                            "not_a_mapping",
+                            "duplicate_key",
+                            "alias_limit",
+                            "unjudgeable",
+                            "unknown_key",
+                            "invalid_value",
+                            "interpolation",
+                            "privileged",
+                            "host_namespace",
+                            "capability_added",
+                            "device",
+                            "mount_outside_source",
+                            "docker_socket",
+                            "external_network",
+                            "external_volume",
+                            "path_outside_source",
+                            "build_context_not_local",
+                            "external_file",
+                            "entry_service_missing",
+                            "entry_port_invalid",
+                            "compose_file_missing",
+                            "compose_file_too_large",
+                            "invalid_path"
+                          ]
+                        },
+                        "place": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "place",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "previewRemoved": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "code",
+                  "detail",
+                  "refusals",
+                  "previewRemoved"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "log": {
+            "type": "object",
+            "properties": {
+              "bytes": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "truncated": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "bytes",
+              "truncated"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "id",
+          "commit",
+          "status",
+          "requestedAt",
+          "startedAt",
+          "finishedAt",
+          "timeLimitMinutes",
+          "failure",
+          "log"
+        ],
+        "additionalProperties": false
+      },
+      "PreviewBuildEvents_Output": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "seq": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                },
+                "stream": {
+                  "type": "string",
+                  "enum": [
+                    "build",
+                    "start",
+                    "controller"
+                  ]
+                },
+                "text": {
+                  "type": "string"
+                },
+                "truncated": {
+                  "type": "boolean"
+                },
+                "redacted": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "seq",
+                "at",
+                "stream",
+                "text",
+                "truncated",
+                "redacted"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "next": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "final": {
+            "type": "boolean"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "events",
+          "final",
+          "truncated"
         ],
         "additionalProperties": false
       },

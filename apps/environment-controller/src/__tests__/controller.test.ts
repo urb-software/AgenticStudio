@@ -172,6 +172,61 @@ describe('EnvironmentController', () => {
     });
   });
 
+  it('reports previewRemoved when the failure removed the Preview', async () => {
+    const api = new FakeApi();
+    const claimed = op('build');
+    api.queue.push(claimed);
+    const controller = start(
+      api,
+      operationsOf(async () => {
+        throw new OperationFailure('start_failed', 'The stack did not start.', undefined, true);
+      }),
+    );
+    await until(() => api.final(claimed.operationId).length === 1);
+    await controller.stop();
+    expect(api.final(claimed.operationId)[0]).toEqual({
+      state: 'failed',
+      failure: { code: 'start_failed', detail: 'The stack did not start.', previewRemoved: true },
+    });
+  });
+
+  it('reports previewRemoved with controller_stopped when the stop came after up', async () => {
+    const api = new FakeApi();
+    const claimed = op('build');
+    api.queue.push(claimed);
+    const controller = start(
+      api,
+      operationsOf(async () => {
+        throw new OperationAborted(true);
+      }),
+    );
+    await until(() => api.final(claimed.operationId).length === 1);
+    await controller.stop();
+    expect(api.final(claimed.operationId)[0]).toEqual({
+      state: 'failed',
+      failure: {
+        code: 'controller_stopped',
+        detail: 'The controller was stopped.',
+        previewRemoved: true,
+      },
+    });
+  });
+
+  it('leaves previewRemoved out of a failure that removed nothing', async () => {
+    const api = new FakeApi();
+    const claimed = op('build');
+    api.queue.push(claimed);
+    const controller = start(
+      api,
+      operationsOf(async () => {
+        throw new OperationFailure('build_failed', 'exit 1');
+      }),
+    );
+    await until(() => api.final(claimed.operationId).length === 1);
+    await controller.stop();
+    expect(JSON.stringify(api.final(claimed.operationId)[0])).not.toContain('previewRemoved');
+  });
+
   it('reports an unexpected error as controller_error without its message', async () => {
     const api = new FakeApi();
     const claimed = op();

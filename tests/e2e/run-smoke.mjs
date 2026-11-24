@@ -29,7 +29,8 @@
 //    request API (tests/e2e/stub-github.mjs, its own process on 127.0.0.1:$E2E_GITHUB_STUB_PORT,
 //    default 4502; STUDIO_AGENT_GITHUB_API_URL), with a throwaway token; nothing reaches GitHub.
 //    On Linux it also starts the environment controller with the fake runtime and a throwaway
-//    token; after Playwright, tests/e2e/controller-phase.mjs runs a SQL-inserted build and stop.
+//    token; after Playwright, tests/e2e/controller-phase.mjs requests a build through the
+//    operator route and reads it back, then runs a SQL-inserted stop.
 //    Repository features
 //    are Linux only: on other platforms the Git steps skip with a reason, and the smoke
 //    checks the "unsupported platform" answer instead.
@@ -338,6 +339,8 @@ async function main() {
     STUDIO_DATA_DIR: dataDir,
     STUDIO_WORKER_TOKEN: workerToken,
     STUDIO_CONTROLLER_TOKEN: controllerToken,
+    // A domain of its own for the Preview link; nothing resolves it.
+    STUDIO_PREVIEW_DOMAIN: 'preview.smoke.test',
     // Issue #146: the operator's own GitHub login, whose review comments are preselected.
     STUDIO_OPERATOR_GITHUB_LOGIN: 'Smoke-Operator',
     // The Merge credential for this run only, and the GitHub stub as the merge adapter's API

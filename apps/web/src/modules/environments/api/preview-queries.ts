@@ -30,6 +30,10 @@ export function useSavePreviewSettings(projectId: string) {
         hostname: saved.hostname,
         ...(saved.hostnameUnavailable ? { hostnameUnavailable: saved.hostnameUnavailable } : {}),
         repository: saved.repository,
+        state: saved.state,
+        running: saved.running,
+        latestBuild: saved.latestBuild,
+        controller: saved.controller,
       };
       queryClient.setQueryData<PreviewOutput>(previewKey(projectId), preview);
     },

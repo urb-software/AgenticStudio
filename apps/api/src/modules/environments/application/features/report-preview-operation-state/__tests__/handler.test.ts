@@ -10,6 +10,7 @@ import { PreviewLimits } from '../../../../domain/value-objects/preview-limits.j
 import { PreviewPort } from '../../../../domain/value-objects/preview-port.js';
 import { PreviewService } from '../../../../domain/value-objects/preview-service.js';
 import { InMemoryPreviewOperationRepository } from '../../../../domain/repositories/__tests__/in-memory-preview-operation-repository.js';
+import { FakeControllerPresence } from '../../../ports/__tests__/fake-controller-presence.js';
 import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
 import { PREVIEW_ENVIRONMENT_FILE_SECRET_OWNER } from '../../../ports/preview-environment-file-snapshots.js';
 import type { PreviewSecretValues } from '../../../ports/preview-secret-values.js';
@@ -27,6 +28,7 @@ describe('ReportPreviewOperationStateHandler', () => {
   let secrets: InMemorySecretStore;
   let secretValues: PreviewSecretValues;
   let known: string[];
+  let presence: FakeControllerPresence;
   let handler: ReportPreviewOperationStateHandler;
 
   beforeEach(() => {
@@ -34,9 +36,14 @@ describe('ReportPreviewOperationStateHandler', () => {
     secrets = new InMemorySecretStore();
     known = [];
     secretValues = { forOperation: () => Promise.resolve(known) };
-    handler = new ReportPreviewOperationStateHandler(operations, secretValues, secrets, {
-      now: () => T1,
-    });
+    presence = new FakeControllerPresence(T0);
+    handler = new ReportPreviewOperationStateHandler(
+      operations,
+      secretValues,
+      secrets,
+      { now: () => T1 },
+      presence,
+    );
   });
 
   async function claimed() {
@@ -181,6 +188,7 @@ describe('ReportPreviewOperationStateHandler', () => {
       },
       secrets,
       { now: () => T1 },
+      presence,
     );
     const failed = {
       state: 'failed' as const,
@@ -232,5 +240,25 @@ describe('ReportPreviewOperationStateHandler', () => {
       report({ state: 'failed', failure: { code: 'build_failed', detail: 'x' } }),
     ).rejects.toBeInstanceOf(PreviewOperationNotHeldError);
     expect(await operations.find(ID)).toMatchObject({ status: 'succeeded' });
+  });
+
+  it('records that a controller called, for a heartbeat too', async () => {
+    await claimed();
+
+    await handler.execute({ operationId: ID, controllerId: CONTROLLER, state: 'in_progress' });
+
+    expect(presence.recorded).toEqual([T1]);
+  });
+
+  it('keeps previewRemoved of a failed build', async () => {
+    await claimedBuildWithSnapshot();
+    await handler.execute({
+      operationId: ID,
+      controllerId: CONTROLLER,
+      state: 'failed',
+      failure: { code: 'start_failed', detail: 'x', previewRemoved: true },
+    });
+
+    expect((await operations.find(ID))?.previewRemoved).toBe(true);
   });
 });

@@ -7,6 +7,7 @@ import {
 import { InMemoryPreviewOperationRepository } from '../../../../domain/repositories/__tests__/in-memory-preview-operation-repository.js';
 import { PreviewLogCap } from '../../../../domain/value-objects/preview-log-cap.js';
 import type { PreviewLogLine } from '../../../../domain/value-objects/preview-log-line.js';
+import { FakeControllerPresence } from '../../../ports/__tests__/fake-controller-presence.js';
 import type { PreviewOperationLog } from '../../../ports/preview-operation-log.js';
 import { AppendPreviewOperationLogHandler } from '../handler.js';
 
@@ -37,23 +38,34 @@ class InMemoryPreviewOperationLog implements PreviewOperationLog {
     this.state = plan.state;
     return { stored: plan.store.length, truncated: plan.state.truncated };
   }
+
+  page(_operationId: string, after: number, limit: number) {
+    const lines = [...this.stored.values()]
+      .filter((line) => line.seq > after)
+      .sort((a, b) => a.seq - b.seq);
+    return Promise.resolve({ lines: lines.slice(0, limit), hasMore: lines.length > limit });
+  }
 }
 
 describe('AppendPreviewOperationLogHandler', () => {
   let operations: InMemoryPreviewOperationRepository;
   let log: InMemoryPreviewOperationLog;
   let known: string[];
+  let presence: FakeControllerPresence;
   let handler: AppendPreviewOperationLogHandler;
 
   beforeEach(async () => {
     operations = new InMemoryPreviewOperationRepository();
     log = new InMemoryPreviewOperationLog(operations);
     known = [];
+    presence = new FakeControllerPresence(AT);
     handler = new AppendPreviewOperationLogHandler(
       operations,
       log,
       { forOperation: () => Promise.resolve(known) },
-      { leaseSeconds: 60, logMaxBytes: 100, snapshotGraceMs: 3_600_000 },
+      { leaseSeconds: 60, logMaxBytes: 100, snapshotGraceMs: 3_600_000, unclaimedMinutes: 5 },
+      { now: () => AT },
+      presence,
     );
     await operations.add(
       PreviewOperation.requestOther({ id: ID, projectId: PROJECT, kind: 'state', now: AT }),
@@ -94,7 +106,9 @@ describe('AppendPreviewOperationLogHandler', () => {
       operations,
       log,
       { forOperation: () => Promise.resolve(known) },
-      { leaseSeconds: 60, logMaxBytes: 100_000, snapshotGraceMs: 3_600_000 },
+      { leaseSeconds: 60, logMaxBytes: 100_000, snapshotGraceMs: 3_600_000, unclaimedMinutes: 5 },
+      { now: () => AT },
+      presence,
     );
 
     await roomy.execute({
@@ -153,5 +167,11 @@ describe('AppendPreviewOperationLogHandler', () => {
     });
 
     await expect(append([line(1, 'x')])).rejects.toBeInstanceOf(PreviewOperationNotHeldError);
+  });
+
+  it('records that a controller called', async () => {
+    await append([line(1, 'step 1/3')]);
+
+    expect(presence.recorded).toEqual([AT]);
   });
 });

@@ -19,6 +19,15 @@ describe('GetPreviewEndpoint', () => {
           },
           hostname: 'preview-3f2b8c1e4d5a.example.test',
           repository: { ready: false, reason: 'repository_not_ready' as const },
+          state: 'running' as const,
+          running: {
+            buildId: '0b2f6d52-3d0b-4d6e-8a44-6b3c1d8f2a10',
+            commit: 'a'.repeat(40),
+            since: new Date('2026-11-23T11:00:00.000Z'),
+            url: 'https://preview-3f2b8c1e4d5a.example.test/',
+          },
+          latestBuild: null,
+          controller: { connected: true },
         }),
       ),
     };
@@ -28,6 +37,7 @@ describe('GetPreviewEndpoint', () => {
 
     expect(previewSchema.safeParse(answer).success).toBe(true);
     expect(answer.settings?.updatedAt).toBe('2026-11-23T10:00:00.000Z');
+    expect(answer.running?.since).toBe('2026-11-23T11:00:00.000Z');
   });
 
   it('maps an unknown project to 404', async () => {

@@ -219,6 +219,7 @@ export class PreviewOperations {
       };
 
       await deps.slices.apply(identity, op.limits, signal);
+      await deps.slices.boundBuild(identity, op.limits, signal);
       await deps.egress.verify(signal);
       await deps.runtime.build(run, call);
       await deps.egress.verify(signal);
@@ -238,7 +239,14 @@ export class PreviewOperations {
     } catch (error) {
       if (startAttempted) await this.rollBackStart(identity, op.projectId);
       await rm(layout.buildDir, { recursive: true, force: true }).catch(() => undefined);
-      throw classify(error, deadline, context.signal);
+      const failure = classify(error, deadline, context.signal);
+      if (
+        startAttempted &&
+        (failure instanceof OperationFailure || failure instanceof OperationAborted)
+      ) {
+        throw failure.afterRollback();
+      }
+      throw failure;
     }
   }
 

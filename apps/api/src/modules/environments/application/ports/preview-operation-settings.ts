@@ -8,4 +8,6 @@ export interface PreviewOperationSettings {
   logMaxBytes: number;
   /** An Environment file snapshot no operation references is swept once it is this old. */
   snapshotGraceMs: number;
+  /** Minutes a requested operation may wait while no controller is known to exist. */
+  unclaimedMinutes: number;
 }

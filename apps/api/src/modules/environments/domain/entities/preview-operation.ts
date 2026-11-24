@@ -51,8 +51,10 @@ export class PreviewOperation {
       heartbeatAt: null,
       finishedAt: null,
       failure: null,
+      previewRemoved: false,
       result: null,
       environmentFile: null,
+      log: { bytes: 0, truncated: false },
     });
   }
 
@@ -69,8 +71,10 @@ export class PreviewOperation {
       heartbeatAt: null,
       finishedAt: null,
       failure: null,
+      previewRemoved: false,
       result: null,
       environmentFile: null,
+      log: { bytes: 0, truncated: false },
     });
   }
 
@@ -80,6 +84,11 @@ export class PreviewOperation {
 
   get status(): PreviewOperationStatus {
     return this.current.status;
+  }
+
+  /** Succeeded or failed: nothing changes it any more. */
+  get isFinished(): boolean {
+    return this.current.status === 'succeeded' || this.current.status === 'failed';
   }
 
   get claimedBy(): string | null {
@@ -106,6 +115,14 @@ export class PreviewOperation {
     return this.current.failure === null
       ? null
       : PreviewOperationFailure.restore(this.current.failure);
+  }
+
+  get previewRemoved(): boolean {
+    return this.current.previewRemoved;
+  }
+
+  get log(): PreviewOperationData['log'] {
+    return this.current.log;
   }
 
   get result(): PreviewOperationResult | null {
@@ -175,9 +192,15 @@ export class PreviewOperation {
     };
   }
 
-  fail(controllerId: string, failure: PreviewOperationFailure, now: Date): void {
+  /** `previewRemoved` counts for a build only: no other operation removes a Preview by failing. */
+  fail(
+    controllerId: string,
+    failure: PreviewOperationFailure,
+    now: Date,
+    previewRemoved = false,
+  ): void {
     this.assertHeldBy(controllerId);
-    this.finishAsFailed(failure, now);
+    this.finishAsFailed(failure, now, previewRemoved && this.current.kind === 'build');
   }
 
   /** The lease ran out: the API fails the claimed operation of a controller that stopped reporting. */
@@ -190,9 +213,34 @@ export class PreviewOperation {
     this.finishAsFailed(failure, now);
   }
 
-  private finishAsFailed(failure: PreviewOperationFailure, now: Date): void {
+  /** The build ran past its time limit and margin without an end report. */
+  failOverdue(failure: PreviewOperationFailure, now: Date): void {
+    if (this.current.status !== 'claimed') {
+      throw new IllegalPreviewOperationTransitionError(
+        'Only a claimed Preview operation can be overdue.',
+      );
+    }
+    this.finishAsFailed(failure, now);
+  }
+
+  /** No controller claimed the operation in time. */
+  failUnclaimed(failure: PreviewOperationFailure, now: Date): void {
+    if (this.current.status !== 'requested') {
+      throw new IllegalPreviewOperationTransitionError(
+        'Only a requested Preview operation can be unclaimed.',
+      );
+    }
+    this.finishAsFailed(failure, now);
+  }
+
+  private finishAsFailed(
+    failure: PreviewOperationFailure,
+    now: Date,
+    previewRemoved = false,
+  ): void {
     this.current = {
       ...this.current,
+      previewRemoved,
       status: 'failed',
       heartbeatAt: null,
       finishedAt: now,

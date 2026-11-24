@@ -169,7 +169,7 @@ _Avoid_: Feedback, remark
 ### `environments`
 
 **Preview**:
-A Project's own Compose stack, built from the Integration branch and reachable in the browser under its own hostname, behind the Preview password. A Project has one shared Preview, not one per Run. It rebuilds after a merge made through Studio and on the operator's "Rebuild"; it runs until the operator stops it.
+A Project's own Compose stack, built from the Integration branch and reachable in the browser under its own hostname, behind the Preview password. A Project has one shared Preview, not one per Run. It rebuilds after a merge made through Studio and on the operator's "Rebuild"; it runs until the operator stops it. It has one state, derived from its builds: `not_configured` (no settings), `stopped` (settings, nothing running), `building` (a build is queued or running), `running` (the last finished change was a succeeded build) or `failed` (the latest build failed and nothing runs). A failed build beside an earlier one that still runs leaves it `running`.
 _Avoid_: Environment (alone), staging, deployment
 
 **Preview operation**:
@@ -177,7 +177,7 @@ One piece of work the environment controller claims from Studio for a Project's 
 _Avoid_: Job, task, command
 
 **Preview build**:
-One attempt to build and start a Preview from the Integration branch at a commit, with its state and its redacted, capped log. A failed build leaves the previous Preview running.
+One attempt to build and start a Preview from the Integration branch at a commit, with its status and its redacted, capped log. Its status is `queued` (waiting for the controller), `building` (claimed), `succeeded` or `failed`. A build that fails before the stack starts leaves the previous Preview running; one that fails after it removes that Preview.
 _Avoid_: Deploy, pipeline
 
 **Preview settings**:

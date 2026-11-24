@@ -1,6 +1,12 @@
 {
   "description": "Files directly in a module's application/ folder (backend.md section 3 rule 3: the last resort for shared application logic). Each entry is '<module>/application/<file>.ts' with a 'reason': the step of rule 3 that was tried and why it did not apply. A new file fails tests/architecture/api/pinned.test.ts until it is recorded here in the same pull request. The Epic aimed for an empty list; the remaining ones are run-lookup-requests, repository-cleanup and the read models shown whole by more than one feature, each with its reason below.",
   "collaborators": {
+    "environments/application/preview-compose-judge.ts": {
+      "reason": "Steps 1 to 5 tried: it calls the Repository's source port, so it cannot live in the domain (1); it is a sequence of one read and the judgement of its text, not one infrastructure capability (2); the settings save and the build request both read the Compose file and map its refusals, and handlers never call each other, so no one use case holds it (3); it is no job or event, since the operator waits for the refusals (4); copying the read and the refusal mapping into both would let their wording drift (5)."
+    },
+    "environments/application/preview-state-reader.ts": {
+      "reason": "Steps 1 to 5 tried: it reads the operation repository, the controller presence and the clock, so it cannot live in the domain, which holds the derivation itself in PreviewState (1); it is a sequence of several ports, not one infrastructure capability (2); the get and the save of the Preview settings both show its state, and handlers never call each other, so no one use case holds it (3); it is no job or event (4); copying its steps and the link rule into both would drift (5)."
+    },
     "environments/application/preview-view.ts": {
       "reason": "Steps 1 to 5 tried: a result shape is no behaviour of the entity (1); no infrastructure capability is involved (2); get and save both show the Project's whole Preview, and handlers never call each other, so no one use case holds it (3); it is no job or event (4); copying its fields into both would drift, since a new field must be added to every copy (5). It is a type with a pure mapping from the entity: no rule, no repository or port call."
     },

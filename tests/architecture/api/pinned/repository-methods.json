@@ -16,6 +16,15 @@
         "kind": "atomic",
         "reason": "Hands out the oldest requested operation of a Project with no claimed one in one statement under the claim lock, so two controllers never get the same one; the selection is the domain PreviewOperationHandOutRule."
       },
+      "failOverdue": {
+        "kind": "set-wide",
+        "reason": "One UPDATE over every claimed build past its time limit plus the margin, whatever its heartbeat; the selection and the failure are the domain OverdueBuildRule's."
+      },
+      "failUnclaimed": {
+        "kind": "set-wide",
+        "reason": "One UPDATE over every requested operation older than the unclaimed limit; the cut-off and the failure are the domain UnclaimedOperationRule's."
+      },
+      "findPreviewFacts": { "kind": "query" },
       "findEnvironmentFileSecret": { "kind": "query" },
       "listEnvironmentFileSecrets": { "kind": "query" }
     },

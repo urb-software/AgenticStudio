@@ -14,6 +14,7 @@ import { LostControllerRule } from '../../../domain/value-objects/lost-controlle
 import { PreviewOperationFailure } from '../../../domain/value-objects/preview-operation-failure.js';
 import type { PreviewOperationKind } from '../../../domain/value-objects/preview-operation-kind.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
+import { CONTROLLER_PRESENCE, type ControllerPresence } from '../../ports/controller-presence.js';
 import { PREVIEW_ENVIRONMENT_FILE_SECRET_OWNER } from '../../ports/preview-environment-file-snapshots.js';
 import type { PreviewLimitsSettings } from '../../ports/preview-limits-settings.js';
 import {
@@ -68,11 +69,13 @@ export class ClaimPreviewOperationHandler {
     @Inject(SECRET_STORE) private readonly secrets: SecretStore,
     @Inject(PREVIEW_OPERATION_SETTINGS) private readonly settings: PreviewOperationSettings,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(CONTROLLER_PRESENCE) private readonly presence: ControllerPresence,
   ) {}
 
   async execute(input: ClaimPreviewOperationInput): Promise<ClaimPreviewOperationResult> {
     const { controllerId } = input;
     const now = this.clock.now();
+    this.presence.record(now);
     const lost = LostControllerRule.at(now, this.settings.leaseSeconds);
     for (const secretId of await this.operations.failLost(lost, now)) {
       await this.discard(secretId);

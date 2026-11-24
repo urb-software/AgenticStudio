@@ -113,6 +113,7 @@ describe('build', () => {
 
     expect(fake.events).toEqual([
       `slice.apply ${COMPOSE_PROJECT}`,
+      `slice.bound ${COMPOSE_PROJECT}`,
       'egress.verify',
       `build ${COMPOSE_PROJECT}`,
       'egress.verify',
@@ -121,6 +122,7 @@ describe('build', () => {
     ]);
     expect(outcome.runtime).toEqual({ services: [{ name: 'web', state: 'running' }] });
     expect(fake.limits[0]).toEqual(op.limits);
+    expect(fake.bounds[0]).toEqual(op.limits);
     expect(fake.bridges.open).toEqual([LABEL]);
 
     const layout = buildLayout(dataDir, PROJECT, op.operationId);
@@ -301,6 +303,7 @@ describe('build', () => {
       apply: async () => {
         throw new OperationFailure('limits_failed', 'systemd could not reload the slice.');
       },
+      boundBuild: async () => undefined,
       remove: async () => undefined,
     };
     const { fake, ops, context } = setup({ slices });
@@ -308,6 +311,25 @@ describe('build', () => {
       code: 'limits_failed',
     });
     expect(fake.events).toEqual([]);
+  });
+
+  it('reports limits_failed when the build cannot be bounded, and builds nothing', async () => {
+    const fake = new FakeRuntime();
+    const slices: PreviewSlices = {
+      apply: fake.apply.bind(fake),
+      boundBuild: async () => {
+        throw new OperationFailure('limits_failed', 'systemd could not bound the build.');
+      },
+      remove: fake.remove.bind(fake),
+    };
+    const { ops, context } = setup({ fake, slices });
+    const op = build();
+
+    expect(await failureOf(ops.execute(op, context() as never))).toMatchObject({
+      code: 'limits_failed',
+    });
+    expect(fake.events).toEqual([`slice.apply ${COMPOSE_PROJECT}`]);
+    expect(existsSync(buildLayout(dataDir, PROJECT, op.operationId).buildDir)).toBe(false);
   });
 
   it('reports build_failed and start_failed from the runtime, and removes the new build directory', async () => {
@@ -469,6 +491,50 @@ describe('after a failure past up, and the kept desired state', () => {
     expect(failing.fake.events).toContain(`removeContainers ${COMPOSE_PROJECT}`);
     expect(failing.fake.bridges.open).toEqual([]);
     expect(await new DesiredStates(dataDir).list()).toEqual([]);
+  });
+
+  it('marks the failure previewRemoved when start failed, and not when the build failed first', async () => {
+    const starting = setup({ fakeOptions: { failStart: 'no start' } });
+    expect(
+      await failureOf(starting.ops.execute(build(), starting.context() as never)),
+    ).toMatchObject({ code: 'start_failed', previewRemoved: true });
+
+    const building = setup({ fakeOptions: { failBuild: 'exit 1' } });
+    expect(
+      await failureOf(building.ops.execute(build(), building.context() as never)),
+    ).toMatchObject({ code: 'build_failed', previewRemoved: false });
+    expect(building.fake.events.some((event) => event.startsWith('removeContainers'))).toBe(false);
+  });
+
+  it('marks a failure before up as not removing the Preview, for every earlier failure', async () => {
+    for (const fakeOptions of [{ egressMissing: true }, { failBuild: 'x' }]) {
+      const { ops, context } = setup({ fakeOptions });
+      expect(await failureOf(ops.execute(build(), context() as never))).toMatchObject({
+        previewRemoved: false,
+      });
+    }
+    const bad = setup({ archive: tar(file('other.txt', 'x')) });
+    expect(await failureOf(bad.ops.execute(build(), bad.context() as never))).toMatchObject({
+      code: 'compose_file_missing',
+      previewRemoved: false,
+    });
+  });
+
+  it('marks a controller_stopped during up as previewRemoved', async () => {
+    const abort = new AbortController();
+    const fake = new FakeRuntime();
+    const start = fake.start.bind(fake);
+    fake.start = async (run, call) => {
+      await start(run, call);
+      abort.abort();
+      throw new OperationAborted();
+    };
+    const { ops, context } = setup({ fake });
+
+    const failure = await failureOf(ops.execute(build(), context(abort.signal) as never));
+
+    expect(failure).toBeInstanceOf(OperationAborted);
+    expect(failure).toMatchObject({ previewRemoved: true });
   });
 
   it('keeps only the Environment file path in the desired state, and reads the values again on resume', async () => {

@@ -5,6 +5,19 @@ import { SecretsModule } from '../../platform/secrets/secrets.module.js';
 import { AppendPreviewOperationLogHandler } from './application/features/append-preview-operation-log/handler.js';
 import { ClaimPreviewOperationHandler } from './application/features/claim-preview-operation/handler.js';
 import { GetPreviewOperationSourceHandler } from './application/features/get-preview-operation-source/handler.js';
+import { GetPreviewBuildEventsHandler } from './application/features/get-preview-build-events/handler.js';
+import { SweepPreviewOperationsHandler } from './application/features/sweep-preview-operations/handler.js';
+import { PreviewComposeJudge } from './application/preview-compose-judge.js';
+import { PreviewStateReader } from './application/preview-state-reader.js';
+import { CONTROLLER_PRESENCE } from './application/ports/controller-presence.js';
+import { InMemoryControllerPresence } from './infrastructure/adapters/in-memory-controller-presence.js';
+import {
+  PREVIEW_SWEEPS_SETTINGS,
+  PreviewSweepsScheduler,
+  type PreviewSweepsSettings,
+} from './entry-points/schedulers/preview-sweeps.js';
+import { RequestPreviewBuildEndpoint } from './entry-points/http/operator/request-preview-build/endpoint.js';
+import { GetPreviewBuildEventsEndpoint } from './entry-points/http/operator/get-preview-build-events/endpoint.js';
 import { ReportPreviewOperationStateHandler } from './application/features/report-preview-operation-state/handler.js';
 import { RequestPreviewOperationHandler } from './application/features/request-preview-operation/handler.js';
 import { SweepPreviewEnvironmentFilesHandler } from './application/features/sweep-preview-environment-files/handler.js';
@@ -42,6 +55,12 @@ import { RemovePreviewSettingsEndpoint } from './entry-points/http/operator/remo
 import { SavePreviewSettingsEndpoint } from './entry-points/http/operator/save-preview-settings/endpoint.js';
 import { PrismaPreviewSettingsRepository } from './infrastructure/repositories/prisma-preview-settings-repository.js';
 
+/** Test seams of the module; production passes none. */
+export interface EnvironmentsModuleOptions {
+  /** `false` leaves the periodic Preview sweep off. */
+  sweeps?: boolean;
+}
+
 /**
  * `environments` business module: a Project's Preview settings, and the work the environment
  * controller claims over the controller routes. It reaches the Repository only
@@ -49,7 +68,7 @@ import { PrismaPreviewSettingsRepository } from './infrastructure/repositories/p
  */
 @Module({})
 export class EnvironmentsModule {
-  static register(projects: DynamicModule): DynamicModule {
+  static register(projects: DynamicModule, options: EnvironmentsModuleOptions = {}): DynamicModule {
     return {
       module: EnvironmentsModule,
       imports: [DatabaseModule, SecretsModule, projects],
@@ -57,6 +76,8 @@ export class EnvironmentsModule {
         GetPreviewEndpoint,
         SavePreviewSettingsEndpoint,
         RemovePreviewSettingsEndpoint,
+        RequestPreviewBuildEndpoint,
+        GetPreviewBuildEventsEndpoint,
         ClaimOperationEndpoint,
         ReportOperationStateEndpoint,
         AppendOperationLogEndpoint,
@@ -86,10 +107,27 @@ export class EnvironmentsModule {
             leaseSeconds: config.controllerLeaseSeconds,
             logMaxBytes: config.previewLogMaxBytes,
             snapshotGraceMs: PREVIEW_SNAPSHOT_GRACE_MS,
+            unclaimedMinutes: config.previewUnclaimedMinutes,
           }),
           inject: [APP_CONFIG],
         },
+        { provide: CONTROLLER_PRESENCE, useValue: new InMemoryControllerPresence() },
+        PreviewComposeJudge,
+        PreviewStateReader,
         GetPreviewHandler,
+        GetPreviewBuildEventsHandler,
+        SweepPreviewOperationsHandler,
+        {
+          provide: PREVIEW_SWEEPS_SETTINGS,
+          useFactory: (config: AppConfig): PreviewSweepsSettings => ({
+            enabled: options.sweeps !== false,
+            // Half the lease, at most every 30 s: a lost controller is noticed within half a
+            // lease after its lease expires.
+            intervalMs: Math.min(30_000, (config.controllerLeaseSeconds * 1000) / 2),
+          }),
+          inject: [APP_CONFIG],
+        },
+        PreviewSweepsScheduler,
         RequestPreviewOperationHandler,
         ClaimPreviewOperationHandler,
         ReportPreviewOperationStateHandler,

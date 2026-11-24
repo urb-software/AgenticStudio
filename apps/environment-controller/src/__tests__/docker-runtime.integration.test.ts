@@ -317,6 +317,50 @@ describe.skipIf(!available)('Docker Compose runtime on a real daemon', () => {
     expect(inspect('network', decoys.network)).toHaveLength(1);
   }, 600_000);
 
+  it('keeps the data of a named volume across two builds', async () => {
+    const projectId = randomUUID();
+    projects.push(projectId);
+    const mark = `marker-${randomUUID()}`;
+    await operations.execute(build(projectId), context());
+    const volumes = () =>
+      ids([
+        'volume',
+        'ls',
+        '--quiet',
+        '--filter',
+        `label=${OWNER}`,
+        '--filter',
+        `label=${projectLabel(projectId)}`,
+      ]);
+    const [volume] = volumes();
+    expect(volume).toBeDefined();
+    const written = docker([
+      'run',
+      '--rm',
+      '-v',
+      `${volume}:/data`,
+      'busybox:1.37',
+      'sh',
+      '-c',
+      `echo ${mark} > /data/marker`,
+    ]);
+    expect(written.status).toBe(0);
+
+    await operations.execute(build(projectId), context());
+
+    const read = docker([
+      'run',
+      '--rm',
+      '-v',
+      `${volume}:/data`,
+      'busybox:1.37',
+      'cat',
+      '/data/marker',
+    ]);
+    expect(read.stdout.trim()).toBe(mark);
+    expect(volumes()).toEqual([volume]);
+  }, 600_000);
+
   it('reports the state of a stopped Project as empty', async () => {
     const projectId = randomUUID();
     const outcome = await operations.execute(simple('state', projectId), context());

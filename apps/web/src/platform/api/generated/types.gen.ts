@@ -499,6 +499,40 @@ export type PreviewOutput = {
     repository: {
         ready: boolean;
         reason?: 'no_repository' | 'repository_not_ready' | 'unsupported_platform';
+        commit?: string;
+    };
+    state: 'not_configured' | 'stopped' | 'building' | 'running' | 'failed';
+    running: {
+        buildId: string;
+        commit: string;
+        since: string;
+        url: string | null;
+    } | null;
+    latestBuild: {
+        id: string;
+        commit: string;
+        status: 'queued' | 'building' | 'succeeded' | 'failed';
+        requestedAt: string;
+        startedAt: string | null;
+        finishedAt: string | null;
+        timeLimitMinutes: number;
+        failure: {
+            code: 'validation_refused' | 'compose_file_missing' | 'source_unavailable' | 'archive_invalid' | 'environment_file_tracked' | 'disk_full' | 'egress_rules_missing' | 'limits_failed' | 'build_failed' | 'build_timed_out' | 'start_failed' | 'runtime_failed' | 'controller_stopped' | 'controller_error' | 'controller_lost' | 'not_claimed' | 'report_overdue';
+            detail: string;
+            refusals: Array<{
+                code: 'text_too_large' | 'too_many_nodes' | 'too_many_services' | 'yaml_syntax' | 'custom_tag' | 'not_a_mapping' | 'duplicate_key' | 'alias_limit' | 'unjudgeable' | 'unknown_key' | 'invalid_value' | 'interpolation' | 'privileged' | 'host_namespace' | 'capability_added' | 'device' | 'mount_outside_source' | 'docker_socket' | 'external_network' | 'external_volume' | 'path_outside_source' | 'build_context_not_local' | 'external_file' | 'entry_service_missing' | 'entry_port_invalid' | 'compose_file_missing' | 'compose_file_too_large' | 'invalid_path';
+                place: string;
+                message: string;
+            }>;
+            previewRemoved: boolean;
+        } | null;
+        log: {
+            bytes: number;
+            truncated: boolean;
+        };
+    } | null;
+    controller: {
+        connected: boolean;
     };
 };
 
@@ -542,11 +576,83 @@ export type SavePreviewSettingsResponseOutput = {
     repository: {
         ready: boolean;
         reason?: 'no_repository' | 'repository_not_ready' | 'unsupported_platform';
+        commit?: string;
+    };
+    state: 'not_configured' | 'stopped' | 'building' | 'running' | 'failed';
+    running: {
+        buildId: string;
+        commit: string;
+        since: string;
+        url: string | null;
+    } | null;
+    latestBuild: {
+        id: string;
+        commit: string;
+        status: 'queued' | 'building' | 'succeeded' | 'failed';
+        requestedAt: string;
+        startedAt: string | null;
+        finishedAt: string | null;
+        timeLimitMinutes: number;
+        failure: {
+            code: 'validation_refused' | 'compose_file_missing' | 'source_unavailable' | 'archive_invalid' | 'environment_file_tracked' | 'disk_full' | 'egress_rules_missing' | 'limits_failed' | 'build_failed' | 'build_timed_out' | 'start_failed' | 'runtime_failed' | 'controller_stopped' | 'controller_error' | 'controller_lost' | 'not_claimed' | 'report_overdue';
+            detail: string;
+            refusals: Array<{
+                code: 'text_too_large' | 'too_many_nodes' | 'too_many_services' | 'yaml_syntax' | 'custom_tag' | 'not_a_mapping' | 'duplicate_key' | 'alias_limit' | 'unjudgeable' | 'unknown_key' | 'invalid_value' | 'interpolation' | 'privileged' | 'host_namespace' | 'capability_added' | 'device' | 'mount_outside_source' | 'docker_socket' | 'external_network' | 'external_volume' | 'path_outside_source' | 'build_context_not_local' | 'external_file' | 'entry_service_missing' | 'entry_port_invalid' | 'compose_file_missing' | 'compose_file_too_large' | 'invalid_path';
+                place: string;
+                message: string;
+            }>;
+            previewRemoved: boolean;
+        } | null;
+        log: {
+            bytes: number;
+            truncated: boolean;
+        };
+    } | null;
+    controller: {
+        connected: boolean;
     };
     removedPorts?: Array<{
         service: string;
         place: string;
     }>;
+};
+
+export type PreviewBuildOutput = {
+    id: string;
+    commit: string;
+    status: 'queued' | 'building' | 'succeeded' | 'failed';
+    requestedAt: string;
+    startedAt: string | null;
+    finishedAt: string | null;
+    timeLimitMinutes: number;
+    failure: {
+        code: 'validation_refused' | 'compose_file_missing' | 'source_unavailable' | 'archive_invalid' | 'environment_file_tracked' | 'disk_full' | 'egress_rules_missing' | 'limits_failed' | 'build_failed' | 'build_timed_out' | 'start_failed' | 'runtime_failed' | 'controller_stopped' | 'controller_error' | 'controller_lost' | 'not_claimed' | 'report_overdue';
+        detail: string;
+        refusals: Array<{
+            code: 'text_too_large' | 'too_many_nodes' | 'too_many_services' | 'yaml_syntax' | 'custom_tag' | 'not_a_mapping' | 'duplicate_key' | 'alias_limit' | 'unjudgeable' | 'unknown_key' | 'invalid_value' | 'interpolation' | 'privileged' | 'host_namespace' | 'capability_added' | 'device' | 'mount_outside_source' | 'docker_socket' | 'external_network' | 'external_volume' | 'path_outside_source' | 'build_context_not_local' | 'external_file' | 'entry_service_missing' | 'entry_port_invalid' | 'compose_file_missing' | 'compose_file_too_large' | 'invalid_path';
+            place: string;
+            message: string;
+        }>;
+        previewRemoved: boolean;
+    } | null;
+    log: {
+        bytes: number;
+        truncated: boolean;
+    };
+};
+
+export type PreviewBuildEventsOutput = {
+    events: Array<{
+        seq: number;
+        at: string;
+        stream: 'build' | 'start' | 'controller';
+        text: string;
+        truncated: boolean;
+        redacted: boolean;
+    }>;
+    next?: number;
+    final: boolean;
+    truncated: boolean;
 };
 
 export type ProblemDetails = {
@@ -2006,7 +2112,7 @@ export type RemovePreviewSettingsErrors = {
      */
     404: ProblemDetails;
     /**
-     * The Preview is running (urn:agentic-studio:problem:preview-running)
+     * The Preview is running (urn:agentic-studio:problem:preview-running) or a build is running (urn:agentic-studio:problem:preview-build-running)
      */
     409: ProblemDetails;
     /**
@@ -2065,3 +2171,79 @@ export type SavePreviewSettingsResponses = {
 };
 
 export type SavePreviewSettingsResponse = SavePreviewSettingsResponses[keyof SavePreviewSettingsResponses];
+
+export type RequestPreviewBuildData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/projects/{id}/preview/builds';
+};
+
+export type RequestPreviewBuildErrors = {
+    /**
+     * Unknown project (urn:agentic-studio:problem:project-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * No Preview settings (urn:agentic-studio:problem:preview-not-configured), the repository cannot be read now (urn:agentic-studio:problem:preview-repository-not-ready), the API is not on Linux (urn:agentic-studio:problem:preview-unsupported-platform), no environment controller is connected (urn:agentic-studio:problem:preview-controller-unavailable), or a build is already running (urn:agentic-studio:problem:preview-build-running)
+     */
+    409: ProblemDetails;
+    /**
+     * The Compose file was refused at this commit (urn:agentic-studio:problem:preview-refused); `refusals` lists every reason with its place
+     */
+    422: PreviewRefusedProblem;
+    /**
+     * The Compose file could not be read (urn:agentic-studio:problem:preview-source-unavailable)
+     */
+    502: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type RequestPreviewBuildError = RequestPreviewBuildErrors[keyof RequestPreviewBuildErrors];
+
+export type RequestPreviewBuildResponses = {
+    202: PreviewBuildOutput;
+};
+
+export type RequestPreviewBuildResponse = RequestPreviewBuildResponses[keyof RequestPreviewBuildResponses];
+
+export type ListPreviewBuildEventsData = {
+    body?: never;
+    path: {
+        id: string;
+        buildId: string;
+    };
+    query?: {
+        after?: number;
+        limit?: number;
+    };
+    url: '/api/projects/{id}/preview/builds/{buildId}/events';
+};
+
+export type ListPreviewBuildEventsErrors = {
+    /**
+     * Invalid after or limit
+     */
+    400: ProblemDetails;
+    /**
+     * Unknown project (urn:agentic-studio:problem:project-not-found) or unknown build (urn:agentic-studio:problem:preview-build-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type ListPreviewBuildEventsError = ListPreviewBuildEventsErrors[keyof ListPreviewBuildEventsErrors];
+
+export type ListPreviewBuildEventsResponses = {
+    200: PreviewBuildEventsOutput;
+};
+
+export type ListPreviewBuildEventsResponse = ListPreviewBuildEventsResponses[keyof ListPreviewBuildEventsResponses];
