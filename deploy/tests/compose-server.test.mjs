@@ -242,7 +242,8 @@ describe(
         ]);
         assert.equal(proxy.environment.STUDIO_PREVIEW_DOMAIN, 'preview.example.invalid');
         assert.equal(
-          proxy.environment.STUDIO_PREVIEW_PASSWORD_HASH,
+          // `docker compose config` writes a literal `$` as `$$`.
+          proxy.environment.STUDIO_PREVIEW_PASSWORD_HASH.replaceAll('$$', '$'),
           PREVIEW_ENV.STUDIO_PREVIEW_PASSWORD_HASH,
         );
         assert.deepEqual(proxy.group_add, ['2003']);
@@ -285,7 +286,8 @@ describe(
             assert.equal(service.environment?.STUDIO_PREVIEW_PASSWORD_HASH, undefined, name);
           }
         }
-        assert.equal(services.api.environment.STUDIO_PREVIEW_DOMAIN, undefined);
+        // One variable for both: the API reads the same env file (its start-up guard, #276).
+        assert.equal(services.api.environment.STUDIO_PREVIEW_DOMAIN, 'preview.example.invalid');
         assert.equal(proxy.depends_on.api.condition, 'service_healthy');
         assert.equal(proxy.depends_on.web.condition, 'service_healthy');
       });

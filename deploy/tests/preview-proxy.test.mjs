@@ -534,8 +534,12 @@ describe('Preview site of the reverse proxy', { skip }, () => {
       assert.equal(answer.headers['www-authenticate'], undefined, label);
     }
     // Two labels: not the wildcard's host at all.
-    const two = await request(main, { host: `${LABEL.one}.extra.${PREVIEW_DOMAIN}` });
-    assert.equal(two.status, 404);
+    // No certificate covers it, so Caddy ends the TLS handshake; if a client got through
+    // anyway, the answer must still be a refusal with no prompt.
+    const two = await request(main, { host: `${LABEL.one}.extra.${PREVIEW_DOMAIN}` }).catch(
+      (error) => ({ status: 'tls-refused', headers: {}, error }),
+    );
+    assert.ok(['tls-refused', 404].includes(two.status), String(two.status));
     assert.equal(two.headers['www-authenticate'], undefined);
     assert.equal(hits.length, before);
   });
