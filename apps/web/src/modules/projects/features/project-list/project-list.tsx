@@ -8,7 +8,8 @@ import { Button } from '@/shared/ui/button';
 import { Card } from '@/shared/ui/card';
 import { Skeleton } from '@/shared/ui/skeleton';
 import { ApiError } from '../../../../platform/api';
-import { useProjects } from '../../api/projects-queries';
+import { StatusPill } from '@/shared/components/status-pill';
+import { usePreviewStates, useProjects } from '../../api/projects-queries';
 import { formatExactTime, formatTimeAgo } from '@/shared/lib/relative-time';
 
 /** The request the list makes (generated `listProjects`), shown verbatim when it fails. */
@@ -40,6 +41,20 @@ function LoadingProjects() {
   );
 }
 
+/** "Preview running" or "Building" for a Project whose Preview takes a place; nothing otherwise. */
+function PreviewBadge({ state }: { state: string | undefined }) {
+  if (state !== 'running' && state !== 'building') return null;
+  return (
+    <div>
+      {state === 'running' ? (
+        <StatusPill status="succeeded">Preview running</StatusPill>
+      ) : (
+        <StatusPill status="running">Building</StatusPill>
+      )}
+    </div>
+  );
+}
+
 type ProjectListProps = {
   /** Opens the New project dialog (the empty state's action). */
   onCreateProject: () => void;
@@ -48,6 +63,7 @@ type ProjectListProps = {
 /** The operator's projects, newest first, in the five list states of the design system. */
 export function ProjectList({ onCreateProject }: ProjectListProps) {
   const { data, error, isPending, isError, isRefetching, refetch, dataUpdatedAt } = useProjects();
+  const previews = usePreviewStates().data;
 
   if (isPending) {
     return <LoadingProjects />;
@@ -98,6 +114,9 @@ export function ProjectList({ onCreateProject }: ProjectListProps) {
                   {project.name}
                 </Link>
               </h2>
+              <PreviewBadge
+                state={previews?.previews.find((p) => p.projectId === project.id)?.state}
+              />
               <p className="m-0 text-caption text-text-dim">
                 Created{' '}
                 <time dateTime={project.createdAt} title={formatExactTime(createdAt)}>

@@ -807,12 +807,12 @@ describe('Disconnect (Story #63)', () => {
     expect(within(card()).queryByRole('heading', { name: 'No repository connected' })).toBeNull();
     expect(screen.queryByText('Repository disconnected')).toBeNull();
     const before = api.calls('repository').length;
-    await act(() => vi.advanceTimersByTimeAsync(2_100));
+    await act(() => vi.advanceTimersByTimeAsync(5_100));
     expect(api.calls('repository').length).toBeGreaterThan(before);
 
     // The server finishes the cleanup (a retry at start-up, say): the Repository is gone.
     api.state.repository = null;
-    await act(() => vi.advanceTimersByTimeAsync(2_100));
+    await act(() => vi.advanceTimersByTimeAsync(5_100));
 
     expect(await screen.findByText('Repository disconnected')).toBeTruthy();
     expect(
@@ -843,6 +843,20 @@ describe('Disconnect (Story #63)', () => {
     expect(api.calls('disconnect')).toHaveLength(1);
   });
 
+  it('polls a disconnecting Repository every 5 s, not every 2 s', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const api = fakeProjectApi(PROJECT, DISCONNECTING);
+    await renderLoaded();
+    await within(card()).findByText('Disconnecting…');
+    const first = api.calls('repository').length;
+
+    await act(() => vi.advanceTimersByTimeAsync(2_500));
+    expect(api.calls('repository').length).toBe(first);
+
+    await act(() => vi.advanceTimersByTimeAsync(2_700));
+    expect(api.calls('repository').length).toBe(first + 1);
+  });
+
   it('confirms once when polling sees the Repository gone before the retried disconnect answers 204', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const api = fakeProjectApi(PROJECT, DISCONNECTING);
@@ -857,7 +871,7 @@ describe('Disconnect (Story #63)', () => {
     await waitFor(() => expect(api.calls('disconnect')).toHaveLength(1));
 
     // …so the next poll sees the Repository gone (404) first and confirms it…
-    await act(() => vi.advanceTimersByTimeAsync(2_100));
+    await act(() => vi.advanceTimersByTimeAsync(5_100));
     expect(await screen.findByText('Repository disconnected')).toBeTruthy();
 
     // …and the late 204 does not confirm it a second time.
@@ -879,7 +893,7 @@ describe('Disconnect (Story #63)', () => {
       within(confirmDialog()).getByRole('button', { name: 'Disconnect repository' }),
     );
     await waitFor(() => expect(api.calls('disconnect')).toHaveLength(1));
-    await act(() => vi.advanceTimersByTimeAsync(2_100));
+    await act(() => vi.advanceTimersByTimeAsync(5_100));
     expect(await screen.findByText('Repository disconnected')).toBeTruthy();
 
     // The first toast goes (as its auto-dismiss would) before the held 204 lands.

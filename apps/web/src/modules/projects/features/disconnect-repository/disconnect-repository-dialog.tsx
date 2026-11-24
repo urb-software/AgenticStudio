@@ -75,6 +75,7 @@ export function DisconnectRepositoryDialog({
           <ul className="m-0 flex list-disc flex-col gap-1.5 pl-5 text-body">
             <li>The project is kept.</li>
             <li>Studio&apos;s clone and deploy key are deleted.</li>
+            <li>Its Preview is stopped and its data removed.</li>
             <li>The remote repository is untouched.</li>
             <li>A deploy key added on the Git host stays there until removed there.</li>
           </ul>

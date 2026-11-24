@@ -233,6 +233,44 @@ describe('project list states', () => {
   });
 });
 
+describe('Preview badges on the project list', () => {
+  const card = async (name: string) =>
+    (await screen.findByRole('heading', { name })).closest('li') as HTMLElement;
+
+  it('shows Preview running and Building for the Projects that take a place, and nothing else', async () => {
+    fakeProjectsApi(
+      [BETA, ALPHA],
+      [
+        { projectId: ALPHA.id, state: 'running' },
+        { projectId: BETA.id, state: 'building' },
+      ],
+    );
+    const { container } = renderProjects();
+
+    expect(await within(await card('Alpha')).findByText('Preview running')).toBeTruthy();
+    expect(within(await card('Beta')).getByText('Building')).toBeTruthy();
+    await expect(container).toHaveNoAxeViolations();
+  });
+
+  it('shows no badge for a Project that has no place', async () => {
+    fakeProjectsApi([ALPHA], []);
+    renderProjects();
+
+    const alpha = await card('Alpha');
+    await waitFor(() => expect(alpha.textContent).toContain('Created'));
+    expect(within(alpha).queryByText('Preview running')).toBeNull();
+    expect(within(alpha).queryByText('Building')).toBeNull();
+  });
+
+  it('keeps the list when the previews cannot be read', async () => {
+    fakeProjectsApi([ALPHA], null);
+    renderProjects();
+
+    expect(await listedNames()).toEqual(['Alpha']);
+    expect(screen.queryByText('Preview running')).toBeNull();
+  });
+});
+
 describe('new project dialog', () => {
   it('opens from the header, focuses the name field and has no axe violations', async () => {
     fakeProjectsApi([ALPHA]);

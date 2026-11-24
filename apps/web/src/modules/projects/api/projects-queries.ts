@@ -19,6 +19,9 @@ import {
 /** The one cache entry for the project list; TanStack Query owns this server state. */
 const PROJECTS_QUERY_KEY = ['projects'] as const;
 
+/** The Projects whose Preview takes a place; the list reads it for its badges. */
+const PREVIEWS_QUERY_KEY = ['previews'] as const;
+
 /** One project's detail (with its Repository summary). */
 const projectKey = (projectId: string) => ['projects', projectId] as const;
 
@@ -31,9 +34,26 @@ const repositoryKey = (projectId: string) => ['projects', projectId, 'repository
  */
 export const REPOSITORY_POLL_MS = 2_000;
 
+/** A disconnect waits for the controller to remove the Preview, so it is polled less often. */
+export const REPOSITORY_DISCONNECT_POLL_MS = 5_000;
+
 /** The project list, newest first, as the API orders it. */
 export function useProjects() {
   return useQuery({ queryKey: PROJECTS_QUERY_KEY, queryFn: api.listProjects });
+}
+
+/**
+ * The Previews running or building, by Project. It only decorates the list, so a failed read
+ * leaves the badges out and never the list; it is read again on focus and every 15 s.
+ */
+export function usePreviewStates() {
+  return useQuery({
+    queryKey: PREVIEWS_QUERY_KEY,
+    queryFn: api.listPreviews,
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
+    retry: false,
+  });
 }
 
 /** Creates a project, then refetches the list so it shows the new project without a reload. */
@@ -66,7 +86,9 @@ export function useRepository(projectId: string, enabled: boolean) {
     refetchInterval: (query) =>
       !(query.state.error instanceof ApiError && query.state.error.status === 404) &&
       BUSY_STATES.includes(query.state.data?.state ?? '')
-        ? REPOSITORY_POLL_MS
+        ? query.state.data?.state === 'disconnecting'
+          ? REPOSITORY_DISCONNECT_POLL_MS
+          : REPOSITORY_POLL_MS
         : false,
     refetchIntervalInBackground: false,
   });

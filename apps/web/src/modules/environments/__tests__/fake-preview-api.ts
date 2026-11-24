@@ -75,6 +75,8 @@ export function fakePreviewApi(
     running?: PreviewOutput['running'];
     latestBuild?: PreviewBuildOutput | null;
     state?: PreviewOutput['state'];
+    latestChange?: PreviewOutput['latestChange'];
+    projectName?: string;
   } = {},
 ) {
   const state = {
@@ -86,6 +88,8 @@ export function fakePreviewApi(
     running: initial.running ?? null,
     latestBuild: initial.latestBuild ?? null,
     stateOverride: initial.state ?? null,
+    latestChange: initial.latestChange ?? null,
+    projectName: initial.projectName ?? 'Acme Shop',
     /** The log of each build id, in order; a page is cut from it by `after` and `limit`. */
     logs: new Map<string, PreviewBuildEventsOutput['events']>(),
     finalBuilds: new Set<string>(),
@@ -96,6 +100,8 @@ export function fakePreviewApi(
   const saves: unknown[] = [];
   const removes: number[] = [];
   const builds: number[] = [];
+  const stops: number[] = [];
+  const resets: number[] = [];
   const eventRequests: { buildId: string; after: number; limit: number }[] = [];
   const scripted: { status: number; body: unknown }[] = [];
 
@@ -110,7 +116,7 @@ export function fakePreviewApi(
         (state.settings === null ? ('not_configured' as const) : ('stopped' as const)),
       running: state.running,
       latestBuild: state.latestBuild,
-      latestChange: null,
+      latestChange: state.latestChange,
       controller: { connected: state.controllerConnected },
     };
   }
@@ -148,6 +154,26 @@ export function fakePreviewApi(
       };
       return json(200, page);
     }
+    const project = /^\/api\/projects\/([^/]+)$/.exec(pathname);
+    if (project) {
+      if (project[1] !== PROJECT_ID) return json(404, problem(404, 'Project not found'));
+      return json(200, {
+        id: PROJECT_ID,
+        name: state.projectName,
+        mergeMethod: 'squash',
+        createdAt: '2026-11-12T09:00:00.000Z',
+        repository: null,
+      });
+    }
+    const change = /^\/api\/projects\/([^/]+)\/preview\/(stop|reset-data)$/.exec(pathname);
+    if (change) {
+      if (change[1] !== PROJECT_ID) return json(404, problem(404, 'Project not found'));
+      (change[2] === 'stop' ? stops : resets).push(Date.now());
+      const scriptedAnswer = scripted.shift();
+      if (scriptedAnswer) return json(scriptedAnswer.status, scriptedAnswer.body);
+      state.stateOverride = change[2] === 'stop' ? 'stopping' : 'resetting_data';
+      return json(202, preview());
+    }
     const match = /^\/api\/projects\/([^/]+)\/preview(\/settings)?$/.exec(pathname);
     if (!match) return json(404, problem(404, 'Not Found'));
     if (match[1] !== PROJECT_ID) return json(404, problem(404, 'Project not found'));
@@ -174,6 +200,8 @@ export function fakePreviewApi(
     saves,
     removes,
     builds,
+    stops,
+    resets,
     eventRequests,
     /** The next save, removal, build request or log read gets this response instead. */
     respondNext(status: number, body: unknown) {

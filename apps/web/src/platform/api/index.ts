@@ -22,8 +22,10 @@ import type {
   PreparedFollowUpOutput,
   PreviewBuildEventsOutput,
   PreviewBuildOutput,
+  PreviewLimitReachedProblem,
   PreviewOutput,
   PreviewRefusedProblem,
+  PreviewsListOutput,
   ProviderListOutput,
   RefreshPullRequestRequest,
   RepositoryOutput,
@@ -51,6 +53,7 @@ import {
   zConnectRepositoryRequest,
   zRunEventOutput,
   zCreateProjectRequest,
+  zPreviewLimitReachedProblem,
   zPreviewRefusedProblem,
   zStartRunRequest,
 } from './generated/zod.gen';
@@ -81,8 +84,10 @@ export type {
   PreparedFollowUpOutput,
   PreviewBuildEventsOutput,
   PreviewBuildOutput,
+  PreviewLimitReachedProblem,
   PreviewOutput,
   PreviewRefusedProblem,
+  PreviewsListOutput,
   ProviderAvailabilityOutput,
   ProviderListOutput,
   RefreshPullRequestRequest,
@@ -142,6 +147,16 @@ export function previewRefusalsOf(error: unknown): PreviewRefusal[] {
   if (!(error instanceof ApiError) || error.status !== 422) return [];
   const parsed = zPreviewRefusedProblem.safeParse(error.problem);
   return parsed.success ? parsed.data.refusals : [];
+}
+
+/**
+ * The Previews running now, from a 409 on a build the limit refused, checked against the
+ * contract; none for any other error.
+ */
+export function previewLimitOf(error: unknown): PreviewLimitReachedProblem | undefined {
+  if (!(error instanceof ApiError) || error.status !== 409) return undefined;
+  const parsed = zPreviewLimitReachedProblem.safeParse(error.problem);
+  return parsed.success ? parsed.data : undefined;
 }
 
 /** Where the UI goes when the API answers 401. */
@@ -297,6 +312,14 @@ export const api = {
     unwrap(
       sdk.listPreviewBuildEvents({ path: { id: projectId, buildId }, query: { after, limit } }),
     ),
+  /** Stops the running Preview (202: the Preview, now `stopping`). A refusal answers 409. */
+  stopPreview: (projectId: string): Promise<PreviewOutput> =>
+    unwrap(sdk.stopPreview({ path: { id: projectId } })),
+  /** Removes the Preview's volumes (202: the Preview, now `resetting_data`). A refusal answers 409. */
+  resetPreviewData: (projectId: string): Promise<PreviewOutput> =>
+    unwrap(sdk.resetPreviewData({ path: { id: projectId } })),
+  /** The Projects whose Preview takes a place (running or building) and the limit. */
+  listPreviews: (): Promise<PreviewsListOutput> => unwrap(sdk.listPreviews()),
   /** Removes the Preview settings (204, also when none were set). */
   removePreviewSettings: async (projectId: string): Promise<void> => {
     await unwrap(sdk.removePreviewSettings({ path: { id: projectId } }));
