@@ -62,7 +62,6 @@ COPY --from=prod-deps /app/packages/compose-validation/package.json ./packages/c
 COPY --from=prod-deps /app/packages/compose-validation/node_modules ./packages/compose-validation/node_modules
 COPY --from=build /app/packages/compose-validation/dist ./packages/compose-validation/dist
 COPY --from=prod-deps /app/packages/log-redaction/package.json ./packages/log-redaction/
-COPY --from=prod-deps /app/packages/log-redaction/node_modules ./packages/log-redaction/node_modules
 COPY --from=build /app/packages/log-redaction/dist ./packages/log-redaction/dist
 COPY --from=prod-deps /app/packages/contracts/package.json ./packages/contracts/
 COPY --from=prod-deps /app/packages/contracts/node_modules ./packages/contracts/node_modules
