@@ -7,8 +7,8 @@ Trial for [ADR 0004](0004-preview-isolation.md) (#273), run on 2026-11-24 in a s
 | Question | Result | Recommendation |
 | --- | --- | --- |
 | 1. Isolation between users | Neither user can use the other's socket, see its containers or volumes, or read its data-root. | Create both users as in [Setup](#setup-steps) and run the negative checks as part of server setup. |
-| 2. Routing | A Unix socket bridge worked with the proxy running as a non-root user; a port on a host address worked only with a firewall rule. | **A socket per Preview** (b), bridged by `socat` from the Preview user's account, group readable by the proxy only. |
-| 3. Limits | A per-project systemd slice used as `cgroup_parent` bounds a whole Compose project. | A slice per Preview, injected by the controller; the Compose validation refuses `cgroup_parent`. |
+| 2. Routing | A Unix socket bridge worked with the proxy running as a non-root user; a port on a host address worked only with a firewall rule. | **A socket per Preview** (b), bridged by `socat` from the Preview user's account, the socket's group is the proxy's group (the Preview user is a member only to be able to set it), and a static wildcard hostname-to-socket route. |
+| 3. Limits | A per-project systemd slice used as `cgroup_parent` bounds a whole Compose project. | A slice per Preview, injected by the controller; the controller's override sets `cgroup_parent` (the Compose validation already refuses the Repository's own). |
 | 4. Network | Loopback is blocked by the rootless networking; Studio's networks and other users' ports need rules in the daemon's own namespace. | `DOCKER-USER` rules inside the Preview daemon's namespace, re-applied at each daemon start. |
 
 **Limit of the trial:** WSL is not a server (see [What WSL could not verify](#what-wsl-could-not-verify)). Everything below was observed in the trial distribution only. The first check on a real server is the server setup that adds the Preview user (#275, #277).
@@ -101,7 +101,7 @@ After it: every row above was `blocked` except the proxy container, which was `R
 
 ### (b) A Unix socket, bridged from the Preview user's account
 
-Setup: group `previewproxy` (the proxy's only), `usermod -aG previewproxy preview`, directory `/run/preview-proxy` owned `preview:previewproxy`, mode 0750. The Preview container publishes **no port**; the controller reads its address inside the daemon's namespace and bridges it:
+Setup: group `previewproxy` (the proxy's group; the Preview user is a member only so it can set the socket's group), `usermod -aG previewproxy preview`, directory `/run/preview-proxy` owned `preview:previewproxy`, mode 0750. The Preview container publishes **no port**; the controller reads its address inside the daemon's namespace and bridges it:
 
 ```text
 IP=$(asu preview docker inspect -f '{{.NetworkSettings.Networks.bridge.IPAddress}}' echo2)
@@ -140,11 +140,12 @@ A root container on Studio's network would pass the file permission; Studio's ow
 
   A new socket `p7.sock` answered the next request (`hello-plain`, WebSocket `101` and echo) with no file written and no reload. After the bridge was stopped and the socket deleted, the same hostname returned `502`. An unknown name also returned `502` (the socket is absent), so a real Caddyfile needs a `handle_errors` mapping if a 404 is wanted. The regular expression keeps the label to a safe character set, so it cannot name another path. Hostnames that did not match fell through to the stand-in's catch-all block (`200`), which is the trial's test block, not a design.
 - An admin API on a Unix socket for the controller only was **not tried**.
-- The Preview password (`basic_auth` per Project) was **not tried**. A password per Project needs per-route configuration, so the route-file import with `--watch` is the way to carry it; the wildcard alone cannot.
+- The Preview password (`basic_auth` per Project) was **not tried**. The wildcard route cannot carry a per-Project password by itself. The recommended ways, both **not tried**: Caddy's `forward_auth` to an endpoint of Studio that checks the password for the hostname, or route files generated **on Studio's side** from validated data. The Preview user must never write proxy configuration.
+- **Rejected: per-route files written by the Preview user, reloaded with `--watch`.** It worked technically (above), but the proxy holds Studio's TLS keys and ACME data, sits on Studio's internal network next to the API and serves Studio's own site, so configuration written by the Preview user (the controller, which runs beside untrusted Repository code) would let a compromise of that user change what the proxy does. The Preview user only creates sockets.
 
 **Rejected:** nothing needed root or the system Docker socket **at run time** in (a) or (b); (a) needs one root-installed firewall rule at setup.
 
-**Label-driven routing.** Not tried. A proxy that builds routes from container labels would need the Preview daemon's API socket, which is the Preview user's boundary, so it is **rejected** under the rule of the Definition of Ready. The Repository's Compose file, which is untrusted, could also set labels. Per the note on #274, the Compose validation refuses any label key of such a proxy even though this design never reads labels. This is a defence-in-depth rule, not something this trial exercised.
+**Label-driven routing.** Not tried. A proxy that builds routes from container labels would need the Preview daemon's API socket, which is the Preview user's boundary, so it is **rejected** under the rule of the Definition of Ready. The chosen routing never reads labels, so no label refusal is needed in the Compose validation for it (the validation does not refuse labels today); this answers the note on #274.
 
 **Recommendation: (b).** It leaves no TCP port at all on the host, so the question "who else can connect" is answered by one file permission, not by a firewall rule that must stay correct. It worked with a non-root proxy.
 
@@ -152,8 +153,9 @@ A root container on Studio's network would pass the file permission; Studio's ow
 
 - create the group `previewproxy` and the directory `/run/preview-proxy` (0750, `preview:previewproxy`) at every boot, for example with a `tmpfiles.d` entry;
 - add the Preview user to the group, and the group (`group_add`) to the proxy service, which runs as a non-root user and mounts the directory read-only;
-- run the proxy with `--watch` (a change to `deploy/Caddyfile`'s `admin off` start command, not made here) and an import of a per-route directory the controller can write and the proxy can read, if per-Project passwords need per-route blocks; otherwise the wildcard needs no reload;
-- have the controller start and stop one bridge per Preview and remove the socket with it.
+- configure one static wildcard route in Studio's Caddyfile that matches only `^preview-[0-9a-f]{12}\.<preview domain>$` and proxies to `unix//run/preview-proxy/{re.pv.1}.sock`, with `handle_errors` so a missing socket answers `404` (the trial's `502` is what Caddy gives without it); the Preview password is checked by Studio (see above), not by files the Preview user writes;
+- keep `/run/preview-proxy` holding **only** Preview bridge sockets: no controller or admin socket, since the proxy's group can connect to every socket in it;
+- have the controller create one bridge per Preview and tie its lifetime to the container id: the bridge must resolve the container address per connection, or be re-created whenever the container restarts (the trial resolved the address once), and the socket is removed with the bridge.
 
 **Costs found:** each connection starts a `nsenter` and a `socat` process (not measured under load), and the bridge targets the daemon's namespace, so it dies when the Preview daemon restarts (see [Pitfalls](#pitfalls)); the controller must re-create it.
 
@@ -184,13 +186,15 @@ After `systemctl --user daemon-reload`, an override file (`compose.slice-overrid
 - systemd nested the slice under an implicit `preview.slice` (`.../user@<uid>.service/preview.slice/preview-p1.slice`), which can carry a limit for all Previews together. **Not tried.**
 - The kernel chose what to kill inside the slice; a project cannot say which of its services is killed.
 
-**C. The Repository's file can choose its own parent.** A file with `cgroup_parent: user.slice` ran in `user.slice` (no limit). With the override as a second `-f` file, the later file won (`parent=preview-p1.slice`). So the override works, and the Compose validation must still refuse `cgroup_parent` (a service could otherwise name a different, unlimited slice if the override were ever omitted).
+**C. The Repository's file can choose its own parent.** A file with `cgroup_parent: user.slice` ran in `user.slice` (no limit). With the override as a second `-f` file, the later file won (`parent=preview-p1.slice`). So the override works. The Compose validation's allow list already refuses `cgroup_parent` in the Repository's file (`unknown_key`); the follow-up is a regression fixture that pins it, not a new refusal.
 
-**Recommendation.** One slice per Preview, `preview-<id>.slice`, written by the controller into the Preview user's unit directory with `MemoryMax`, `MemorySwapMax=0`, `CPUQuota` and `TasksMax`, then `systemctl --user daemon-reload`; the controller injects `cgroup_parent` into every service through its override file and removes the slice when the Preview is deleted. Per-service `mem_limit` or `deploy.resources` stays allowed (it only tightens further).
+**Recommendation.** One slice per Preview, `preview-<id>.slice`, written by the controller into the Preview user's unit directory with `MemoryMax`, `MemorySwapMax=0`, `CPUQuota` and `TasksMax`, then `systemctl --user daemon-reload`; the controller injects `cgroup_parent` into every service through its override file and removes the slice when the Preview is deleted. The Compose validation already refuses `mem_limit` and `cpus` as unknown keys; only `deploy.resources.limits` passes, and it only tightens further.
 
 **Server setup must:** keep linger on; confirm `cpu memory pids` in the user manager's `cgroup.controllers` (fail the setup check otherwise); keep swap in mind, since `MemorySwapMax=0` is what made the memory limit bite on a host with swap; not touch `user@.service` delegation unless `cpuset` or `io` limits are wanted.
 
 **Not covered:** the image build runs in the daemon's own cgroup (`.../app.slice/docker.service`), not in a Preview slice. A build's memory and CPU limit was **not tried**; the build's time limit is the controller's.
+
+**Required of the controller:** the override forces `restart: "no"` on every service, and the controller starts or restarts Previews only after the egress rules read-back check passes (see Question 4).
 
 ## Question 4: network blocking
 
@@ -220,7 +224,11 @@ After `systemctl --user daemon-reload`, an override file (`compose.slice-overrid
 
 **Recommendation.** Filter in the Preview daemon's namespace, not on the host.
 
-**Server setup must:** install `preview-egress-rules.sh` (or its equivalent) and the `ExecStartPost=` drop-in for the Preview user's `docker.service`; add the host's own public addresses to the reject list (private ranges do not cover them; not testable here) and the IPv6 equivalent (**not tried**); set the resolver explicitly so the DNS exception names it (for example `dns` in the rootless `daemon.json`, since a resolver on `127.0.0.53` behaves differently, **not tried**); and add a check that the controller runs before it starts a Preview, reading the rules back and refusing to start without them (**not tried**). A test must prove the blocking, as the network decision requires: this table is its model.
+**Server setup must:** install `preview-egress-rules.sh` (or its equivalent) and the `ExecStartPost=` drop-in for the Preview user's `docker.service`; add the host's own public addresses to the reject list (private ranges do not cover them; not testable here) and the IPv6 equivalent (**not tried**); set the resolver explicitly so the DNS exception names it (for example `dns` in the rootless `daemon.json`, since a resolver on `127.0.0.53` behaves differently, **not tried**); and add a check that the controller runs before it starts any Preview, reading the rules back and refusing to start without them (**not tried**).
+
+**Window after a daemon restart (reasoned, not reproduced):** the user service is `Type=notify`, so `ExecStartPost=` runs after the daemon is ready, and containers with a restart policy may start before the rules are applied. Hence the controller's override forces `restart: "no"` on every service, and the controller (not the daemon) restarts Previews, only after the read-back check.
+
+**Not verified, to include in the blocking test of #275:** egress from a Compose project network (not the default bridge; the rule matches by output interface `tap0`, which should cover it, but it was only run from the default bridge) and from a build `RUN` step (the build runs in the daemon, not in a container of the project). A test must prove the blocking, as the network decision requires: this table is its model.
 
 ## What WSL could not verify
 
@@ -242,7 +250,7 @@ After `systemctl --user daemon-reload`, an override file (`compose.slice-overrid
 
 ## Items for later stories (not decided here)
 
-- **Routing (#277):** the bridge process per Preview, the socket directory and its group at boot, the proxy start with `--watch` or the wildcard route, and the choice between per-Project route files and the wildcard (depends on how the Preview password is held).
+- **Routing (#277):** the bridge process per Preview, the socket directory and its group at boot, the static wildcard route with `handle_errors`, the socket directory and its group at boot, and how Studio checks the Preview password (`forward_auth` or Studio-generated route files).
 - **Server setup (#275):** the users, groups, directory, slice delegation check, egress rules and the drop-in; each negative check above as a boundary test.
-- **Compose validation (#274):** refuse `cgroup_parent`, and the label keys of a label-driven proxy.
+- **Compose validation:** a regression fixture that `cgroup_parent` stays refused; no label refusal is needed.
 - **First check on a real server:** repeat Questions 1, 2 and 4's tables there, and the limit check of Question 3.
