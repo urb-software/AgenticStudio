@@ -1097,9 +1097,12 @@ step_preview_rootless() {
 # namespace at every start, and the daemon does not start without them. The controller bounds
 # the Preview user's app.slice per build, and the kernel may pick the daemon instead of the build:
 # the daemon must then not stay stopped (Restart=always stays; OOMPolicy=continue keeps the
-# daemon's other processes).
+# daemon's other processes). The controller requires the daemon and is stopped with it, and an
+# automatic restart of the daemon does not bring it back, so every start of the daemon also
+# starts the controller (no-op when it runs; its ExecCondition holds it back without a token).
 [Service]
 ExecStartPost=$PREVIEW_EGRESS_SCRIPT apply
+ExecStartPost=-/usr/bin/systemctl --user --no-block start agentic-studio-controller.service
 OOMPolicy=continue"
   have="$(as_preview cat "$dropin" 2>/dev/null || true)"
   if [ "$have" != "$want" ]; then
