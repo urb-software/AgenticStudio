@@ -17,7 +17,9 @@
 # routes with the worker token; that token reaches nothing else on the API. Also: not WSL with
 # interop or automount, cgroup v2 with limits on the agent user's slice, and Studio's managed
 # guardrails for the provider CLIs in place: root-owned, unchangeable by the agent user and equal
-# to the worker's own copies (Issue #134).
+# to the worker's own copies (Issue #134). Group `preview` (Issue #286): the Preview user's rootless
+# Docker socket and data-root, its home and the controller's .env are refused, and the worker
+# token is refused by the controller's routes.
 # shellcheck disable=SC2016,SC2317 # single-quoted text run by another shell; check_* called by name
 set -uo pipefail
 
@@ -34,6 +36,8 @@ STUDIO_REDIS_ADDRESS="${STUDIO_REDIS_ADDRESS:-172.31.250.11}"
 STUDIO_API_ADDRESS="${STUDIO_API_ADDRESS:-172.31.250.12}"
 STUDIO_WEB_ADDRESS="${STUDIO_WEB_ADDRESS:-172.31.250.13}"
 WORKER_ENV_FILE="${WORKER_ENV_FILE:-$HOME/.config/agentic-studio-worker/.env}"
+# The Preview user (equal to PREVIEW_USER of the setup script).
+PREVIEW_USER="${PREVIEW_USER:-preview}"
 # The agent worker's code (root-owned): its guardrails folder lists and holds the managed files.
 WORKER_CODE_DIR="${WORKER_CODE_DIR:-/opt/agentic-studio-worker}"
 # A small public image for the rootless container checks.
@@ -41,7 +45,7 @@ CHECK_IMAGE="${CHECK_IMAGE:-busybox:1.37}"
 CONNECT_TIMEOUT="${CONNECT_TIMEOUT:-3}"
 # -------------------------------------------------------------------------------------------------
 
-GROUPS_ALL=(identity processes studio-files docker-socket sudo studio-network host cgroup guardrails rootless api)
+GROUPS_ALL=(identity processes studio-files docker-socket sudo studio-network host cgroup guardrails rootless preview api)
 SKIP=""
 PASSED=0
 FAILED=0
@@ -49,7 +53,7 @@ SKIPPED=0
 WORK_DIR=""
 
 # Variables that must never reach the agent side (the worker refuses to start with them).
-STUDIO_ONLY_VARS=(DATABASE_URL REDIS_URL REDIS_PASSWORD STUDIO_SECRETS_KEY STUDIO_OPERATOR_PASSWORD_HASH STUDIO_MERGE_TOKEN STUDIO_PREVIEW_PASSWORD_HASH POSTGRES_PASSWORD)
+STUDIO_ONLY_VARS=(DATABASE_URL REDIS_URL REDIS_PASSWORD STUDIO_SECRETS_KEY STUDIO_OPERATOR_PASSWORD_HASH STUDIO_MERGE_TOKEN STUDIO_PREVIEW_PASSWORD_HASH STUDIO_CONTROLLER_TOKEN POSTGRES_PASSWORD)
 
 pass() {
   PASSED=$((PASSED + 1))
@@ -434,6 +438,67 @@ EOF
   else
     timeout 60 docker compose -p "$project" -f "$WORK_DIR/compose.yaml" down -v -t 1 >/dev/null 2>&1
     fail rootless-compose "the Compose stack did not start and stop"
+  fi
+}
+
+check_preview() {
+  # Issue #286: the Preview side is the Preview user's. A missing path proves nothing: the user
+  # and its home must exist (the checks run on the set-up server).
+  local uid home
+  if ! uid="$(id -u "$PREVIEW_USER" 2>/dev/null)"; then
+    fail preview-files-unreadable "the Preview user '$PREVIEW_USER' does not exist: run on the set-up server"
+    fail preview-docker-unreachable "not run: no Preview user"
+    fail worker-token-not-controller "not run: no Preview user"
+    return
+  fi
+  home="$(getent passwd "$PREVIEW_USER" | cut -d: -f6)"
+  local path readable=()
+  for path in "$home" "$home/.config" "$home/.config/agentic-studio-controller" \
+    "$home/.config/agentic-studio-controller/.env" "$home/.local/share/agentic-studio-controller"; do
+    can_read "$path" && readable+=("$path")
+  done
+  if [ ! -d "$home" ]; then
+    fail preview-files-unreadable "$home not found: run on the set-up server"
+  elif [ "${#readable[@]}" -gt 0 ]; then
+    fail preview-files-unreadable "readable: ${readable[*]}"
+  else
+    pass preview-files-unreadable "$home, the controller's .env (the controller token) and its data directory refused"
+  fi
+
+  local socket="/run/user/$uid/docker.sock" reached=()
+  if [ -e "$socket" ] || [ -S "$socket" ]; then
+    if command -v curl >/dev/null 2>&1 &&
+      curl -fsS --max-time "$CONNECT_TIMEOUT" --unix-socket "$socket" http://localhost/_ping >/dev/null 2>&1; then
+      reached+=("curl --unix-socket")
+    fi
+    if command -v docker >/dev/null 2>&1 &&
+      timeout 10 docker -H "unix://$socket" version --format '{{.Server.Version}}' >/dev/null 2>&1; then
+      reached+=("docker -H")
+    fi
+  fi
+  [ ! -w "$socket" ] || reached+=("writable")
+  can_read "$home/.local/share/docker" && reached+=("data-root $home/.local/share/docker listed")
+  can_read "$home/.config/docker" && reached+=("$home/.config/docker listed")
+  if [ "${#reached[@]}" -gt 0 ]; then
+    fail preview-docker-unreachable "$socket or the Preview user's Docker data: ${reached[*]}"
+  else
+    pass preview-docker-unreachable "the Preview user's Docker socket and data-root refused"
+  fi
+
+  # The controller's routes refuse the worker token (and, before anything is handled, 401).
+  local api token status
+  api="$(worker_env_value STUDIO_API_URL || true)"
+  token="$(worker_env_value STUDIO_WORKER_TOKEN || true)"
+  api="${api%/}"
+  if [ -z "$api" ] || [ "${#token}" -lt 32 ]; then
+    fail worker-token-not-controller "STUDIO_API_URL or STUDIO_WORKER_TOKEN missing in $WORKER_ENV_FILE"
+    return
+  fi
+  status="$(http_status POST "$api/api/controller/operations/claim" "$token" "{\"controllerId\":\"$(random_uuid)\"}")"
+  if [ "$status" = 401 ]; then
+    pass worker-token-not-controller "the controller's claim route answers 401 to the worker token"
+  else
+    fail worker-token-not-controller "the claim route answered ${status:-no answer} to the worker token (expected 401)"
   fi
 }
 

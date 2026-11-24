@@ -271,6 +271,15 @@ Also verify: a canceled or retried execution causes no duplicate irreversible ef
 
 The [rootless Docker trial](../architecture/adr/0002-trial-rootless-docker.md) (2026-11-15, WSL) showed the system socket, `sudo` and rootless Compose checks passing, and the WSL check and the resource-limit (cgroup) check failing under WSL with default settings; the server setup task (#107) runs all of them on the target server.
 
+**Preview isolation model ([ADR 0004](../architecture/adr/0004-preview-isolation.md)).** The Preview side must pass these checks, run as the Preview user (`deploy/check-preview.sh`, installed as `agentic-studio-check-preview`; set up by `deploy/setup-server.sh`, #286; [Deployment](deployment.md#preview-checks)), and the agent's part as the agent user (`check-boundary.sh`, group `preview`):
+
+- The Preview user is in no `docker`, `lxd`, `sudo` or proxy group, cannot use `sudo`, has a private home and linger; it shares no group with the agent user.
+- The Preview user cannot reach the system Docker socket, the agent's socket and data-root, the agent's home and worker `.env`, Studio's configuration and state, nor Studio's PostgreSQL, Redis, API and web; a third user cannot reach either user's socket or data-root; the agent user cannot reach the Preview user's socket, data-root or controller `.env`.
+- The cgroup controllers `cpu memory pids` are delegated to the Preview user's manager, and a slice limit bites; a memory limit on the rootless daemon's unit fails a build that exceeds it and leaves the daemon running.
+- The egress rules are in place in the Preview daemon's network namespace (re-applied at every daemon start), and **from a Compose project network and from a build `RUN` step** the proxy, PostgreSQL, the host's non-loopback address and `10.0.2.2` are blocked while public HTTPS is reached.
+- The controller runs as production under the rootless `DOCKER_HOST`, its `.env` is 0600, and `/run/preview-proxy` is `preview:previewproxy` with mode 2750 (setgid).
+- The controller token works on the controller routes only (worker and operator routes answer 401); the worker token gets 401 on the controller's claim route.
+
 All runs share the agent user, so user permissions alone do not separate runs or projects. For the first version the operator accepted guardrails only for that separation (ADR 0002, 2026-11-15): the cross-run and cross-project checks above show that the guardrails block ordinary attempts, not that a misled agent is contained. Dedicated host users per project are the recorded upgrade path for cross-project separation.
 
 ## 10. Security delivery gates

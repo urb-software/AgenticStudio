@@ -1,0 +1,43 @@
+# The environment controller as a systemd user service of the Preview user (Issue #286; ADR 0004).
+# Installed by deploy/setup-server.sh as /etc/systemd/user/agentic-studio-controller.service
+# (root-owned) and enabled only for the Preview user, whose user manager runs without a login
+# session (linger). @CONTROLLER_CODE_DIR@, @NODE_BIN@ and @PREVIEW_USER@ are filled in by the
+# setup script.
+[Unit]
+Description=AI Agent Studio environment controller
+Documentation=file://@CONTROLLER_CODE_DIR@/docs/engineering/deployment.md
+# Never runs for another user, even though the file is installed for every user manager.
+ConditionUser=@PREVIEW_USER@
+# The Preview user's rootless Docker daemon (a user service of the same manager). When the daemon
+# restarts, the controller restarts with it and re-checks the egress rules before starting anything.
+Requires=docker.service
+After=docker.service
+PartOf=docker.service
+
+[Service]
+Type=simple
+# Root-owned code the Preview user can read but not change.
+WorkingDirectory=@CONTROLLER_CODE_DIR@/apps/environment-controller
+# The controller's own settings (Preview user, 0600), the one place its settings come from. It
+# refuses to start if a Studio-side or agent-side variable reaches its environment.
+EnvironmentFile=%h/.config/agentic-studio-controller/.env
+Environment=STUDIO_CONTROLLER_ENVIRONMENT=production
+Environment=HOME=%h
+Environment=XDG_RUNTIME_DIR=%t
+# The Preview user's rootless Docker daemon, never the system one.
+Environment=DOCKER_HOST=unix://%t/docker.sock
+# docker (with the Compose plugin), systemctl, nsenter and socat.
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin
+ExecStart=@NODE_BIN@ @CONTROLLER_CODE_DIR@/apps/environment-controller/dist/main.js
+Restart=on-failure
+RestartSec=10s
+UMask=0077
+NoNewPrivileges=yes
+# No RestrictNamespaces and no seccomp filter: the controller enters the rootless daemon's
+# namespaces (nsenter, setns). SIGTERM goes to the controller first; it stops its own processes
+# (builds, socket bridges) before the rest of the control group is killed.
+KillMode=mixed
+TimeoutStopSec=90s
+
+[Install]
+WantedBy=default.target

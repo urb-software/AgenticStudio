@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Setup script and boundary checks in a clean Ubuntu 24.04 container without systemd (CI job
 # deploy:server). Covers: the refusals (agent user in the docker group, passwordless sudo,
-# systemd steps without systemd), the steps that need no systemd run twice with the same result,
+# systemd steps without systemd, the Preview user's refusals: root-equivalent groups, the proxy
+# group, a shared group, a uid collision, a uid below 2000, a gid collision), the steps that need
+# no systemd run twice with the same result,
 # the resulting ownership and modes, and the boundary checks' verdicts, including that each
 # check fails when its rule is broken.
 #   docker run --rm -v "$PWD:/w:ro" ubuntu:24.04 bash /w/deploy/tests/container-tests.sh
@@ -18,6 +20,8 @@ export DEBIAN_FRONTEND=noninteractive
 mkdir -p /usr/local/src && cp -a "$REPO" "$SRC" && chown -R root:root "$SRC" && chmod -R go-w "$SRC"
 
 as_agent() { (cd / && runuser -u agent -- env -i HOME=/home/agent PATH=/usr/local/bin:/usr/bin:/bin "$@"); }
+as_preview() { (cd / && runuser -u preview -- env -i HOME=/home/preview PATH=/usr/local/bin:/usr/bin:/bin "$@"); }
+check_as_preview() { as_preview /usr/local/bin/agentic-studio-check-preview "$@" 2>&1; }
 check_as_agent() { as_agent /usr/local/bin/agentic-studio-check-boundary "$@" 2>&1; }
 
 section "Refusals before any change"
@@ -46,7 +50,39 @@ useradd --create-home --uid 1500 lowuid
 expect_fail "refuses an agent user below uid 2000" "below 2000" env AGENT_USER=lowuid bash "$SETUP" --only preflight
 userdel -r lowuid 2>/dev/null
 
-STEPS=packages,node,user,logins,layout,worker,guardrails
+section "Refusals for the Preview user"
+expect_fail "refuses a Preview uid equal to the agent's" "must differ from the agent user's uid" env PREVIEW_UID=2001 bash "$SETUP" --only preflight
+expect_fail "refuses a Preview uid below 2000" "PREVIEW_UID must be a number of 2000 or more" env PREVIEW_UID=1500 bash "$SETUP" --only preflight
+expect_fail "refuses a Preview user named like the agent user" "equals the agent user" env PREVIEW_USER=agent bash "$SETUP" --only preflight
+groupadd --gid 2003 othergroup
+expect_fail "refuses a proxy gid held by another group" "already taken by the group 'othergroup'" bash "$SETUP" --only preflight
+groupdel othergroup
+groupadd --gid 2002 preview
+useradd --create-home --uid 2002 --gid 2002 --shell /bin/bash preview
+for group in docker lxd sudo; do
+  groupadd -f "$group" && usermod -aG "$group" preview
+  expect_fail "refuses a Preview user in the $group group" "is in the $group group" bash "$SETUP" --only preflight
+  gpasswd -d preview "$group" >/dev/null
+done
+groupadd --gid 2003 previewproxy
+usermod -aG previewproxy preview
+expect_fail "refuses a Preview user in the proxy group" "is in the previewproxy group" bash "$SETUP" --only preflight
+gpasswd -d preview previewproxy >/dev/null
+groupadd sharedgroup && usermod -aG sharedgroup agent && usermod -aG sharedgroup preview
+expect_fail "refuses a group shared by the agent and Preview users" "share the group(s) sharedgroup" bash "$SETUP" --only preflight
+gpasswd -d agent sharedgroup >/dev/null && gpasswd -d preview sharedgroup >/dev/null && groupdel sharedgroup
+echo 'preview ALL=(ALL) NOPASSWD: ALL' >/etc/sudoers.d/preview-test
+chmod 0440 /etc/sudoers.d/preview-test
+expect_fail "refuses a Preview user with passwordless sudo" "passwordless sudo" bash "$SETUP" --only preflight
+rm -f /etc/sudoers.d/preview-test
+userdel -r preview 2>/dev/null
+groupdel previewproxy 2>/dev/null
+getent group preview >/dev/null && groupdel preview
+
+expect_fail "the egress script refuses an unknown command" "usage:" bash "$SRC/deploy/preview-egress-rules.sh" bogus
+expect_fail "the egress script's verify fails without rules" "preview egress rules are missing" env -u XDG_RUNTIME_DIR bash "$SRC/deploy/preview-egress-rules.sh" verify
+
+STEPS=packages,node,user,preview-user,logins,layout,worker,controller,guardrails
 MANAGED=(/etc/claude-code/managed-settings.json /etc/codex/managed_config.toml /etc/codex/requirements.toml
   /usr/local/lib/agentic-studio/guardrails/claude-guard.mjs)
 snapshot() {
@@ -56,13 +92,18 @@ snapshot() {
       /usr/local/sbin/agentic-studio-compose /usr/local/bin/agentic-studio-check-boundary \
       /etc/apt/sources.list.d/docker.sources /etc/apt/keyrings/docker.asc \
       /opt/agentic-studio-worker/.source-commit /etc/claude-code /etc/codex /usr/local/lib/agentic-studio \
+      /home/preview/.config/agentic-studio-controller /home/preview/.local/share/agentic-studio-controller \
+      /usr/local/bin/agentic-studio-check-preview /opt/agentic-studio-controller/.source-commit \
       -printf '%p %u:%g %m\n' | sort
     find /etc/agentic-studio /opt/agentic-studio /home/agent/.config/agentic-studio-worker \
       /usr/local/sbin/agentic-studio-compose /usr/local/bin/agentic-studio-check-boundary \
       /etc/apt/sources.list.d/docker.sources /opt/agentic-studio-worker/.source-commit \
-      /etc/claude-code /etc/codex /usr/local/lib/agentic-studio -type f -exec sha256sum {} + | sort
+      /etc/claude-code /etc/codex /usr/local/lib/agentic-studio /home/preview/.config/agentic-studio-controller \
+      /usr/local/bin/agentic-studio-check-preview /opt/agentic-studio-controller/.source-commit -type f -exec sha256sum {} + | sort
     /usr/local/bin/node --version
     id agent
+    id preview
+    getent group previewproxy
   }
 }
 
@@ -117,8 +158,8 @@ expect_true "agent user has a subordinate uid range" grep -q '^agent:' /etc/subu
 expect_true "agent user has uid and gid 2001" bash -c '[ "$(id -u agent):$(id -g agent)" = 2001:2001 ]'
 expect_true "agent user is in /etc/cron.deny" grep -qx agent /etc/cron.deny
 expect_true "agent user is in /etc/at.deny" grep -qx agent /etc/at.deny
-expect_true "logind kills only the agent user's session processes" \
-  grep -qx 'KillOnlyUsers=agent' /etc/systemd/logind.conf.d/60-agentic-studio.conf
+expect_true "logind kills only the agent and Preview users' session processes" \
+  grep -qx 'KillOnlyUsers=agent preview' /etc/systemd/logind.conf.d/60-agentic-studio.conf
 expect_stat /home/agent/.config/agentic-studio-worker agent:agent 700
 expect_stat /home/agent/.config/agentic-studio-worker/.env agent:agent 600
 expect_stat /home/agent/.local/share/agentic-studio-worker agent:agent 700
@@ -146,6 +187,52 @@ if [ "$status" -ne 0 ] && grep -q STUDIO_WORKER_TOKEN <<<"$worker"; then
   ok "the built worker refuses to start without its token"
 else
   not_ok "the built worker did not refuse its empty token (exit $status)"
+fi
+
+section "The Preview side (Issue #286)"
+expect_true "Preview user has uid and gid 2002" bash -c '[ "$(id -u preview):$(id -g preview)" = 2002:2002 ]'
+expect_true "the proxy group has gid 2003" bash -c '[ "$(getent group previewproxy | cut -d: -f3)" = 2003 ]'
+expect_false "Preview user is not in the docker group" bash -c "id -nG preview | tr ' ' '\n' | grep -qx docker"
+expect_false "Preview user is not in the proxy group (the setgid directory makes it unnecessary)" \
+  bash -c "id -nG preview | tr ' ' '\n' | grep -qx previewproxy"
+expect_false "the agent and Preview users share no group" \
+  bash -c "comm -12 <(id -nG agent | tr ' ' '\n' | sort) <(id -nG preview | tr ' ' '\n' | sort) | grep -q ."
+expect_true "Preview user has a subordinate uid range" grep -q '^preview:' /etc/subuid
+expect_true "Preview user has a subordinate gid range" grep -q '^preview:' /etc/subgid
+expect_true "the agent and Preview ranges differ" bash -c '[ "$(grep ^agent: /etc/subuid | cut -d: -f2)" != "$(grep ^preview: /etc/subuid | cut -d: -f2)" ]'
+expect_true "Preview user is in /etc/cron.deny" grep -qx preview /etc/cron.deny
+expect_true "Preview user is in /etc/at.deny" grep -qx preview /etc/at.deny
+expect_true "home is 0750 or tighter" bash -c '[ "$(stat -c %a /home/preview | tail -c 2)" = 0 ] || [ "$(stat -c %a /home/preview | tail -c 2)" = "00" ]'
+expect_stat /home/preview/.config/agentic-studio-controller preview:preview 700
+expect_stat /home/preview/.config/agentic-studio-controller/.env preview:preview 600
+expect_stat /home/preview/.local/share/agentic-studio-controller preview:preview 700
+expect_stat /usr/local/bin/agentic-studio-check-preview root:root 755
+expect_true "controller .env leaves STUDIO_CONTROLLER_TOKEN empty (no secret written)" \
+  grep -qx 'STUDIO_CONTROLLER_TOKEN=' /home/preview/.config/agentic-studio-controller/.env
+expect_true "controller .env: the API through the reverse proxy's worker port" \
+  grep -qx 'STUDIO_API_URL=http://172.31.250.20:8080' /home/preview/.config/agentic-studio-controller/.env
+expect_true "controller .env: data directory on the Preview side" \
+  grep -qx 'STUDIO_CONTROLLER_DATA_DIR=/home/preview/.local/share/agentic-studio-controller' /home/preview/.config/agentic-studio-controller/.env
+expect_true "controller .env: the proxy group" grep -qx 'STUDIO_CONTROLLER_PROXY_GID=2003' /home/preview/.config/agentic-studio-controller/.env
+expect_true "controller .env: production" grep -qx 'STUDIO_CONTROLLER_ENVIRONMENT=production' /home/preview/.config/agentic-studio-controller/.env
+expect_stat /opt/agentic-studio-controller root:root 755
+expect_true "Preview user can read the controller code" as_preview test -r /opt/agentic-studio-controller/apps/environment-controller/dist/main.js
+expect_false "Preview user cannot change the controller code" as_preview touch /opt/agentic-studio-controller/apps/environment-controller/dist/main.js
+expect_false "no file in the controller code is writable by the Preview user" \
+  bash -c "find /opt/agentic-studio-controller \( -perm -o+w -o ! -user root \) ! -type l | grep -q ."
+expect_false "the agent user cannot list the Preview user's home" as_agent ls /home/preview
+expect_false "the Preview user cannot list the agent user's home" as_preview ls /home/agent
+expect_false "the Preview user cannot read the worker's .env" as_preview cat /home/agent/.config/agentic-studio-worker/.env
+expect_false "the agent user cannot read the controller's .env" as_agent cat /home/preview/.config/agentic-studio-controller/.env
+expect_false "the Preview user cannot read Studio's .env" as_preview cat /etc/agentic-studio/.env
+controller="$(as_preview node --env-file=/home/preview/.config/agentic-studio-controller/.env \
+  /opt/agentic-studio-controller/apps/environment-controller/dist/main.js 2>&1)"
+status=$?
+printf '%s\n' "$controller" | sed 's/^/      | /'
+if [ "$status" -ne 0 ] && grep -q STUDIO_CONTROLLER_TOKEN <<<"$controller"; then
+  ok "the built controller refuses to start without its token"
+else
+  not_ok "the built controller did not refuse its empty token (exit $status)"
 fi
 
 section "Managed guardrails (Issue #134): root-owned, equal to the worker's copies"
@@ -185,14 +272,18 @@ done
 for name in rootless-docker agent-user-limits; do
   expect_line "FAIL $name without systemd" "$out" "^FAIL  $name "
 done
+for name in preview-files-unreadable preview-docker-unreachable; do
+  expect_line "PASS $name" "$out" "^PASS  $name "
+done
+expect_line "no Studio API reachable here -> FAIL worker-token-not-controller" "$out" "^FAIL  worker-token-not-controller "
 expect_line "no Studio running -> FAIL studio-stack-running (positive control)" "$out" '^FAIL  studio-stack-running '
 
 expect_line "SKIP api on request" "$out" '^SKIP  api '
 expect_line "last line is the result" "$(tail -n 1 <<<"$out")" '^RESULT: FAIL '
 
-ONLY_LOCAL=(--skip 'rootless,cgroup,api')
+ONLY_LOCAL=(--skip 'rootless,cgroup,preview,api')
 section "Each check fails when its rule is broken"
-ONLY_GUARDRAILS=(--skip 'identity,processes,studio-files,docker-socket,sudo,studio-network,host,cgroup,rootless,api')
+ONLY_GUARDRAILS=(--skip 'identity,processes,studio-files,docker-socket,sudo,studio-network,host,cgroup,rootless,preview,api')
 guardrails_reinstalled() {
   local out
   out="$(bash "$SETUP" --only guardrails 2>&1)"
@@ -277,6 +368,30 @@ expect_line "reachable API port -> FAIL studio-app-direct-unreachable" "$out" '^
 kill "$listener"
 wait "$listener" 2>/dev/null
 
+chmod 0755 /home/preview
+out="$(check_as_agent "${ONLY_PREVIEW[@]}")"
+expect_line "readable Preview home -> FAIL preview-files-unreadable" "$out" '^FAIL  preview-files-unreadable '
+chmod 0750 /home/preview
+
+section "Preview checks as the Preview user (no systemd, no rootless Docker here)"
+out="$(check_as_preview --skip 'cgroup,egress,internet,controller,api')"
+status=$?
+printf '%s\n' "$out" | sed 's/^/      | /'
+if [ "$status" -ne 0 ]; then ok "fails without a login session here (linger needs systemd)"; else not_ok "exit $status"; fi
+for name in not-root not-privileged sudo-needs-password home-private system-docker-unreachable system-containerd-unreachable \
+  agent-docker-unreachable agent-files-unreadable studio-files-unreadable studio-network-unreachable; do
+  expect_line "PASS $name" "$out" "^PASS  $name "
+done
+expect_line "FAIL linger without systemd" "$out" '^FAIL  linger '
+chmod 0755 /home/agent
+out="$(check_as_preview --skip 'identity,cgroup,egress,internet,controller,api')"
+expect_line "readable agent home -> FAIL agent-files-unreadable" "$out" '^FAIL  agent-files-unreadable '
+chmod 0750 /home/agent
+usermod -aG docker preview
+out="$(check_as_preview --skip 'refused,cgroup,egress,internet,controller,api')"
+expect_line "docker group -> FAIL not-privileged" "$out" '^FAIL  not-privileged '
+gpasswd -d preview docker >/dev/null
+
 section "API checks against a stub of Studio's worker routes"
 # A test-only token (not a secret) in the worker .env; the stub accepts it on worker routes only,
 # or, in leaky mode, on every route. The stub stands in for the reverse proxy's worker port on
@@ -297,20 +412,25 @@ stub() {
   STUB_PID=$!
   sleep 1
 }
-ONLY_API=(--skip 'identity,processes,studio-files,docker-socket,sudo,studio-network,host,cgroup,rootless')
+ONLY_API=(--skip 'identity,processes,studio-files,docker-socket,sudo,studio-network,host,cgroup,rootless,preview')
+ONLY_PREVIEW=(--skip 'identity,processes,studio-files,docker-socket,sudo,studio-network,host,cgroup,guardrails,rootless,api')
 stub 0
-out="$(check_as_agent --skip 'identity,processes,studio-files,docker-socket,sudo,host,cgroup,rootless,api')"
+out="$(check_as_agent --skip 'identity,processes,studio-files,docker-socket,sudo,host,cgroup,rootless,preview,api')"
 expect_line "Studio answering -> PASS studio-stack-running" "$out" '^PASS  studio-stack-running '
 out="$(check_as_agent "${ONLY_API[@]}")"
 printf '%s\n' "$out" | sed 's/^/      | /'
 expect_line "PASS worker-token-works" "$out" '^PASS  worker-token-works '
 expect_line "PASS worker-token-nothing-else" "$out" '^PASS  worker-token-nothing-else '
 expect_line "the token is never printed" "$(grep -c -- "$TEST_TOKEN" <<<"$out")" '^0$'
+out="$(check_as_agent "${ONLY_PREVIEW[@]}")"
+expect_line "the worker token is refused by the controller's claim route -> PASS worker-token-not-controller" "$out" '^PASS  worker-token-not-controller '
 kill "$STUB_PID"
 wait "$STUB_PID" 2>/dev/null
 stub 1
 out="$(check_as_agent "${ONLY_API[@]}")"
 expect_line "token accepted elsewhere -> FAIL worker-token-nothing-else" "$out" '^FAIL  worker-token-nothing-else '
+out="$(check_as_agent "${ONLY_PREVIEW[@]}")"
+expect_line "claim accepts the worker token -> FAIL worker-token-not-controller" "$out" '^FAIL  worker-token-not-controller '
 kill "$STUB_PID"
 wait "$STUB_PID" 2>/dev/null
 as_agent sed -i "s|^STUDIO_WORKER_TOKEN=.*|STUDIO_WORKER_TOKEN=|" /home/agent/.config/agentic-studio-worker/.env
