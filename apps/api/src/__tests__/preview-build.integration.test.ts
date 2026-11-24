@@ -122,6 +122,11 @@ describe('Preview build API (PostgreSQL + Redis via Testcontainers)', () => {
     return projectId;
   }
 
+  /** The commit the Clone holds: the fixture's own branch moved when its files were pushed. */
+  async function headOf(projectId: string): Promise<string> {
+    return (await getPreview(projectId)).body.repository.commit as string;
+  }
+
   async function setEnvironmentFile(projectId: string) {
     const response = await http()
       .put(`/api/projects/${projectId}/environment-file`)
@@ -243,7 +248,7 @@ describe('Preview build API (PostgreSQL + Redis via Testcontainers)', () => {
         expect(previewBuildSchema.safeParse(response.body).success).toBe(true);
         expect(response.body).toMatchObject({
           status: 'queued',
-          commit: fixture.commits.dev,
+          commit: await headOf(id),
           startedAt: null,
           finishedAt: null,
           timeLimitMinutes: 20,
@@ -256,7 +261,7 @@ describe('Preview build API (PostgreSQL + Redis via Testcontainers)', () => {
         expect(row).toMatchObject({
           kind: 'build',
           status: 'requested',
-          commit: fixture.commits.dev,
+          commit: await headOf(id),
           composeFile: 'compose.yaml',
           service: 'web',
           port: 80,
@@ -361,7 +366,7 @@ describe('Preview build API (PostgreSQL + Redis via Testcontainers)', () => {
         latestBuild: { id: buildId, status: 'succeeded' },
         running: {
           buildId,
-          commit: fixture.commits.dev,
+          commit: await headOf(id),
           url: `https://preview-${id.replace(/-/g, '').slice(0, 12)}.${PREVIEW_DOMAIN}/`,
         },
       });
