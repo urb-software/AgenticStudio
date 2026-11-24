@@ -67,7 +67,6 @@ function usePreviewChange(projectId: string, change: () => Promise<PreviewOutput
   });
 }
 
-/** Stops the running Preview. */
 export function useStopPreview(projectId: string) {
   return usePreviewChange(projectId, () => api.stopPreview(projectId));
 }

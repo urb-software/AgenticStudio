@@ -192,7 +192,7 @@ const CHANGE_LABEL: Record<NonNullable<PreviewOutput['latestChange']>['kind'], s
 };
 
 /** A stop or a reset that failed; one that is under way or done shows in the state instead. */
-function LatestChange({ change }: { change: PreviewOutput['latestChange'] }) {
+function LatestChange({ change, now }: { change: PreviewOutput['latestChange']; now: number }) {
   if (!change || change.status !== 'failed') return null;
   const { failure } = change;
   return (
@@ -200,6 +200,11 @@ function LatestChange({ change }: { change: PreviewOutput['latestChange'] }) {
       {failure ? <span>{FAILURE_MESSAGE[failure.code]} </span> : null}
       {failure?.detail ? (
         <span className="font-mono text-code break-words">{failure.detail}</span>
+      ) : null}
+      {change.finishedAt ? (
+        <span className="block text-small text-text-muted">
+          Finished <Time iso={change.finishedAt} now={now} />
+        </span>
       ) : null}
     </Banner>
   );
@@ -248,6 +253,8 @@ export function BuildCard({ projectId, preview, dataUpdatedAt }: BuildCardProps)
   const connected = preview.controller.connected;
   const canStop = state === 'running' && connected;
   const canReset = connected && latestBuild !== null;
+  // Reset data is no longer offered: forget the open dialog, so it never reopens on its own.
+  if (!canReset && resetOpen) setResetOpen(false);
 
   return (
     <Card aria-labelledby={TITLE_ID}>
@@ -285,7 +292,7 @@ export function BuildCard({ projectId, preview, dataUpdatedAt }: BuildCardProps)
               {stopError.message}
             </Banner>
           ) : null}
-          <LatestChange change={preview.latestChange} />
+          <LatestChange change={preview.latestChange} now={dataUpdatedAt} />
           {otherError ? (
             <Banner tone="danger" title="The build was not started.">
               {otherError.message}
@@ -340,13 +347,15 @@ export function BuildCard({ projectId, preview, dataUpdatedAt }: BuildCardProps)
           ) : null}
         </div>
       </CardContent>
-      {/* Mounted in every state, so it closes itself once Reset data is no longer offered. */}
-      <ResetPreviewDataDialog
-        projectId={projectId}
-        rebuildCommit={state === 'running' && running ? running.commit : null}
-        open={resetOpen && canReset}
-        onOpenChange={setResetOpen}
-      />
+      {/* Unmounted while Reset data is not offered, which also drops the dialog's last error. */}
+      {canReset ? (
+        <ResetPreviewDataDialog
+          projectId={projectId}
+          rebuildCommit={state === 'running' && running ? running.commit : null}
+          open={resetOpen}
+          onOpenChange={setResetOpen}
+        />
+      ) : null}
     </Card>
   );
 }

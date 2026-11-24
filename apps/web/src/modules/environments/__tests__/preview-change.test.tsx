@@ -50,11 +50,12 @@ const STOPPED_PREVIEW = { settings: SETTINGS, latestBuild: SUCCEEDED, state: 'st
 
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const view = render(
     <QueryClientProvider client={client}>
       <PreviewPage projectId={PROJECT_ID} />
     </QueryClientProvider>,
   );
+  return { ...view, client };
 }
 
 const card = () => screen.findByRole('region', { name: 'Preview build' });
@@ -163,6 +164,7 @@ describe('Preview build card: Stop', () => {
     expect(within(region).getByText('The stop failed.')).toBeTruthy();
     expect(within(region).getByText('The environment controller hit an error.')).toBeTruthy();
     expect(within(region).getByText('docker said no')).toBeTruthy();
+    expect(within(region).getAllByText(/^Finished/).length).toBeGreaterThan(1);
   });
 
   it('does not show a finished change as a failure', async () => {
@@ -252,6 +254,26 @@ describe('Preview build card: Reset data', () => {
 
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     expect(api.resets).toHaveLength(0);
+  });
+
+  it('stays closed when the controller disconnects and reconnects', async () => {
+    const api = fakePreviewApi(RUNNING_PREVIEW);
+    const { client } = renderPage();
+    await userEvent.click(within(await card()).getByRole('button', { name: 'Reset data…' }));
+    await confirmDialog();
+
+    api.state.controllerConnected = false;
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ['projects', PROJECT_ID, 'preview'] });
+    });
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+
+    api.state.controllerConnected = true;
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ['projects', PROJECT_ID, 'preview'] });
+    });
+    expect(await within(await card()).findByRole('button', { name: 'Reset data…' })).toBeTruthy();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 
   it('resets, closes the dialog and shows Resetting data', async () => {
