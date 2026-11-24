@@ -22,6 +22,39 @@ export class PreviewBuildRunningError extends Error {
   }
 }
 
+/** A stop or a data removal of the Project is requested or claimed: no other change can start. */
+export class PreviewBusyError extends Error {
+  constructor() {
+    super('A stop or a data removal of this Preview is already running.');
+    this.name = 'PreviewBusyError';
+  }
+}
+
+/** Stop was asked for a Preview that does not run. */
+export class PreviewNotRunningError extends Error {
+  constructor() {
+    super('The Preview is not running.');
+    this.name = 'PreviewNotRunningError';
+  }
+}
+
+/** Every place of the running limit is taken; `running` holds the Projects that take them. */
+export class PreviewLimitReachedError extends Error {
+  constructor(
+    readonly limit: number,
+    readonly running: readonly { projectId: string; state: string }[],
+    /** Project names by id, filled in by the caller that can read them. */
+    readonly names: ReadonlyMap<string, string> = new Map(),
+  ) {
+    super('The running Previews limit is reached.');
+    this.name = 'PreviewLimitReachedError';
+  }
+
+  withNames(names: ReadonlyMap<string, string>): PreviewLimitReachedError {
+    return new PreviewLimitReachedError(this.limit, this.running, names);
+  }
+}
+
 /** No environment controller is connected to take a build. */
 export class PreviewControllerUnavailableError extends Error {
   constructor() {

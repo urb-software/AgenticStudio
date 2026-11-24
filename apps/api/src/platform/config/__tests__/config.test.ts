@@ -72,6 +72,7 @@ describe('loadConfig', () => {
       previewLimits: { memoryMiB: 1024, cpuPercent: 100, tasksMax: 512, buildMinutes: 20 },
       previewLogMaxBytes: 2 * 1024 * 1024,
       previewUnclaimedMinutes: 5,
+      previewMaxRunning: 3,
       runLimits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
       runLogMaxBytes: 8 * 1024 * 1024,
       runSnapshotRetentionDays: 7,
@@ -593,6 +594,25 @@ describe('loadConfig', () => {
         loadConfig({ ...requiredEnv, STUDIO_PREVIEW_UNCLAIMED_MINUTES: value }),
       );
       expect(error.message).toContain('STUDIO_PREVIEW_UNCLAIMED_MINUTES');
+    });
+  });
+
+  describe('Preview running limit', () => {
+    it('defaults to 3 and is set from the environment', () => {
+      expect(loadConfig(requiredEnv).previewMaxRunning).toBe(3);
+      expect(
+        loadConfig({ ...requiredEnv, STUDIO_PREVIEW_MAX_RUNNING: '1' }).previewMaxRunning,
+      ).toBe(1);
+      expect(
+        loadConfig({ ...requiredEnv, STUDIO_PREVIEW_MAX_RUNNING: '50' }).previewMaxRunning,
+      ).toBe(50);
+    });
+
+    it.each(['0', '51', '1.5', 'abc'])('refuses %j (whole places, 1-50)', (value) => {
+      const error = captureError(() =>
+        loadConfig({ ...requiredEnv, STUDIO_PREVIEW_MAX_RUNNING: value }),
+      );
+      expect(error.message).toContain('STUDIO_PREVIEW_MAX_RUNNING');
     });
   });
 

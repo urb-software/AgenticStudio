@@ -79,8 +79,26 @@ export class FakeRuntime implements ContainerRuntime, PreviewSlices, EgressRules
     this.running.delete(identity.projectId);
   }
 
-  async removeVolumes(identity: PreviewIdentity): Promise<void> {
+  async removeVolumes(identity: PreviewIdentity, call: RuntimeCall): Promise<void> {
     this.events.push(`removeVolumes ${identity.composeProject}`);
+    call.onLine('controller', `fake volumes removed for ${identity.previewLabel}`);
+  }
+
+  async removeImages(
+    identity: PreviewIdentity,
+    call: RuntimeCall,
+    options: { danglingOnly: boolean },
+  ): Promise<void> {
+    this.events.push(
+      `removeImages ${identity.composeProject} ${options.danglingOnly ? 'dangling' : 'all'}`,
+    );
+    if (!options.danglingOnly) {
+      call.onLine('controller', `fake images removed for ${identity.previewLabel}`);
+    }
+  }
+
+  async pruneBuildCache(maxBytes: number): Promise<void> {
+    this.events.push(`pruneBuildCache ${maxBytes}`);
   }
 
   async state(identity: PreviewIdentity): Promise<OperationRuntime> {

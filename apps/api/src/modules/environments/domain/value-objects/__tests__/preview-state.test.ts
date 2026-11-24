@@ -20,7 +20,9 @@ const other = (id: string, kind: 'stop' | 'remove_data'): PreviewStateOperation 
   build: null,
 });
 
-const state = (facts: Parameters<typeof PreviewState.of>[0]) => PreviewState.of(facts);
+type Facts = Parameters<typeof PreviewState.of>[0];
+const state = (facts: Omit<Facts, 'latestChange'> & Partial<Pick<Facts, 'latestChange'>>) =>
+  PreviewState.of({ latestChange: null, ...facts });
 
 describe('PreviewState', () => {
   it('is not_configured without settings and without a build', () => {
@@ -104,5 +106,145 @@ describe('PreviewState', () => {
     expect(
       state({ configured: false, latestBuild: build('b1', 'failed'), runningChange: null }).name,
     ).toBe('not_configured');
+  });
+
+  describe('a stop or a data removal', () => {
+    const change = (
+      kind: 'stop' | 'remove_data',
+      status: 'requested' | 'claimed' | 'succeeded' | 'failed',
+    ): PreviewStateOperation => ({
+      id: 'c1',
+      kind,
+      status,
+      finishedAt: status === 'succeeded' || status === 'failed' ? T(9) : null,
+      build: null,
+    });
+    const running = build('b1', 'succeeded');
+
+    it.each(['requested', 'claimed'] as const)(
+      'makes the state stopping while a stop is %s, and keeps what runs',
+      (status) => {
+        const result = state({
+          configured: true,
+          latestBuild: running,
+          runningChange: running,
+          latestChange: change('stop', status),
+        });
+        expect(result.name).toBe('stopping');
+        expect(result.changeActive).toBe(true);
+        expect(result.running?.buildId).toBe('b1');
+      },
+    );
+
+    it.each(['requested', 'claimed'] as const)(
+      'makes the state resetting_data while a data removal is %s',
+      (status) => {
+        const result = state({
+          configured: true,
+          latestBuild: running,
+          runningChange: running,
+          latestChange: change('remove_data', status),
+        });
+        expect(result.name).toBe('resetting_data');
+      },
+    );
+
+    it('puts resetting_data before building, and stopping before building', () => {
+      const rebuilding = build('b2', 'requested');
+      const facts = { configured: true, latestBuild: rebuilding, runningChange: running };
+      expect(state({ ...facts, latestChange: change('remove_data', 'claimed') }).name).toBe(
+        'resetting_data',
+      );
+      expect(state({ ...facts, latestChange: change('stop', 'claimed') }).name).toBe('stopping');
+      expect(state({ ...facts, latestChange: change('stop', 'succeeded') }).name).toBe('building');
+    });
+
+    it('does not let a finished change decide the state', () => {
+      for (const status of ['succeeded', 'failed'] as const) {
+        const result = state({
+          configured: true,
+          latestBuild: running,
+          runningChange: running,
+          latestChange: change('stop', status),
+        });
+        expect(result.name).toBe('running');
+        expect(result.changeActive).toBe(false);
+      }
+    });
+  });
+
+  describe('the refusals', () => {
+    const running = build('b1', 'succeeded');
+    const stop = (status: 'requested' | 'succeeded'): PreviewStateOperation => ({
+      id: 's1',
+      kind: 'stop',
+      status,
+      finishedAt: status === 'succeeded' ? T(9) : null,
+      build: null,
+    });
+    const reset: PreviewStateOperation = {
+      id: 'r1',
+      kind: 'remove_data',
+      status: 'claimed',
+      finishedAt: null,
+      build: null,
+    };
+    const of = (facts: Partial<Facts>) =>
+      state({ configured: true, latestBuild: null, runningChange: null, ...facts });
+    const names = (state: PreviewState) => [
+      state.buildRefusal()?.name ?? null,
+      state.stopRefusal()?.name ?? null,
+      state.resetRefusal()?.name ?? null,
+    ];
+
+    it('accepts everything it may: stop only when running, build and reset otherwise', () => {
+      expect(names(of({ latestBuild: running, runningChange: running }))).toEqual([
+        null,
+        null,
+        null,
+      ]);
+      expect(names(of({}))).toEqual([null, 'PreviewNotRunningError', null]);
+      expect(names(of({ configured: false }))).toEqual([null, 'PreviewNotRunningError', null]);
+      expect(names(of({ latestBuild: build('b2', 'failed') }))).toEqual([
+        null,
+        'PreviewNotRunningError',
+        null,
+      ]);
+    });
+
+    it('refuses with build_running while a build is active', () => {
+      const facts = { latestBuild: build('b2', 'claimed'), runningChange: running };
+      expect(names(of(facts))).toEqual([
+        'PreviewBuildRunningError',
+        'PreviewBuildRunningError',
+        'PreviewBuildRunningError',
+      ]);
+    });
+
+    it('refuses with busy while a stop or a reset is active, even with a build active', () => {
+      const facts = { latestBuild: build('b2', 'requested'), runningChange: running };
+      expect(names(of({ ...facts, latestChange: reset }))).toEqual([
+        'PreviewBusyError',
+        'PreviewBusyError',
+        'PreviewBusyError',
+      ]);
+      expect(
+        names(
+          of({ latestBuild: running, runningChange: running, latestChange: stop('requested') }),
+        ),
+      ).toEqual(['PreviewBusyError', 'PreviewBusyError', 'PreviewBusyError']);
+    });
+
+    it('lets a finished stop leave a Preview that runs no more to be reset and built', () => {
+      expect(
+        names(
+          of({
+            latestBuild: running,
+            runningChange: { ...stop('succeeded'), id: 's2' },
+            latestChange: stop('succeeded'),
+          }),
+        ),
+      ).toEqual([null, 'PreviewNotRunningError', null]);
+    });
   });
 });

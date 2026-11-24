@@ -46,6 +46,7 @@ Decided by the operator on 2026-11-23, in a comment on Epic #271.
 - **Validation is the second line of defence.** A gap in it leaves the Preview user's rights as the limit, not Studio's.
 - **Outbound network access is allowed.** See [Network decision](#network-decision-2026-11-23).
 - **A kernel vulnerability could cross the boundary**, as for Runs. Keeping the host patched is part of the model.
+- **The build cache is the one thing the controller removes without a label.** It has none, and the daemon serves only the controller, so after every build the controller prunes it to `STUDIO_CONTROLLER_BUILD_CACHE_MAX_GB`. Everything else it removes (containers, networks, volumes, images) it found by both ownership labels.
 - **One more user, daemon and service on the server.** The server setup creates them and checks them.
 - **The agent side must not read the Preview user's files or socket**; the server setup checks it.
 - **Routing** is a static wildcard route to one socket per Preview, as the [trial record](0004-trial-preview-routing.md) decided; the proxy side is [`deploy/Caddyfile.preview`](../../../deploy/Caddyfile.preview) (#277), the bridge and the socket directory come with #285 and #286.

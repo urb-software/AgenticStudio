@@ -35,6 +35,8 @@ import { REPOSITORY_JOBS } from '../../../../application/ports/repository-jobs.j
 import { RepositoryJobProcessor } from '../../../../entry-points/jobs/repository-job-processor.js';
 import { RepositoryStartupRecovery } from '../../../../entry-points/startup/repository-startup-recovery.js';
 import { QueueRepositoryJobs } from '../../queue-repository-jobs.js';
+import { REPOSITORY_DISCONNECT_STEPS } from '../../../../contracts/index.js';
+import { ProjectRepositoryDisconnectSteps } from '../../../../entry-points/contracts/repository-disconnect-steps.js';
 import { SweepOrphanedEnvironmentFilesHandler } from '../../../../application/features/sweep-orphaned-environment-files/handler.js';
 import { ENVIRONMENT_FILE_REPOSITORY } from '../../../../domain/repositories/environment-file-repository.js';
 import { InMemoryEnvironmentFileRepository } from '../../../../domain/repositories/__tests__/in-memory-environment-file-repository.js';
@@ -112,6 +114,7 @@ function startupContext(
       RecordUnfinishedFetchHandler,
       FailInterruptedClonesHandler,
       FailInterruptedFetchesHandler,
+      { provide: REPOSITORY_DISCONNECT_STEPS, useClass: ProjectRepositoryDisconnectSteps },
       RepositoryCleanup,
       ResumeDisconnectsHandler,
       GetRepositoryOperationHandler,

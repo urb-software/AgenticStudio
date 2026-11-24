@@ -80,6 +80,7 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     previewLimits: { memoryMiB: 1024, cpuPercent: 100, tasksMax: 512, buildMinutes: 20 },
     previewLogMaxBytes: 2 * 1024 * 1024,
     previewUnclaimedMinutes: 5,
+    previewMaxRunning: 3,
     runLimits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
     runLogMaxBytes: 8 * 1024 * 1024,
     runSnapshotRetentionDays: 7,

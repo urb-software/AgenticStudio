@@ -1,4 +1,4 @@
-import { PREVIEW_LIMIT_BOUNDS } from '@agentic-studio/contracts';
+import { PREVIEW_LIMIT_BOUNDS, PREVIEW_MAX_RUNNING_BOUNDS } from '@agentic-studio/contracts';
 import { createHash, createSecretKey, type KeyObject } from 'node:crypto';
 import { accessSync, constants, existsSync, realpathSync, statSync } from 'node:fs';
 import { isIP } from 'node:net';
@@ -286,6 +286,13 @@ const environmentSchema = z.object({
   STUDIO_PREVIEW_BUILD_MINUTES: previewLimit(PREVIEW_LIMIT_BOUNDS.buildMinutes, 20),
   // Minutes a requested Preview operation may wait while no controller is known to exist.
   STUDIO_PREVIEW_UNCLAIMED_MINUTES: z.coerce.number().int().min(1).max(1440).default(5),
+  // The most Previews that run at the same time (a Preview running, or a build requested or claimed).
+  STUDIO_PREVIEW_MAX_RUNNING: z.coerce
+    .number()
+    .int()
+    .min(PREVIEW_MAX_RUNNING_BOUNDS.min)
+    .max(PREVIEW_MAX_RUNNING_BOUNDS.max)
+    .default(3),
   STUDIO_PREVIEW_LOG_MAX_BYTES: z.coerce
     .number()
     .int()
@@ -412,6 +419,8 @@ export interface AppConfig {
   previewLogMaxBytes: number;
   /** Minutes a requested Preview operation may wait with no controller known to exist. */
   previewUnclaimedMinutes: number;
+  /** The most Previews that run at the same time (`STUDIO_PREVIEW_MAX_RUNNING`, default 3). */
+  previewMaxRunning: number;
   /** The limits copied onto every new Run. */
   runLimits: { stepMinutes: number; maxSteps: number; waitingDays: number; maxTotalSteps: number };
   /** Per-Run log cap in UTF-8 bytes of event text (`STUDIO_RUN_LOG_MAX_BYTES`, default 8 MiB). */
@@ -498,6 +507,7 @@ export function loadConfig(
     },
     previewLogMaxBytes: result.data.STUDIO_PREVIEW_LOG_MAX_BYTES,
     previewUnclaimedMinutes: result.data.STUDIO_PREVIEW_UNCLAIMED_MINUTES,
+    previewMaxRunning: result.data.STUDIO_PREVIEW_MAX_RUNNING,
     runLimits: {
       stepMinutes: result.data.STUDIO_RUN_STEP_MINUTES,
       maxSteps: result.data.STUDIO_RUN_MAX_STEPS,

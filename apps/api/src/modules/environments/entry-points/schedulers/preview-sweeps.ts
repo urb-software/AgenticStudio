@@ -42,9 +42,12 @@ export class PreviewSweepsScheduler implements OnApplicationBootstrap, OnApplica
     if (this.sweeping) return;
     this.sweeping = true;
     try {
-      const { releasedSnapshots, unclaimed } = await this.sweep.execute();
+      const { releasedSnapshots, unclaimed, stateChecks } = await this.sweep.execute();
       if (releasedSnapshots > 0) {
         this.logger.warn(`${releasedSnapshots} Preview operation(s) failed that nobody carried.`);
+      }
+      if (stateChecks > 0) {
+        this.logger.warn(`${stateChecks} Preview state check(s) requested after a lost build.`);
       }
       if (unclaimed > 0) {
         this.logger.warn(`${unclaimed} Preview operation(s) failed: no controller took them.`);

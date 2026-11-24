@@ -1,6 +1,9 @@
 import { CONTROLLER_PROBLEM_TYPES } from '@agentic-studio/contracts';
 import { HttpStatus } from '@nestjs/common';
-import type { PreviewRepositoryReason } from '../../../domain/errors/preview-settings-errors.js';
+import type {
+  PreviewLimitReachedError,
+  PreviewRepositoryReason,
+} from '../../../domain/errors/preview-settings-errors.js';
 import { ProblemException } from '../../../../../platform/http/problem-details.js';
 
 /** Problem `type` URIs of the environments API (RFC 9457); generic validation errors stay `about:blank`. */
@@ -18,6 +21,12 @@ export const ENVIRONMENTS_PROBLEM_TYPES = {
   controllerUnavailable: 'urn:agentic-studio:problem:preview-controller-unavailable',
   /** 409: a build of the Project is already requested or claimed. */
   buildRunning: 'urn:agentic-studio:problem:preview-build-running',
+  /** 409: a stop or a data removal of the Project is already requested or claimed. */
+  previewBusy: 'urn:agentic-studio:problem:preview-busy',
+  /** 409: stop was asked but the Preview does not run. */
+  previewNotRunning: 'urn:agentic-studio:problem:preview-not-running',
+  /** 409: every place of the running limit is taken; `running` lists the Projects. */
+  previewLimitReached: 'urn:agentic-studio:problem:preview-limit-reached',
   /** 404: no build of the Project has this id. */
   buildNotFound: 'urn:agentic-studio:problem:preview-build-not-found',
   /** 422: the Compose file or the choice was refused; `refusals` lists every reason. */
@@ -84,6 +93,38 @@ export function buildRunning(): ProblemException {
     type: ENVIRONMENTS_PROBLEM_TYPES.buildRunning,
     title: 'Build running',
     detail: 'A build of this Preview is already running.',
+  });
+}
+
+export function previewBusy(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: ENVIRONMENTS_PROBLEM_TYPES.previewBusy,
+    title: 'Preview busy',
+    detail: 'The Preview is being stopped or its data removed. Try again when it is done.',
+  });
+}
+
+export function previewNotRunning(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: ENVIRONMENTS_PROBLEM_TYPES.previewNotRunning,
+    title: 'Preview not running',
+    detail: 'The Preview is not running, so there is nothing to stop.',
+  });
+}
+
+export function previewLimitReached(error: PreviewLimitReachedError): ProblemException {
+  const running = error.running.map(({ projectId, state }) => ({
+    projectId,
+    name: error.names.get(projectId) ?? projectId,
+    state,
+  }));
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: ENVIRONMENTS_PROBLEM_TYPES.previewLimitReached,
+    title: 'Preview limit reached',
+    detail:
+      `At most ${error.limit} Previews run at the same time. ` +
+      `Running now: ${running.map((preview) => preview.name).join(', ')}. Stop one first.`,
+    extensions: { running },
   });
 }
 

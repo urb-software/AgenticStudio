@@ -42,6 +42,7 @@ describe('loadConfig', () => {
       pollMs: 5000,
       heartbeatMs: 15_000,
       minFreeBytes: 2 * 1024 ** 3,
+      buildCacheMaxBytes: 10 * 1024 ** 3,
       proxyGid: 2003,
       proxyDir: '/run/preview-proxy',
       rootless: true,
@@ -122,6 +123,9 @@ describe('loadConfig', () => {
     );
     expect(problemsOf({ ...fakeEnv, STUDIO_CONTROLLER_DATA_DIR: '/' })).toContain('root');
     expect(problemsOf({ ...fakeEnv, STUDIO_CONTROLLER_POLL_MS: '5' })).toContain('POLL_MS');
+    expect(problemsOf({ ...fakeEnv, STUDIO_CONTROLLER_BUILD_CACHE_MAX_GB: '0' })).toContain(
+      'BUILD_CACHE_MAX_GB',
+    );
     expect(problemsOf({ ...fakeEnv, STUDIO_CONTROLLER_PROXY_GID: '0' })).toContain('PROXY_GID');
   });
 });

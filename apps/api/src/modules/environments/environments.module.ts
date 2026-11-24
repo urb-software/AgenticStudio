@@ -17,9 +17,22 @@ import {
   type PreviewSweepsSettings,
 } from './entry-points/schedulers/preview-sweeps.js';
 import { RequestPreviewBuildEndpoint } from './entry-points/http/operator/request-preview-build/endpoint.js';
+import { ListPreviewsEndpoint } from './entry-points/http/operator/list-previews/endpoint.js';
+import { ResetPreviewDataEndpoint } from './entry-points/http/operator/reset-preview-data/endpoint.js';
+import { StopPreviewEndpoint } from './entry-points/http/operator/stop-preview/endpoint.js';
+import { PreviewDisconnectStep } from './entry-points/disconnect/preview-disconnect-step.js';
+import { ListPreviewsHandler } from './application/features/list-previews/handler.js';
+import { RemovePreviewForDisconnectHandler } from './application/features/remove-preview-for-disconnect/handler.js';
+import { RequestPreviewResetDataHandler } from './application/features/request-preview-reset-data/handler.js';
+import { RequestPreviewStopHandler } from './application/features/request-preview-stop/handler.js';
+import { PreviewBuildRequests } from './application/preview-build-requests.js';
+import {
+  PREVIEW_RUNNING_LIMIT,
+  type PreviewRunningLimitSettings,
+} from './application/ports/preview-running-limit.js';
 import { GetPreviewBuildEventsEndpoint } from './entry-points/http/operator/get-preview-build-events/endpoint.js';
 import { ReportPreviewOperationStateHandler } from './application/features/report-preview-operation-state/handler.js';
-import { RequestPreviewOperationHandler } from './application/features/request-preview-operation/handler.js';
+import { RequestPreviewBuildHandler } from './application/features/request-preview-build/handler.js';
 import { SweepPreviewEnvironmentFilesHandler } from './application/features/sweep-preview-environment-files/handler.js';
 import { CLOCK, type Clock } from './application/ports/clock.js';
 import {
@@ -77,6 +90,9 @@ export class EnvironmentsModule {
         SavePreviewSettingsEndpoint,
         RemovePreviewSettingsEndpoint,
         RequestPreviewBuildEndpoint,
+        StopPreviewEndpoint,
+        ResetPreviewDataEndpoint,
+        ListPreviewsEndpoint,
         GetPreviewBuildEventsEndpoint,
         ClaimOperationEndpoint,
         ReportOperationStateEndpoint,
@@ -99,6 +115,13 @@ export class EnvironmentsModule {
         {
           provide: PREVIEW_LIMITS,
           useFactory: (config: AppConfig): PreviewLimitsSettings => ({ ...config.previewLimits }),
+          inject: [APP_CONFIG],
+        },
+        {
+          provide: PREVIEW_RUNNING_LIMIT,
+          useFactory: (config: AppConfig): PreviewRunningLimitSettings => ({
+            maxRunning: config.previewMaxRunning,
+          }),
           inject: [APP_CONFIG],
         },
         {
@@ -128,7 +151,13 @@ export class EnvironmentsModule {
           inject: [APP_CONFIG],
         },
         PreviewSweepsScheduler,
-        RequestPreviewOperationHandler,
+        PreviewBuildRequests,
+        RequestPreviewBuildHandler,
+        RequestPreviewStopHandler,
+        RequestPreviewResetDataHandler,
+        ListPreviewsHandler,
+        RemovePreviewForDisconnectHandler,
+        PreviewDisconnectStep,
         ClaimPreviewOperationHandler,
         ReportPreviewOperationStateHandler,
         AppendPreviewOperationLogHandler,

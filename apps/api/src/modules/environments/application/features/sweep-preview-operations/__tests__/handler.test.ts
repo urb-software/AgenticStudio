@@ -4,6 +4,7 @@ import { InMemoryPreviewOperationRepository } from '../../../../domain/repositor
 import { PreviewCommit } from '../../../../domain/value-objects/preview-commit.js';
 import { PreviewComposeFile } from '../../../../domain/value-objects/preview-compose-file.js';
 import { PreviewLimits } from '../../../../domain/value-objects/preview-limits.js';
+import { PreviewOperationFailure } from '../../../../domain/value-objects/preview-operation-failure.js';
 import { PreviewPort } from '../../../../domain/value-objects/preview-port.js';
 import { PreviewService } from '../../../../domain/value-objects/preview-service.js';
 import { FakePreviewSources } from '../../../ports/__tests__/fake-preview-sources.js';
@@ -116,6 +117,90 @@ describe('SweepPreviewOperationsHandler', () => {
 
     expect(result.releasedSnapshots).toBe(2);
     expect(secrets.values.size).toBe(0);
+  });
+
+  describe('state checks (step 4)', () => {
+    const stateChecks = () =>
+      [...operations.operations.values()].filter((operation) => operation.kind === 'state');
+
+    beforeEach(() => {
+      kit.presence.seen = seconds(-10);
+    });
+
+    it('waits while no controller is connected, then requests the check once one is', async () => {
+      await request('a', PROJECT, minutes(-40));
+      await claim('a', minutes(-30), seconds(-120));
+      kit.presence.seen = null;
+
+      const absent = await handler.execute();
+      expect(absent.stateChecks).toBe(0);
+      expect(stateChecks()).toHaveLength(0);
+      expect(await failureOf('a')).toBe('controller_lost');
+
+      kit.presence.seen = seconds(-5);
+      expect((await handler.execute()).stateChecks).toBe(1);
+      expect(stateChecks()).toHaveLength(1);
+    });
+
+    it.each(['controller_lost', 'report_overdue'] as const)(
+      'requests one state check for a Project whose newest operation is a build lost as %s',
+      async (code) => {
+        await request('a', PROJECT, minutes(-40), 20);
+        if (code === 'controller_lost') await claim('a', minutes(-30), seconds(-120));
+        else await claim('a', minutes(-26), seconds(-5));
+
+        const result = await handler.execute();
+
+        expect(await failureOf('a')).toBe(code);
+        expect(result.stateChecks).toBe(1);
+        expect(stateChecks()).toHaveLength(1);
+        expect(stateChecks()[0]).toMatchObject({
+          projectId: PROJECT,
+          status: 'requested',
+          requestedAt: KIT_NOW,
+        });
+      },
+    );
+
+    it('is idempotent: the state check is the newest operation, so the next sweep adds none', async () => {
+      await request('a', PROJECT, minutes(-40));
+      await claim('a', minutes(-30), seconds(-120));
+
+      await handler.execute();
+      const again = await handler.execute();
+
+      expect(again.stateChecks).toBe(0);
+      expect(stateChecks()).toHaveLength(1);
+    });
+
+    it('requests none for a build that failed another way, or was never claimed', async () => {
+      await request('a', PROJECT, minutes(-40));
+      await claim('a', minutes(-30), seconds(-5));
+      await operations.change('a', (op) => {
+        op.fail(CONTROLLER, PreviewOperationFailure.of('build_failed', 'x'), seconds(-1));
+      });
+      kit.presence.seen = seconds(-10);
+      await request('b', OTHER_PROJECT, minutes(-60));
+      await operations.change('b', (op) => {
+        op.failUnclaimed(PreviewOperationFailure.of('not_claimed', 'x'), seconds(-1));
+      });
+
+      const result = await handler.execute();
+
+      expect(result.stateChecks).toBe(0);
+      expect(stateChecks()).toHaveLength(0);
+    });
+
+    it('requests none when a later operation exists', async () => {
+      await request('a', PROJECT, minutes(-40));
+      await claim('a', minutes(-30), seconds(-120));
+      await operations.change('a', (op) => {
+        op.loseController(PreviewOperationFailure.of('controller_lost', 'x'), minutes(-20));
+      });
+      await request('b', PROJECT, minutes(-5));
+
+      expect((await handler.execute()).stateChecks).toBe(0);
+    });
   });
 
   describe('unclaimed operations', () => {

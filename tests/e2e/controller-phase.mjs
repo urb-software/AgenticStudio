@@ -1,5 +1,6 @@
 // The environment controller phase of the smoke test, on Linux: a build requested through the
-// operator route and read back from the Preview and its log, then a SQL-inserted stop.
+// operator route and read back from the Preview and its log, then stop, a second build, reset of
+// the data and the disconnect of the Repository, all through the operator routes.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 
@@ -73,12 +74,6 @@ export async function runControllerPhase(options) {
   });
   assert(environmentFile.status === 200, `the Environment file answered ${environmentFile.status}`);
 
-  const finished = (id) =>
-    until(
-      () => db.previewOperation.findUniqueOrThrow({ where: { id } }),
-      (row) => row.status === 'succeeded' || row.status === 'failed',
-      `operation ${id} to finish`,
-    );
   const linesOf = async (id) =>
     (
       await db.previewOperationLine.findMany({
@@ -163,24 +158,97 @@ export async function runControllerPhase(options) {
     'the fake runtime did not start the socket bridge',
   );
 
-  // Stop has no route yet: it stays a SQL insert.
-  const stop = await db.previewOperation.create({
-    data: { projectId, kind: 'stop', status: 'requested' },
-  });
-  const stopped = await finished(stop.id);
-  assert(stopped.status === 'succeeded', `the stop ${stopped.status}`);
+  const post = (path) => read(`/api/projects/${projectId}/preview/${path}`, { method: 'POST' });
+  const operationOf = (kind) =>
+    db.previewOperation.findFirstOrThrow({
+      where: { projectId, kind },
+      orderBy: { requestedAt: 'desc' },
+    });
+
+  // 1. Stop through the route: stopping, then stopped with the bridge removed.
+  const stop = await post('stop');
+  assert(stop.status === 202, `stopping answered ${stop.status}`);
   assert(
-    (await linesOf(stop.id)).some((line) => line.startsWith('fake bridge removed for preview-')),
-    'the stop did not remove the socket bridge',
+    stop.body.state === 'stopping',
+    `the Preview is ${stop.body.state} after the stop request`,
   );
-  const after = await until(
+  const stopped = await until(
     previewOf,
-    (preview) => preview.state !== 'running',
+    (preview) => preview.state !== 'stopping' && preview.state !== 'running',
     'the Preview to stop',
   );
-  assert(after.state === 'stopped', `the Preview is ${after.state} after the stop`);
+  assert(stopped.state === 'stopped', `the Preview is ${stopped.state} after the stop`);
+  assert(
+    stopped.latestChange.kind === 'stop' && stopped.latestChange.status === 'succeeded',
+    'the stop did not succeed',
+  );
+  const stopOperation = await operationOf('stop');
+  assert(
+    (await linesOf(stopOperation.id)).some((line) =>
+      line.startsWith('fake bridge removed for preview-'),
+    ),
+    'the stop did not remove the socket bridge',
+  );
+
+  // 2. Build again, then reset the data: the volumes go and the same commit runs again.
+  const rebuilt = await read(`/api/projects/${projectId}/preview/builds`, { method: 'POST' });
+  assert(rebuilt.status === 202, `the second build answered ${rebuilt.status}`);
+  const again = await until(
+    previewOf,
+    (preview) => preview.state === 'running' || preview.state === 'failed',
+    'the second build to run',
+  );
+  assert(again.state === 'running', `the Preview is ${again.state} after the second build`);
+  const reset = await post('reset-data');
+  assert(reset.status === 202, `resetting answered ${reset.status}`);
+  assert(
+    reset.body.state === 'resetting_data',
+    `the Preview is ${reset.body.state} after the reset request`,
+  );
+  const afterReset = await until(
+    previewOf,
+    (preview) => preview.state === 'running' && preview.running.buildId !== again.running.buildId,
+    'the Preview to run again after the reset',
+  );
+  assert(afterReset.running.commit === again.running.commit, 'the reset rebuilt another commit');
+  assert(
+    afterReset.latestChange.kind === 'reset_data' && afterReset.latestChange.status === 'succeeded',
+    'the reset did not succeed',
+  );
+  assert(
+    (await linesOf((await operationOf('remove_data')).id)).some((line) =>
+      line.startsWith('fake volumes removed for preview-'),
+    ),
+    'the reset did not remove the volumes',
+  );
+  const previews = async () => (await read('/api/previews')).body;
+  assert(
+    (await previews()).previews.some((entry) => entry.projectId === projectId),
+    'GET /api/previews does not list the running Preview',
+  );
+
+  // 3. Disconnect: the Preview is stopped and its data removed, then the disconnect finishes.
+  const disconnect = await read(`/api/projects/${projectId}/repository`, { method: 'DELETE' });
+  assert(
+    disconnect.status === 202 || disconnect.status === 204,
+    `disconnecting answered ${disconnect.status}`,
+  );
+  await until(
+    async () => (await call(`/api/projects/${projectId}/repository`)).status,
+    (status) => status === 404,
+    'the disconnect to finish',
+    150_000,
+  );
+  assert(
+    !(await previews()).previews.some((entry) => entry.projectId === projectId),
+    'GET /api/previews still lists the disconnected Project',
+  );
+  assert(
+    (await db.previewOperation.count({ where: { projectId } })) === 0,
+    'the disconnect left Preview operations behind',
+  );
   console.log(
-    '[e2e] controller phase: the Preview was built through the operator routes, then stopped; no answer held the secret',
+    '[e2e] controller phase: the Preview was built, stopped, rebuilt, reset and removed on disconnect through the operator routes; no answer held the secret',
   );
 }
 

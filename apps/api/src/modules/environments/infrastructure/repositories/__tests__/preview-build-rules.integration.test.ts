@@ -146,8 +146,8 @@ describe('the Preview build store follows the rules of the domain (PostgreSQL + 
 
       await expect(insertRawBuild(ids[0]!, 'requested')).rejects.toThrow(ACTIVE_BUILD_INDEX);
       await expect(insertRawBuild(ids[0]!, 'claimed')).rejects.toThrow(ACTIVE_BUILD_INDEX);
-      await insert(ids, { project: 0, kind: 'stop', status: 'requested', requestedAt: -8 });
-      await insert(ids, { project: 0, kind: 'stop', status: 'requested', requestedAt: -7 });
+      await insert(ids, { project: 0, kind: 'state', status: 'requested', requestedAt: -8 });
+      await insert(ids, { project: 0, kind: 'state', status: 'requested', requestedAt: -7 });
       await insertRawBuild(ids[1]!, 'requested');
       await insert(ids, { project: 0, status: 'succeeded', requestedAt: -20 });
       await insert(ids, { project: 0, status: 'failed', requestedAt: -19 });
@@ -314,6 +314,7 @@ describe('the Preview build store follows the rules of the domain (PostgreSQL + 
 
       expect(await operations().findPreviewFacts(ids[0]!)).toEqual({
         latestBuild: null,
+        latestChange: null,
         runningChange: null,
       });
     });

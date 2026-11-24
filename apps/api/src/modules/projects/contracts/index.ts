@@ -179,4 +179,25 @@ export interface RunPreviewSources {
    * `repository_not_ready`.
    */
   openArchive(projectId: string, commit: string, maxBytes: number): Promise<PreviewArchiveResult>;
+
+  /** The names of the projects with these ids; an unknown id has no entry. */
+  projectNames(ids: readonly string[]): Promise<ReadonlyMap<string, string>>;
+}
+
+export const REPOSITORY_DISCONNECT_STEPS = Symbol('REPOSITORY_DISCONNECT_STEPS');
+
+/**
+ * Something another module removes for a Project when its Repository is disconnected. `pending`
+ * leaves the Repository `disconnecting` for the next retry, as a throw does; the step is
+ * idempotent, so every retry runs it again until it answers `done`.
+ */
+export interface RepositoryDisconnectStep {
+  readonly name: string;
+  run(projectId: string): Promise<'done' | 'pending'>;
+}
+
+/** The list of steps other modules add theirs to at start-up; they run before the Clone is removed. */
+export interface RepositoryDisconnectSteps {
+  add(step: RepositoryDisconnectStep): void;
+  list(): readonly RepositoryDisconnectStep[];
 }

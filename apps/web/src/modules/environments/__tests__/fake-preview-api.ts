@@ -110,6 +110,7 @@ export function fakePreviewApi(
         (state.settings === null ? ('not_configured' as const) : ('stopped' as const)),
       running: state.running,
       latestBuild: state.latestBuild,
+      latestChange: null,
       controller: { connected: state.controllerConnected },
     };
   }

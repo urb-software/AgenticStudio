@@ -2879,7 +2879,7 @@
             }
           },
           "409": {
-            "description": "No Preview settings (urn:agentic-studio:problem:preview-not-configured), the repository cannot be read now (urn:agentic-studio:problem:preview-repository-not-ready), the API is not on Linux (urn:agentic-studio:problem:preview-unsupported-platform), no environment controller is connected (urn:agentic-studio:problem:preview-controller-unavailable), or a build is already running (urn:agentic-studio:problem:preview-build-running)",
+            "description": "No Preview settings (urn:agentic-studio:problem:preview-not-configured), the repository cannot be read now (urn:agentic-studio:problem:preview-repository-not-ready), the API is not on Linux (urn:agentic-studio:problem:preview-unsupported-platform), no environment controller is connected (urn:agentic-studio:problem:preview-controller-unavailable), a build is already running (urn:agentic-studio:problem:preview-build-running), a stop or a reset is running (urn:agentic-studio:problem:preview-busy), or every place of the running limit is taken (urn:agentic-studio:problem:preview-limit-reached; `running` lists the projects that hold them)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2904,6 +2904,163 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/projects/{id}/preview/stop": {
+      "post": {
+        "description": "Asks the environment controller to stop the running Preview of the project. The Preview is `stopping` until it has; its volumes are kept. The answer is the Preview.",
+        "operationId": "stopPreview",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Preview_Output"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown project (urn:agentic-studio:problem:project-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No environment controller is connected (urn:agentic-studio:problem:preview-controller-unavailable), a build is running (urn:agentic-studio:problem:preview-build-running), a stop or a reset is running (urn:agentic-studio:problem:preview-busy) or the Preview is not running (urn:agentic-studio:problem:preview-not-running)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/projects/{id}/preview/reset-data": {
+      "post": {
+        "description": "Removes the volumes of the Preview for good, and everything else the controller keeps of it. A running Preview is rebuilt from the commit it runs. The answer is the Preview.",
+        "operationId": "resetPreviewData",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Preview_Output"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown project (urn:agentic-studio:problem:project-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No environment controller is connected (urn:agentic-studio:problem:preview-controller-unavailable), a build is running (urn:agentic-studio:problem:preview-build-running) or a stop or a reset is running (urn:agentic-studio:problem:preview-busy)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/previews": {
+      "get": {
+        "description": "The most Previews that run at the same time, and the projects that take one of those places: a Preview that runs or a build that is requested or claimed.",
+        "operationId": "listPreviews",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewsList_Output"
                 }
               }
             }
@@ -5163,6 +5320,8 @@
             "enum": [
               "not_configured",
               "stopped",
+              "stopping",
+              "resetting_data",
               "building",
               "running",
               "failed"
@@ -5399,6 +5558,101 @@
               }
             ]
           },
+          "latestChange": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "stop",
+                      "reset_data"
+                    ]
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "queued",
+                      "in_progress",
+                      "succeeded",
+                      "failed"
+                    ]
+                  },
+                  "requestedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  },
+                  "finishedAt": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "failure": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "code": {
+                            "type": "string",
+                            "enum": [
+                              "validation_refused",
+                              "compose_file_missing",
+                              "source_unavailable",
+                              "archive_invalid",
+                              "environment_file_tracked",
+                              "disk_full",
+                              "egress_rules_missing",
+                              "limits_failed",
+                              "build_failed",
+                              "build_timed_out",
+                              "start_failed",
+                              "runtime_failed",
+                              "controller_stopped",
+                              "controller_error",
+                              "controller_lost",
+                              "not_claimed",
+                              "report_overdue"
+                            ]
+                          },
+                          "detail": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "code",
+                          "detail"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "status",
+                  "requestedAt",
+                  "finishedAt",
+                  "failure"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "controller": {
             "type": "object",
             "properties": {
@@ -5419,6 +5673,7 @@
           "state",
           "running",
           "latestBuild",
+          "latestChange",
           "controller"
         ],
         "additionalProperties": false
@@ -5612,6 +5867,8 @@
             "enum": [
               "not_configured",
               "stopped",
+              "stopping",
+              "resetting_data",
               "building",
               "running",
               "failed"
@@ -5848,6 +6105,101 @@
               }
             ]
           },
+          "latestChange": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "stop",
+                      "reset_data"
+                    ]
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "queued",
+                      "in_progress",
+                      "succeeded",
+                      "failed"
+                    ]
+                  },
+                  "requestedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  },
+                  "finishedAt": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "failure": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "code": {
+                            "type": "string",
+                            "enum": [
+                              "validation_refused",
+                              "compose_file_missing",
+                              "source_unavailable",
+                              "archive_invalid",
+                              "environment_file_tracked",
+                              "disk_full",
+                              "egress_rules_missing",
+                              "limits_failed",
+                              "build_failed",
+                              "build_timed_out",
+                              "start_failed",
+                              "runtime_failed",
+                              "controller_stopped",
+                              "controller_error",
+                              "controller_lost",
+                              "not_claimed",
+                              "report_overdue"
+                            ]
+                          },
+                          "detail": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "code",
+                          "detail"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "status",
+                  "requestedAt",
+                  "finishedAt",
+                  "failure"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "controller": {
             "type": "object",
             "properties": {
@@ -5887,9 +6239,74 @@
           "state",
           "running",
           "latestBuild",
+          "latestChange",
           "controller"
         ],
         "additionalProperties": false
+      },
+      "PreviewLimitReachedProblem": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "detail": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": "string"
+          },
+          "running": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "projectId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "not_configured",
+                    "stopped",
+                    "stopping",
+                    "resetting_data",
+                    "building",
+                    "running",
+                    "failed"
+                  ]
+                }
+              },
+              "required": [
+                "projectId",
+                "name",
+                "state"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail",
+          "correlationId",
+          "running"
+        ]
       },
       "PreviewBuild_Output": {
         "type": "object",
@@ -6074,6 +6491,51 @@
           "timeLimitMinutes",
           "failure",
           "log"
+        ],
+        "additionalProperties": false
+      },
+      "PreviewsList_Output": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "previews": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "projectId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "not_configured",
+                    "stopped",
+                    "stopping",
+                    "resetting_data",
+                    "building",
+                    "running",
+                    "failed"
+                  ]
+                }
+              },
+              "required": [
+                "projectId",
+                "state"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "limit",
+          "previews"
         ],
         "additionalProperties": false
       },

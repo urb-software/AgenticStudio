@@ -7,9 +7,17 @@ import {
   RUN_ENVIRONMENT_FILES,
   RUN_INTEGRATION_FETCHES,
   RUN_MERGE_METHODS,
+  REPOSITORY_DISCONNECT_STEPS,
   RUN_PREVIEW_SOURCES,
   RUN_START_POINTS,
 } from './contracts/index.js';
+import { GetProjectNamesHandler } from './application/features/get-project-names/handler.js';
+import { ProjectRepositoryDisconnectSteps } from './entry-points/contracts/repository-disconnect-steps.js';
+import {
+  REPOSITORY_DISCONNECTS_SETTINGS,
+  RepositoryDisconnectsScheduler,
+  type RepositoryDisconnectsSettings,
+} from './entry-points/schedulers/repository-disconnects.js';
 import { GetPreviewSourceStatusHandler } from './application/features/get-preview-source-status/handler.js';
 import { OpenPreviewArchiveHandler } from './application/features/open-preview-archive/handler.js';
 import { ReadIntegrationFileHandler } from './application/features/read-integration-file/handler.js';
@@ -108,7 +116,14 @@ export interface ProjectsModuleOptions {
     >
   >;
   deployKeySweep?: Partial<DeployKeySweepSettings>;
+  /** `false` leaves the periodic retry of disconnecting Repositories off. */
+  disconnectRetries?: boolean;
+  /** Milliseconds between those retries; 30 seconds when unset. */
+  disconnectRetryMs?: number;
 }
+
+/** How often a disconnecting Repository's cleanup is retried. */
+const DISCONNECT_RETRY_MS = 30_000;
 
 /**
  * `projects` business module: projects, their Repository (Git adapter, background jobs),
@@ -197,9 +212,18 @@ export class ProjectsModule {
         GetRepositoryHandler,
         ConnectRepositoryHandler,
         FetchRepositoryHandler,
+        { provide: REPOSITORY_DISCONNECT_STEPS, useClass: ProjectRepositoryDisconnectSteps },
         RepositoryCleanup,
         DisconnectRepositoryHandler,
         ResumeDisconnectsHandler,
+        {
+          provide: REPOSITORY_DISCONNECTS_SETTINGS,
+          useValue: {
+            enabled: options.disconnectRetries !== false,
+            intervalMs: options.disconnectRetryMs ?? DISCONNECT_RETRY_MS,
+          } satisfies RepositoryDisconnectsSettings,
+        },
+        RepositoryDisconnectsScheduler,
         VerifyRepositoryHandler,
         GetRunStartPointHandler,
         { provide: RUN_START_POINTS, useClass: ProjectRunStartPoints },
@@ -220,6 +244,7 @@ export class ProjectsModule {
         GetPreviewSourceStatusHandler,
         ReadIntegrationFileHandler,
         OpenPreviewArchiveHandler,
+        GetProjectNamesHandler,
         { provide: RUN_PREVIEW_SOURCES, useClass: ProjectRunPreviewSources },
       ],
       exports: [
@@ -229,6 +254,7 @@ export class ProjectsModule {
         RUN_INTEGRATION_FETCHES,
         RUN_MERGE_METHODS,
         RUN_PREVIEW_SOURCES,
+        REPOSITORY_DISCONNECT_STEPS,
       ],
     };
   }

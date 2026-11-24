@@ -35,6 +35,8 @@ class InMemoryProjectRepository implements ProjectRepository {
 
   findById = notUsed;
 
+  findByIds = notUsed;
+
   saveMergeMethod = notUsed;
 }
 

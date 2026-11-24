@@ -139,6 +139,27 @@ describe('the Compose files', () => {
     expect(override.volumes).toEqual({ data: { labels } });
   });
 
+  it('labels the image of every service that builds, whatever the build syntax', () => {
+    const stack = {
+      services: {
+        long: { build: { context: './app' } },
+        short: { build: './app' },
+        pulled: { image: 'nginx:1.27' },
+      },
+    };
+    const override = parse(
+      renderOverride(stack, { composeProject: COMPOSE_PROJECT, projectId: PROJECT }),
+    ) as Record<string, Record<string, Record<string, unknown>>>;
+    const labels = {
+      'io.agentic-studio.owner': 'environment-controller',
+      'io.agentic-studio.project': PROJECT,
+    };
+
+    expect(override.services!.long).toMatchObject({ build: { labels } });
+    expect(override.services!.short).toMatchObject({ build: { labels } });
+    expect(override.services!.pulled).not.toHaveProperty('build');
+  });
+
   it('labels the default network and leaves volumes out when there are none', () => {
     const stack = { services: { a: { image: 'x' } } };
     const override = parse(

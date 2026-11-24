@@ -11,7 +11,7 @@ import {
   PREVIEW_OPERATION_SETTINGS,
   type PreviewOperationSettings,
 } from './ports/preview-operation-settings.js';
-import { previewBuildView, type PreviewStateView } from './preview-view.js';
+import { previewBuildView, previewChangeView, type PreviewStateView } from './preview-view.js';
 
 /** Derives a Project's Preview state from its operations and the controller's presence. */
 @Injectable()
@@ -30,8 +30,9 @@ export class PreviewStateReader {
     domain: string | null;
   }): Promise<PreviewStateView> {
     const { projectId, configured, domain } = input;
-    const { latestBuild, runningChange } = await this.operations.findPreviewFacts(projectId);
-    const state = PreviewState.of({ configured, latestBuild, runningChange });
+    const { latestBuild, runningChange, latestChange } =
+      await this.operations.findPreviewFacts(projectId);
+    const state = PreviewState.of({ configured, latestBuild, runningChange, latestChange });
     const availability = this.presence.availability(this.settings.leaseSeconds);
     return {
       state: state.name,
@@ -44,6 +45,7 @@ export class PreviewStateReader {
                 domain === null ? null : `https://${PreviewHostname.of(projectId, domain).value}/`,
             },
       latestBuild: latestBuild === null ? null : previewBuildView(latestBuild),
+      latestChange: latestChange === null ? null : previewChangeView(latestChange),
       controller: { connected: availability.connected(this.clock.now()) },
       buildActive: state.buildActive,
     };

@@ -4,6 +4,17 @@
     "environments/PreviewOperationRepository": {
       "add": { "kind": "save" },
       "find": { "kind": "load" },
+      "request": {
+        "kind": "atomic",
+        "reason": "Takes one advisory lock for every operator request, reads the Project's facts and the occupying Projects, calls a pure callback that applies the domain's refusals and the start limit, and inserts what it returns in one transaction, so two requests for the last place of the running limit cannot both pass."
+      },
+      "findOccupyingProjects": { "kind": "query" },
+      "findStateCheckProjects": { "kind": "query" },
+      "findDisconnectFacts": { "kind": "query" },
+      "deleteForDisconnect": {
+        "kind": "set-wide",
+        "reason": "Under the claim lock it reads the Project's facts again and deletes every operation, with its log lines by cascade, only when the domain PreviewDisconnectRule still says the Preview is gone, so a build claimed meanwhile is never deleted from under its controller."
+      },
       "change": {
         "kind": "atomic",
         "reason": "Loads the operation FOR UPDATE, calls a pure callback that runs operation methods, and saves in one transaction, so the row lock serializes every controller change and the lost-controller sweep."
@@ -157,6 +168,7 @@
       },
       "listNewestFirst": { "kind": "query" },
       "findById": { "kind": "load" },
+      "findByIds": { "kind": "query" },
       "saveMergeMethod": { "kind": "save" }
     },
     "projects/RepositoryConnectionRepository": {

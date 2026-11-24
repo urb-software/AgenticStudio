@@ -59,6 +59,7 @@ describe('SavePreviewSettingsHandler', () => {
       state: 'stopped',
       running: null,
       latestBuild: null,
+      latestChange: null,
       controller: { connected: false },
       removedPorts: [{ service: 'web', place: 'services.web.ports[0]' }],
     });

@@ -29,6 +29,15 @@ export class InMemoryProjectRepository implements ProjectRepository {
     return Promise.resolve(this.projects.get(id) ?? null);
   }
 
+  findByIds(ids: readonly string[]): Promise<Project[]> {
+    return Promise.resolve(
+      ids.flatMap((id) => {
+        const project = this.projects.get(id);
+        return project ? [project] : [];
+      }),
+    );
+  }
+
   saveMergeMethod(project: Project): Promise<boolean> {
     if (!this.projects.has(project.id)) return Promise.resolve(false);
     this.projects.set(project.id, project);

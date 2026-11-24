@@ -19,7 +19,7 @@ import { PREVIEW_ENVIRONMENT_FILE_SECRET_OWNER } from '../../../application/port
 import { SweepPreviewEnvironmentFilesHandler } from '../../../application/features/sweep-preview-environment-files/handler.js';
 import { PreviewLogLine } from '../../../domain/value-objects/preview-log-line.js';
 import { PreviewLogRedaction } from '../../../domain/value-objects/preview-log-redaction.js';
-import { RequestPreviewOperationHandler } from '../../../application/features/request-preview-operation/handler.js';
+import { RequestPreviewStopHandler } from '../../../application/features/request-preview-stop/handler.js';
 import { PreviewOperation } from '../../../domain/entities/preview-operation.js';
 import {
   PREVIEW_OPERATION_REPOSITORY,
@@ -74,7 +74,7 @@ describe('the Preview operation store follows the rules of the domain (PostgreSQ
       const row = await db().previewOperation.create({
         data: {
           projectId: projectIds[spec.project]!,
-          kind: 'stop',
+          kind: 'state',
           status: spec.status,
           requestedAt: seconds(spec.requestedAt),
           ...(claimed || final ? { claimedBy: randomUUID(), claimedAt: seconds(-500) } : {}),
@@ -247,7 +247,7 @@ describe('the Preview operation store follows the rules of the domain (PostgreSQ
       await expect(claimedRow(second)).resolves.toBeDefined();
       // Only claimed rows count: any number of final or requested ones.
       for (const status of ['requested', 'requested'] as const) {
-        await db().previewOperation.create({ data: { projectId: first, kind: 'stop', status } });
+        await db().previewOperation.create({ data: { projectId: first, kind: 'state', status } });
       }
     });
 
@@ -308,12 +308,12 @@ describe('the Preview operation store follows the rules of the domain (PostgreSQ
     });
   });
 
-  describe('requesting a build through the handler', () => {
+  describe('requesting a stop', () => {
     it('refuses an unknown Project and records nothing', async () => {
       await db().$executeRaw`TRUNCATE TABLE projects CASCADE`;
-      const handler = app.get(RequestPreviewOperationHandler);
+      const handler = app.get(RequestPreviewStopHandler);
 
-      await expect(handler.execute({ projectId: randomUUID(), kind: 'stop' })).rejects.toThrow(
+      await expect(handler.execute({ projectId: randomUUID() })).rejects.toThrow(
         'No project has this id.',
       );
       expect(await db().previewOperation.count()).toBe(0);
@@ -326,11 +326,15 @@ describe('the Preview operation store follows the rules of the domain (PostgreSQ
         INSERT INTO projects (name, name_normalized) VALUES (${name}, ${name.toLowerCase()})
         RETURNING id`;
 
-      const { operationId } = await app
-        .get(RequestPreviewOperationHandler)
-        .execute({ projectId: project!.id, kind: 'stop' });
+      const requested = PreviewOperation.requestOther({
+        id: randomUUID(),
+        projectId: project!.id,
+        kind: 'stop',
+        now: NOW,
+      });
+      await operations().add(requested);
 
-      const stored = await operations().find(operationId);
+      const stored = await operations().find(requested.id);
       expect(stored).toBeInstanceOf(PreviewOperation);
       expect(stored).toMatchObject({ projectId: project!.id, kind: 'stop', status: 'requested' });
     });

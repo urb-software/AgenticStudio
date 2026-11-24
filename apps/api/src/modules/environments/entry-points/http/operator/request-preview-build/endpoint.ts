@@ -5,11 +5,13 @@ import {
   ApiProblemResponses,
   PROBLEM_JSON,
 } from '../../../../../../platform/http/problem-details.js';
-import { RequestPreviewOperationHandler } from '../../../../application/features/request-preview-operation/handler.js';
+import { RequestPreviewBuildHandler } from '../../../../application/features/request-preview-build/handler.js';
 import { PreviewSettingsMissingError } from '../../../../domain/errors/preview-operation-errors.js';
 import {
   PreviewBuildRunningError,
+  PreviewBusyError,
   PreviewControllerUnavailableError,
+  PreviewLimitReachedError,
   PreviewRefusedError,
   PreviewRepositoryNotReadyError,
   PreviewSourceUnavailableError,
@@ -17,6 +19,7 @@ import {
 } from '../../../../domain/errors/preview-settings-errors.js';
 import {
   PreviewBuildDto,
+  PreviewLimitReachedProblemDto,
   PreviewRefusedProblemDto,
   toPreviewBuildResponse,
 } from '../../shared/preview-response.js';
@@ -24,6 +27,8 @@ import {
   buildRunning,
   controllerUnavailable,
   ENVIRONMENTS_PROBLEM_TYPES,
+  previewBusy,
+  previewLimitReached,
   previewNotConfigured,
   previewRefused,
   projectNotFound,
@@ -37,6 +42,8 @@ function toHttpError(error: unknown): unknown {
   if (error instanceof PreviewRepositoryNotReadyError) return repositoryNotReady(error.reason);
   if (error instanceof PreviewControllerUnavailableError) return controllerUnavailable();
   if (error instanceof PreviewBuildRunningError) return buildRunning();
+  if (error instanceof PreviewBusyError) return previewBusy();
+  if (error instanceof PreviewLimitReachedError) return previewLimitReached(error);
   if (error instanceof PreviewRefusedError) return previewRefused(error.refusals);
   if (error instanceof PreviewSourceUnavailableError) return sourceUnavailable();
   return error;
@@ -44,10 +51,10 @@ function toHttpError(error: unknown): unknown {
 
 /** `POST /api/projects/:id/preview/builds`, behind the global session and mutation Origin guards. */
 @ApiTags('environments')
-@ApiExtraModels(PreviewRefusedProblemDto)
+@ApiExtraModels(PreviewRefusedProblemDto, PreviewLimitReachedProblemDto)
 @Controller('projects')
 export class RequestPreviewBuildEndpoint {
-  constructor(private readonly handler: RequestPreviewOperationHandler) {}
+  constructor(private readonly handler: RequestPreviewBuildHandler) {}
 
   @Post(':id/preview/builds')
   @HttpCode(HttpStatus.ACCEPTED)
@@ -65,8 +72,11 @@ export class RequestPreviewBuildEndpoint {
       `No Preview settings (${ENVIRONMENTS_PROBLEM_TYPES.previewNotConfigured}), the repository ` +
       `cannot be read now (${ENVIRONMENTS_PROBLEM_TYPES.repositoryNotReady}), the API is not on ` +
       `Linux (${ENVIRONMENTS_PROBLEM_TYPES.unsupportedPlatform}), no environment controller is ` +
-      `connected (${ENVIRONMENTS_PROBLEM_TYPES.controllerUnavailable}), or a build is already ` +
-      `running (${ENVIRONMENTS_PROBLEM_TYPES.buildRunning})`,
+      `connected (${ENVIRONMENTS_PROBLEM_TYPES.controllerUnavailable}), a build is already ` +
+      `running (${ENVIRONMENTS_PROBLEM_TYPES.buildRunning}), a stop or a reset is running ` +
+      `(${ENVIRONMENTS_PROBLEM_TYPES.previewBusy}), or every place of the running limit is ` +
+      `taken (${ENVIRONMENTS_PROBLEM_TYPES.previewLimitReached}; \`running\` lists the ` +
+      'projects that hold them)',
     502: `The Compose file could not be read (${ENVIRONMENTS_PROBLEM_TYPES.sourceUnavailable})`,
   })
   @ApiResponse({
@@ -78,8 +88,7 @@ export class RequestPreviewBuildEndpoint {
   })
   async request(@Param('id') id: string) {
     try {
-      const { build } = await this.handler.execute({ projectId: id, kind: 'build' });
-      if (build === null) throw new Error('A build request answered without a build.');
+      const { build } = await this.handler.execute({ projectId: id });
       return toPreviewBuildResponse(build);
     } catch (error) {
       throw toHttpError(error);

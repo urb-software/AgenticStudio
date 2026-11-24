@@ -4,6 +4,7 @@ import { RepositoryConnection } from '../../domain/entities/repository-connectio
 import { InMemoryRepositoryConnectionRepository } from '../../domain/repositories/__tests__/in-memory-repository-connection-repository.js';
 import { FakeRepositoryGit } from '../ports/__tests__/fake-repository-git.js';
 import { RepositoryCleanup } from '../repository-cleanup.js';
+import { InMemoryDisconnectSteps } from '../ports/__tests__/in-memory-disconnect-steps.js';
 import { testDeployKey } from '../../domain/value-objects/__tests__/test-deploy-key.js';
 import { SecretStoreUnavailableError } from '../../../../platform/secrets/index.js';
 import { InMemoryDeployKeys } from '../ports/__tests__/in-memory-deploy-keys.js';
@@ -19,6 +20,7 @@ describe('RepositoryCleanup finishing a disconnect', () => {
   let git: FakeRepositoryGit;
   let logs: string[];
   let cleanup: RepositoryCleanup;
+  let steps: InMemoryDisconnectSteps;
 
   async function connect(projectId: string, name: string) {
     await connections.connect({
@@ -42,7 +44,8 @@ describe('RepositoryCleanup finishing a disconnect', () => {
     vi.spyOn(Logger.prototype, 'warn').mockImplementation((message: unknown) => {
       logs.push(String(message));
     });
-    cleanup = new RepositoryCleanup(connections, git, deployKeys);
+    steps = new InMemoryDisconnectSteps();
+    cleanup = new RepositoryCleanup(connections, git, deployKeys, steps);
   });
 
   it.each([
@@ -88,6 +91,60 @@ describe('RepositoryCleanup finishing a disconnect', () => {
     await expect(cleanup.finish(A)).resolves.toBe(false);
     expect((await connections.find(A))?.state).toBe('connecting');
     expect(git.removeClone).not.toHaveBeenCalled();
+  });
+
+  describe('a step another module added', () => {
+    async function disconnecting() {
+      await connect(A, 'a');
+      await connections.change(A, (r) => {
+        r.startDisconnect();
+      });
+    }
+
+    it('runs before the Clone is removed, with the Project id', async () => {
+      const order: string[] = [];
+      steps.add({
+        name: 'remove the Preview',
+        run: (projectId) => {
+          order.push(`step ${projectId}`);
+          return Promise.resolve('done');
+        },
+      });
+      git.removeClone.mockImplementation(() => {
+        order.push('clone');
+        return Promise.resolve();
+      });
+      await disconnecting();
+
+      expect(await cleanup.finish(A)).toBe(true);
+      expect(order).toEqual([`step ${A}`, 'clone']);
+    });
+
+    it('keeps the Repository disconnecting while it is pending, and finishes once done', async () => {
+      const answers: ('pending' | 'done')[] = ['pending', 'done'];
+      steps.add({ name: 'remove the Preview', run: () => Promise.resolve(answers.shift()!) });
+      await disconnecting();
+
+      expect(await cleanup.finish(A)).toBe(false);
+      expect(git.removeClone).not.toHaveBeenCalled();
+      expect((await connections.find(A))?.state).toBe('disconnecting');
+      expect(logs.join('\n')).toMatch(/remove the Preview is not done/);
+
+      expect(await cleanup.finish(A)).toBe(true);
+      expect(await connections.find(A)).toBeNull();
+    });
+
+    it('keeps the Repository disconnecting when it throws, logged redacted', async () => {
+      steps.add({
+        name: 'remove the Preview',
+        run: () => Promise.reject(new Error('connect ECONNREFUSED postgres://studio:hunter2@db')),
+      });
+      await disconnecting();
+
+      expect(await cleanup.finish(A)).toBe(false);
+      expect(git.removeClone).not.toHaveBeenCalled();
+      expect(logs.join('\n')).not.toContain('hunter2');
+    });
   });
 
   describe('an SSH Repository', () => {

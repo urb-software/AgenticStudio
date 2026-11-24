@@ -3,6 +3,9 @@ import {
   PREVIEW_BUILD_STATUSES,
   PREVIEW_STATES,
   previewBuildEventsSchema,
+  previewLatestChangeSchema,
+  previewLimitReachedProblemSchema,
+  previewsListSchema,
   previewBuildSchema,
   previewRefusalCodeSchema,
   previewSchema,
@@ -50,6 +53,7 @@ describe('preview contract', () => {
     state: 'stopped',
     running: null,
     latestBuild: null,
+    latestChange: null,
     controller: { connected: false },
   };
 
@@ -86,10 +90,12 @@ describe('preview contract', () => {
     }
   });
 
-  it('has the five states and the four build statuses', () => {
+  it('has the seven states and the four build statuses', () => {
     expect([...PREVIEW_STATES]).toEqual([
       'not_configured',
       'stopped',
+      'stopping',
+      'resetting_data',
       'building',
       'running',
       'failed',
@@ -196,5 +202,43 @@ describe('preview contract', () => {
     for (const code of ['compose_file_missing', 'compose_file_too_large', 'invalid_path']) {
       expect(previewRefusalCodeSchema.safeParse(code).success).toBe(true);
     }
+  });
+
+  describe('stop, reset and the list of Previews', () => {
+    const CHANGE = {
+      kind: 'reset_data',
+      status: 'failed',
+      requestedAt: '2026-11-24T10:00:00.000Z',
+      finishedAt: '2026-11-24T10:01:00.000Z',
+      failure: { code: 'runtime_failed', detail: 'Docker could not remove resources.' },
+    };
+    const PROJECT = '0b2f6d52-3d0b-4d6e-8a44-6b3c1d8f2a10';
+
+    it('describes the newest change and nothing else', () => {
+      expect(previewLatestChangeSchema.safeParse(CHANGE).success).toBe(true);
+      expect(previewLatestChangeSchema.safeParse({ ...CHANGE, kind: 'build' }).success).toBe(false);
+      expect(previewLatestChangeSchema.safeParse({ ...CHANGE, extra: 1 }).success).toBe(false);
+    });
+
+    it('lists the limit and the Projects that take a place', () => {
+      const list = { limit: 3, previews: [{ projectId: PROJECT, state: 'building' }] };
+      expect(previewsListSchema.safeParse(list).success).toBe(true);
+      expect(previewsListSchema.safeParse({ ...list, limit: undefined }).success).toBe(false);
+    });
+
+    it('names the running Projects in the limit problem', () => {
+      const problem = {
+        type: 'urn:agentic-studio:problem:preview-limit-reached',
+        title: 'Preview limit reached',
+        status: 409,
+        detail: 'At most 3 Previews run at the same time.',
+        correlationId: 'c1',
+        running: [{ projectId: PROJECT, name: 'Shop', state: 'running' }],
+      };
+      expect(previewLimitReachedProblemSchema.safeParse(problem).success).toBe(true);
+      expect(
+        previewLimitReachedProblemSchema.safeParse({ ...problem, running: [{}] }).success,
+      ).toBe(false);
+    });
   });
 });

@@ -13,6 +13,7 @@ import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.
 import { RecordingRepositoryJobs } from '../../../ports/__tests__/recording-repository-jobs.js';
 import { DisconnectRepositoryHandler } from '../handler.js';
 import { RepositoryCleanup } from '../../../repository-cleanup.js';
+import { InMemoryDisconnectSteps } from '../../../ports/__tests__/in-memory-disconnect-steps.js';
 import { InMemoryDeployKeys } from '../../../ports/__tests__/in-memory-deploy-keys.js';
 import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
 import { DEPLOY_KEY_SWEEP_GRACE_PERIOD_MS } from '../../../../domain/value-objects/deploy-key-sweep-policy.js';
@@ -94,7 +95,7 @@ describe('DisconnectRepositoryHandler', () => {
       connections,
       git,
       jobs,
-      new RepositoryCleanup(connections, git, deployKeys),
+      new RepositoryCleanup(connections, git, deployKeys, new InMemoryDisconnectSteps()),
     );
   });
 

@@ -23,6 +23,8 @@ const TITLE_ID = 'preview-build-title';
 const PILL: Record<PreviewOutput['state'], { status: PillStatus; label: string }> = {
   not_configured: { status: 'none', label: 'Not configured' },
   stopped: { status: 'cancelled', label: 'Stopped' },
+  stopping: { status: 'running', label: 'Stopping' },
+  resetting_data: { status: 'running', label: 'Resetting data' },
   building: { status: 'running', label: 'Building' },
   running: { status: 'succeeded', label: 'Running' },
   failed: { status: 'failed', label: 'Failed' },

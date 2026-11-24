@@ -6,6 +6,7 @@ import type {
   RunPreviewSources,
 } from '../../contracts/index.js';
 import { GetPreviewSourceStatusHandler } from '../../application/features/get-preview-source-status/handler.js';
+import { GetProjectNamesHandler } from '../../application/features/get-project-names/handler.js';
 import { OpenPreviewArchiveHandler } from '../../application/features/open-preview-archive/handler.js';
 import { ReadIntegrationFileHandler } from '../../application/features/read-integration-file/handler.js';
 
@@ -19,6 +20,7 @@ export class ProjectRunPreviewSources implements RunPreviewSources {
     private readonly statusHandler: GetPreviewSourceStatusHandler,
     private readonly readHandler: ReadIntegrationFileHandler,
     private readonly archiveHandler: OpenPreviewArchiveHandler,
+    private readonly namesHandler: GetProjectNamesHandler,
   ) {}
 
   status(projectId: string): Promise<PreviewSourceStatus> {
@@ -31,5 +33,9 @@ export class ProjectRunPreviewSources implements RunPreviewSources {
 
   openArchive(projectId: string, commit: string, maxBytes: number): Promise<PreviewArchiveResult> {
     return this.archiveHandler.execute({ projectId, commit, maxBytes });
+  }
+
+  projectNames(ids: readonly string[]): Promise<ReadonlyMap<string, string>> {
+    return this.namesHandler.execute({ ids });
   }
 }
