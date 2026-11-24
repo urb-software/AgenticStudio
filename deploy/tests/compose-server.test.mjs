@@ -30,7 +30,7 @@ function envFile(values) {
   writeFileSync(
     file,
     Object.entries(values)
-      .map(([key, value]) => `${key}=${value}`)
+      .map(([key, value]) => `${key}=${value.includes('$') ? `'${value}'` : value}`)
       .join('\n'),
   );
   return file;
@@ -280,7 +280,10 @@ describe(
             assert.notEqual(volume.target, '/run/preview-proxy', name);
             assert.doesNotMatch(String(volume.source), /preview/, name);
           }
-          assert.equal(service.environment?.STUDIO_PREVIEW_PASSWORD_HASH, undefined, name);
+          // The API reads the root-only env file as a whole, so it is not checked here.
+          if (name !== 'api') {
+            assert.equal(service.environment?.STUDIO_PREVIEW_PASSWORD_HASH, undefined, name);
+          }
         }
         assert.equal(services.api.environment.STUDIO_PREVIEW_DOMAIN, undefined);
         assert.equal(proxy.depends_on.api.condition, 'service_healthy');

@@ -13,7 +13,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { chmodSync, copyFileSync, mkdtempSync, readFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync } from 'node:fs';
 import http from 'node:http';
 import http2 from 'node:http2';
 import https from 'node:https';
@@ -337,11 +337,17 @@ function webSocket(proxy, { host, headers = {}, secret }) {
         });
       }
       while (buffer.length >= 2) {
-        const length = buffer[1] & 0x7f;
-        if (length >= 126) throw new Error('frame too large for the test');
-        if (buffer.length < 2 + length) return;
-        const text = buffer.subarray(2, 2 + length).toString('utf8');
-        buffer = buffer.subarray(2 + length);
+        let length = buffer[1] & 0x7f;
+        let offset = 2;
+        if (length === 127) throw new Error('frame too large for the test');
+        if (length === 126) {
+          if (buffer.length < 4) return;
+          length = buffer.readUInt16BE(2);
+          offset = 4;
+        }
+        if (buffer.length < offset + length) return;
+        const text = buffer.subarray(offset, offset + length).toString('utf8');
+        buffer = buffer.subarray(offset + length);
         if (waiters.length) waiters.shift()(text);
         else texts.push(text);
       }
@@ -367,13 +373,14 @@ describe('Preview site of the reverse proxy', { skip }, () => {
     assert.ok(docker, 'Docker is required in CI');
     assert.ok(image, 'the pinned proxy image is in compose.server.app.yaml');
     // A throwaway wildcard certificate, readable by the proxy's uid.
-    asRoot('install', ['-d', '-m', '0755', certDir]);
+    mkdirSync(certDir, { mode: 0o755 });
+    chmodSync(certDir, 0o755);
     execFileSync('openssl', [
       'req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1', '-nodes',
       '-keyout', join(certDir, 'privkey.pem'), '-out', join(certDir, 'fullchain.pem'),
       '-days', '2', '-subj', `/CN=${PREVIEW_DOMAIN}`,
       '-addext', `subjectAltName=DNS:*.${PREVIEW_DOMAIN},DNS:${PREVIEW_DOMAIN}`,
-    ], { stdio: 'ignore' }); // prettier-ignore
+    ], { stdio: ['ignore', 'ignore', 'inherit'] }); // prettier-ignore
     chmodSync(join(certDir, 'privkey.pem'), 0o644);
     chmodSync(join(certDir, 'fullchain.pem'), 0o644);
     passwordHash = dockerOut([
