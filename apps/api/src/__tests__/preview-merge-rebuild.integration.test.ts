@@ -356,6 +356,18 @@ describe('the Preview rebuild after a merge (PostgreSQL + Redis via Testcontaine
       expect(await builds(id)).toHaveLength(1);
     });
 
+    it('removes the waiting rebuild with the Project', async () => {
+      const id = await readyProject();
+      await runningPreview(id);
+      await previews().merged(merge(id, randomUUID(), await mergeOnHost(id)));
+      expect(await db().previewMergeRebuild.count()).toBe(1);
+
+      await db().project.delete({ where: { id } });
+
+      expect(await db().previewMergeRebuild.count()).toBe(0);
+    });
+
+    // Last: it leaves a refused Compose file on the shared fixture's branch.
     it('fails the rebuild at once when the Compose file is refused at the merged commit', async () => {
       const id = await readyProject();
       await runningPreview(id);
@@ -375,17 +387,6 @@ describe('the Preview rebuild after a merge (PostgreSQL + Redis via Testcontaine
       expect(page.mergeRebuild).toMatchObject({ runId, status: 'failed' });
       expect(page.mergeRebuild.reason).toContain('The Compose file was refused');
       expect((await previews().forMerge(id, runId, merged)).state).toBe('failed');
-    });
-
-    it('removes the waiting rebuild with the Project', async () => {
-      const id = await readyProject();
-      await runningPreview(id);
-      await previews().merged(merge(id, randomUUID(), await mergeOnHost(id)));
-      expect(await db().previewMergeRebuild.count()).toBe(1);
-
-      await db().project.delete({ where: { id } });
-
-      expect(await db().previewMergeRebuild.count()).toBe(0);
     });
   });
 
