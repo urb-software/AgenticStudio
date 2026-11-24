@@ -283,6 +283,7 @@ export const SERVER_PACKAGES = [
   '@agentic-studio/api',
   '@agentic-studio/testing',
   '@agentic-studio/compose-validation',
+  '@agentic-studio/log-redaction',
   // The worker protocol: only the API and the agent worker use it.
   '@agentic-studio/contracts',
 ];

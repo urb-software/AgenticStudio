@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { APP_CONFIG, type AppConfig } from '../config/config.js';
+import { IS_CONTROLLER_ROUTE } from './controller-route.js';
 import type { HttpRequest } from './http-types.js';
 import { IS_WORKER_ROUTE } from './worker-route.js';
 
@@ -16,7 +17,7 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 /**
  * Tokenless CSRF defence on every mutation: `Origin` must be the Studio origin (or
  * `Sec-Fetch-Site: same-origin` without it), and a body must be JSON, which no form can send.
- * Worker routes skip the Origin check only: no cookie authenticates them.
+ * Worker and controller routes skip the Origin check only: no cookie authenticates them.
  */
 @Injectable()
 export class MutationOriginGuard implements CanActivate {
@@ -30,11 +31,11 @@ export class MutationOriginGuard implements CanActivate {
     if (SAFE_METHODS.has(request.method ?? '')) {
       return true;
     }
-    const isWorkerRoute = this.reflector.getAllAndOverride<boolean | undefined>(IS_WORKER_ROUTE, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
-    if (!isWorkerRoute && !this.isSameOrigin(request)) {
+    const targets = [context.getHandler(), context.getClass()];
+    const isTokenRoute =
+      this.reflector.getAllAndOverride<boolean | undefined>(IS_WORKER_ROUTE, targets) ||
+      this.reflector.getAllAndOverride<boolean | undefined>(IS_CONTROLLER_ROUTE, targets);
+    if (!isTokenRoute && !this.isSameOrigin(request)) {
       throw new ForbiddenException('Cross-origin request rejected.');
     }
     if (hasBody(request) && !isJson(request.headers['content-type'])) {

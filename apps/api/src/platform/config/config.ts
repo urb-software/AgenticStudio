@@ -1,3 +1,4 @@
+import { PREVIEW_LIMIT_BOUNDS } from '@agentic-studio/contracts';
 import { createHash, createSecretKey, type KeyObject } from 'node:crypto';
 import { accessSync, constants, existsSync, realpathSync, statSync } from 'node:fs';
 import { isIP } from 'node:net';
@@ -75,15 +76,15 @@ const secretsKeySchema = z
   })
   .transform((value) => createSecretKey(Buffer.from(value, 'base64')));
 
-/** Shortest accepted agent worker token. */
+/** Shortest accepted agent worker or environment controller token. */
 export const WORKER_TOKEN_MIN_LENGTH = 32;
 
 /**
- * `STUDIO_WORKER_TOKEN`: the token the agent worker sends on the worker routes.
- * Unset or empty: no token, and every worker route rejects (fail closed). Only its SHA-256
+ * A bearer token setting (`STUDIO_WORKER_TOKEN`, `STUDIO_CONTROLLER_TOKEN`).
+ * Unset or empty: no token, and every route it guards rejects (fail closed). Only its SHA-256
  * digest is kept, as a KeyObject that never prints; messages never echo the value.
  */
-const workerTokenSchema = z
+const bearerTokenSchema = z
   .string()
   .optional()
   .transform((value) => (value === '' ? undefined : value))
@@ -93,6 +94,11 @@ const workerTokenSchema = z
   .transform((value) =>
     value === undefined ? null : createSecretKey(createHash('sha256').update(value).digest()),
   );
+
+/** A whole-number Preview limit within the controller protocol's bounds. */
+function previewLimit(bounds: { min: number; max: number }, fallback: number) {
+  return z.coerce.number().int().min(bounds.min).max(bounds.max).default(fallback);
+}
 
 /**
  * `STUDIO_MERGE_TOKEN`: the Merge credential. Unset or empty: merging is off. Otherwise one
@@ -266,9 +272,24 @@ const environmentSchema = z.object({
   // Git remotes on loopback and private addresses: closed unless set to true.
   STUDIO_GIT_ALLOW_PRIVATE_REMOTES: z.enum(['true', 'false']).default('false'),
   STUDIO_SSH_KNOWN_HOSTS: sshKnownHostsSchema,
-  STUDIO_WORKER_TOKEN: workerTokenSchema,
+  STUDIO_WORKER_TOKEN: bearerTokenSchema,
   // How long a claimed Run may go without a heartbeat before it fails as worker_lost.
   STUDIO_WORKER_LEASE_SECONDS: z.coerce.number().int().min(10).max(3600).default(60),
+  // The environment controller's own token; never the worker token.
+  STUDIO_CONTROLLER_TOKEN: bearerTokenSchema,
+  // How long a claimed Preview operation may go without a heartbeat before it fails as controller_lost.
+  STUDIO_CONTROLLER_LEASE_SECONDS: z.coerce.number().int().min(10).max(3600).default(60),
+  // Limits copied onto every Preview build, within the controller protocol's bounds.
+  STUDIO_PREVIEW_MEMORY_MB: previewLimit(PREVIEW_LIMIT_BOUNDS.memoryMiB, 1024),
+  STUDIO_PREVIEW_CPU_PERCENT: previewLimit(PREVIEW_LIMIT_BOUNDS.cpuPercent, 100),
+  STUDIO_PREVIEW_TASKS_MAX: previewLimit(PREVIEW_LIMIT_BOUNDS.tasksMax, 512),
+  STUDIO_PREVIEW_BUILD_MINUTES: previewLimit(PREVIEW_LIMIT_BOUNDS.buildMinutes, 20),
+  STUDIO_PREVIEW_LOG_MAX_BYTES: z.coerce
+    .number()
+    .int()
+    .min(64 * 1024)
+    .max(1024 * 1024 * 1024)
+    .default(2 * 1024 * 1024),
   // Run limits copied onto every new Run; the upper bounds are the worker protocol's
   // (`RUN_STEP_MINUTES_MAX`, `RUN_MAX_STEPS_MAX`).
   STUDIO_RUN_STEP_MINUTES: z.coerce.number().int().min(1).max(1440).default(60),
@@ -324,10 +345,27 @@ function schemaFor(workspaceRoot: string | undefined) {
         "must not be Studio's own hostname or a name under it: a Preview needs its own origin " +
         '(security.md section 5)',
     })
+    .refine(
+      (env) =>
+        env.STUDIO_CONTROLLER_TOKEN === null ||
+        env.STUDIO_WORKER_TOKEN === null ||
+        !env.STUDIO_CONTROLLER_TOKEN.export().equals(env.STUDIO_WORKER_TOKEN.export()),
+      {
+        path: ['STUDIO_CONTROLLER_TOKEN'],
+        message: 'must differ from STUDIO_WORKER_TOKEN: the two protocols never share a credential',
+      },
+    )
     .refine((env) => env.STUDIO_MERGE_GITHUB_API_URL === undefined || env.NODE_ENV === 'test', {
       path: ['STUDIO_MERGE_GITHUB_API_URL'],
       message: 'is a test-only setting; it is accepted only with NODE_ENV=test',
     });
+}
+
+export interface PreviewLimitsConfig {
+  memoryMiB: number;
+  cpuPercent: number;
+  tasksMax: number;
+  buildMinutes: number;
 }
 
 export interface AppConfig {
@@ -359,6 +397,17 @@ export interface AppConfig {
   workerToken: KeyObject | null;
   /** Seconds a claimed Run may go without a heartbeat before it fails with `worker_lost`. */
   workerLeaseSeconds: number;
+  /**
+   * SHA-256 digest of `STUDIO_CONTROLLER_TOKEN`, or `null` when unset (every controller route
+   * then answers 401).
+   */
+  controllerToken: KeyObject | null;
+  /** Seconds a claimed Preview operation may go without a heartbeat before `controller_lost`. */
+  controllerLeaseSeconds: number;
+  /** Limits copied onto every new Preview build. */
+  previewLimits: PreviewLimitsConfig;
+  /** Bytes of Preview operation log kept per operation; later lines are dropped. */
+  previewLogMaxBytes: number;
   /** The limits copied onto every new Run. */
   runLimits: { stepMinutes: number; maxSteps: number; waitingDays: number; maxTotalSteps: number };
   /** Per-Run log cap in UTF-8 bytes of event text (`STUDIO_RUN_LOG_MAX_BYTES`, default 8 MiB). */
@@ -435,6 +484,15 @@ export function loadConfig(
     sshKnownHosts: result.data.STUDIO_SSH_KNOWN_HOSTS,
     workerToken: result.data.STUDIO_WORKER_TOKEN,
     workerLeaseSeconds: result.data.STUDIO_WORKER_LEASE_SECONDS,
+    controllerToken: result.data.STUDIO_CONTROLLER_TOKEN,
+    controllerLeaseSeconds: result.data.STUDIO_CONTROLLER_LEASE_SECONDS,
+    previewLimits: {
+      memoryMiB: result.data.STUDIO_PREVIEW_MEMORY_MB,
+      cpuPercent: result.data.STUDIO_PREVIEW_CPU_PERCENT,
+      tasksMax: result.data.STUDIO_PREVIEW_TASKS_MAX,
+      buildMinutes: result.data.STUDIO_PREVIEW_BUILD_MINUTES,
+    },
+    previewLogMaxBytes: result.data.STUDIO_PREVIEW_LOG_MAX_BYTES,
     runLimits: {
       stepMinutes: result.data.STUDIO_RUN_STEP_MINUTES,
       maxSteps: result.data.STUDIO_RUN_MAX_STEPS,

@@ -18,6 +18,7 @@
     "@agentic-studio/compose-validation": "workspace:*",
     "@agentic-studio/contracts": "workspace:*",
     "@agentic-studio/database": "workspace:*",
+    "@agentic-studio/log-redaction": "workspace:*",
     "@nestjs/common": "12.4.2",
     "@nestjs/core": "12.4.2",
     "@nestjs/platform-express": "12.4.2",

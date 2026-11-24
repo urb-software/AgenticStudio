@@ -172,6 +172,10 @@ _Avoid_: Feedback, remark
 A Project's own Compose stack, built from the Integration branch and reachable in the browser under its own hostname, behind the Preview password. A Project has one shared Preview, not one per Run. It rebuilds after a merge made through Studio and on the operator's "Rebuild"; it runs until the operator stops it.
 _Avoid_: Environment (alone), staging, deployment
 
+**Preview operation**:
+One piece of work the environment controller claims from Studio for a Project's Preview: build, stop, remove data or report its state. It is requested, claimed by one controller process (which must keep reporting, or Studio fails it as lost), then succeeded or failed, and a Project has at most one claimed at a time. A build carries what it was asked to build and keeps a redacted, capped log.
+_Avoid_: Job, task, command
+
 **Preview build**:
 One attempt to build and start a Preview from the Integration branch at a commit, with its state and its redacted, capped log. A failed build leaves the previous Preview running.
 _Avoid_: Deploy, pipeline

@@ -25,6 +25,7 @@ export const WEB_PACKAGE_CLASSIFICATION: { allowed: string[]; forbidden: string[
     '@agentic-studio/compose-validation',
     '@agentic-studio/contracts',
     '@agentic-studio/database',
+    '@agentic-studio/log-redaction',
     '@agentic-studio/testing',
   ],
 };
@@ -98,7 +99,7 @@ export const monorepoGate: Gate = {
       from: { path: '^apps/web/' },
       to: {
         path: [
-          '^packages/(compose-validation|contracts|database|testing)/',
+          '^packages/(compose-validation|contracts|database|log-redaction|testing)/',
           npmPackages(...SERVER_PACKAGES),
         ],
       },

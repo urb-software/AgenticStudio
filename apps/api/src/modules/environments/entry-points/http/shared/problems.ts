@@ -1,3 +1,4 @@
+import { CONTROLLER_PROBLEM_TYPES } from '@agentic-studio/contracts';
 import { HttpStatus } from '@nestjs/common';
 import type { PreviewRepositoryReason } from '../../../domain/errors/preview-settings-errors.js';
 import { ProblemException } from '../../../../../platform/http/problem-details.js';
@@ -70,5 +71,46 @@ export function sourceUnavailable(): ProblemException {
     type: ENVIRONMENTS_PROBLEM_TYPES.sourceUnavailable,
     title: 'Compose file unavailable',
     detail: 'The Compose file could not be read from the repository. Try again.',
+  });
+}
+
+export function operationNotFound(): ProblemException {
+  return new ProblemException(HttpStatus.NOT_FOUND, {
+    type: CONTROLLER_PROBLEM_TYPES.operationNotFound,
+    title: 'Preview operation not found',
+    detail: 'No Preview operation has this id.',
+  });
+}
+
+/** 409: the controller must abandon the operation. */
+export function operationNotHeld(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: CONTROLLER_PROBLEM_TYPES.operationNotHeld,
+    title: 'Preview operation not held',
+    detail: 'This controller does not hold the operation, or it is already final.',
+  });
+}
+
+export function operationSourceUnavailable(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: CONTROLLER_PROBLEM_TYPES.sourceUnavailable,
+    title: 'Source unavailable',
+    detail: 'The source of this build cannot be read from the repository now.',
+  });
+}
+
+export function operationSourceTooLarge(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: CONTROLLER_PROBLEM_TYPES.sourceTooLarge,
+    title: 'Source too large',
+    detail: 'The source archive of this build is over the size limit.',
+  });
+}
+
+export function operationNotABuild(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: CONTROLLER_PROBLEM_TYPES.operationNotABuild,
+    title: 'Not a build',
+    detail: 'Only a build has a source.',
   });
 }

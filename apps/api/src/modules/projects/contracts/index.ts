@@ -122,7 +122,8 @@ export const INTEGRATION_FILE_MAX_BYTES = 256 * 1024;
  * (`unsupported_platform`: the API does not run on Linux).
  */
 export type PreviewSourceStatus =
-  | { status: 'ready' }
+  /** `commit` is the Integration branch's commit the Clone holds. */
+  | { status: 'ready'; commit: string }
   | {
       status:
         'project_not_found' | 'no_repository' | 'repository_not_ready' | 'unsupported_platform';
@@ -145,6 +146,23 @@ export type IntegrationFileResult =
         | 'failed';
     };
 
+/**
+ * `ready`: a tar archive of the commit's tracked tree, held in a temporary file until `close`
+ * (call it in a `finally`; it may be called more than once). `commit_missing`: the Clone does not
+ * hold the commit. `too_large`: the archive passed `maxBytes`. `failed`: anything else.
+ */
+export type PreviewArchiveResult =
+  | {
+      status: 'ready';
+      sizeBytes: number;
+      chunks: AsyncIterable<Uint8Array>;
+      close(): Promise<void>;
+    }
+  | {
+      status:
+        'commit_missing' | 'too_large' | 'repository_not_ready' | 'unsupported_platform' | 'failed';
+    };
+
 /** What `environments` reads of a Project's Repository to set up a Preview. */
 export interface RunPreviewSources {
   status(projectId: string): Promise<PreviewSourceStatus>;
@@ -154,4 +172,11 @@ export interface RunPreviewSources {
    * store and never from a working tree. The path must be a safe relative POSIX path.
    */
   readIntegrationFile(projectId: string, path: string): Promise<IntegrationFileResult>;
+
+  /**
+   * The tracked tree of `commit` as a tar archive of at most `maxBytes`, read from the Clone's
+   * object store only. An id that names no project, or a Repository that is not `ready`, is
+   * `repository_not_ready`.
+   */
+  openArchive(projectId: string, commit: string, maxBytes: number): Promise<PreviewArchiveResult>;
 }

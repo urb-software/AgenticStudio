@@ -47,6 +47,6 @@ export class GetPreviewSourceStatusHandler {
       if (error instanceof GitUnsupportedPlatformError) return { status: 'unsupported_platform' };
       throw error;
     }
-    return { status: 'ready' };
+    return { status: 'ready', commit: repository.headSha };
   }
 }

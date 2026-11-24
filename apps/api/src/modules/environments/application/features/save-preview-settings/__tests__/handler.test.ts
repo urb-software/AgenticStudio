@@ -9,7 +9,11 @@ import {
 import { InMemoryPreviewSettingsRepository } from '../../../../domain/repositories/__tests__/in-memory-preview-settings-repository.js';
 import { InvalidPreviewPortError } from '../../../../domain/value-objects/preview-port.js';
 import { InvalidPreviewServiceError } from '../../../../domain/value-objects/preview-service.js';
-import { COMPOSE_TEXT, FakePreviewSources } from '../../../ports/__tests__/fake-preview-sources.js';
+import {
+  COMMIT,
+  COMPOSE_TEXT,
+  FakePreviewSources,
+} from '../../../ports/__tests__/fake-preview-sources.js';
 import { SavePreviewSettingsHandler } from '../handler.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
@@ -139,7 +143,7 @@ describe('SavePreviewSettingsHandler', () => {
     await expect(handler.execute({ ...INPUT, composeFile: '../x' })).rejects.toBeInstanceOf(
       ProjectNotFoundError,
     );
-    sources.statusAnswer = { status: 'ready' };
+    sources.statusAnswer = { status: 'ready', commit: COMMIT };
     sources.fileAnswer = { status: 'project_not_found' };
     await expect(handler.execute(INPUT)).rejects.toBeInstanceOf(ProjectNotFoundError);
   });

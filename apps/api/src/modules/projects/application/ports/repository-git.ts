@@ -70,6 +70,22 @@ export type MergeDiffOutcome =
 export type CommitFileOutcome =
   { status: 'found'; text: string } | { status: 'missing' } | { status: 'too_large' };
 
+/**
+ * A `git archive` of one commit, held in an owner-only temporary file until {@link close}.
+ * `chunks` streams the file's bytes; `close` deletes it and may be called more than once.
+ */
+export interface CommitArchive {
+  sizeBytes: number;
+  chunks(): AsyncIterable<Uint8Array>;
+  close(): Promise<void>;
+}
+
+/** `commit_missing`: the commit is not in the Clone. `too_large`: the archive passed the limit. */
+export type CommitArchiveOutcome =
+  | { status: 'archived'; archive: CommitArchive }
+  | { status: 'commit_missing' }
+  | { status: 'too_large' };
+
 export type GitFailureReason = Exclude<RepositoryFailureCode, 'interrupted'>;
 
 export const GIT_FAILURE_REASONS: readonly GitFailureReason[] = REPOSITORY_FAILURE_CODES.filter(
@@ -180,6 +196,18 @@ export interface RepositoryGit {
     maxBytes: number,
     options?: GitOperationOptions,
   ): Promise<CommitFileOutcome>;
+
+  /**
+   * The tracked tree of `commit` as a tar archive of at most `maxBytes`, built from the Clone's
+   * object store (never a working tree, never a remote); Git is killed once the archive passes
+   * the limit. Throws the errors of {@link RepositoryGit.isPathTracked}. The caller closes it.
+   */
+  archiveCommit(
+    projectId: string,
+    commit: string,
+    maxBytes: number,
+    options?: GitOperationOptions,
+  ): Promise<CommitArchiveOutcome>;
 
   /** Removes the Project's Clone (and any partial one); a missing Clone is not an error. */
   removeClone(projectId: string, options?: GitOperationOptions): Promise<void>;

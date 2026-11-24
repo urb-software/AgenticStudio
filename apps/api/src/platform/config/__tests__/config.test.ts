@@ -49,8 +49,9 @@ function captureError(fn: () => unknown): Error {
 
 describe('loadConfig', () => {
   it('returns typed configuration from a valid environment', () => {
-    const { secretsKey, workerToken, ...config } = loadConfig(validEnv);
+    const { secretsKey, workerToken, controllerToken, ...config } = loadConfig(validEnv);
     expect(workerToken).toBeNull();
+    expect(controllerToken).toBeNull();
     expect(secretsKey.type).toBe('secret');
     expect(secretsKey.export().equals(SECRETS_KEY_BYTES)).toBe(true);
     expect(config).toEqual({
@@ -67,6 +68,9 @@ describe('loadConfig', () => {
       gitAllowPrivateRemotes: false,
       sshKnownHosts: [],
       workerLeaseSeconds: 60,
+      controllerLeaseSeconds: 60,
+      previewLimits: { memoryMiB: 1024, cpuPercent: 100, tasksMax: 512, buildMinutes: 20 },
+      previewLogMaxBytes: 2 * 1024 * 1024,
       runLimits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
       runLogMaxBytes: 8 * 1024 * 1024,
       runSnapshotRetentionDays: 7,
@@ -458,6 +462,120 @@ describe('loadConfig', () => {
         expect(error.message).toMatch(/STUDIO_WORKER_LEASE_SECONDS/);
       },
     );
+  });
+
+  describe('environment controller settings', () => {
+    // Throwaway tokens generated per run: no token is committed.
+    const TOKEN = randomBytes(32).toString('base64');
+
+    it('has no controller token when STUDIO_CONTROLLER_TOKEN is unset or empty (controller routes then reject all)', () => {
+      expect(loadConfig(requiredEnv).controllerToken).toBeNull();
+      expect(
+        loadConfig({ ...requiredEnv, STUDIO_CONTROLLER_TOKEN: '' }).controllerToken,
+      ).toBeNull();
+    });
+
+    it('keeps only the SHA-256 digest of the token, as a key object that never prints', () => {
+      const { controllerToken } = loadConfig({ ...requiredEnv, STUDIO_CONTROLLER_TOKEN: TOKEN });
+      expect(controllerToken?.type).toBe('secret');
+      expect(controllerToken?.export().equals(createHash('sha256').update(TOKEN).digest())).toBe(
+        true,
+      );
+      expect(inspect(controllerToken)).not.toContain(TOKEN);
+    });
+
+    it('refuses a token shorter than 32 characters without echoing it', () => {
+      const short = 'x'.repeat(31);
+      const error = captureError(() =>
+        loadConfig({ ...requiredEnv, STUDIO_CONTROLLER_TOKEN: short }),
+      );
+      expect(error).toBeInstanceOf(ConfigValidationError);
+      expect(error.message).toMatch(/STUDIO_CONTROLLER_TOKEN: must be at least 32 characters/);
+      expect(error.message).not.toContain(short);
+    });
+
+    it('accepts exactly 32 characters', () => {
+      expect(
+        loadConfig({ ...requiredEnv, STUDIO_CONTROLLER_TOKEN: 'y'.repeat(32) }).controllerToken,
+      ).not.toBeNull();
+    });
+
+    it('refuses to start when the controller token equals the worker token, echoing neither', () => {
+      const error = captureError(() =>
+        loadConfig({
+          ...requiredEnv,
+          STUDIO_WORKER_TOKEN: TOKEN,
+          STUDIO_CONTROLLER_TOKEN: TOKEN,
+        }),
+      );
+      expect(error).toBeInstanceOf(ConfigValidationError);
+      expect(error.message).toMatch(
+        /STUDIO_CONTROLLER_TOKEN: must differ from STUDIO_WORKER_TOKEN/,
+      );
+      expect(error.message).not.toContain(TOKEN);
+    });
+
+    it('accepts two different tokens', () => {
+      const config = loadConfig({
+        ...requiredEnv,
+        STUDIO_WORKER_TOKEN: 'a'.repeat(32),
+        STUDIO_CONTROLLER_TOKEN: 'b'.repeat(32),
+      });
+      expect(config.workerToken).not.toBeNull();
+      expect(config.controllerToken).not.toBeNull();
+    });
+
+    it('leases a claimed operation for 60 seconds by default', () => {
+      expect(loadConfig(requiredEnv).controllerLeaseSeconds).toBe(60);
+      expect(
+        loadConfig({ ...requiredEnv, STUDIO_CONTROLLER_LEASE_SECONDS: '120' })
+          .controllerLeaseSeconds,
+      ).toBe(120);
+    });
+
+    it.each([['0'], ['9'], ['3601'], ['1.5'], ['abc']])(
+      'refuses a lease of %j (whole seconds, 10-3600)',
+      (value) => {
+        const error = captureError(() =>
+          loadConfig({ ...requiredEnv, STUDIO_CONTROLLER_LEASE_SECONDS: value }),
+        );
+        expect(error.message).toMatch(/STUDIO_CONTROLLER_LEASE_SECONDS/);
+      },
+    );
+  });
+
+  describe('Preview limits', () => {
+    it('are set from the environment', () => {
+      expect(
+        loadConfig({
+          ...requiredEnv,
+          STUDIO_PREVIEW_MEMORY_MB: '2048',
+          STUDIO_PREVIEW_CPU_PERCENT: '200',
+          STUDIO_PREVIEW_TASKS_MAX: '1024',
+          STUDIO_PREVIEW_BUILD_MINUTES: '30',
+          STUDIO_PREVIEW_LOG_MAX_BYTES: String(1024 * 1024),
+        }),
+      ).toMatchObject({
+        previewLimits: { memoryMiB: 2048, cpuPercent: 200, tasksMax: 1024, buildMinutes: 30 },
+        previewLogMaxBytes: 1024 * 1024,
+      });
+    });
+
+    it.each([
+      ['STUDIO_PREVIEW_MEMORY_MB', '127'],
+      ['STUDIO_PREVIEW_MEMORY_MB', '65537'],
+      ['STUDIO_PREVIEW_CPU_PERCENT', '9'],
+      ['STUDIO_PREVIEW_CPU_PERCENT', '6401'],
+      ['STUDIO_PREVIEW_TASKS_MAX', '63'],
+      ['STUDIO_PREVIEW_TASKS_MAX', '32769'],
+      ['STUDIO_PREVIEW_BUILD_MINUTES', '0'],
+      ['STUDIO_PREVIEW_BUILD_MINUTES', '121'],
+      ['STUDIO_PREVIEW_LOG_MAX_BYTES', '1024'],
+      ['STUDIO_PREVIEW_MEMORY_MB', '1.5'],
+    ])('refuse %s=%s', (name, value) => {
+      const error = captureError(() => loadConfig({ ...requiredEnv, [name]: value }));
+      expect(error.message).toContain(name);
+    });
   });
 
   // The Run limits are configuration, with documented defaults.

@@ -14,24 +14,25 @@ datasource db {
 
 /// A project the operator manages (`projects` business module, Story #16).
 model Project {
-  id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id                String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   /// Display name: trimmed, internal whitespace collapsed, case preserved (1–100 characters).
-  name            String           @db.VarChar(100)
+  name              String             @db.VarChar(100)
   /// `name` lower-cased; unique, so names clash case-insensitively (Epic #8 decision 2).
   /// Unbounded: lower-casing can lengthen a string (e.g. "İ" becomes two code points).
-  nameNormalized  String           @unique(map: "projects_name_normalized_key") @map("name_normalized")
+  nameNormalized    String             @unique(map: "projects_name_normalized_key") @map("name_normalized")
   /// Set by PostgreSQL (microsecond precision), not by the client, so ordering uses one clock.
-  createdAt       DateTime         @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz(6)
+  createdAt         DateTime           @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz(6)
   /// How Studio merges this project's Runs: squash | merge_commit (a CHECK constraint holds the list).
-  mergeMethod     String           @default("squash") @map("merge_method") @db.VarChar(16)
+  mergeMethod       String             @default("squash") @map("merge_method") @db.VarChar(16)
   /// The connected Repository (Story #60): at most one per project.
-  repository      Repository?
+  repository        Repository?
   /// The project's Runs (`executions` module, Issue #96).
-  runs            Run[]
+  runs              Run[]
   /// The project's Environment file setting (Issue #104), independent of the Repository.
-  environmentFile EnvironmentFile?
+  environmentFile   EnvironmentFile?
   /// The project's Preview settings (`environments` module, Issue #276).
-  previewSettings PreviewSettings?
+  previewSettings   PreviewSettings?
+  previewOperations PreviewOperation[]
 
   /// Serves the newest-first list (created_at DESC, id DESC as the tie-breaker).
   @@index([createdAt(sort: Desc), id(sort: Desc)], map: "projects_created_at_id_idx")
@@ -602,4 +603,67 @@ model PreviewSettings {
   updatedAt   DateTime @default(dbgenerated("now()")) @map("updated_at") @db.Timestamptz(6)
 
   @@map("preview_settings")
+}
+
+/// One piece of work for the environment controller (`environments` module): build, stop, remove
+/// data or state of a Project's Preview. The migration adds the CHECK constraints (kind and status
+/// lists, the build columns set exactly when kind is build, ranges, the lease columns) and the
+/// partial unique index `preview_operations_one_claimed_per_project`, which Prisma does not model.
+model PreviewOperation {
+  id                      String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId               String                 @map("project_id") @db.Uuid
+  project                 Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// build | stop | remove_data | state.
+  kind                    String                 @db.VarChar(16)
+  /// requested | claimed | succeeded | failed.
+  status                  String                 @db.VarChar(16)
+  /// Build only: the commit, Compose file, service and port of the Preview settings when asked.
+  commit                  String?                @db.Char(40)
+  composeFile             String?                @map("compose_file") @db.VarChar(255)
+  service                 String?                @db.VarChar(63)
+  port                    Int?
+  /// Build only: the limits copied from the API's configuration when asked.
+  memoryMiB               Int?                   @map("memory_mib")
+  cpuPercent              Int?                   @map("cpu_percent")
+  tasksMax                Int?                   @map("tasks_max")
+  buildMinutes            Int?                   @map("build_minutes")
+  requestedAt             DateTime               @default(dbgenerated("now()")) @map("requested_at") @db.Timestamptz(6)
+  /// The controller process holding the operation (its random id); set exactly when claimed.
+  claimedBy               String?                @map("claimed_by") @db.Uuid
+  claimedAt               DateTime?              @map("claimed_at") @db.Timestamptz(6)
+  /// The holder last heartbeat; set exactly while claimed.
+  heartbeatAt             DateTime?              @map("heartbeat_at") @db.Timestamptz(6)
+  finishedAt              DateTime?              @map("finished_at") @db.Timestamptz(6)
+  /// One of the fixed failure codes; set exactly when failed.
+  failureCode             String?                @map("failure_code") @db.VarChar(32)
+  /// A short explanation, redacted; set exactly when failed.
+  failureDetail           String?                @map("failure_detail") @db.VarChar(2000)
+  /// The refusals of a validation_refused failure.
+  refusals                Json?
+  /// What the controller reported on success: the Preview's services and their states.
+  result                  Json?
+  /// Build only: where the Environment file snapshot goes, and its secret store reference.
+  environmentFilePath     String?                @map("environment_file_path") @db.VarChar(255)
+  environmentFileSecretId String?                @map("environment_file_secret_id") @db.Uuid
+  logBytes                Int                    @default(0) @map("log_bytes")
+  logTruncated            Boolean                @default(false) @map("log_truncated")
+  lines                   PreviewOperationLine[]
+
+  @@index([status, requestedAt])
+  @@map("preview_operations")
+}
+
+/// A stored, redacted line of a Preview operation's log; a re-sent seq is ignored.
+model PreviewOperationLine {
+  operationId String           @map("operation_id") @db.Uuid
+  operation   PreviewOperation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  seq         Int
+  at          DateTime         @db.Timestamptz(6)
+  /// build | start | controller.
+  stream      String           @db.VarChar(16)
+  text        String           @db.VarChar(2048)
+  truncated   Boolean          @default(false)
+
+  @@id([operationId, seq])
+  @@map("preview_operation_lines")
 }

@@ -47,7 +47,10 @@ describe('GetPreviewSourceStatusHandler', () => {
     await connections.change(PROJECT, (r) => {
       r.completeClone({ headSha: 'c'.repeat(40), fetchedAt: new Date() });
     });
-    await expect(handler.execute({ projectId: PROJECT })).resolves.toEqual({ status: 'ready' });
+    await expect(handler.execute({ projectId: PROJECT })).resolves.toEqual({
+      status: 'ready',
+      commit: 'c'.repeat(40),
+    });
   });
 
   it('is unsupported on a host that is not Linux, even with a ready Repository', async () => {

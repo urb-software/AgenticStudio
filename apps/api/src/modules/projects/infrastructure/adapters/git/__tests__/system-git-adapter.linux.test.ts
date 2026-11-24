@@ -293,6 +293,169 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
       ).rejects.toThrow(GitCloneMissingError);
     });
 
+    describe('archiving a commit', () => {
+      const archiveFolder = () => join(tempRoot, 'preview-archives');
+
+      afterEach(async () => {
+        await rm(archiveFolder(), { recursive: true, force: true });
+      });
+      const listed = (file: string) =>
+        spawnSync('tar', ['-tf', file], { encoding: 'utf8' })
+          .stdout.split('\n')
+          .filter((name) => name !== '')
+          .sort();
+
+      async function archived(git: SystemGitAdapter, commit: string, maxBytes = 1024 * 1024) {
+        const outcome = await git.archiveCommit(PROJECT_ID, commit, maxBytes);
+        if (outcome.status !== 'archived') throw new Error(`not archived: ${outcome.status}`);
+        return outcome.archive;
+      }
+
+      async function bytesOf(chunks: AsyncIterable<Uint8Array>) {
+        const parts: Buffer[] = [];
+        for await (const chunk of chunks) parts.push(Buffer.from(chunk));
+        return Buffer.concat(parts);
+      }
+
+      it('holds the tracked tree of the commit in an owner-only temporary file until closed', async () => {
+        const source = createFixture(
+          fixtures,
+          'archive-source',
+          {
+            'compose.yaml': 'services: {}\n',
+            'src/app.js': 'console.log(1);\n',
+            'link.txt': { symlink: 'compose.yaml' },
+          },
+          { branch: 'dev' },
+        );
+        const git = adapter();
+        const { commit } = await git.clone(PROJECT_ID, source.url, 'dev');
+
+        const archive = await archived(git, commit);
+        const [name, ...others] = await readdir(archiveFolder());
+        expect(others).toEqual([]);
+        const file = join(archiveFolder(), name!);
+        expect((await lstat(file)).mode & 0o777).toBe(0o600);
+        expect((await lstat(archiveFolder())).mode & 0o777).toBe(0o700);
+
+        const tracked = spawnSync(
+          'git',
+          [`--git-dir=${clonePath()}`, 'ls-tree', '-r', '-t', '--name-only', commit],
+          { encoding: 'utf8' },
+        )
+          .stdout.split('\n')
+          .filter((entry) => entry !== '');
+        expect(listed(file).map((entry) => entry.replace(/\/$/, ''))).toEqual([...tracked].sort());
+        const bytes = await bytesOf(archive.chunks());
+        expect(bytes.length).toBe(archive.sizeBytes);
+        expect(bytes.length).toBe((await lstat(file)).size);
+
+        await archive.close();
+        await archive.close();
+        expect(existsSync(file)).toBe(false);
+      });
+
+      it('archives the tracked tree as stored, whatever attributes the tree itself carries', async () => {
+        const source = createFixture(
+          fixtures,
+          'archive-attributes',
+          {
+            '.gitattributes': 'ignored.txt export-ignore\nsubst.txt export-subst\n',
+            'ignored.txt': 'kept\n',
+            'subst.txt': '$Format:%H$\n',
+            'plain.txt': 'plain\n',
+          },
+          { branch: 'dev' },
+        );
+        const git = adapter();
+        const { commit } = await git.clone(PROJECT_ID, source.url, 'dev');
+
+        const archive = await archived(git, commit);
+        const [name] = await readdir(archiveFolder());
+        const file = join(archiveFolder(), name!);
+        const tracked = spawnSync(
+          'git',
+          [`--git-dir=${clonePath()}`, 'ls-tree', '-r', '--name-only', commit],
+          { encoding: 'utf8' },
+        )
+          .stdout.split('\n')
+          .filter((entry) => entry !== '')
+          .sort();
+        expect(listed(file)).toEqual(tracked);
+        expect(tracked).toContain('ignored.txt');
+        for (const entry of tracked) {
+          const stored = spawnSync(
+            'git',
+            [`--git-dir=${clonePath()}`, 'show', `${commit}:${entry}`],
+            {
+              encoding: 'utf8',
+            },
+          ).stdout;
+          const archivedText = spawnSync('tar', ['-xOf', file, entry], { encoding: 'utf8' }).stdout;
+          expect(archivedText).toBe(stored);
+        }
+        expect(spawnSync('tar', ['-xOf', file, 'subst.txt'], { encoding: 'utf8' }).stdout).toBe(
+          '$Format:%H$\n',
+        );
+        await archive.close();
+      });
+
+      it('answers commit_missing for a commit the Clone lacks, leaving no file', async () => {
+        const git = adapter();
+        await git.clone(PROJECT_ID, fixture.url, 'dev');
+
+        await expect(git.archiveCommit(PROJECT_ID, 'f'.repeat(40), 1024 * 1024)).resolves.toEqual({
+          status: 'commit_missing',
+        });
+        expect(existsSync(archiveFolder()) ? await readdir(archiveFolder()) : []).toEqual([]);
+      });
+
+      it('answers too_large above the limit and removes the file', async () => {
+        const source = createFixture(
+          fixtures,
+          'archive-big',
+          { 'big.bin': randomBytes(64 * 1024).toString('hex') },
+          { branch: 'dev' },
+        );
+        const git = adapter();
+        const { commit } = await git.clone(PROJECT_ID, source.url, 'dev');
+
+        await expect(git.archiveCommit(PROJECT_ID, commit, 16 * 1024)).resolves.toEqual({
+          status: 'too_large',
+        });
+        expect(await readdir(archiveFolder())).toEqual([]);
+      });
+
+      it('refuses a commit that is not a full id, and a project without a Clone', async () => {
+        const git = adapter();
+        const { commit } = await git.clone(PROJECT_ID, fixture.url, 'dev');
+
+        await expect(git.archiveCommit(PROJECT_ID, 'HEAD', 1024)).rejects.toThrow(
+          GitRequestRejectedError,
+        );
+        await expect(git.archiveCommit(OTHER_PROJECT_ID, commit, 1024)).rejects.toThrow(
+          GitCloneMissingError,
+        );
+      });
+
+      it('removes archives a crash left behind at start-up', async () => {
+        const name = 'archive-3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e.tar';
+        const own = join(dataDir, 'tmp', 'preview-archives');
+        await mkdir(own, { recursive: true, mode: 0o700 });
+        await writeFile(join(own, name), 'x');
+        await mkdir(archiveFolder(), { recursive: true, mode: 0o700 });
+        await writeFile(join(archiveFolder(), name), 'x');
+
+        // A custom temp root is shared: it keeps a file younger than the clone limit.
+        await adapter().onModuleInit();
+        expect(existsSync(join(archiveFolder(), name))).toBe(true);
+        expect(existsSync(join(own, name))).toBe(true);
+        // The default root belongs to the API alone, so nothing in it is live at start-up.
+        await adapter({ tempRoot: undefined }).onModuleInit();
+        expect(existsSync(join(own, name))).toBe(false);
+      });
+    });
+
     it('removes a Clone, and treats a missing Clone as removed', async () => {
       const git = adapter();
       await git.clone(PROJECT_ID, fixture.url, 'dev');
