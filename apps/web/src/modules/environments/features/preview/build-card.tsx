@@ -1,7 +1,8 @@
 'use client';
 
-import { ExternalLinkIcon, HammerIcon } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { DatabaseZapIcon, ExternalLinkIcon, HammerIcon, SquareIcon } from 'lucide-react';
+import Link from 'next/link';
+import { type ReactNode, useState } from 'react';
 import { Banner } from '@/shared/components/banner';
 import { LogViewer } from '@/shared/components/log-viewer';
 import { StatusPill, type PillStatus } from '@/shared/components/status-pill';
@@ -12,11 +13,17 @@ import {
   ApiError,
   type PreviewBuildOutput,
   type PreviewOutput,
+  previewLimitOf,
   previewRefusalsOf,
 } from '../../../../platform/api';
-import { usePreviewBuildLog, useRequestPreviewBuild } from '../../api/preview-queries';
+import {
+  usePreviewBuildLog,
+  useRequestPreviewBuild,
+  useStopPreview,
+} from '../../api/preview-queries';
 import { FAILURE_MESSAGE, PREVIEW_REMOVED_MESSAGE } from './failure-messages';
 import { RefusalList } from './refusal-list';
+import { ResetPreviewDataDialog } from './reset-preview-data-dialog';
 
 const TITLE_ID = 'preview-build-title';
 
@@ -88,6 +95,10 @@ function Summary({ preview }: { preview: PreviewOutput }) {
       ) : (
         <>The Preview is running.</>
       );
+    case 'stopping':
+      return <>Stopping the Preview.</>;
+    case 'resetting_data':
+      return <>Removing the Preview&apos;s data.</>;
     case 'failed':
       return <>The latest build failed.</>;
   }
@@ -175,6 +186,46 @@ function LatestBuild({
   );
 }
 
+const CHANGE_LABEL: Record<NonNullable<PreviewOutput['latestChange']>['kind'], string> = {
+  stop: 'The stop failed.',
+  reset_data: 'Removing the data failed.',
+};
+
+/** A stop or a reset that failed; one that is under way or done shows in the state instead. */
+function LatestChange({ change, now }: { change: PreviewOutput['latestChange']; now: number }) {
+  if (!change || change.status !== 'failed') return null;
+  const { failure } = change;
+  return (
+    <Banner tone="danger" title={CHANGE_LABEL[change.kind]}>
+      {failure ? <span>{FAILURE_MESSAGE[failure.code]} </span> : null}
+      {failure?.detail ? (
+        <span className="font-mono text-code break-words">{failure.detail}</span>
+      ) : null}
+      {change.finishedAt ? (
+        <span className="block text-small text-text-muted">
+          Finished <Time iso={change.finishedAt} now={now} />
+        </span>
+      ) : null}
+    </Banner>
+  );
+}
+
+/** The 409 of a build the limit refused: its detail, and a link to each Preview that runs. */
+function LimitBanner({ problem }: { problem: NonNullable<ReturnType<typeof previewLimitOf>> }) {
+  return (
+    <Banner tone="warning" title="The limit of running Previews is reached.">
+      <span>{problem.detail}</span>
+      <ul className="m-0 mt-2 flex list-disc flex-col gap-1 pl-5">
+        {problem.running.map((project) => (
+          <li key={project.projectId}>
+            <Link href={`/projects/${project.projectId}/preview`}>{project.name}</Link>
+          </li>
+        ))}
+      </ul>
+    </Banner>
+  );
+}
+
 function buttonLabel(state: PreviewOutput['state']): string {
   if (state === 'running') return 'Rebuild';
   if (state === 'failed') return 'Retry build';
@@ -186,13 +237,24 @@ type BuildCardProps = { projectId: string; preview: PreviewOutput; dataUpdatedAt
 /** The Preview's state, its Build button and link, and the latest build with its log. */
 export function BuildCard({ projectId, preview, dataUpdatedAt }: BuildCardProps) {
   const request = useRequestPreviewBuild(projectId);
+  const stop = useStopPreview(projectId);
+  const [resetOpen, setResetOpen] = useState(false);
   const { state, settings, running, latestBuild } = preview;
   const pill = PILL[state];
   const configured = settings !== null;
   const canBuild = configured && preview.repository.ready && preview.controller.connected;
   const refusals = previewRefusalsOf(request.error);
+  const limit = previewLimitOf(request.error);
   const otherError =
-    request.error instanceof ApiError && refusals.length === 0 ? request.error : null;
+    request.error instanceof ApiError && refusals.length === 0 && !limit ? request.error : null;
+  const stopError = stop.error instanceof ApiError ? stop.error : null;
+  const changing = state === 'building' || state === 'stopping' || state === 'resetting_data';
+  const busy = request.isPending || stop.isPending;
+  const connected = preview.controller.connected;
+  const canStop = state === 'running' && connected;
+  const canReset = connected && latestBuild !== null;
+  // Reset data is no longer offered: forget the open dialog, so it never reopens on its own.
+  if (!canReset && resetOpen) setResetOpen(false);
 
   return (
     <Card aria-labelledby={TITLE_ID}>
@@ -224,22 +286,49 @@ export function BuildCard({ projectId, preview, dataUpdatedAt }: BuildCardProps)
               retry="build again"
             />
           ) : null}
+          {limit ? <LimitBanner problem={limit} /> : null}
+          {stopError ? (
+            <Banner tone="danger" title="The Preview was not stopped.">
+              {stopError.message}
+            </Banner>
+          ) : null}
+          <LatestChange change={preview.latestChange} now={dataUpdatedAt} />
           {otherError ? (
             <Banner tone="danger" title="The build was not started.">
               {otherError.message}
             </Banner>
           ) : null}
-          {canBuild || running?.url ? (
+          {canBuild || canStop || canReset || running?.url ? (
             <div className="flex flex-wrap gap-2">
               {canBuild ? (
                 <Button
                   variant="primary"
                   icon={HammerIcon}
                   loading={request.isPending}
-                  disabled={state === 'building' || request.isPending}
+                  disabled={changing || busy}
                   onClick={() => request.mutate()}
                 >
                   {buttonLabel(state)}
+                </Button>
+              ) : null}
+              {canStop ? (
+                <Button
+                  icon={SquareIcon}
+                  loading={stop.isPending}
+                  disabled={busy}
+                  onClick={() => stop.mutate()}
+                >
+                  Stop
+                </Button>
+              ) : null}
+              {canReset ? (
+                <Button
+                  variant="danger"
+                  icon={DatabaseZapIcon}
+                  disabled={changing || busy}
+                  onClick={() => setResetOpen(true)}
+                >
+                  Reset data…
                 </Button>
               ) : null}
               {running?.url ? (
@@ -258,6 +347,15 @@ export function BuildCard({ projectId, preview, dataUpdatedAt }: BuildCardProps)
           ) : null}
         </div>
       </CardContent>
+      {/* Unmounted while Reset data is not offered, which also drops the dialog's last error. */}
+      {canReset ? (
+        <ResetPreviewDataDialog
+          projectId={projectId}
+          rebuildCommit={state === 'running' && running ? running.commit : null}
+          open={resetOpen}
+          onOpenChange={setResetOpen}
+        />
+      ) : null}
     </Card>
   );
 }

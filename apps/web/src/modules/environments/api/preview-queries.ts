@@ -17,13 +17,18 @@ const previewKey = (projectId: string) => ['projects', projectId, 'preview'] as 
 export const PREVIEW_BUILDING_POLL_MS = 2_000;
 export const PREVIEW_IDLE_POLL_MS = 15_000;
 
-/** Polled fast while a build is under way and slowly otherwise, never in a hidden tab. */
+/** The states in which the controller is at work, so the page looks again quickly. */
+const ACTIVE_STATES: readonly string[] = ['building', 'stopping', 'resetting_data'];
+
+/** Polled fast while a build, a stop or a reset is under way and slowly otherwise, never in a hidden tab. */
 export function usePreview(projectId: string) {
   return useQuery({
     queryKey: previewKey(projectId),
     queryFn: () => api.getPreview(projectId),
     refetchInterval: (query) =>
-      query.state.data?.state === 'building' ? PREVIEW_BUILDING_POLL_MS : PREVIEW_IDLE_POLL_MS,
+      ACTIVE_STATES.includes(query.state.data?.state ?? '')
+        ? PREVIEW_BUILDING_POLL_MS
+        : PREVIEW_IDLE_POLL_MS,
     refetchIntervalInBackground: false,
   });
 }
@@ -34,7 +39,41 @@ export function useRequestPreviewBuild(projectId: string) {
   return useMutation({
     mutationFn: () => api.requestPreviewBuild(projectId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: previewKey(projectId) }),
+    // 409 (a stop or a reset began, or the limit): the page reads the server's state again.
+    onError: async (error) => {
+      if (error instanceof ApiError && error.status === 409) {
+        await queryClient.invalidateQueries({ queryKey: previewKey(projectId) });
+      }
+    },
   });
+}
+
+/**
+ * The answer of a stop or a reset is the Preview (202), so the page takes it at once. A 409 means
+ * the server is ahead of the page (a build, a stop or a reset began elsewhere), so it reads again.
+ */
+function usePreviewChange(projectId: string, change: () => Promise<PreviewOutput>) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: change,
+    onSuccess: (preview: PreviewOutput) => {
+      queryClient.setQueryData<PreviewOutput>(previewKey(projectId), preview);
+    },
+    onError: async (error) => {
+      if (error instanceof ApiError && error.status === 409) {
+        await queryClient.invalidateQueries({ queryKey: previewKey(projectId) });
+      }
+    },
+  });
+}
+
+export function useStopPreview(projectId: string) {
+  return usePreviewChange(projectId, () => api.stopPreview(projectId));
+}
+
+/** Removes the Preview's volumes (and rebuilds a running Preview). */
+export function useResetPreviewData(projectId: string) {
+  return usePreviewChange(projectId, () => api.resetPreviewData(projectId));
 }
 
 export const PREVIEW_LOG_POLL_MS = 2_000;

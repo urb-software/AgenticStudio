@@ -11,7 +11,11 @@ interface ScriptedResponse {
  * real client, wrapper and TanStack Query run in the tests. It keeps the API's contract
  * (newest first, 201 with the project) without its rules; tests script error responses.
  */
-export function fakeProjectsApi(initial: ProjectOutput[] = []) {
+export function fakeProjectsApi(
+  initial: ProjectOutput[] = [],
+  /** The Previews that take a place, as `GET /api/previews` lists them; `null` fails the read. */
+  previews: { projectId: string; state: 'running' | 'building' }[] | null = [],
+) {
   const projects = [...initial];
   const scripted: Record<'GET' | 'POST', ScriptedResponse[]> = { GET: [], POST: [] };
   const calls: { method: string; body: unknown }[] = [];
@@ -19,6 +23,11 @@ export function fakeProjectsApi(initial: ProjectOutput[] = []) {
 
   const fetch = vi.fn(async (request: Request): Promise<Response> => {
     const { pathname } = new URL(request.url);
+    if (pathname === '/api/previews') {
+      return previews === null
+        ? json(500, problem(500, 'Internal Server Error'))
+        : json(200, { limit: 3, previews });
+    }
     const method = request.method as 'GET' | 'POST';
     const body: unknown = method === 'POST' ? await request.json() : undefined;
     calls.push({ method, body });

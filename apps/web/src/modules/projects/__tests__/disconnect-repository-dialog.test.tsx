@@ -45,6 +45,17 @@ afterEach(() => {
 });
 
 describe('Disconnect repository dialog', () => {
+  it('says its Preview is stopped and its data removed', () => {
+    fakeProjectApi(PROJECT, READY);
+    renderDialog();
+
+    expect(
+      within(screen.getByRole('alertdialog')).getByText(
+        'Its Preview is stopped and its data removed.',
+      ),
+    ).toBeTruthy();
+  });
+
   it('on a 204: confirms once and asks to close exactly once', async () => {
     fakeProjectApi(PROJECT, READY);
     const { onOpenChange, onDisconnected } = renderDialog();
