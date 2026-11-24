@@ -247,6 +247,9 @@ export async function extractTar(
     if (type !== '0' && type !== '5' && type !== '2') {
       throw new ArchiveError(`an entry has the unsupported type ${JSON.stringify(header.type)}`);
     }
+    if (type !== '0' && extended.has('size')) {
+      throw new ArchiveError('a size override is allowed on a file only');
+    }
     if (kinds.size >= full.maxEntries) throw new ArchiveError('the archive has too many entries');
     const directory = type === '5';
     const segments = entrySegments(extended.get('path') ?? header.name, directory, full);

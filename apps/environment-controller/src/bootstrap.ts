@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { EnvironmentController } from './controller.js';
 import { DesiredStates } from './desired-state.js';
 import { DockerComposeRuntime } from './docker-compose-runtime.js';
-import { ScriptEgressRules } from './egress-rules.js';
+import { checkEgressScript, ScriptEgressRules } from './egress-rules.js';
 import type { ControllerConfig } from './config.js';
 import { FakeRuntime, type FakeRuntimeOptions } from './fake-runtime.js';
 import type { ControllerLogger } from './logger.js';
@@ -31,6 +31,9 @@ export function createRuntime(
   runner: ProcessRunner,
   fakeOptions?: FakeRuntimeOptions,
 ): Runtime {
+  if (config.runtime === 'docker' && config.docker === null) {
+    throw new Error('The Docker runtime needs the Docker settings.');
+  }
   if (config.runtime === 'fake' || config.docker === null) {
     const fake = new FakeRuntime(fakeOptions);
     return { runtime: fake, slices: fake, egress: fake, fake };
@@ -87,6 +90,9 @@ export async function buildController(
   logger: ControllerLogger,
   options: { fakeOptions?: FakeRuntimeOptions; fetch?: typeof fetch; runner?: ProcessRunner } = {},
 ): Promise<BuiltController> {
+  if (config.environment === 'production' && config.runtime === 'docker') {
+    await checkEgressScript(config.egressRulesBin);
+  }
   await mkdir(config.dataDir, { recursive: true, mode: 0o700 });
   await chmod(config.dataDir, 0o700);
   const controllerId = randomUUID();

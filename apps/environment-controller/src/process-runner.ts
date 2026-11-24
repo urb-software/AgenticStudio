@@ -1,10 +1,7 @@
 import { spawn } from 'node:child_process';
+import { DEFAULT_EGRESS_RULES_BIN } from './config.js';
 
-/**
- * The one place the controller starts a process: a literal program name from a fixed list, an
- * argument array, no shell, no standard input, its own process group. A timeout or abort sends
- * SIGTERM to the group, then SIGKILL. `socat` runs only as the argument of `nsenter`.
- */
+/** The one place the controller starts a process, always from a literal program name. */
 export type ProcessBinary = 'docker' | 'systemctl' | 'egress-rules' | 'nsenter';
 
 export type BinaryPaths = Record<ProcessBinary, string>;
@@ -12,7 +9,7 @@ export type BinaryPaths = Record<ProcessBinary, string>;
 export const DEFAULT_BINARIES: BinaryPaths = {
   docker: 'docker',
   systemctl: 'systemctl',
-  'egress-rules': '/usr/local/lib/agentic-studio/preview-egress-rules',
+  'egress-rules': DEFAULT_EGRESS_RULES_BIN,
   nsenter: 'nsenter',
 };
 

@@ -1,5 +1,6 @@
 import type { OperationRuntime, PreviewLogStream } from '@agentic-studio/contracts';
 import { mkdir } from 'node:fs/promises';
+import { isIP } from 'node:net';
 import { join } from 'node:path';
 import { OperationAborted, OperationFailure, type FailureCode } from './failure.js';
 import {
@@ -95,7 +96,9 @@ export class DockerComposeRuntime implements ContainerRuntime {
     const address = Object.values(entry.NetworkSettings?.Networks ?? {})
       .map((network) => network.IPAddress ?? '')
       .find((value) => value !== '');
-    if (!address) throw new OperationFailure('start_failed', 'The entry service has no address.');
+    if (!address || isIP(address) === 0) {
+      throw new OperationFailure('start_failed', 'The entry service has no address.');
+    }
     await this.options.bridges.create({
       previewLabel: run.previewLabel,
       address,

@@ -12,8 +12,8 @@ const desiredSchema = z.strictObject({
   previewLabel: z.string().regex(PREVIEW_LABEL_PATTERN),
   service: z.string().min(1).max(63),
   port: z.number().int().min(1).max(65_535),
-  /** The Environment file's pairs the build was made with; empty without one. */
-  environmentFile: z.string().nullable(),
+  /** Where the build's own copy of the Environment file is in its source tree, if any. */
+  environmentFilePath: z.string().min(1).max(255).nullable(),
 });
 export type DesiredPreview = z.infer<typeof desiredSchema>;
 

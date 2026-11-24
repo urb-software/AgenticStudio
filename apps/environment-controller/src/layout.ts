@@ -1,9 +1,8 @@
 import { join } from 'node:path';
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { z } from 'zod';
 
 function segment(value: string): string {
-  if (!UUID.test(value)) throw new Error('A path segment must be a UUID.');
+  if (!z.uuid().safeParse(value).success) throw new Error('A path segment must be a UUID.');
   return value;
 }
 

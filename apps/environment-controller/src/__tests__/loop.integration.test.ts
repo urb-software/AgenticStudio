@@ -14,8 +14,7 @@ import { loadConfig } from '../config.js';
 import { JsonLineLogger } from '../logger.js';
 import { type ComposeRepository, createComposeRepository } from './fixtures/git-fixture.js';
 
-// The real controller loop against the production-built Studio API, reached over HTTP only, with
-// the fake runtime. An operation is created with SQL, as no route creates one yet.
+// The real controller loop against the built Studio API, with the fake runtime.
 
 const ROOT = join(import.meta.dirname, '..', '..', '..', '..');
 const API_MAIN = join(ROOT, 'apps', 'api', 'dist', 'main.js');

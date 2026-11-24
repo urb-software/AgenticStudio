@@ -7,6 +7,7 @@ import {
   operationPayloadSchema,
   type ReportOperationStateRequest,
 } from '@agentic-studio/contracts';
+import { z } from 'zod';
 
 /** A controller route answered with an error status (problem+json); never carries the token. */
 export class StudioApiError extends Error {
@@ -57,7 +58,6 @@ export interface StudioApiOptions {
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The controller's side of the controller protocol: the routes under `/api/controller/`. */
 export class StudioApi {
@@ -71,7 +71,9 @@ export class StudioApi {
     const parsed = operationPayloadSchema.safeParse(body);
     if (parsed.success) return parsed.data;
     const id = (body as { operationId?: unknown } | null)?.operationId;
-    throw new InvalidClaimError(typeof id === 'string' && UUID.test(id) ? id : null);
+    throw new InvalidClaimError(
+      typeof id === 'string' && z.uuid().safeParse(id).success ? id : null,
+    );
   }
 
   async reportState(

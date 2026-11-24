@@ -455,3 +455,46 @@ describe('resumeRunning', () => {
     });
   });
 });
+
+describe('after a failure past up, and the kept desired state', () => {
+  it('removes the containers, the bridge and the desired state when start fails', async () => {
+    const first = setup();
+    await first.ops.execute(build(), first.context() as never);
+    const failing = setup({ fakeOptions: { failStart: 'no start' } });
+    expect(await failureOf(failing.ops.execute(build(), failing.context() as never))).toMatchObject(
+      {
+        code: 'start_failed',
+      },
+    );
+    expect(failing.fake.events).toContain(`removeContainers ${COMPOSE_PROJECT}`);
+    expect(failing.fake.bridges.open).toEqual([]);
+    expect(await new DesiredStates(dataDir).list()).toEqual([]);
+  });
+
+  it('keeps only the Environment file path in the desired state, and reads the values again on resume', async () => {
+    const first = setup();
+    const op = build({
+      environmentFile: { path: 'deploy.env', content: `DB_PASSWORD=${PASSWORD}\n` },
+    });
+    await first.ops.execute(op, first.context() as never);
+    const stored = readFileSync(join(dataDir, 'previews', PROJECT, 'desired.json'), 'utf8');
+    expect(stored).toContain('deploy.env');
+    expect(stored).not.toContain(PASSWORD);
+
+    const restarted = setup();
+    await restarted.ops.resumeRunning(restarted.context() as never);
+    expect(restarted.fake.startEnvironments[0]!.DB_PASSWORD).toBe(PASSWORD);
+  });
+
+  it('counts a Preview whose build copy of the Environment file is gone as failed', async () => {
+    const first = setup();
+    const op = build();
+    await first.ops.execute(op, first.context() as never);
+    rmSync(join(buildLayout(dataDir, PROJECT, op.operationId).srcDir, '.env'));
+    const restarted = setup();
+    expect(await restarted.ops.resumeRunning(restarted.context() as never)).toEqual({
+      resumed: 0,
+      failed: 1,
+    });
+  });
+});

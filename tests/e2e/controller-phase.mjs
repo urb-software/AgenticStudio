@@ -1,9 +1,4 @@
-// The environment controller phase of `pnpm e2e:smoke` (Linux only: the source archive needs Git).
-//
-// With the stack running and the controller started with the fake runtime, a Preview build is
-// requested the only way there is for now, with SQL (no route creates an operation yet): the
-// operation must end `succeeded`, its log lines must be stored with the Environment file value
-// redacted, and the fake runtime's bridge must be started and then removed by a stop operation.
+// The environment controller phase of the smoke test: a SQL-inserted build, then a stop, on Linux.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 

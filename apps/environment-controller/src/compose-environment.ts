@@ -1,8 +1,4 @@
-/**
- * The process environment of every Compose call: a fixed base and the Project's Environment file
- * values, nothing else from the controller. Keys that would steer Compose, Docker, BuildKit or
- * the dynamic loader are dropped, and the base keys cannot be replaced.
- */
+/** The process environment of every Compose call: a fixed base plus the Environment file values. */
 export interface ComposeBase {
   PATH: string;
   /** An empty directory, 0700. */

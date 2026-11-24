@@ -225,6 +225,32 @@ describe('start', () => {
     expect(bridges.events).toEqual([{ event: 'create', previewLabel: LABEL }]);
   });
 
+  it('refuses an address that is not an IP address', async () => {
+    const runner = daemon({
+      containers: [
+        container(
+          'c-web',
+          {
+            ...ownedLabels,
+            'com.docker.compose.service': 'web',
+            'com.docker.compose.project': COMPOSE_PROJECT,
+          },
+          { NetworkSettings: { Networks: { net: { IPAddress: '1.2.3.4,evil' } } } },
+        ),
+      ],
+    });
+    const { runtime: docker, bridges } = runtime(runner);
+    await expect(docker.start(run, call())).rejects.toMatchObject({ code: 'start_failed' });
+    expect(bridges.events).toEqual([]);
+  });
+
+  it('stops every bridge when it is closed', async () => {
+    const { runtime: docker, bridges } = runtime(daemon({}));
+    await bridges.create({ previewLabel: LABEL, address: '10.0.0.2', port: 1, containerId: 'x' });
+    await docker.close();
+    expect(bridges.open).toEqual([]);
+  });
+
   it('fails with start_failed when up fails or the entry service is not running', async () => {
     const failing = daemon({ failing: (c) => c.args.includes('up') });
     await expect(runtime(failing).runtime.start(run, call())).rejects.toMatchObject({

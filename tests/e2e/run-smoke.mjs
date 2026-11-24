@@ -28,10 +28,8 @@
 //    to the file:// fixture remotes and opens pull requests on a local stub of GitHub's pull
 //    request API (tests/e2e/stub-github.mjs, its own process on 127.0.0.1:$E2E_GITHUB_STUB_PORT,
 //    default 4502; STUDIO_AGENT_GITHUB_API_URL), with a throwaway token; nothing reaches GitHub.
-//    On Linux it also starts the environment controller (apps/environment-controller) with the fake
-//    runtime and its own throwaway token (the API gets the same STUDIO_CONTROLLER_TOKEN); after
-//    Playwright, tests/e2e/controller-phase.mjs inserts a Preview build with SQL and checks that the
-//    controller carries it out, with redacted log lines and a started and removed socket bridge.
+//    On Linux it also starts the environment controller with the fake runtime and a throwaway
+//    token; after Playwright, tests/e2e/controller-phase.mjs runs a SQL-inserted build and stop.
 //    Repository features
 //    are Linux only: on other platforms the Git steps skip with a reason, and the smoke
 //    checks the "unsupported platform" answer instead.

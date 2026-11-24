@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ArchiveError, extractTar } from '../tar-extract.js';
-import { chunked, directory, file, link, tar } from './fixtures/tar-builder.js';
+import { chunked, directory, file, link, pax, tar } from './fixtures/tar-builder.js';
 
 const LIMITS = { maxBytes: 10 * 1024 * 1024, maxEntries: 100 };
 
@@ -57,6 +57,16 @@ describe.skipIf(process.platform !== 'linux')('extractTar: symlinks (Linux)', ()
 
   it('refuses a symlink loop', async () => {
     await refused(tar(link('a', 'b'), link('b', 'a')));
+  });
+
+  it('takes a symlink target from a pax linkpath, and judges that one', async () => {
+    await unpack(tar(file('a.txt', 'x'), pax({ linkpath: 'a.txt' }), link('ok', '/etc/passwd')));
+    expect(readlinkSync(join(root, 'ok'))).toBe('a.txt');
+    await refused(tar(pax({ linkpath: '/etc/passwd' }), link('bad', 'a.txt')));
+  });
+
+  it('refuses a symlink over a directory made implicitly by a file below it', async () => {
+    await refused(tar(file('a/x', '1'), link('a', 'b'), file('b', '2')));
   });
 
   it('never writes outside the root', async () => {

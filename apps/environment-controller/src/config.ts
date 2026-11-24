@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-/** Shortest accepted controller token; the API applies the same rule. */
+/** Shortest accepted controller token. */
 export const CONTROLLER_TOKEN_MIN_LENGTH = 32;
 
 export const CONTROLLER_ENVIRONMENTS = ['production', 'development', 'test'] as const;
@@ -22,6 +22,11 @@ export const FORBIDDEN_VARIABLES = [
   'STUDIO_MERGE_TOKEN',
   'POSTGRES_PASSWORD',
   'STUDIO_WORKER_TOKEN',
+  'STUDIO_AGENT_GITHUB_TOKEN',
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN',
+  'CLAUDE_CODE_OAUTH_TOKEN',
+  'OPENAI_API_KEY',
 ] as const;
 
 const intervalMs = (fallback: number) =>
@@ -127,6 +132,9 @@ export function loadConfig(env: Record<string, string | undefined>): ControllerC
   const rootless = value.STUDIO_CONTROLLER_ROOTLESS === 'true';
   if (production && value.STUDIO_CONTROLLER_RUNTIME === 'fake') {
     problems.push('STUDIO_CONTROLLER_RUNTIME=fake is allowed only in development or test');
+  }
+  if (production && value.STUDIO_CONTROLLER_EGRESS_RULES_BIN !== DEFAULT_EGRESS_RULES_BIN) {
+    problems.push('STUDIO_CONTROLLER_EGRESS_RULES_BIN may be changed only in development or test');
   }
   if (production && !rootless) {
     problems.push('STUDIO_CONTROLLER_ROOTLESS=false is allowed only in development or test');

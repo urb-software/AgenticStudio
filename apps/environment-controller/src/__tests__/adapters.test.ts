@@ -3,12 +3,14 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ScriptEgressRules } from '../egress-rules.js';
+import { createRuntime } from '../bootstrap.js';
+import { loadConfig } from '../config.js';
+import { checkEgressScript, ScriptEgressRules } from '../egress-rules.js';
 import { OperationAborted, OperationFailure } from '../failure.js';
 import { FakeRuntime } from '../fake-runtime.js';
 import { DesiredStates } from '../desired-state.js';
 import { PreviewOperations } from '../preview-operations.js';
-import { NsenterSocatBridges, removeStaleSocket } from '../socket-bridge.js';
+import { NodeProxyBridges, NsenterSocatBridges, removeStaleSocket } from '../socket-bridge.js';
 import {
   InvalidClaimError,
   isOperationLost,
@@ -350,3 +352,75 @@ describe('StudioApi', () => {
     ).rejects.toMatchObject({ status: 409 });
   });
 });
+
+describe('the egress rules script check', () => {
+  const file =
+    (uid: number, mode: number, regular = true) =>
+    async () => ({
+      uid,
+      mode,
+      isFile: () => regular,
+    });
+
+  it('accepts a root-owned regular file that only root can write', async () => {
+    await expect(checkEgressScript('/x', file(0, 0o100755))).resolves.toBeUndefined();
+  });
+
+  it('refuses another owner, a group or other writable file, and a missing or irregular path', async () => {
+    await expect(checkEgressScript('/x', file(1000, 0o100755))).rejects.toThrow('owned by root');
+    await expect(checkEgressScript('/x', file(0, 0o100775))).rejects.toThrow('writable');
+    await expect(checkEgressScript('/x', file(0, 0o100757))).rejects.toThrow('writable');
+    await expect(checkEgressScript('/x', file(0, 0o120777, false))).rejects.toThrow('regular file');
+    await expect(
+      checkEgressScript('/x', async () => {
+        throw new Error('ENOENT');
+      }),
+    ).rejects.toThrow('missing');
+  });
+});
+
+describe('the runtime settings', () => {
+  it('refuses the Docker runtime without its Docker settings, instead of using the fake', () => {
+    const config = loadConfig({
+      STUDIO_API_URL: 'http://127.0.0.1:3001',
+      STUDIO_CONTROLLER_TOKEN: 'a-test-token-of-at-least-32-characters-0123456789',
+      STUDIO_CONTROLLER_DATA_DIR: '/tmp/controller',
+      STUDIO_CONTROLLER_ENVIRONMENT: 'test',
+      STUDIO_CONTROLLER_RUNTIME: 'fake',
+    });
+    expect(() => createRuntime({ ...config, runtime: 'docker' }, new RecordingRunner())).toThrow(
+      'Docker settings',
+    );
+  });
+});
+
+describe.skipIf(process.platform !== 'linux')(
+  'stale sockets and the Node.js bridge (Linux)',
+  () => {
+    it('removes a socket of its own and keeps the directory clean when the bridge is removed', async () => {
+      const { createServer } = await import('node:net');
+      const { existsSync } = await import('node:fs');
+      const path = join(dir, 'own.sock');
+      const server = createServer();
+      await new Promise<void>((resolve) => server.listen(path, resolve));
+      server.close();
+      await expect(removeStaleSocket(path)).resolves.toBeUndefined();
+      expect(existsSync(path)).toBe(false);
+
+      const upstream = createServer((socket) => socket.end('hi'));
+      await new Promise<void>((resolve) => upstream.listen(0, '127.0.0.1', resolve));
+      const port = (upstream.address() as { port: number }).port;
+      const bridges = new NodeProxyBridges({ dir, proxyGid: process.getgid?.() ?? 0 });
+      await bridges.create({
+        previewLabel: 'preview-aaaaaaaaaaaa',
+        address: '127.0.0.1',
+        port,
+        containerId: 'c',
+      });
+      expect(existsSync(join(dir, 'preview-aaaaaaaaaaaa.sock'))).toBe(true);
+      await bridges.closeAll();
+      expect(existsSync(join(dir, 'preview-aaaaaaaaaaaa.sock'))).toBe(false);
+      upstream.close();
+    });
+  },
+);

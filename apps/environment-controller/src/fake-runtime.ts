@@ -33,6 +33,7 @@ export class FakeRuntime implements ContainerRuntime, PreviewSlices, EgressRules
   readonly events: string[] = [];
   readonly bridges = new RecordingBridges();
   readonly environments: Record<string, string>[] = [];
+  readonly startEnvironments: Record<string, string>[] = [];
   readonly limits: PreviewBuildLimits[] = [];
   private readonly running = new Map<string, PreviewRun>();
 
@@ -55,6 +56,7 @@ export class FakeRuntime implements ContainerRuntime, PreviewSlices, EgressRules
 
   async start(run: PreviewRun, call: RuntimeCall): Promise<void> {
     this.events.push(`start ${run.composeProject}`);
+    this.startEnvironments.push(run.environment);
     call.onLine('start', `fake start of ${run.service}`);
     if (this.options.failStart) throw new OperationFailure('start_failed', this.options.failStart);
     this.running.set(run.projectId, run);

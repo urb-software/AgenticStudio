@@ -1,10 +1,23 @@
-import { readFile } from 'node:fs/promises';
+import { lstat, readFile } from 'node:fs/promises';
 import { OperationAborted, OperationFailure } from './failure.js';
 import type { EgressRules } from './ports.js';
 import type { ProcessRunner } from './process-runner.js';
 
 const missing = () =>
   new OperationFailure('egress_rules_missing', 'The Preview egress rules are not in place.');
+
+/** Fails unless the script is a root-owned regular file that no one but root can write. */
+export async function checkEgressScript(
+  path: string,
+  stat: (path: string) => Promise<{ uid: number; mode: number; isFile(): boolean }> = lstat,
+): Promise<void> {
+  const info = await stat(path).catch(() => null);
+  if (!info?.isFile()) throw new Error('The egress rules script is missing or not a regular file.');
+  if (info.uid !== 0) throw new Error('The egress rules script must be owned by root.');
+  if ((info.mode & 0o022) !== 0) {
+    throw new Error('The egress rules script must not be writable by group or others.');
+  }
+}
 
 /**
  * Reads back the egress rules by running the root-owned script's `verify`, inside the rootless

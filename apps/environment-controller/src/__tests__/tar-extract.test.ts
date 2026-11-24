@@ -122,6 +122,15 @@ describe('extractTar: attack cases are refused', () => {
     await refused(tar(base256));
   });
 
+  it('applies a pax size to a file and refuses one on a directory or a symlink', async () => {
+    await unpack(
+      tar(pax({ size: '5' }), entry({ name: 'five.txt', content: 'hello', declaredSize: 0 })),
+    );
+    expect(readFileSync(join(root, 'five.txt'), 'utf8')).toBe('hello');
+    await refused(tar(pax({ size: '5' }), entry({ name: 'd/', type: '5' })));
+    await refused(tar(pax({ size: '1' }), entry({ name: 'l', type: '2', linkname: 'x' })));
+  });
+
   it('refuses a malformed pax header', async () => {
     await refused(tar(entry({ name: 'p', type: 'x', content: '99 path=a\n' }), file('x', '1')));
     await refused(tar(entry({ name: 'p', type: 'x', content: 'nolength' }), file('x', '1')));

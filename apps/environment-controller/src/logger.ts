@@ -1,8 +1,4 @@
-/**
- * The controller's own log, for the journal: an event, the operation id, the Project id, the
- * kind and the outcome code, and nothing else. No message from a process or an API answer, and
- * no value from an Environment file, can reach it because it has no field to carry them.
- */
+/** The controller's own journal log, whose fields cannot carry a secret. */
 export interface LogFields {
   operationId?: string;
   projectId?: string;

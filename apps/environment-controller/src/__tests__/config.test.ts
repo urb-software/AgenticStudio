@@ -93,10 +93,27 @@ describe('loadConfig', () => {
     'STUDIO_MERGE_TOKEN',
     'POSTGRES_PASSWORD',
     'STUDIO_WORKER_TOKEN',
+    'STUDIO_AGENT_GITHUB_TOKEN',
+    'ANTHROPIC_API_KEY',
+    'ANTHROPIC_AUTH_TOKEN',
+    'CLAUDE_CODE_OAUTH_TOKEN',
+    'OPENAI_API_KEY',
   ])('refuses to start when %s is present, without echoing its value', (name) => {
     const message = problemsOf({ ...fakeEnv, [name]: 'value-that-must-not-leak' });
     expect(message).toContain(name);
     expect(message).not.toContain('value-that-must-not-leak');
+  });
+
+  it('refuses another egress rules script in production, and accepts it in test', () => {
+    expect(
+      problemsOf({ ...dockerEnv, STUDIO_CONTROLLER_EGRESS_RULES_BIN: '/tmp/always-ok' }),
+    ).toContain('EGRESS_RULES_BIN may be changed only in development or test');
+    expect(
+      loadConfig({
+        ...fakeEnv,
+        STUDIO_CONTROLLER_EGRESS_RULES_BIN: '/tmp/always-ok',
+      }).egressRulesBin,
+    ).toBe('/tmp/always-ok');
   });
 
   it('refuses relative paths and out-of-range numbers', () => {

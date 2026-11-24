@@ -109,16 +109,20 @@ export class PreviewOperations {
     let failed = 0;
     for (const preview of desired) {
       const layout = buildLayout(this.deps.dataDir, preview.projectId, preview.operationId);
-      const run: PreviewRun = {
-        projectId: preview.projectId,
-        composeProject: preview.composeProject,
-        previewLabel: preview.previewLabel,
-        layout,
-        environment: composeEnvironment(this.base(layout), preview.environmentFile).env,
-        service: preview.service,
-        port: preview.port,
-      };
       try {
+        const content =
+          preview.environmentFilePath === null
+            ? null
+            : await readFile(join(layout.srcDir, preview.environmentFilePath), 'utf8');
+        const run: PreviewRun = {
+          projectId: preview.projectId,
+          composeProject: preview.composeProject,
+          previewLabel: preview.previewLabel,
+          layout,
+          environment: composeEnvironment(this.base(layout), content).env,
+          service: preview.service,
+          port: preview.port,
+        };
         await this.deps.runtime.start(run, call);
         resumed += 1;
       } catch {
@@ -167,6 +171,7 @@ export class PreviewOperations {
     const signal = AbortSignal.any([context.signal, deadline]);
     const call: RuntimeCall = { signal, onLine: context.log, killGraceMs: deps.killGraceMs };
     const identity = identityOf(op);
+    let startAttempted = false;
     try {
       await this.prepareDirectories(layout);
       await this.checkFreeSpace(layout);
@@ -217,6 +222,7 @@ export class PreviewOperations {
       await deps.egress.verify(signal);
       await deps.runtime.build(run, call);
       await deps.egress.verify(signal);
+      startAttempted = true;
       await deps.runtime.start(run, call);
       await deps.desired.record({
         projectId: op.projectId,
@@ -225,14 +231,26 @@ export class PreviewOperations {
         previewLabel: op.previewLabel,
         service: op.service,
         port: op.port,
-        environmentFile: op.environmentFile?.content ?? null,
+        environmentFilePath: op.environmentFile?.path ?? null,
       });
       await removeOtherBuilds(deps.dataDir, op.projectId, op.operationId);
       return { runtime: await deps.runtime.state(identity, call) };
     } catch (error) {
+      if (startAttempted) await this.rollBackStart(identity, op.projectId);
       await rm(layout.buildDir, { recursive: true, force: true }).catch(() => undefined);
       throw classify(error, deadline, context.signal);
     }
+  }
+
+  /** After a failure past `up` nothing may keep running without a bridge: remove it as stop does. */
+  private async rollBackStart(identity: PreviewIdentity, projectId: string): Promise<void> {
+    const call: RuntimeCall = {
+      signal: AbortSignal.timeout(ADMIN_TIMEOUT_MS),
+      onLine: () => undefined,
+      killGraceMs: this.deps.killGraceMs,
+    };
+    await this.deps.desired.clear(projectId).catch(() => undefined);
+    await this.deps.runtime.removeContainers(identity, call).catch(() => undefined);
   }
 
   private async prepareDirectories(layout: BuildLayout): Promise<void> {
