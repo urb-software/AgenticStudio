@@ -286,7 +286,9 @@ check_cgroup() {
   local before pid_before pid_after build_status limit_set kills_before kills_after events restored output
   before="$(systemctl --user show docker.service -p MemoryMax --value 2>/dev/null)"
   pid_before="$(systemctl --user show docker.service -p MainPID --value 2>/dev/null)"
-  events="/sys/fs/cgroup$(systemctl --user show docker.service -p ControlGroup --value 2>/dev/null)/memory.events"
+  local cgdir
+  cgdir="/sys/fs/cgroup$(systemctl --user show docker.service -p ControlGroup --value 2>/dev/null)"
+  events="$cgdir/memory.events"
   WORK_DIR="${WORK_DIR:-$(mktemp -d)}"
   mkdir -p "$WORK_DIR/oom"
   # About 800 MB held in a shell variable (twice while it is copied), above the 512 MiB limit.
@@ -318,7 +320,7 @@ check_cgroup() {
     [ "$pid_before" = "$pid_after" ] && [ "$restored" = "${before:-infinity}" ]; then
     pass docker-unit-memory-limit "MemoryMax=536870912 on docker.service: a RUN step of 800 MB was OOM-killed, the daemon (pid $pid_after) stayed active, MemoryMax restored to $restored"
   else
-    fail docker-unit-memory-limit "limit ${limit_set:-?} (expected 536870912), build exit $build_status, oom kill $([ "$killed" = 0 ] && echo seen || echo not seen) (counter ${kills_before:-?} -> ${kills_after:-?}), daemon up=$([ "$up" = 0 ] && echo yes || echo no), pid $pid_before -> $pid_after, MemoryMax restored to '${restored:-?}' (was '${before:-?}'); build cgroup: $(grep -m1 '^0::' <<<"$output" | tr -d '\n'), daemon cgroup: $(systemctl --user show docker.service -p ControlGroup --value 2>/dev/null)"
+    fail docker-unit-memory-limit "limit ${limit_set:-?} (expected 536870912), build exit $build_status, oom kill $([ "$killed" = 0 ] && echo seen || echo not seen) (counter ${kills_before:-?} -> ${kills_after:-?}), daemon up=$([ "$up" = 0 ] && echo yes || echo no), pid $pid_before -> $pid_after, MemoryMax restored to '${restored:-?}' (was '${before:-?}'); daemon cgroup $cgdir: memory.max $(cat "$cgdir/memory.max" 2>/dev/null) peak $(cat "$cgdir/memory.peak" 2>/dev/null), children: $(find "$cgdir" -mindepth 1 -maxdepth 1 -type d -printf '%f ' 2>/dev/null); build output: $(tail -n 6 <<<"$output" | tr '\n' '|')"
   fi
 }
 
