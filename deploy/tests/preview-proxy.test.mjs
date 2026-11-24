@@ -1,6 +1,6 @@
 // Runs the real Caddy with the Preview site against stand-in sockets (docs/engineering/deployment.md, "What CI covers").
 import assert from 'node:assert/strict';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync } from 'node:fs';
 import http from 'node:http';
@@ -137,6 +137,11 @@ const hitsFor = (label) => hits.filter((hit) => hit === label).length;
 // ---- Caddy -----------------------------------------------------------------------------------
 
 const proxies = [];
+/** Caddy logs to stderr: both streams. */
+const dockerLogs = (name) => {
+  const { stdout, stderr } = spawnSync('docker', ['logs', name], { encoding: 'utf8' });
+  return `${stdout}${stderr}`;
+};
 const dockerOut = (args) => execFileSync('docker', args, { encoding: 'utf8' }).trim();
 
 /** Starts the proxy like deploy/compose.server*.yaml does; returns its published ports. */
@@ -172,9 +177,9 @@ async function startProxy({ studioDomain, previewDomain, tlsDir = certDir, refus
     if (!running) {
       if (refuses) {
         const exitCode = Number(dockerOut(['inspect', '-f', '{{.State.ExitCode}}', name]));
-        return { name, exitCode, logs: dockerOut(['logs', name]) };
+        return { name, exitCode, logs: dockerLogs(name) };
       }
-      throw new Error(`proxy stopped:\n${dockerOut(['logs', name])}`);
+      throw new Error(`proxy stopped:\n${dockerLogs(name)}`);
     }
     try {
       // Trust only the throwaway wildcard certificate and this proxy's own internal CA.
@@ -186,7 +191,7 @@ async function startProxy({ studioDomain, previewDomain, tlsDir = certDir, refus
       // Not listening yet.
     }
     if (attempt > 80 && refuses) throw new Error('the proxy did not refuse to start');
-    if (attempt > 80) throw new Error(`proxy not ready:\n${dockerOut(['logs', name])}`);
+    if (attempt > 80) throw new Error(`proxy not ready:\n${dockerLogs(name)}`);
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
 }
