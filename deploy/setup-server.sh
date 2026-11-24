@@ -1242,7 +1242,7 @@ main() {
       [ -f /sys/fs/cgroup/cgroup.controllers ] || die "step '$step' needs cgroup v2 (unified hierarchy)."
     fi
     CURRENT_STEP="$step"
-    "step_$step"
+    "step_${step//-/_}"
   done
   CURRENT_STEP=final
   assert_agent_safe

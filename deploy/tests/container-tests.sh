@@ -57,27 +57,28 @@ expect_fail "refuses a Preview user named like the agent user" "equals the agent
 groupadd --gid 2003 othergroup
 expect_fail "refuses a proxy gid held by another group" "already taken by the group 'othergroup'" bash "$SETUP" --only preflight
 groupdel othergroup
-groupadd --gid 2002 preview
+getent group 2002 >/dev/null || groupadd --gid 2002 preview
 useradd --create-home --uid 2002 --gid 2002 --shell /bin/bash preview
 for group in docker lxd sudo; do
   groupadd -f "$group" && usermod -aG "$group" preview
   expect_fail "refuses a Preview user in the $group group" "is in the $group group" bash "$SETUP" --only preflight
-  gpasswd -d preview "$group" >/dev/null
+  usermod -G "" preview
 done
 groupadd --gid 2003 previewproxy
 usermod -aG previewproxy preview
 expect_fail "refuses a Preview user in the proxy group" "is in the previewproxy group" bash "$SETUP" --only preflight
-gpasswd -d preview previewproxy >/dev/null
+usermod -G "" preview
 groupadd sharedgroup && usermod -aG sharedgroup agent && usermod -aG sharedgroup preview
 expect_fail "refuses a group shared by the agent and Preview users" "share the group(s) sharedgroup" bash "$SETUP" --only preflight
-gpasswd -d agent sharedgroup >/dev/null && gpasswd -d preview sharedgroup >/dev/null && groupdel sharedgroup
+usermod -G "" agent && usermod -G "" preview && groupdel sharedgroup
 echo 'preview ALL=(ALL) NOPASSWD: ALL' >/etc/sudoers.d/preview-test
 chmod 0440 /etc/sudoers.d/preview-test
 expect_fail "refuses a Preview user with passwordless sudo" "passwordless sudo" bash "$SETUP" --only preflight
 rm -f /etc/sudoers.d/preview-test
 userdel -r preview 2>/dev/null
-groupdel previewproxy 2>/dev/null
-getent group preview >/dev/null && groupdel preview
+for group in previewproxy preview "$(getent group 2002 | cut -d: -f1)"; do
+  [ -z "$group" ] || ! getent group "$group" >/dev/null || groupdel "$group"
+done
 
 expect_fail "the egress script refuses an unknown command" "usage:" bash "$SRC/deploy/preview-egress-rules.sh" bogus
 expect_fail "the egress script's verify fails without rules" "preview egress rules are missing" env -u XDG_RUNTIME_DIR bash "$SRC/deploy/preview-egress-rules.sh" verify
