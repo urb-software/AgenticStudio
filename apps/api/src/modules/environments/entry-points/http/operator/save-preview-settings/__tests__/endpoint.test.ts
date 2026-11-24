@@ -45,6 +45,10 @@ describe('SavePreviewSettingsEndpoint', () => {
       hostname: null,
       hostnameUnavailable: 'not_configured' as const,
       repository: { ready: true },
+      state: 'stopped' as const,
+      running: null,
+      latestBuild: null,
+      controller: { connected: false },
       removedPorts: [],
     };
 
@@ -53,6 +57,10 @@ describe('SavePreviewSettingsEndpoint', () => {
       hostname: null,
       hostnameUnavailable: 'not_configured',
       repository: { ready: true },
+      state: 'stopped',
+      running: null,
+      latestBuild: null,
+      controller: { connected: false },
     });
     const removed = [{ service: 'web', place: 'services.web.ports[0]' }];
     await expect(

@@ -2,7 +2,10 @@ import { Inject, Injectable } from '@nestjs/common';
 import { DATABASE_CLIENT } from '../../../../platform/database/database.module.js';
 import type { PreviewOperationLog } from '../../application/ports/preview-operation-log.js';
 import { PreviewLogCap } from '../../domain/value-objects/preview-log-cap.js';
-import type { PreviewLogLine } from '../../domain/value-objects/preview-log-line.js';
+import {
+  PreviewLogLine,
+  type PreviewLogStream,
+} from '../../domain/value-objects/preview-log-line.js';
 import { isPreviewOperationId } from '../../domain/value-objects/preview-operation-id.js';
 import { type Executor, inTransaction } from './executor.js';
 
@@ -13,6 +16,31 @@ import { type Executor, inTransaction } from './executor.js';
 @Injectable()
 export class PrismaPreviewOperationLog implements PreviewOperationLog {
   constructor(@Inject(DATABASE_CLIENT) private readonly db: Executor) {}
+
+  async page(
+    operationId: string,
+    after: number,
+    limit: number,
+  ): Promise<{ lines: PreviewLogLine[]; hasMore: boolean }> {
+    if (!isPreviewOperationId(operationId)) return { lines: [], hasMore: false };
+    const rows = await this.db.previewOperationLine.findMany({
+      where: { operationId, seq: { gt: after } },
+      orderBy: { seq: 'asc' },
+      take: limit + 1,
+    });
+    return {
+      lines: rows.slice(0, limit).map((row) =>
+        PreviewLogLine.restore({
+          seq: row.seq,
+          at: row.at,
+          stream: row.stream as PreviewLogStream,
+          text: row.text,
+          truncated: row.truncated,
+        }),
+      ),
+      hasMore: rows.length > limit,
+    };
+  }
 
   async append(
     operationId: string,

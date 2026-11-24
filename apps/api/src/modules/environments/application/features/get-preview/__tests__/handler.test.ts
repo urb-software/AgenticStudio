@@ -1,34 +1,43 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { PreviewOperation } from '../../../../domain/entities/preview-operation.js';
 import { PreviewSettings } from '../../../../domain/entities/preview-settings.js';
 import { ProjectNotFoundError } from '../../../../domain/errors/preview-settings-errors.js';
+import { InMemoryPreviewOperationRepository } from '../../../../domain/repositories/__tests__/in-memory-preview-operation-repository.js';
 import { InMemoryPreviewSettingsRepository } from '../../../../domain/repositories/__tests__/in-memory-preview-settings-repository.js';
-import { FakePreviewSources } from '../../../ports/__tests__/fake-preview-sources.js';
+import { PreviewCommit } from '../../../../domain/value-objects/preview-commit.js';
+import { PreviewComposeFile } from '../../../../domain/value-objects/preview-compose-file.js';
+import { PreviewLimits } from '../../../../domain/value-objects/preview-limits.js';
+import { PreviewOperationFailure } from '../../../../domain/value-objects/preview-operation-failure.js';
+import { PreviewPort } from '../../../../domain/value-objects/preview-port.js';
+import { PreviewService } from '../../../../domain/value-objects/preview-service.js';
+import { COMMIT, FakePreviewSources } from '../../../ports/__tests__/fake-preview-sources.js';
+import { KIT_NOW, previewKit } from '../../../__tests__/preview-test-kit.js';
 import { GetPreviewHandler } from '../handler.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
+const CONTROLLER = '7d6c5b4a-3f2e-4d1c-8b0a-9f8e7d6c5b4a';
+const FIRST = '0b2f6d52-3d0b-4d6e-8a44-6b3c1d8f2a10';
+const SECOND = '1c3a7e63-4e1c-4e7f-9b55-7c4d2e9a3b21';
+const minutes = (count: number) => new Date(KIT_NOW.getTime() + count * 60_000);
 
 describe('GetPreviewHandler', () => {
   let sources: FakePreviewSources;
   let settings: InMemoryPreviewSettingsRepository;
   let domain: { domain: string | null };
+  let operations: InMemoryPreviewOperationRepository;
+  let kit: ReturnType<typeof previewKit>;
   let handler: GetPreviewHandler;
 
   beforeEach(() => {
     sources = new FakePreviewSources();
     settings = new InMemoryPreviewSettingsRepository();
     domain = { domain: 'preview.example.test' };
-    handler = new GetPreviewHandler(sources, settings, domain);
+    operations = new InMemoryPreviewOperationRepository();
+    kit = previewKit(operations, sources);
+    handler = new GetPreviewHandler(sources, settings, domain, kit.states);
   });
 
-  it('answers no settings, the hostname and a ready Repository for a new Project', async () => {
-    await expect(handler.execute({ projectId: PROJECT })).resolves.toEqual({
-      settings: null,
-      hostname: 'preview-3f2b8c1e4d5a.preview.example.test',
-      repository: { ready: true },
-    });
-  });
-
-  it('answers the settings that were saved', async () => {
+  async function saveSettings() {
     await settings.save(
       PreviewSettings.restore({
         projectId: PROJECT,
@@ -38,20 +47,65 @@ describe('GetPreviewHandler', () => {
         updatedAt: new Date(),
       }),
     );
+  }
+
+  async function build(id: string, requested: number) {
+    await operations.add(
+      PreviewOperation.requestBuild({
+        id,
+        projectId: PROJECT,
+        commit: PreviewCommit.of('b'.repeat(40)),
+        composeFile: PreviewComposeFile.of('compose.yaml'),
+        service: PreviewService.of('web'),
+        port: PreviewPort.of(3000),
+        limits: PreviewLimits.of({
+          memoryMiB: 1024,
+          cpuPercent: 100,
+          tasksMax: 512,
+          buildMinutes: 20,
+        }),
+        now: minutes(requested),
+      }),
+    );
+  }
+
+  async function finish(id: string, outcome: 'succeeded' | 'failed', at: number, removed = false) {
+    await operations.change(id, (op) => {
+      op.claim(CONTROLLER, minutes(at - 1));
+      if (outcome === 'succeeded') op.succeed(CONTROLLER, null, minutes(at));
+      else {
+        op.fail(CONTROLLER, PreviewOperationFailure.of('start_failed', 'no'), minutes(at), removed);
+      }
+    });
+  }
+
+  it('answers no settings, the hostname and a ready Repository for a new Project', async () => {
+    await expect(handler.execute({ projectId: PROJECT })).resolves.toEqual({
+      settings: null,
+      hostname: 'preview-3f2b8c1e4d5a.preview.example.test',
+      repository: { ready: true, commit: COMMIT },
+      state: 'not_configured',
+      running: null,
+      latestBuild: null,
+      controller: { connected: false },
+    });
+  });
+
+  it('answers the settings that were saved, and a stopped Preview that was never built', async () => {
+    await saveSettings();
 
     await expect(handler.execute({ projectId: PROJECT })).resolves.toMatchObject({
       settings: { composeFile: 'compose.yaml', service: 'web', port: 3000 },
+      state: 'stopped',
     });
   });
 
   it('says why there is no hostname while no preview domain is configured', async () => {
     domain.domain = null;
 
-    await expect(handler.execute({ projectId: PROJECT })).resolves.toEqual({
-      settings: null,
+    await expect(handler.execute({ projectId: PROJECT })).resolves.toMatchObject({
       hostname: null,
       hostnameUnavailable: 'not_configured',
-      repository: { ready: true },
     });
   });
 
@@ -72,5 +126,91 @@ describe('GetPreviewHandler', () => {
     await expect(handler.execute({ projectId: PROJECT })).rejects.toBeInstanceOf(
       ProjectNotFoundError,
     );
+  });
+
+  it('says a queued build is building, and shows it', async () => {
+    await saveSettings();
+    await build(FIRST, -1);
+
+    const view = await handler.execute({ projectId: PROJECT });
+
+    expect(view.state).toBe('building');
+    expect(view.latestBuild).toMatchObject({
+      id: FIRST,
+      status: 'queued',
+      commit: 'b'.repeat(40),
+      timeLimitMinutes: 20,
+      startedAt: null,
+      finishedAt: null,
+      failure: null,
+    });
+  });
+
+  it('says a succeeded build runs, with the commit, since and the link', async () => {
+    await saveSettings();
+    await build(FIRST, -10);
+    await finish(FIRST, 'succeeded', -5);
+
+    const view = await handler.execute({ projectId: PROJECT });
+
+    expect(view.state).toBe('running');
+    expect(view.running).toEqual({
+      buildId: FIRST,
+      commit: 'b'.repeat(40),
+      since: minutes(-5),
+      url: 'https://preview-3f2b8c1e4d5a.preview.example.test/',
+    });
+  });
+
+  it('has no link while no preview domain is configured', async () => {
+    domain.domain = null;
+    await saveSettings();
+    await build(FIRST, -10);
+    await finish(FIRST, 'succeeded', -5);
+
+    expect((await handler.execute({ projectId: PROJECT })).running?.url).toBeNull();
+  });
+
+  it('keeps running when a later build failed before it removed anything, and shows the failure', async () => {
+    await saveSettings();
+    await build(FIRST, -20);
+    await finish(FIRST, 'succeeded', -15);
+    await build(SECOND, -10);
+    await finish(SECOND, 'failed', -5);
+
+    const view = await handler.execute({ projectId: PROJECT });
+
+    expect(view.state).toBe('running');
+    expect(view.running?.buildId).toBe(FIRST);
+    expect(view.latestBuild).toMatchObject({
+      status: 'failed',
+      failure: { code: 'start_failed', previewRemoved: false },
+    });
+  });
+
+  it('is failed, with previewRemoved, when the failed build took the Preview down', async () => {
+    await saveSettings();
+    await build(FIRST, -20);
+    await finish(FIRST, 'succeeded', -15);
+    await build(SECOND, -10);
+    await finish(SECOND, 'failed', -5, true);
+
+    const view = await handler.execute({ projectId: PROJECT });
+
+    expect(view.state).toBe('failed');
+    expect(view.running).toBeNull();
+    expect(view.latestBuild?.failure?.previewRemoved).toBe(true);
+  });
+
+  it('says whether a controller called within a lease', async () => {
+    kit.presence.seen = minutes(0);
+    expect((await handler.execute({ projectId: PROJECT })).controller).toEqual({
+      connected: true,
+    });
+
+    kit.presence.seen = new Date(KIT_NOW.getTime() - 61_000);
+    expect((await handler.execute({ projectId: PROJECT })).controller).toEqual({
+      connected: false,
+    });
   });
 });

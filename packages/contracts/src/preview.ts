@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PREVIEW_OPERATION_FAILURE_CODES } from './preview-failure-codes.js';
 
 /** Longest Compose file path, in characters, and longest Compose service name. */
 export const PREVIEW_COMPOSE_FILE_MAX_LENGTH = 255;
@@ -92,7 +93,46 @@ export const previewSettingsSchema = z.strictObject({
   updatedAt: z.iso.datetime(),
 });
 
-/** What the Preview page shows: the settings, the hostname and whether the Repository can be read. */
+/** What the Preview is: `building` while a build is requested or claimed. */
+export const PREVIEW_STATES = [
+  'not_configured',
+  'stopped',
+  'building',
+  'running',
+  'failed',
+] as const;
+export const previewStateSchema = z.enum(PREVIEW_STATES);
+export type PreviewState = z.infer<typeof previewStateSchema>;
+
+/** `queued` waits for the controller, `building` is claimed, the other two are final. */
+export const PREVIEW_BUILD_STATUSES = ['queued', 'building', 'succeeded', 'failed'] as const;
+export const previewBuildStatusSchema = z.enum(PREVIEW_BUILD_STATUSES);
+export type PreviewBuildStatus = z.infer<typeof previewBuildStatusSchema>;
+
+export const previewBuildFailureSchema = z.strictObject({
+  code: z.enum(PREVIEW_OPERATION_FAILURE_CODES),
+  detail: z.string(),
+  refusals: z.array(previewRefusalSchema),
+  /** True when the failed build also stopped the Preview that was running. */
+  previewRemoved: z.boolean(),
+});
+export type PreviewBuildFailure = z.infer<typeof previewBuildFailureSchema>;
+
+/** One build of the Project's Preview. */
+export const previewBuildSchema = z.strictObject({
+  id: z.uuid(),
+  commit: z.string(),
+  status: previewBuildStatusSchema,
+  requestedAt: z.iso.datetime(),
+  startedAt: z.iso.datetime().nullable(),
+  finishedAt: z.iso.datetime().nullable(),
+  timeLimitMinutes: z.int(),
+  failure: previewBuildFailureSchema.nullable(),
+  log: z.strictObject({ bytes: z.int(), truncated: z.boolean() }),
+});
+export type PreviewBuild = z.infer<typeof previewBuildSchema>;
+
+/** What the Preview page shows: the settings, the hostname, the state and the latest build. */
 export const previewSchema = z.strictObject({
   settings: previewSettingsSchema.nullable(),
   /** `null` while no preview domain is configured. */
@@ -101,7 +141,21 @@ export const previewSchema = z.strictObject({
   repository: z.strictObject({
     ready: z.boolean(),
     reason: previewRepositoryReasonSchema.optional(),
+    /** The commit the Clone holds, when the Repository is ready. */
+    commit: z.string().optional(),
   }),
+  state: previewStateSchema,
+  /** The build Studio last asked to run; `url` is `null` while no preview domain is configured. */
+  running: z
+    .strictObject({
+      buildId: z.uuid(),
+      commit: z.string(),
+      since: z.iso.datetime(),
+      url: z.string().nullable(),
+    })
+    .nullable(),
+  latestBuild: previewBuildSchema.nullable(),
+  controller: z.strictObject({ connected: z.boolean() }),
 });
 export type Preview = z.infer<typeof previewSchema>;
 
@@ -123,3 +177,28 @@ export const previewRefusedProblemSchema = z.object({
   refusals: z.array(previewRefusalSchema),
 });
 export type PreviewRefusedProblem = z.infer<typeof previewRefusedProblemSchema>;
+
+export const PREVIEW_EVENTS_DEFAULT_LIMIT = 500;
+export const PREVIEW_EVENTS_MAX_LIMIT = 1000;
+
+export const previewBuildEventSchema = z.strictObject({
+  seq: z.int(),
+  at: z.iso.datetime(),
+  stream: z.enum(['build', 'start', 'controller']),
+  text: z.string(),
+  truncated: z.boolean(),
+  /** Whether the text holds the redaction marker. */
+  redacted: z.boolean(),
+});
+export type PreviewBuildEvent = z.infer<typeof previewBuildEventSchema>;
+
+/** A page of a build's log: `next` is the `after` of the following page, absent on the last. */
+export const previewBuildEventsSchema = z.strictObject({
+  events: z.array(previewBuildEventSchema),
+  next: z.int().optional(),
+  /** True once the build is over: no line will be added. */
+  final: z.boolean(),
+  /** True when the log reached its size cap. */
+  truncated: z.boolean(),
+});
+export type PreviewBuildEvents = z.infer<typeof previewBuildEventsSchema>;

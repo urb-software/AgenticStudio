@@ -51,6 +51,15 @@ export interface ContainerRuntime {
 /** One systemd slice per Preview. */
 export interface PreviewSlices {
   apply(identity: PreviewIdentity, limits: PreviewBuildLimits, signal: AbortSignal): Promise<void>;
+  /**
+   * Bounds the memory and processor of the build steps, which run in the Docker daemon's own
+   * unit and not in the Preview's slice. The bound holds until the next call or a daemon restart.
+   */
+  boundBuild(
+    identity: PreviewIdentity,
+    limits: PreviewBuildLimits,
+    signal: AbortSignal,
+  ): Promise<void>;
   remove(identity: PreviewIdentity, signal: AbortSignal): Promise<void>;
 }
 

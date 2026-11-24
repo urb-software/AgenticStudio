@@ -284,6 +284,8 @@ const environmentSchema = z.object({
   STUDIO_PREVIEW_CPU_PERCENT: previewLimit(PREVIEW_LIMIT_BOUNDS.cpuPercent, 100),
   STUDIO_PREVIEW_TASKS_MAX: previewLimit(PREVIEW_LIMIT_BOUNDS.tasksMax, 512),
   STUDIO_PREVIEW_BUILD_MINUTES: previewLimit(PREVIEW_LIMIT_BOUNDS.buildMinutes, 20),
+  // Minutes a requested Preview operation may wait while no controller is known to exist.
+  STUDIO_PREVIEW_UNCLAIMED_MINUTES: z.coerce.number().int().min(1).max(1440).default(5),
   STUDIO_PREVIEW_LOG_MAX_BYTES: z.coerce
     .number()
     .int()
@@ -408,6 +410,8 @@ export interface AppConfig {
   previewLimits: PreviewLimitsConfig;
   /** Bytes of Preview operation log kept per operation; later lines are dropped. */
   previewLogMaxBytes: number;
+  /** Minutes a requested Preview operation may wait with no controller known to exist. */
+  previewUnclaimedMinutes: number;
   /** The limits copied onto every new Run. */
   runLimits: { stepMinutes: number; maxSteps: number; waitingDays: number; maxTotalSteps: number };
   /** Per-Run log cap in UTF-8 bytes of event text (`STUDIO_RUN_LOG_MAX_BYTES`, default 8 MiB). */
@@ -493,6 +497,7 @@ export function loadConfig(
       buildMinutes: result.data.STUDIO_PREVIEW_BUILD_MINUTES,
     },
     previewLogMaxBytes: result.data.STUDIO_PREVIEW_LOG_MAX_BYTES,
+    previewUnclaimedMinutes: result.data.STUDIO_PREVIEW_UNCLAIMED_MINUTES,
     runLimits: {
       stepMinutes: result.data.STUDIO_RUN_STEP_MINUTES,
       maxSteps: result.data.STUDIO_RUN_MAX_STEPS,

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { PreviewRunningError } from '../../errors/preview-settings-errors.js';
+import {
+  PreviewBuildRunningError,
+  PreviewRunningError,
+} from '../../errors/preview-settings-errors.js';
 import { PreviewComposeFile } from '../../value-objects/preview-compose-file.js';
 import { PreviewPort } from '../../value-objects/preview-port.js';
 import { PreviewService } from '../../value-objects/preview-service.js';
@@ -36,9 +39,9 @@ describe('PreviewSettings', () => {
   });
 
   describe('remove', () => {
-    // A stub for the Preview state, which does not exist yet.
-    const idle: PreviewSettingsRemovalFacts = { previewRunning: false };
-    const running: PreviewSettingsRemovalFacts = { previewRunning: true };
+    const idle: PreviewSettingsRemovalFacts = { previewRunning: false, buildActive: false };
+    const running: PreviewSettingsRemovalFacts = { previewRunning: true, buildActive: false };
+    const building: PreviewSettingsRemovalFacts = { previewRunning: false, buildActive: true };
 
     it('allows removal while no Preview runs', () => {
       expect(() => settings().remove(idle)).not.toThrow();
@@ -46,6 +49,16 @@ describe('PreviewSettings', () => {
 
     it('refuses removal while the Preview runs', () => {
       expect(() => settings().remove(running)).toThrow(PreviewRunningError);
+    });
+
+    it('refuses removal while a build is requested or claimed', () => {
+      expect(() => settings().remove(building)).toThrow(PreviewBuildRunningError);
+    });
+
+    it('names a running Preview before a running build', () => {
+      expect(() => settings().remove({ previewRunning: true, buildActive: true })).toThrow(
+        PreviewRunningError,
+      );
     });
   });
 });

@@ -35,6 +35,7 @@ export class FakeRuntime implements ContainerRuntime, PreviewSlices, EgressRules
   readonly environments: Record<string, string>[] = [];
   readonly startEnvironments: Record<string, string>[] = [];
   readonly limits: PreviewBuildLimits[] = [];
+  readonly bounds: PreviewBuildLimits[] = [];
   private readonly running = new Map<string, PreviewRun>();
 
   constructor(private readonly options: FakeRuntimeOptions = {}) {}
@@ -96,6 +97,11 @@ export class FakeRuntime implements ContainerRuntime, PreviewSlices, EgressRules
   async apply(identity: PreviewIdentity, limits: PreviewBuildLimits): Promise<void> {
     this.events.push(`slice.apply ${identity.composeProject}`);
     this.limits.push(limits);
+  }
+
+  async boundBuild(identity: PreviewIdentity, limits: PreviewBuildLimits): Promise<void> {
+    this.events.push(`slice.bound ${identity.composeProject}`);
+    this.bounds.push(limits);
   }
 
   async remove(identity: PreviewIdentity): Promise<void> {

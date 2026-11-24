@@ -6,6 +6,9 @@ import { OperationAborted, OperationFailure } from './failure.js';
 import type { PreviewIdentity, PreviewSlices } from './ports.js';
 import type { ProcessRunner } from './process-runner.js';
 
+/** Room for the daemon itself on top of a build's memory: dockerd, containerd, rootlesskit and the shims. */
+export const BUILD_DAEMON_HEADROOM_MIB = 512;
+
 const limitsFailed = (detail: string) => new OperationFailure('limits_failed', detail);
 
 function checked(value: number, bounds: { min: number; max: number }, name: string): number {
@@ -46,6 +49,33 @@ export class SystemdSlices implements PreviewSlices {
       mode: 0o644,
     });
     await this.reload(signal);
+  }
+
+  async boundBuild(
+    _identity: PreviewIdentity,
+    limits: PreviewBuildLimits,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const memory = checked(limits.memoryMiB, PREVIEW_LIMIT_BOUNDS.memoryMiB, 'memory');
+    const cpu = checked(limits.cpuPercent, PREVIEW_LIMIT_BOUNDS.cpuPercent, 'CPU');
+    const result = await this.options.runner.run({
+      binary: 'systemctl',
+      args: [
+        '--user',
+        'set-property',
+        '--runtime',
+        'docker.service',
+        `MemoryMax=${memory + BUILD_DAEMON_HEADROOM_MIB}M`,
+        'MemorySwapMax=0',
+        `CPUQuota=${cpu}%`,
+      ],
+      env: this.options.env,
+      timeoutMs: 30_000,
+      signal,
+      graceMs: this.options.killGraceMs,
+    });
+    if (result.interrupted === 'aborted') throw new OperationAborted();
+    if (result.exitCode !== 0) throw limitsFailed('systemd could not bound the build.');
   }
 
   async remove(identity: PreviewIdentity, signal: AbortSignal): Promise<void> {

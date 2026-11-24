@@ -18,7 +18,8 @@ export class GetPreviewEndpoint {
     operationId: 'getPreview',
     description:
       "The project's Preview: its settings or `null`, the hostname it will be served at (or why " +
-      'there is none), and whether the repository is ready to be read.',
+      'there is none), whether the repository is ready to be read, its state, the build that ' +
+      'runs, the latest build and whether an environment controller is connected.',
   })
   @ZodResponse({ status: 200, type: PreviewDto })
   @ApiProblemResponses({ 404: `Unknown project (${ENVIRONMENTS_PROBLEM_TYPES.projectNotFound})` })

@@ -10,6 +10,7 @@ import {
 } from '../../../domain/repositories/preview-settings-repository.js';
 import { PREVIEW_DOMAIN_SETTINGS, type PreviewDomainSettings } from '../../ports/preview-domain.js';
 import { previewView, type PreviewView } from '../../preview-view.js';
+import { PreviewStateReader } from '../../preview-state-reader.js';
 
 export interface GetPreviewInput {
   projectId: string;
@@ -24,17 +25,25 @@ export class GetPreviewHandler {
     @Inject(RUN_PREVIEW_SOURCES) private readonly sources: RunPreviewSources,
     @Inject(PREVIEW_SETTINGS_REPOSITORY) private readonly settings: PreviewSettingsRepository,
     @Inject(PREVIEW_DOMAIN_SETTINGS) private readonly domain: PreviewDomainSettings,
+    private readonly states: PreviewStateReader,
   ) {}
 
   async execute(input: GetPreviewInput): Promise<GetPreviewResult> {
     const { projectId } = input;
     const source = await this.sources.status(projectId);
     if (source.status === 'project_not_found') throw new ProjectNotFoundError();
+    const settings = await this.settings.find(projectId);
     return previewView({
       projectId,
-      settings: await this.settings.find(projectId),
+      settings,
       domain: this.domain.domain,
       repositoryReason: source.status === 'ready' ? null : source.status,
+      commit: source.status === 'ready' ? source.commit : null,
+      stateView: await this.states.read({
+        projectId,
+        configured: settings !== null,
+        domain: this.domain.domain,
+      }),
     });
   }
 }

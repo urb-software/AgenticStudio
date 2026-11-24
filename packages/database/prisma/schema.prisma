@@ -647,9 +647,12 @@ model PreviewOperation {
   environmentFileSecretId String?                @map("environment_file_secret_id") @db.Uuid
   logBytes                Int                    @default(0) @map("log_bytes")
   logTruncated            Boolean                @default(false) @map("log_truncated")
+  /// True only for a failed build whose rollback removed the Project's running Preview.
+  previewRemoved          Boolean                @default(false) @map("preview_removed")
   lines                   PreviewOperationLine[]
 
   @@index([status, requestedAt])
+  @@index([projectId, kind, finishedAt], map: "preview_operations_project_kind_finished_at_idx")
   @@map("preview_operations")
 }
 

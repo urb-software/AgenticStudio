@@ -3,10 +3,12 @@ import { ApiNoContentResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ApiProblemResponses } from '../../../../../../platform/http/problem-details.js';
 import { RemovePreviewSettingsHandler } from '../../../../application/features/remove-preview-settings/handler.js';
 import {
+  PreviewBuildRunningError,
   PreviewRunningError,
   ProjectNotFoundError,
 } from '../../../../domain/errors/preview-settings-errors.js';
 import {
+  buildRunning,
   ENVIRONMENTS_PROBLEM_TYPES,
   previewRunning,
   projectNotFound,
@@ -28,7 +30,9 @@ export class RemovePreviewSettingsEndpoint {
   @ApiNoContentResponse({ description: 'Removed (or there were none)' })
   @ApiProblemResponses({
     404: `Unknown project (${ENVIRONMENTS_PROBLEM_TYPES.projectNotFound})`,
-    409: `The Preview is running (${ENVIRONMENTS_PROBLEM_TYPES.previewRunning})`,
+    409:
+      `The Preview is running (${ENVIRONMENTS_PROBLEM_TYPES.previewRunning}) or a build is ` +
+      `running (${ENVIRONMENTS_PROBLEM_TYPES.buildRunning})`,
   })
   async remove(@Param('id') id: string): Promise<void> {
     try {
@@ -36,6 +40,7 @@ export class RemovePreviewSettingsEndpoint {
     } catch (error) {
       if (error instanceof ProjectNotFoundError) throw projectNotFound();
       if (error instanceof PreviewRunningError) throw previewRunning();
+      if (error instanceof PreviewBuildRunningError) throw buildRunning();
       throw error;
     }
   }

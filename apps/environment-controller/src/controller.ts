@@ -183,7 +183,13 @@ export class EnvironmentController {
   private failureOf(error: unknown, reason: AbortReason | null): Report['failure'] | undefined {
     if (reason === 'lost' || isOperationLost(error)) return undefined;
     if (reason === 'shutdown' || error instanceof OperationAborted) {
-      return { code: 'controller_stopped', detail: 'The controller was stopped.' };
+      return {
+        code: 'controller_stopped',
+        detail: 'The controller was stopped.',
+        ...(error instanceof OperationAborted && error.previewRemoved
+          ? { previewRemoved: true }
+          : {}),
+      };
     }
     if (error instanceof OperationFailure) {
       return {
@@ -192,6 +198,7 @@ export class EnvironmentController {
         ...(error.refusals
           ? { refusals: error.refusals.slice(0, PREVIEW_FAILURE_REFUSALS_MAX) }
           : {}),
+        ...(error.previewRemoved ? { previewRemoved: true } : {}),
       };
     }
     return { code: 'controller_error', detail: 'The controller hit an unexpected error.' };

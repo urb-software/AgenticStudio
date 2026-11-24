@@ -37,3 +37,11 @@ export class PreviewOperationNotABuildError extends Error {
     this.name = 'PreviewOperationNotABuildError';
   }
 }
+
+/** No build of this Project has this id. */
+export class PreviewBuildNotFoundError extends Error {
+  constructor() {
+    super('No build of this Project has this id.');
+    this.name = 'PreviewBuildNotFoundError';
+  }
+}

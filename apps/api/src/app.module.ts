@@ -1,5 +1,8 @@
 import { type DynamicModule, Module } from '@nestjs/common';
-import { EnvironmentsModule } from './modules/environments/environments.module.js';
+import {
+  EnvironmentsModule,
+  type EnvironmentsModuleOptions,
+} from './modules/environments/environments.module.js';
 import {
   ExecutionsModule,
   type ExecutionsModuleOptions,
@@ -23,6 +26,7 @@ export class AppModule {
       queue?: QueueWorkerTuning;
       projects?: ProjectsModuleOptions;
       executions?: ExecutionsModuleOptions;
+      environments?: EnvironmentsModuleOptions;
     } = {},
   ): DynamicModule {
     // One instance: `executions` and `environments` import this same module to reach its public contract.
@@ -39,7 +43,7 @@ export class AppModule {
         AuthModule,
         projects,
         ExecutionsModule.register(projects, options.executions),
-        EnvironmentsModule.register(projects),
+        EnvironmentsModule.register(projects, options.environments),
       ],
     };
   }

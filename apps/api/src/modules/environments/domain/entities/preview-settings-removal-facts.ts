@@ -2,4 +2,6 @@
 export interface PreviewSettingsRemovalFacts {
   /** Whether the Project's Preview is running. */
   readonly previewRunning: boolean;
+  /** Whether a build of the Project is requested or claimed. */
+  readonly buildActive: boolean;
 }

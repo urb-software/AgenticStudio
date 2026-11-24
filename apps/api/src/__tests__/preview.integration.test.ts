@@ -179,6 +179,10 @@ describe('Preview settings API (PostgreSQL + Redis via Testcontainers)', () => {
         settings: null,
         hostname: `preview-${id.replace(/-/g, '').slice(0, 12)}.${PREVIEW_DOMAIN}`,
         repository: { ready: false, reason: 'no_repository' },
+        state: 'not_configured',
+        running: null,
+        latestBuild: null,
+        controller: { connected: false },
       });
     });
 
@@ -246,7 +250,11 @@ describe('Preview settings API (PostgreSQL + Redis via Testcontainers)', () => {
         expect(saved.body).toEqual({
           settings: { ...BODY, updatedAt: expect.stringMatching(ISO_8601) },
           hostname: `preview-${id.replace(/-/g, '').slice(0, 12)}.${PREVIEW_DOMAIN}`,
-          repository: { ready: true },
+          repository: { ready: true, commit: expect.stringMatching(/^[0-9a-f]{40}$/) },
+          state: 'stopped',
+          running: null,
+          latestBuild: null,
+          controller: { connected: false },
           removedPorts: [{ service: 'web', place: 'services.web.ports[0]' }],
         });
         const { removedPorts, ...preview } = saved.body;
