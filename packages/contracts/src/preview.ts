@@ -7,6 +7,9 @@ export const PREVIEW_SERVICE_MAX_LENGTH = 63;
 export const PREVIEW_PORT_MIN = 1;
 export const PREVIEW_PORT_MAX = 65535;
 
+/** The most Previews that run at the same time is a whole number within these bounds. */
+export const PREVIEW_MAX_RUNNING_BOUNDS = { min: 1, max: 50 } as const;
+
 /** The Compose service-name rule. */
 export const PREVIEW_SERVICE_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/;
 

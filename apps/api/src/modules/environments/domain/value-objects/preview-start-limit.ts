@@ -18,8 +18,11 @@ export class PreviewStartLimit {
   private constructor(readonly max: number) {}
 
   static of(max: number): PreviewStartLimit {
-    if (!Number.isInteger(max) || max < PreviewStartLimit.BOUNDS.min) {
-      throw new RangeError('The running Previews limit must be a positive integer.');
+    const { min, max: top } = PreviewStartLimit.BOUNDS;
+    if (!Number.isInteger(max) || max < min || max > top) {
+      throw new RangeError(
+        `The running Previews limit must be a whole number from ${min} to ${top}.`,
+      );
     }
     return new PreviewStartLimit(max);
   }

@@ -26,8 +26,8 @@ export interface SweepPreviewOperationsResult {
 }
 
 /**
- * Fails the operations nobody carries and deletes the snapshots they held, then asks the
- * controller what runs for every Project whose newest operation is a build it lost.
+ * Fails the operations nobody carries and deletes the snapshots they held, then, while a
+ * controller is connected, asks it what runs for every Project whose newest operation is a build it lost.
  */
 @Injectable()
 export class SweepPreviewOperationsHandler {
@@ -62,8 +62,12 @@ export class SweepPreviewOperationsHandler {
     };
   }
 
-  /** The state check is then the newest operation, so a Project is selected once. */
+  /**
+   * Waits for a controller: a check nobody claims fails as `not_claimed`, becomes the newest
+   * operation and ends the selection for good.
+   */
   private async requestStateChecks(now: Date): Promise<number> {
+    if (!this.presence.availability(this.settings.leaseSeconds).connected(now)) return 0;
     const projectIds = await this.operations.findStateCheckProjects();
     for (const projectId of projectIds) {
       await this.operations.add(

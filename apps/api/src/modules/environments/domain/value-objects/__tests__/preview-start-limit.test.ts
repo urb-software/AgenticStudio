@@ -1,3 +1,4 @@
+import { PREVIEW_MAX_RUNNING_BOUNDS } from '@agentic-studio/contracts';
 import { describe, expect, it } from 'vitest';
 import { PreviewStartLimit, type PreviewStartLimitOccupant } from '../preview-start-limit.js';
 
@@ -8,6 +9,11 @@ const taking = (...ids: string[]): PreviewStartLimitOccupant[] =>
   ids.map((projectId) => ({ projectId, state: 'running' }));
 
 describe('PreviewStartLimit', () => {
+  it('has the bounds of the setting', () => {
+    expect(PreviewStartLimit.BOUNDS).toEqual(PREVIEW_MAX_RUNNING_BOUNDS);
+    expect(PreviewStartLimit.of(50).max).toBe(50);
+  });
+
   it('accepts a Project while a place is free', () => {
     expect(PreviewStartLimit.of(3).refusal({ projectId: C, occupying: taking(A, B) })).toBeNull();
     expect(PreviewStartLimit.of(1).refusal({ projectId: A, occupying: [] })).toBeNull();
@@ -25,7 +31,7 @@ describe('PreviewStartLimit', () => {
     expect(PreviewStartLimit.of(1).refusal({ projectId: A, occupying: taking(A) })).toBeNull();
   });
 
-  it.each([0, -1, 1.5, Number.NaN])('refuses a limit of %s', (max) => {
+  it.each([0, -1, 51, 1.5, Number.NaN])('refuses a limit of %s', (max) => {
     expect(() => PreviewStartLimit.of(max)).toThrow(RangeError);
   });
 });

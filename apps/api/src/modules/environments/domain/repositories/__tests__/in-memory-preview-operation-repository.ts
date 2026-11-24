@@ -131,11 +131,15 @@ export class InMemoryPreviewOperationRepository implements PreviewOperationRepos
     });
   }
 
-  deleteForProject(projectId: string): Promise<void> {
+  async deleteForDisconnect(
+    projectId: string,
+    mayDelete: (facts: PreviewDisconnectReadModel) => boolean,
+  ): Promise<boolean> {
+    if (!mayDelete(await this.findDisconnectFacts(projectId))) return false;
     for (const [id, operation] of this.operations) {
       if (operation.projectId === projectId) this.operations.delete(id);
     }
-    return Promise.resolve();
+    return true;
   }
 
   findPreviewFacts(projectId: string): Promise<PreviewReadModel> {

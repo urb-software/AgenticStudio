@@ -123,6 +123,25 @@ describe('SweepPreviewOperationsHandler', () => {
     const stateChecks = () =>
       [...operations.operations.values()].filter((operation) => operation.kind === 'state');
 
+    beforeEach(() => {
+      kit.presence.seen = seconds(-10);
+    });
+
+    it('waits while no controller is connected, then requests the check once one is', async () => {
+      await request('a', PROJECT, minutes(-40));
+      await claim('a', minutes(-30), seconds(-120));
+      kit.presence.seen = null;
+
+      const absent = await handler.execute();
+      expect(absent.stateChecks).toBe(0);
+      expect(stateChecks()).toHaveLength(0);
+      expect(await failureOf('a')).toBe('controller_lost');
+
+      kit.presence.seen = seconds(-5);
+      expect((await handler.execute()).stateChecks).toBe(1);
+      expect(stateChecks()).toHaveLength(1);
+    });
+
     it.each(['controller_lost', 'report_overdue'] as const)(
       'requests one state check for a Project whose newest operation is a build lost as %s',
       async (code) => {

@@ -16,11 +16,7 @@ import {
   type DatabaseClient,
 } from '../../../../../platform/database/database.module.js';
 import { problemDetailsSchema } from '../../../../../platform/http/problem-details.js';
-import {
-  createGitFixture,
-  type GitFixture,
-  pushFiles,
-} from '../../../../../__tests__/git-fixture.js';
+import { createGitFixture, pushFiles } from '../../../../../__tests__/git-fixture.js';
 import {
   signIn,
   startStudioApp,
@@ -55,7 +51,6 @@ describe('Preview stop, reset and limit API (PostgreSQL + Redis via Testcontaine
   let dataDir: string;
   let app: INestApplication;
   let cookie: string;
-  let fixture: GitFixture;
 
   const db = () => app.get<DatabaseClient>(DATABASE_CLIENT);
   const http = () => request(app.getHttpServer());
@@ -91,10 +86,14 @@ describe('Preview stop, reset and limit API (PostgreSQL + Redis via Testcontaine
 
   async function readyProject(): Promise<string> {
     const projectId = await createProject();
+    const own = createGitFixture(dataDir, `preview-stop-reset-${randomUUID()}`, {
+      branches: ['main', 'dev'],
+    });
+    pushFiles(own, 'dev', own.commits.dev!, { 'compose.yaml': COMPOSE });
     const connected = await http()
       .post(`/api/projects/${projectId}/repository`)
       .set(session())
-      .send({ url: fixture.url, integrationBranch: 'dev' });
+      .send({ url: own.url, integrationBranch: 'dev' });
     expect(connected.status).toBe(201);
     const deadline = Date.now() + 30_000;
     for (;;) {
@@ -118,6 +117,11 @@ describe('Preview stop, reset and limit API (PostgreSQL + Redis via Testcontaine
   /** A Preview that runs: a succeeded build the controller once claimed. */
   async function seedRunning(projectId: string, requestedMinutesAgo = 30) {
     const at = (minutes: number) => new Date(Date.now() - minutes * 60_000);
+    await db().previewSettings.upsert({
+      where: { projectId },
+      create: { projectId, composeFile: 'compose.yaml', service: 'web', port: 80 },
+      update: {},
+    });
     return db().previewOperation.create({
       data: {
         projectId,
@@ -156,12 +160,6 @@ describe('Preview stop, reset and limit API (PostgreSQL + Redis via Testcontaine
       controllerLeaseSeconds: 60,
       previewDomain: 'preview.example.test',
     };
-    if (linux) {
-      fixture = createGitFixture(dataDir, 'preview-stop-reset-source', {
-        branches: ['main', 'dev'],
-      });
-      pushFiles(fixture, 'dev', fixture.commits.dev!, { 'compose.yaml': COMPOSE });
-    }
     app = await startStudioApp(services.config, {
       environments: { sweeps: false },
       projects: { disconnectRetryMs: 300 },
@@ -323,7 +321,7 @@ describe('Preview stop, reset and limit API (PostgreSQL + Redis via Testcontaine
         data: {
           projectId: building,
           kind: 'build',
-          status: 'requested',
+          status: 'claimed',
           commit: COMMIT,
           composeFile: 'compose.yaml',
           service: 'web',
@@ -332,6 +330,9 @@ describe('Preview stop, reset and limit API (PostgreSQL + Redis via Testcontaine
           cpuPercent: 100,
           tasksMax: 512,
           buildMinutes: 20,
+          claimedBy: randomUUID(),
+          claimedAt: new Date(),
+          heartbeatAt: new Date(),
         },
       });
       const resetting = await createProject();

@@ -419,7 +419,7 @@ describe('ownership', () => {
       ]);
     });
 
-    it('prunes the build cache with the pinned arguments', async () => {
+    it('prunes the build cache with the arguments of the size cap', async () => {
       const runner = daemon({});
 
       await runtime(runner).runtime.pruneBuildCache(10 * 1024 ** 3, call());

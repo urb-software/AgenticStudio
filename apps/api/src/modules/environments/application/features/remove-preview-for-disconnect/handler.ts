@@ -35,15 +35,23 @@ export class RemovePreviewForDisconnectHandler {
 
   async execute(input: RemovePreviewForDisconnectInput): Promise<RemovePreviewForDisconnectResult> {
     const { projectId } = input;
+    const rule = PreviewDisconnectRule.create();
     const facts = await this.operations.findDisconnectFacts(projectId);
-    switch (PreviewDisconnectRule.create().next(facts)) {
+    switch (rule.next(facts)) {
       case 'forget_settings':
         await this.settings.delete(projectId);
         return 'done';
-      case 'forget_everything':
+      case 'forget_everything': {
+        // The rule is asked again under the claim lock: a build claimed meanwhile is kept, and
+        // the next retry decides again.
+        const deleted = await this.operations.deleteForDisconnect(
+          projectId,
+          (current) => rule.next(current) === 'forget_everything',
+        );
+        if (!deleted) return 'pending';
         await this.settings.delete(projectId);
-        await this.operations.deleteForProject(projectId);
         return 'done';
+      }
       case 'wait_for_removal':
         return 'pending';
       case 'request_removal':

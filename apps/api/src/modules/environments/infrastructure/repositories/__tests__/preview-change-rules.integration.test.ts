@@ -490,6 +490,24 @@ describe('the Preview stop, reset and limit store follows the rules of the domai
       ]);
     });
 
+    it('keeps the operations when a build was claimed after the facts were read', async () => {
+      const ids = await projects(1);
+      const claimed = await insert(ids, { project: 0, status: 'requested', requestedAt: -10 });
+      const rule = PreviewDisconnectRule.create();
+      const decided = rule.next(await operations().findDisconnectFacts(ids[0]!));
+      expect(decided).toBe('forget_everything');
+
+      const claimedNow = await operations().claimNext(randomUUID(), NOW);
+      expect(claimedNow?.id).toBe(claimed);
+      const deleted = await operations().deleteForDisconnect(
+        ids[0]!,
+        (facts) => rule.next(facts) === 'forget_everything',
+      );
+
+      expect(deleted).toBe(false);
+      expect(await db().previewOperation.count({ where: { projectId: ids[0]! } })).toBe(1);
+    });
+
     it('deletes the operations of one Project with their log lines, and no other', async () => {
       const ids = await projects(2);
       const mine = await insert(ids, { project: 0, status: 'succeeded', requestedAt: -60 });
@@ -498,7 +516,13 @@ describe('the Preview stop, reset and limit store follows the rules of the domai
         data: { operationId: mine, seq: 1, at: NOW, stream: 'build', text: 'x' },
       });
 
-      await operations().deleteForProject(ids[0]!);
+      const rule = PreviewDisconnectRule.create();
+      expect(
+        await operations().deleteForDisconnect(
+          ids[0]!,
+          (facts) => rule.next(facts) === 'forget_everything',
+        ),
+      ).toBe(true);
 
       expect(await db().previewOperation.count({ where: { projectId: ids[0]! } })).toBe(0);
       expect(await db().previewOperationLine.count()).toBe(0);

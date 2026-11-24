@@ -87,33 +87,19 @@ export class PrismaPreviewOperationRepository implements PreviewOperationReposit
   }
 
   async findDisconnectFacts(projectId: string): Promise<PreviewDisconnectReadModel> {
-    const active = { projectId, status: { in: ['requested', 'claimed'] } };
-    const [operations, claimedBuilds, newest, activeOperations, activeRemovals] = await Promise.all(
-      [
-        this.db.previewOperation.count({ where: { projectId } }),
-        this.db.previewOperation.count({
-          where: { projectId, kind: 'build', claimedAt: { not: null } },
-        }),
-        this.db.previewOperation.findFirst({
-          where: { projectId },
-          orderBy: [{ requestedAt: 'desc' }, { id: 'desc' }],
-          select: { kind: true, status: true },
-        }),
-        this.db.previewOperation.count({ where: active }),
-        this.db.previewOperation.count({ where: { ...active, kind: 'remove_data' } }),
-      ],
-    );
-    return {
-      operations,
-      buildEverClaimed: claimedBuilds > 0,
-      newest,
-      activeOperations,
-      removalActive: activeRemovals > 0,
-    };
+    return readDisconnectFacts(this.db, projectId);
   }
 
-  async deleteForProject(projectId: string): Promise<void> {
-    await this.db.previewOperation.deleteMany({ where: { projectId } });
+  async deleteForDisconnect(
+    projectId: string,
+    mayDelete: (facts: PreviewDisconnectReadModel) => boolean,
+  ): Promise<boolean> {
+    return inTransaction(this.db, async (tx) => {
+      await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext(${CLAIM_LOCK}))`;
+      if (!mayDelete(await readDisconnectFacts(tx, projectId))) return false;
+      await tx.previewOperation.deleteMany({ where: { projectId } });
+      return true;
+    });
   }
 
   async find(id: string): Promise<PreviewOperation | null> {
@@ -230,6 +216,33 @@ export class PrismaPreviewOperationRepository implements PreviewOperationReposit
       row.environmentFileSecretId === null ? [] : [row.environmentFileSecretId],
     );
   }
+}
+
+async function readDisconnectFacts(
+  db: Executor,
+  projectId: string,
+): Promise<PreviewDisconnectReadModel> {
+  const active = { projectId, status: { in: ['requested', 'claimed'] } };
+  const operations = await db.previewOperation.count({ where: { projectId } });
+  const claimedBuilds = await db.previewOperation.count({
+    where: { projectId, kind: 'build', claimedAt: { not: null } },
+  });
+  const newest = await db.previewOperation.findFirst({
+    where: { projectId },
+    orderBy: [{ requestedAt: 'desc' }, { id: 'desc' }],
+    select: { kind: true, status: true },
+  });
+  const activeOperations = await db.previewOperation.count({ where: active });
+  const activeRemovals = await db.previewOperation.count({
+    where: { ...active, kind: 'remove_data' },
+  });
+  return {
+    operations,
+    buildEverClaimed: claimedBuilds > 0,
+    newest,
+    activeOperations,
+    removalActive: activeRemovals > 0,
+  };
 }
 
 async function findOperation(db: Executor, id: string): Promise<PreviewOperation | null> {

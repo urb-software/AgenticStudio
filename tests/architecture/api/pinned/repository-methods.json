@@ -11,9 +11,9 @@
       "findOccupyingProjects": { "kind": "query" },
       "findStateCheckProjects": { "kind": "query" },
       "findDisconnectFacts": { "kind": "query" },
-      "deleteForProject": {
+      "deleteForDisconnect": {
         "kind": "set-wide",
-        "reason": "One DELETE of every operation of a Project, with its log lines by cascade, once the Project's Preview is gone; which operations may go is the domain PreviewDisconnectRule's."
+        "reason": "Under the claim lock it reads the Project's facts again and deletes every operation, with its log lines by cascade, only when the domain PreviewDisconnectRule still says the Preview is gone, so a build claimed meanwhile is never deleted from under its controller."
       },
       "change": {
         "kind": "atomic",

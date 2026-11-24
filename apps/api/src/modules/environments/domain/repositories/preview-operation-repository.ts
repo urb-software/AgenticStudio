@@ -72,8 +72,15 @@ export interface PreviewOperationRepository {
   /** What removing the Project's Preview on Disconnect decides from (`PreviewDisconnectRule`). */
   findDisconnectFacts(projectId: string): Promise<PreviewDisconnectReadModel>;
 
-  /** Deletes every operation of the Project, with their log lines. */
-  deleteForProject(projectId: string): Promise<void>;
+  /**
+   * One transaction under the claim lock: reads the facts again, and deletes every operation of
+   * the Project, with their log lines, only when `mayDelete` still agrees. `false` when it does
+   * not, so an operation a controller claimed meanwhile is never deleted from under it.
+   */
+  deleteForDisconnect(
+    projectId: string,
+    mayDelete: (facts: PreviewDisconnectReadModel) => boolean,
+  ): Promise<boolean>;
 
   /** The facts of the Project's Preview state; both `null` for a Project with no operation. */
   findPreviewFacts(projectId: string): Promise<PreviewReadModel>;

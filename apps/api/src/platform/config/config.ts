@@ -1,4 +1,4 @@
-import { PREVIEW_LIMIT_BOUNDS } from '@agentic-studio/contracts';
+import { PREVIEW_LIMIT_BOUNDS, PREVIEW_MAX_RUNNING_BOUNDS } from '@agentic-studio/contracts';
 import { createHash, createSecretKey, type KeyObject } from 'node:crypto';
 import { accessSync, constants, existsSync, realpathSync, statSync } from 'node:fs';
 import { isIP } from 'node:net';
@@ -287,7 +287,12 @@ const environmentSchema = z.object({
   // Minutes a requested Preview operation may wait while no controller is known to exist.
   STUDIO_PREVIEW_UNCLAIMED_MINUTES: z.coerce.number().int().min(1).max(1440).default(5),
   // The most Previews that run at the same time (a Preview running, or a build requested or claimed).
-  STUDIO_PREVIEW_MAX_RUNNING: z.coerce.number().int().min(1).max(50).default(3),
+  STUDIO_PREVIEW_MAX_RUNNING: z.coerce
+    .number()
+    .int()
+    .min(PREVIEW_MAX_RUNNING_BOUNDS.min)
+    .max(PREVIEW_MAX_RUNNING_BOUNDS.max)
+    .default(3),
   STUDIO_PREVIEW_LOG_MAX_BYTES: z.coerce
     .number()
     .int()

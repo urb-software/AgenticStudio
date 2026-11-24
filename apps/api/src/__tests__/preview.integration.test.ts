@@ -182,6 +182,7 @@ describe('Preview settings API (PostgreSQL + Redis via Testcontainers)', () => {
         state: 'not_configured',
         running: null,
         latestBuild: null,
+        latestChange: null,
         controller: { connected: false },
       });
     });
@@ -254,6 +255,7 @@ describe('Preview settings API (PostgreSQL + Redis via Testcontainers)', () => {
           state: 'stopped',
           running: null,
           latestBuild: null,
+          latestChange: null,
           controller: { connected: false },
           removedPorts: [{ service: 'web', place: 'services.web.ports[0]' }],
         });

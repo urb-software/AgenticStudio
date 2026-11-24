@@ -20,7 +20,9 @@ const other = (id: string, kind: 'stop' | 'remove_data'): PreviewStateOperation 
   build: null,
 });
 
-const state = (facts: Parameters<typeof PreviewState.of>[0]) => PreviewState.of(facts);
+type Facts = Parameters<typeof PreviewState.of>[0];
+const state = (facts: Omit<Facts, 'latestChange'> & Partial<Pick<Facts, 'latestChange'>>) =>
+  PreviewState.of({ latestChange: null, ...facts });
 
 describe('PreviewState', () => {
   it('is not_configured without settings and without a build', () => {
@@ -187,7 +189,7 @@ describe('PreviewState', () => {
       finishedAt: null,
       build: null,
     };
-    const of = (facts: Partial<Parameters<typeof PreviewState.of>[0]>) =>
+    const of = (facts: Partial<Facts>) =>
       state({ configured: true, latestBuild: null, runningChange: null, ...facts });
     const names = (state: PreviewState) => [
       state.buildRefusal()?.name ?? null,

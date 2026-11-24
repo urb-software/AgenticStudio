@@ -97,8 +97,8 @@ export class RepositoryCleanup {
 
   private logPending(projectId: string, what: string, error: unknown): void {
     this.logger.warn(
-      `Disconnect of project ${projectId}: ${what}; it stays disconnecting and is retried at ` +
-        `start-up and on a repeated disconnect. ${redactSecrets(String(error))}`,
+      `Disconnect of project ${projectId}: ${what}; it stays disconnecting and is retried every 30 s, ` +
+        `at start-up and on a repeated disconnect. ${redactSecrets(String(error))}`,
     );
   }
 }

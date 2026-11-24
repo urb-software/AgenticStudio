@@ -155,4 +155,26 @@ describe('RemovePreviewForDisconnectHandler', () => {
 
     await expect(racing.execute({ projectId: PROJECT })).resolves.toBe('pending');
   });
+
+  it('keeps everything and is pending when a build was claimed after the facts were read', async () => {
+    await savePreviewSettings(settings, PROJECT);
+    await seedBuild(operations, PROJECT, BUILD, 'requested');
+    const facts = operations.findDisconnectFacts.bind(operations);
+    let first = true;
+    operations.findDisconnectFacts = async (projectId) => {
+      const read = await facts(projectId);
+      if (first) {
+        first = false;
+        await operations.change(BUILD, (op) => {
+          op.claim(KIT_CONTROLLER, later(9));
+        });
+      }
+      return read;
+    };
+
+    await expect(run()).resolves.toBe('pending');
+
+    expect(await operations.find(BUILD)).toMatchObject({ status: 'claimed' });
+    expect(await settings.find(PROJECT)).not.toBeNull();
+  });
 });

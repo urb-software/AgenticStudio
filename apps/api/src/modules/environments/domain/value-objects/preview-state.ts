@@ -27,7 +27,7 @@ export interface PreviewStateFacts {
   /** The newest finished operation that changes what runs. */
   runningChange: PreviewStateOperation | null;
   /** The newest stop or data removal by request time. */
-  latestChange?: PreviewStateOperation | null;
+  latestChange: PreviewStateOperation | null;
 }
 
 /** What the Project's Preview is, derived from its operations; nothing about it is stored. */
@@ -44,7 +44,7 @@ export class PreviewState {
 
   /** Precedence: resetting data, stopping, building, running, not configured, failed, stopped. */
   static of(facts: PreviewStateFacts): PreviewState {
-    const { configured, latestBuild, runningChange, latestChange = null } = facts;
+    const { configured, latestBuild, runningChange, latestChange } = facts;
     const running =
       runningChange !== null &&
       runningChange.kind === 'build' &&

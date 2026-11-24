@@ -62,7 +62,7 @@ export function composeArguments(run: PreviewRun, subcommand: readonly string[])
   ];
 }
 
-/** The size cap is the pinned Docker's `--keep-storage`; `--all` so that cache no build uses goes too. */
+/** The size cap is the `--keep-storage` flag of `docker builder prune`; `--all` so that cache no build uses goes too. */
 export function buildCachePruneArguments(maxBytes: number): string[] {
   return ['builder', 'prune', '--all', '--force', '--keep-storage', String(maxBytes)];
 }

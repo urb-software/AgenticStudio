@@ -314,6 +314,7 @@ describe('the Preview build store follows the rules of the domain (PostgreSQL + 
 
       expect(await operations().findPreviewFacts(ids[0]!)).toEqual({
         latestBuild: null,
+        latestChange: null,
         runningChange: null,
       });
     });
