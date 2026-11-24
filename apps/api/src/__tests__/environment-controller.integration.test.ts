@@ -177,6 +177,9 @@ describe('Environment controller API (PostgreSQL + Redis via Testcontainers)', (
 
   beforeEach(async () => {
     await db().$executeRaw`TRUNCATE TABLE projects CASCADE`;
+    for (const reference of await snapshots()) {
+      await app.get<SecretStore>(SECRET_STORE).delete(reference);
+    }
   });
 
   describe('the three credentials open three sets of routes', () => {
