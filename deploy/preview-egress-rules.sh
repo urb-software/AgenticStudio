@@ -125,7 +125,7 @@ case "${1:-}" in
     ;;
   verify-inside) verify_inside ;;
   *)
-    echo "usage: $0 apply|apply-inside|verify" >&2
+    echo "usage: $0 apply|apply-inside|verify (verify-inside is internal)" >&2
     exit 2
     ;;
 esac

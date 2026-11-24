@@ -61,6 +61,7 @@ WORK_DIR=""
 LISTENER_PID=""
 APP_SLICE_STATE=""
 APP_SLICE_SWAP=""
+APP_SLICE_SWAP_BEFORE=""
 
 UID_NOW="$(id -u)"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$UID_NOW}"
@@ -285,7 +286,7 @@ check_cgroup() {
     fail build-memory-limit "no rootless daemon at $DOCKER_HOST"
     return
   fi
-  local before pid_before pid_after build_status limit_set expected kills_before kills_after events restored output cgdir current
+  local before pid_before pid_after build_status limit_set expected kills_before kills_after events restored restored_swap output cgdir current user_max note
   before="$(systemctl --user show app.slice -p MemoryMax --value 2>/dev/null)"
   pid_before="$(systemctl --user show docker.service -p MainPID --value 2>/dev/null)"
   cgdir="/sys/fs/cgroup$(systemctl --user show app.slice -p ControlGroup --value 2>/dev/null)"
@@ -297,10 +298,17 @@ check_cgroup() {
   current="$(cat "$cgdir/memory.current" 2>/dev/null)"
   [[ "$current" =~ ^[0-9]+$ ]] || current=0
   expected=$((current + 536870912))
+  # The bound must be below the user slice's, or the user slice would be what the build hits.
+  user_max="$(systemctl show "user-$UID_NOW.slice" -p MemoryMax --value 2>/dev/null)"
+  if [[ "$user_max" =~ ^[0-9]+$ ]] && [ "$expected" -ge "$user_max" ]; then
+    fail build-memory-limit "the probe's bound ($expected) is not below the user slice's MemoryMax ($user_max)"
+    return
+  fi
   kills_before="$(sed -n 's/^oom_kill //p' "$events" 2>/dev/null)"
   APP_SLICE_STATE="${before:-infinity}"
   APP_SLICE_SWAP="$(systemctl --user show app.slice -p MemorySwapMax --value 2>/dev/null)"
   APP_SLICE_SWAP="${APP_SLICE_SWAP:-infinity}"
+  APP_SLICE_SWAP_BEFORE="$APP_SLICE_SWAP"
   # No swap, as the controller sets it: otherwise the kernel pages the allocation out instead.
   systemctl --user set-property --runtime app.slice "MemoryMax=$expected" MemorySwapMax=0 >/dev/null 2>&1
   limit_set="$(systemctl --user show app.slice -p MemoryMax --value 2>/dev/null)"
@@ -309,6 +317,7 @@ check_cgroup() {
   kills_after="$(sed -n 's/^oom_kill //p' "$events" 2>/dev/null)"
   systemctl --user set-property --runtime app.slice "MemoryMax=$APP_SLICE_STATE" "MemorySwapMax=$APP_SLICE_SWAP" >/dev/null 2>&1
   restored="$(systemctl --user show app.slice -p MemoryMax --value 2>/dev/null)"
+  restored_swap="$(systemctl --user show app.slice -p MemorySwapMax --value 2>/dev/null)"
   APP_SLICE_STATE=""
   local up=1 _
   for _ in $(seq 1 30); do
@@ -322,10 +331,12 @@ check_cgroup() {
   local killed=1
   if [[ "$kills_before" =~ ^[0-9]+$ && "$kills_after" =~ ^[0-9]+$ ]] && [ "$kills_after" -gt "$kills_before" ]; then killed=0; fi
   if [ "$limit_set" = "$expected" ] && [ "$build_status" -ne 0 ] && [ "$killed" = 0 ] && [ "$up" = 0 ] &&
-    [ "$restored" = "${before:-infinity}" ]; then
-    pass build-memory-limit "app.slice bounded to $expected bytes: a RUN step of 1.2 GB failed with an OOM kill in it (counter $kills_before -> $kills_after), the daemon is active (pid $pid_before -> $pid_after), MemoryMax restored to $restored"
+    [ "$restored" = "${before:-infinity}" ] && [ "$restored_swap" = "$APP_SLICE_SWAP_BEFORE" ]; then
+    note=""
+    [ "$pid_before" = "$pid_after" ] || note=" (note: the daemon was restarted during the probe, pid $pid_before -> $pid_after: the kernel picked it, the residual case)"
+    pass build-memory-limit "app.slice bounded to $expected bytes: a RUN step of 1.2 GB failed with an OOM kill in it (counter $kills_before -> $kills_after), the daemon is active, MemoryMax restored to $restored and MemorySwapMax to $restored_swap$note"
   else
-    fail build-memory-limit "limit ${limit_set:-?} (expected $expected), build exit $build_status, oom kill $([ "$killed" = 0 ] && echo seen || echo not seen) (counter ${kills_before:-?} -> ${kills_after:-?}), daemon up=$([ "$up" = 0 ] && echo yes || echo no) (pid $pid_before -> $pid_after), MemoryMax restored to '${restored:-?}' (was '${before:-?}'); app.slice $cgdir: peak $(cat "$cgdir/memory.peak" 2>/dev/null), children: $(find "$cgdir" -mindepth 1 -maxdepth 1 -type d -printf '%f ' 2>/dev/null); build output: $(tail -n 6 <<<"$output" | tr '\n' '|')"
+    fail build-memory-limit "limit ${limit_set:-?} (expected $expected), build exit $build_status, oom kill $([ "$killed" = 0 ] && echo seen || echo not seen) (counter ${kills_before:-?} -> ${kills_after:-?}), daemon up=$([ "$up" = 0 ] && echo yes || echo no) (pid $pid_before -> $pid_after), MemoryMax restored to '${restored:-?}' (was '${before:-?}'), swap '${restored_swap:-?}' (was '${APP_SLICE_SWAP_BEFORE:-?}'); app.slice $cgdir: peak $(cat "$cgdir/memory.peak" 2>/dev/null), children: $(find "$cgdir" -mindepth 1 -maxdepth 1 -type d -printf '%f ' 2>/dev/null); build output: $(tail -n 6 <<<"$output" | tr '\n' '|')"
   fi
 }
 

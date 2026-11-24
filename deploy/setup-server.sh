@@ -335,7 +335,7 @@ install_template() {
   for content in "$@"; do expressions+=(-e "$content"); done
   content="$(sed "${expressions[@]}" "$source")" || die "could not render $source."
   [ -n "$content" ] || die "rendering $source gave nothing."
-  printf '%s\n' "$content" | install_content "$dest" "$mode"
+  install_content "$dest" "$mode" <<<"$content"
 }
 
 # A root-owned directory with an exact mode.
@@ -1094,8 +1094,10 @@ step_preview_rootless() {
     restart=1
   fi
   want="# Installed by deploy/setup-server.sh: the egress rules are applied in the daemon's network
-# namespace at every start, and the daemon does not start without them. A build that runs out of
-# memory under a limit the controller sets on this unit must not leave the daemon stopped.
+# namespace at every start, and the daemon does not start without them. The controller bounds
+# the Preview user's app.slice per build, and the kernel may pick the daemon instead of the build:
+# the daemon must then not stay stopped (Restart=always stays; OOMPolicy=continue keeps the
+# daemon's other processes).
 [Service]
 ExecStartPost=$PREVIEW_EGRESS_SCRIPT apply
 OOMPolicy=continue"
