@@ -28,6 +28,8 @@
 //    to the file:// fixture remotes and opens pull requests on a local stub of GitHub's pull
 //    request API (tests/e2e/stub-github.mjs, its own process on 127.0.0.1:$E2E_GITHUB_STUB_PORT,
 //    default 4502; STUDIO_AGENT_GITHUB_API_URL), with a throwaway token; nothing reaches GitHub.
+//    On Linux it also starts the environment controller with the fake runtime and a throwaway
+//    token; after Playwright, tests/e2e/controller-phase.mjs runs a SQL-inserted build and stop.
 //    Repository features
 //    are Linux only: on other platforms the Git steps skip with a reason, and the smoke
 //    checks the "unsupported platform" answer instead.
@@ -42,6 +44,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { COMPOSE, runControllerPhase } from './controller-phase.mjs';
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const WEB_PORT = Number(process.env.E2E_WEB_PORT ?? 4500);
@@ -143,6 +146,28 @@ async function waitUntilReady(url) {
     await delay(500);
   }
   throw new Error(`${url} was not ready within ${READY_TIMEOUT_MS / 1000}s`);
+}
+
+/**
+ * Creates `<root>/controller.git`, a bare Repository whose `dev` branch holds the Compose file
+ * of the environment controller phase. Returns its URL and the commit of `dev`.
+ */
+async function createControllerFixture(root) {
+  const work = join(root, 'controller-work');
+  await mkdir(work, { recursive: true });
+  fixtureGit(work, ['init', '--quiet', '--template=', '--initial-branch=main']);
+  await writeFile(join(work, 'README.md'), '# Smoke fixture (controller)\n');
+  fixtureGit(work, ['add', '--all']);
+  fixtureGit(work, ['commit', '--quiet', '-m', 'initial']);
+  fixtureGit(work, ['checkout', '--quiet', '-b', 'dev']);
+  await writeFile(join(work, 'compose.yaml'), COMPOSE);
+  fixtureGit(work, ['add', '--all']);
+  fixtureGit(work, ['commit', '--quiet', '-m', 'preview files']);
+  const commit = fixtureGit(work, ['rev-parse', 'HEAD']);
+  const bare = join(root, 'controller.git');
+  fixtureGit(root, ['clone', '--quiet', '--bare', '--template=', work, bare]);
+  fixtureGit(bare, ['symbolic-ref', 'HEAD', 'refs/heads/main']);
+  return { url: pathToFileURL(bare).href, commit };
 }
 
 /** Runs the system `git` for a fixture, isolated from the host's Git configuration. */
@@ -248,12 +273,14 @@ async function main() {
   run('pnpm', ['run', 'build:packages']);
   run('pnpm', ['--filter', '@agentic-studio/api', 'run', 'build']);
   if (LINUX) run('pnpm', ['--filter', '@agentic-studio/agent-worker', 'run', 'build']);
+  if (LINUX) run('pnpm', ['--filter', '@agentic-studio/environment-controller', 'run', 'build']);
   const webProxyEnv = { STUDIO_WEB_API_PROXY: 'true', API_ORIGIN };
   run('pnpm', ['--filter', '@agentic-studio/web', 'run', 'build'], webProxyEnv);
 
   // Imported after the builds: they resolve to the freshly built dist/ output.
   const { startPostgres, startRedis } = await import('@agentic-studio/testing');
   const { deployMigrations } = await import('@agentic-studio/database/migrations');
+  const { createDatabaseClient } = await import('@agentic-studio/database');
 
   console.log('\n[e2e] starting PostgreSQL and Redis (Testcontainers)');
   const [postgres, redis] = await Promise.all([startPostgres(), startRedis()]);
@@ -262,6 +289,8 @@ async function main() {
     () => redis.stop(),
   );
   await deployMigrations(postgres.url);
+  const db = createDatabaseClient(postgres.url);
+  cleanups.push(() => db.$disconnect());
 
   // Throwaway data directory (STUDIO_DATA_DIR) outside the repository, removed afterwards.
   const dataDir = await mkdtemp(join(tmpdir(), 'studio-e2e-data-'));
@@ -271,8 +300,10 @@ async function main() {
   const scratch = await mkdtemp(join(tmpdir(), 'studio-e2e-'));
   cleanups.push(() => rm(scratch, { recursive: true, force: true }));
   let fixtureBase = '';
+  let controllerFixture;
   if (LINUX) {
     fixtureBase = await createFixtureRepositories(join(scratch, 'fixtures'));
+    controllerFixture = await createControllerFixture(join(scratch, 'fixtures'));
     console.log(`[e2e] fixture repositories under ${fixtureBase}`);
   } else {
     console.log(
@@ -285,6 +316,8 @@ async function main() {
   const operatorPassword = randomBytes(24).toString('base64url');
   // The agent worker's token for this run only (at least 32 characters); never stored.
   const workerToken = randomBytes(32).toString('base64url');
+  // The environment controller's token for this run only (the API gets the same); never stored.
+  const controllerToken = randomBytes(32).toString('base64url');
   // The Merge credential (the API's) and the Agent account's token (the worker's, set below):
   // the stub of GitHub tells them apart, and lets only the first close a pull request.
   const mergeToken = randomBytes(24).toString('base64url');
@@ -304,6 +337,7 @@ async function main() {
     STUDIO_SECRETS_KEY: randomBytes(32).toString('base64'),
     STUDIO_DATA_DIR: dataDir,
     STUDIO_WORKER_TOKEN: workerToken,
+    STUDIO_CONTROLLER_TOKEN: controllerToken,
     // Issue #146: the operator's own GitHub login, whose review comments are preselected.
     STUDIO_OPERATOR_GITHUB_LOGIN: 'Smoke-Operator',
     // The Merge credential for this run only, and the GitHub stub as the merge adapter's API
@@ -363,6 +397,26 @@ async function main() {
       { clean: true },
     );
   }
+  if (LINUX) {
+    // A clean environment on purpose: the controller must not see a Studio-side setting either.
+    startServer(
+      'environment-controller',
+      process.execPath,
+      ['apps/environment-controller/dist/main.js'],
+      {
+        PATH: process.env.PATH ?? '/usr/bin:/bin',
+        STUDIO_API_URL: API_ORIGIN,
+        STUDIO_CONTROLLER_TOKEN: controllerToken,
+        STUDIO_CONTROLLER_ENVIRONMENT: 'test',
+        STUDIO_CONTROLLER_RUNTIME: 'fake',
+        STUDIO_CONTROLLER_DATA_DIR: join(scratch, 'controller-data'),
+        STUDIO_CONTROLLER_POLL_MS: '500',
+        STUDIO_CONTROLLER_HEARTBEAT_MS: '2000',
+        STUDIO_CONTROLLER_MIN_FREE_GB: '0',
+      },
+      { clean: true },
+    );
+  }
   startServer(
     'web',
     process.execPath,
@@ -396,6 +450,16 @@ async function main() {
     },
   );
   if (LINUX) await assertLinuxTestsRan(reportPath);
+  if (LINUX) {
+    await runControllerPhase({
+      apiOrigin: API_ORIGIN,
+      studioOrigin: STUDIO_ORIGIN,
+      operatorPassword,
+      repositoryUrl: controllerFixture.url,
+      commit: controllerFixture.commit,
+      db,
+    });
+  }
 }
 
 for (const signal of ['SIGINT', 'SIGTERM']) {

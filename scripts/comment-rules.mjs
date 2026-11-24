@@ -8,7 +8,14 @@ import ts from 'typescript';
 export const MAX_COMMENT_LINES = 3;
 
 /** Source roots under the repository root. */
-const ROOTS = ['apps/api/src', 'apps/agent-worker', 'apps/web', 'packages', 'tests/architecture'];
+const ROOTS = [
+  'apps/api/src',
+  'apps/agent-worker',
+  'apps/environment-controller',
+  'apps/web',
+  'packages',
+  'tests/architecture',
+];
 const SOURCE = /\.(?:[cm]?[jt]s|tsx)$/;
 const SKIPPED_DIRECTORIES = new Set([
   'node_modules',

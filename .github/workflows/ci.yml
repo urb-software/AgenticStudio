@@ -290,6 +290,42 @@ jobs:
       # and Redis (Testcontainers on the runner's Docker). Linux-only suites run here. No secrets.
       - run: pnpm test:agent-worker
 
+  quality-environment-controller:
+    name: quality:environment-controller
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      # Format + ESLint + typecheck + build of apps/environment-controller and the packages it uses.
+      - run: pnpm check:environment-controller
+
+  test-environment-controller:
+    name: test:environment-controller
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      # Unit tests, the controller loop in process against the built API on throwaway PostgreSQL and
+      # Redis, and the Docker Compose runtime against the runner's own Docker (Testcontainers and
+      # throwaway containers). Linux-only suites run here. No secrets.
+      - name: Print Git and Docker versions
+        run: git --version && docker --version && docker compose version
+      - run: pnpm test:environment-controller
+
   deploy-server:
     name: deploy:server
     needs: changes
@@ -344,6 +380,8 @@ jobs:
       - security
       - quality-agent-worker
       - test-agent-worker
+      - quality-environment-controller
+      - test-environment-controller
       - deploy-server
     runs-on: ubuntu-24.04
     timeout-minutes: 5
