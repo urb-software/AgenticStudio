@@ -1,6 +1,24 @@
 {
   "description": "Every method of every repository interface in domain/repositories/ (backend.md section 3 rule 6: business rules live on the domain object, never in the database adapter). Kinds: load (reads one aggregate), save (persists or removes one), query (reads plain data), atomic (one conditional, locked or index-decided step that load, call and save cannot express) and set-wide (one statement over many aggregates). Each atomic or set-wide method has a one-line reason. Compared with the source by tests/architecture/api/pinned.test.ts: a method added, renamed or removed fails it until this file is updated in the same pull request.",
   "repositories": {
+    "environments/PreviewOperationRepository": {
+      "add": { "kind": "save" },
+      "find": { "kind": "load" },
+      "change": {
+        "kind": "atomic",
+        "reason": "Loads the operation FOR UPDATE, calls a pure callback that runs operation methods, and saves in one transaction, so the row lock serializes every controller change and the lost-controller sweep."
+      },
+      "failLost": {
+        "kind": "set-wide",
+        "reason": "One UPDATE over every claimed operation whose last report is older than the lease; the cut-off and the failure are the domain LostControllerRule's."
+      },
+      "claimNext": {
+        "kind": "atomic",
+        "reason": "Hands out the oldest requested operation of a Project with no claimed one in one statement under the claim lock, so two controllers never get the same one; the selection is the domain PreviewOperationHandOutRule."
+      },
+      "findEnvironmentFileSecret": { "kind": "query" },
+      "listEnvironmentFileSecrets": { "kind": "query" }
+    },
     "environments/PreviewSettingsRepository": {
       "find": { "kind": "load" },
       "save": { "kind": "save" },

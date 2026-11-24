@@ -1,6 +1,7 @@
 import { vi } from 'vitest';
 import type {
   IntegrationFileResult,
+  PreviewArchiveResult,
   PreviewSourceStatus,
   RunPreviewSources,
 } from '../../../../projects/contracts/index.js';
@@ -22,7 +23,8 @@ export const COMMIT = 'c'.repeat(40);
  * test sets another answer.
  */
 export class FakePreviewSources implements RunPreviewSources {
-  statusAnswer: PreviewSourceStatus = { status: 'ready' };
+  statusAnswer: PreviewSourceStatus = { status: 'ready', commit: COMMIT };
+  archiveAnswer: PreviewArchiveResult = { status: 'commit_missing' };
   fileAnswer: IntegrationFileResult = { status: 'found', text: COMPOSE_TEXT, commit: COMMIT };
 
   status = vi.fn<RunPreviewSources['status']>(() => Promise.resolve(this.statusAnswer));
@@ -30,4 +32,6 @@ export class FakePreviewSources implements RunPreviewSources {
   readIntegrationFile = vi.fn<RunPreviewSources['readIntegrationFile']>(() =>
     Promise.resolve(this.fileAnswer),
   );
+
+  openArchive = vi.fn<RunPreviewSources['openArchive']>(() => Promise.resolve(this.archiveAnswer));
 }
