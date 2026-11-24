@@ -1,0 +1,15 @@
+# Throwaway: two services with no limits of their own (the project slice must bound them).
+name: p1
+services:
+  mem1:
+    image: alpine:3.22
+    command: ["sh", "-c", "sleep 2; tail /dev/zero"]
+  mem2:
+    image: alpine:3.22
+    command: ["sh", "-c", "sleep 2; tail /dev/zero"]
+  cpu1:
+    image: alpine:3.22
+    command: ["sh", "-c", "while :; do :; done"]
+  cpu2:
+    image: alpine:3.22
+    command: ["sh", "-c", "while :; do :; done"]

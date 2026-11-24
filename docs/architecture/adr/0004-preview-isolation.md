@@ -24,7 +24,7 @@ A Project's Preview is the Project's own Compose stack, built from the Integrati
 - **The boundary is the operating system.** A hostile Compose file can at most damage other Previews. Validating the Compose file before anything starts is the second line of defence, not the boundary.
 - **No Git credential on the Preview side.** The API hands the controller an archive of the Integration branch at the merged commit, made from the Project's Clone, together with the Environment file's content. The controller never reads a Working copy.
 - **The agent worker and the agents have no access to Preview credentials or to the Preview user's daemon.**
-- **Reaching a Preview.** The settled rules are in [Security](../../engineering/security.md) §5: a hostname per Project under a separate preview domain, a Preview password at the reverse proxy, and routing to exactly one service. How the reverse proxy in Studio's stack reaches a service of the Preview user's daemon without opening it to the network is **not decided here**. A routing trial (#273) settles it and its result is recorded then.
+- **Reaching a Preview.** The settled rules are in [Security](../../engineering/security.md) §5: a hostname per Project under a separate preview domain, a Preview password at the reverse proxy, and routing to exactly one service. How the reverse proxy in Studio's stack reaches a service of the Preview user's daemon without opening it to the network is **not decided here**. A routing trial (#273) settles it; its record is [Trial report: a Preview user's rootless Docker and routing](0004-trial-preview-routing.md).
 
 ### Network decision (2026-11-23)
 

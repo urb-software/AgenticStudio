@@ -1,0 +1,11 @@
+# Throwaway stand-in for deploy/Caddyfile: admin off, plain HTTP, one imported file per route.
+{
+	admin off
+	auto_https off
+}
+
+import /etc/caddy/routes/*.caddy
+
+http://:8081 {
+	respond "studio-stand-in" 200
+}
