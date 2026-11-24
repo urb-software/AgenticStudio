@@ -107,7 +107,7 @@ logins     The agent user gets no cron (/etc/cron.deny), no at (/etc/at.deny) an
            session processes at logout (/etc/systemd/logind.conf.d/60-agentic-studio.conf).
 layout     Root only: ${STUDIO_CONFIG_DIR} (0700, .env 0600 from deploy/studio.env.example),
            ${STUDIO_STATE_DIR} (0700; data/ and proxy/ owned by uid ${STUDIO_CONTAINER_UID}),
-           ${STUDIO_COMPOSE_DIR} (0700, compose files 0600, Caddyfile 0644),
+           ${STUDIO_COMPOSE_DIR} (0700, compose files 0600, Caddyfiles 0644),
            /usr/local/sbin/agentic-studio-compose; /usr/local/bin/agentic-studio-check-boundary.
            Agent side, written as the agent user: ~/.config/agentic-studio-worker/.env (0600, from
            apps/agent-worker/.env.example) and ~/.local/share/agentic-studio-worker (0700).
@@ -467,14 +467,20 @@ step_layout() {
   install_content "$STUDIO_COMPOSE_DIR/compose.app.yaml" 600 <"$SCRIPT_DIR/compose.server.app.yaml" || true
   # Readable by the proxy container's uid (bind-mounted); the directory keeps it from everyone else.
   install_content "$STUDIO_COMPOSE_DIR/Caddyfile" 644 <"$SCRIPT_DIR/Caddyfile" || true
+  install_content "$STUDIO_COMPOSE_DIR/Caddyfile.preview" 644 <"$SCRIPT_DIR/Caddyfile.preview" || true
+  install_content "$STUDIO_COMPOSE_DIR/compose.preview.yaml" 600 <"$SCRIPT_DIR/compose.server.preview.yaml" || true
   install_content /usr/local/sbin/agentic-studio-compose 700 <<EOF || true
 #!/usr/bin/env bash
 # Studio's Compose stack (installed by deploy/setup-server.sh). Root only. Adds the web and API
-# file once STUDIO_API_IMAGE and STUDIO_WEB_IMAGE are set in $env.
+# file once STUDIO_API_IMAGE and STUDIO_WEB_IMAGE are set in $env, and the Preview site once
+# STUDIO_PREVIEW_DOMAIN is set as well.
 set -euo pipefail
 files=(-f "$STUDIO_COMPOSE_DIR/compose.yaml")
 if grep -Eq '^STUDIO_API_IMAGE=.+' "$env" && grep -Eq '^STUDIO_WEB_IMAGE=.+' "$env"; then
   files+=(-f "$STUDIO_COMPOSE_DIR/compose.app.yaml")
+  if grep -Eq '^STUDIO_PREVIEW_DOMAIN=.+' "$env"; then
+    files+=(-f "$STUDIO_COMPOSE_DIR/compose.preview.yaml")
+  fi
 fi
 export STUDIO_ENV_FILE="$env" STUDIO_DATA_HOST_DIR="$STUDIO_STATE_DIR/data" STUDIO_PROXY_HOST_DIR="$STUDIO_STATE_DIR/proxy" STUDIO_CONTAINER_UID="$STUDIO_CONTAINER_UID"
 exec docker compose --project-directory "$STUDIO_COMPOSE_DIR" --env-file "$env" "\${files[@]}" "\$@"

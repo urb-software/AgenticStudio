@@ -130,6 +130,8 @@ describe('operator authentication (Redis via Testcontainers)', () => {
       expect(cookie).toMatch(/; SameSite=Lax/);
       // http://localhost Studio origin: development cookie, not Secure, no __Host- prefix.
       expect(cookie).not.toMatch(/; Secure/);
+      // Host-only: no Domain attribute, so a Preview under another hostname never receives it.
+      expect(cookie).not.toMatch(/Domain=/i);
       // ≥128 bits from a CSPRNG: 32 random bytes, base64url.
       expect(sessionId(cookie)).toMatch(/^[A-Za-z0-9_-]{43}$/);
 

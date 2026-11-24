@@ -38,7 +38,7 @@ NestJS API (apps/api) ───────── PostgreSQL, Redis + BullMQ
                                            Preview user's rootless Docker
                                            for the project Preview
 
-Traefik exposes only explicitly approved UI/Preview entrypoints.
+The reverse proxy (Caddy, `deploy/Caddyfile`) exposes only Studio's own hostname and the per-Preview hostnames `preview-<12 hex>.<preview domain>` (`deploy/Caddyfile.preview`), which it routes to one socket per Preview after checking the Preview password.
 ```
 
 Conceptual diagram. The exact network, queue, auth, and deployment boundaries must be implemented and tested.

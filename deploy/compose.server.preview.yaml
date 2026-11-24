@@ -1,0 +1,29 @@
+# The proxy side of Previews (Issue #277), added on top of compose.server.yaml and
+# compose.server.app.yaml. The setup script installs this file root-only as
+# /opt/agentic-studio/compose.preview.yaml; agentic-studio-compose uses it only when
+# STUDIO_PREVIEW_DOMAIN is set in /etc/agentic-studio/.env.
+#
+# It changes the `proxy` service only: the Preview site (Caddyfile.preview, mounted read-only
+# where the Caddyfile imports it), the domain and the password hash (a bcrypt hash, never the
+# password), the directory of per-Preview sockets (read-only; before the Preview server setup
+# #286 exists Docker creates an empty one and the proxy still starts) and the group that may
+# connect to them. The proxy keeps uid 10001, no capabilities beyond binding ports, a read-only
+# root filesystem and no privilege escalation. No other service gets the mount or the group.
+#
+# PREVIEW_PROXY_GID must equal the group the Preview server setup (#286) creates for the sockets.
+# The wildcard certificate is read from /data/preview-tls (docs/engineering/deployment.md,
+# "Previews: domain, certificate, password"); without it Caddy refuses to start.
+services:
+  proxy:
+    environment:
+      STUDIO_PREVIEW_DOMAIN: ${STUDIO_PREVIEW_DOMAIN:?set STUDIO_PREVIEW_DOMAIN in /etc/agentic-studio/.env}
+      STUDIO_PREVIEW_PASSWORD_HASH: ${STUDIO_PREVIEW_PASSWORD_HASH:?set STUDIO_PREVIEW_PASSWORD_HASH in /etc/agentic-studio/.env}
+    group_add: ['${PREVIEW_PROXY_GID:-2003}']
+    volumes:
+      - ./Caddyfile.preview:/etc/caddy/preview-site.caddy:ro
+      - type: bind
+        source: /run/preview-proxy
+        target: /run/preview-proxy
+        read_only: true
+        bind:
+          create_host_path: true

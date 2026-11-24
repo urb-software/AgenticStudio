@@ -1,0 +1,41 @@
+# The Preview site (Issue #277; docs/engineering/security.md section 5, ADR 0004 and its trial
+# record). The setup script installs it as /opt/agentic-studio/Caddyfile.preview; the Compose
+# overlay compose.server.preview.yaml mounts it read-only at /etc/caddy/preview-site.caddy, where
+# the Caddyfile imports it. Without STUDIO_PREVIEW_DOMAIN the overlay is not used and there is
+# no Preview site.
+#
+# - One static wildcard route: `preview-<12 hex>.<preview domain>` goes to the Unix socket
+#   `/run/preview-proxy/<label>.sock`, one socket per Preview, made by its bridge (#285) in a
+#   directory the Preview user fills and this proxy only reads (#286). The Preview user never
+#   writes proxy configuration; only the captured label enters the socket path.
+# - The Preview password comes first, so a missing Preview and a missing socket look the same
+#   to anyone without it. One fixed user name, the operator's bcrypt hash from the environment.
+# - The Preview is untrusted: it gets no Authorization header, no Studio session cookie and no
+#   client address header. Caddy adds X-Forwarded-Proto and X-Forwarded-Host itself.
+# - Only 502, 503 and 504 become "not running" (no socket, a stale socket): the 401 keeps its
+#   WWW-Authenticate header. The body never echoes the error. No access log here.
+*.{$STUDIO_PREVIEW_DOMAIN} {
+	# The operator's wildcard certificate (files on the proxy's data volume, renewed by hand).
+	tls /data/preview-tls/fullchain.pem /data/preview-tls/privkey.pem
+
+	@preview header_regexp label Host ^(preview-[0-9a-f]{12})\.
+	handle @preview {
+		basic_auth bcrypt "Preview" {
+			preview {$STUDIO_PREVIEW_PASSWORD_HASH}
+		}
+		reverse_proxy unix//run/preview-proxy/{re.label.1}.sock {
+			header_up -Authorization
+			header_up Cookie "(?:^|;)\s*(?:__Host-)?studio_session=[^;]*" ""
+			header_up -X-Forwarded-For
+			header_up -Forwarded
+			header_up -X-Real-IP
+		}
+	}
+	handle {
+		respond "Not found" 404
+	}
+	handle_errors 502 503 504 {
+		header Content-Type "text/plain; charset=utf-8"
+		respond "This Preview is not running." 404
+	}
+}

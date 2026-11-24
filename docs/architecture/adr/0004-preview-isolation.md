@@ -24,7 +24,7 @@ A Project's Preview is the Project's own Compose stack, built from the Integrati
 - **The boundary is the operating system.** A hostile Compose file can at most damage other Previews. Validating the Compose file before anything starts is the second line of defence, not the boundary.
 - **No Git credential on the Preview side.** The API hands the controller an archive of the Integration branch at the merged commit, made from the Project's Clone, together with the Environment file's content. The controller never reads a Working copy.
 - **The agent worker and the agents have no access to Preview credentials or to the Preview user's daemon.**
-- **Reaching a Preview.** The settled rules are in [Security](../../engineering/security.md) §5: a hostname per Project under a separate preview domain, a Preview password at the reverse proxy, and routing to exactly one service. How the reverse proxy in Studio's stack reaches a service of the Preview user's daemon without opening it to the network is **not decided here**. A routing trial (#273) settles it; its record is [Trial report: a Preview user's rootless Docker and routing](0004-trial-preview-routing.md).
+- **Reaching a Preview.** The settled rules are in [Security](../../engineering/security.md) §5: a hostname per Project under a separate preview domain, a Preview password at the reverse proxy, and routing to exactly one service. How the reverse proxy in Studio's stack reaches a service of the Preview user's daemon without opening it to the network was settled by a routing trial (#273): one Unix socket per Preview and a static wildcard route, with the password checked by the proxy. Its record is [Trial report: a Preview user's rootless Docker and routing](0004-trial-preview-routing.md); the route is [`deploy/Caddyfile.preview`](../../../deploy/Caddyfile.preview) (#277).
 
 ### Network decision (2026-11-23)
 
@@ -48,7 +48,7 @@ Decided by the operator on 2026-11-23, in a comment on Epic #271.
 - **A kernel vulnerability could cross the boundary**, as for Runs. Keeping the host patched is part of the model.
 - **One more user, daemon and service on the server.** The server setup creates them and checks them.
 - **The agent side must not read the Preview user's files or socket**; the server setup checks it.
-- **Routing is unsettled until the trial (#273)** records its result.
+- **Routing** is a static wildcard route to one socket per Preview, as the [trial record](0004-trial-preview-routing.md) decided; the proxy side is [`deploy/Caddyfile.preview`](../../../deploy/Caddyfile.preview) (#277), the bridge and the socket directory come with #285 and #286.
 
 ## Upgrade paths
 
