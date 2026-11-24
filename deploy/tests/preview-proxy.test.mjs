@@ -177,11 +177,14 @@ async function startProxy({ studioDomain, previewDomain }) {
   dockerOut(args);
   proxies.push(name);
   const port = (target) => Number(dockerOut(['port', name, `${target}/tcp`]).match(/:(\d+)$/m)[1]);
-  const proxy = { name, https: port(443), http: port(80), studioHost: studioDomain };
+  const proxy = { name, https: port(443), http: port(80), ca: [] };
   for (let attempt = 0; ; attempt++) {
     const running = dockerOut(['inspect', '-f', '{{.State.Running}}', name]) === 'true';
     if (!running) throw new Error(`proxy stopped:\n${dockerOut(['logs', name])}`);
     try {
+      // Trust only the throwaway wildcard certificate and this proxy's own internal CA.
+      const root = dockerOut(['exec', name, 'cat', '/data/caddy/pki/authorities/local/root.crt']);
+      proxy.ca = [root, readFileSync(join(certDir, 'fullchain.pem'), 'utf8')];
       const answer = await request(proxy, { host: studioDomain, path: '/api/health' });
       if (answer.status === 200) return proxy;
     } catch {
@@ -211,7 +214,7 @@ function request(proxy, { host, sni = host, path = '/', headers = {}, secret, au
         path,
         headers: all,
         agent: false,
-        rejectUnauthorized: false,
+        ca: proxy.ca,
       },
       (response) => {
         const chunks = [];
@@ -241,7 +244,7 @@ function request2(proxy, { host, path = '/', headers = {}, secret }) {
   if (secret !== undefined) fields.authorization = basic(secret);
   return new Promise((resolve, reject) => {
     const client = http2.connect(`https://127.0.0.1:${proxy.https}`, {
-      rejectUnauthorized: false,
+      ca: proxy.ca,
       servername: host,
     });
     client.on('error', reject);
@@ -300,7 +303,7 @@ function webSocket(proxy, { host, headers = {}, secret }) {
       host: '127.0.0.1',
       port: proxy.https,
       servername: host,
-      rejectUnauthorized: false,
+      ca: proxy.ca,
     });
     let buffer = Buffer.alloc(0);
     let status;
