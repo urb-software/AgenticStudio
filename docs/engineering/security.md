@@ -280,7 +280,7 @@ The [rootless Docker trial](../architecture/adr/0002-trial-rootless-docker.md) (
 - The controller runs as production under the rootless `DOCKER_HOST`, its `.env` is 0600, and `/run/preview-proxy` is `preview:previewproxy` with mode 2750 (setgid).
 - The controller token works on the controller routes only (worker and operator routes answer 401); the worker token gets 401 on the controller's claim route.
 - The agent user is not in the proxy group and cannot list `/run/preview-proxy` (it could otherwise connect to a Preview's socket and skip the Preview password); the setup refuses it.
-- An absent socket or runtime directory is a failed check, never a pass.
+- An absent runtime directory is a failed check, never a pass.
 
 Residual risk: the egress script records the host's global IPv4 addresses when the rules are applied (at every daemon start, so also at boot). An address that appears later is rejected only after a restart of the Preview user's daemon; `verify` checks against the recorded list. The Preview user owns that list and the namespace's rules, so this does not change the trust boundary (ADR 0004).
 

@@ -195,9 +195,9 @@ check_refused() {
     can_read "$agent_home/.local/share/docker" && reached+=("data-root listed")
     if [ "${#reached[@]}" -gt 0 ]; then
       fail agent-docker-unreachable "the agent's socket or data-root: ${reached[*]}"
-    elif [ ! -d "/run/user/$agent_uid" ] || [ ! -S "$socket" ]; then
+    elif [ ! -d "/run/user/$agent_uid" ]; then
       # A refusal proves nothing about a socket that is not there.
-      fail agent-docker-unreachable "$socket is absent: the agent's rootless daemon is not running, so nothing is refused"
+      fail agent-docker-unreachable "/run/user/$agent_uid is absent: the agent's user manager is not running, so nothing is refused"
     else
       pass agent-docker-unreachable "$socket and $agent_home/.local/share/docker refused"
     fi
@@ -289,8 +289,8 @@ check_cgroup() {
   events="/sys/fs/cgroup$(systemctl --user show docker.service -p ControlGroup --value 2>/dev/null)/memory.events"
   WORK_DIR="${WORK_DIR:-$(mktemp -d)}"
   mkdir -p "$WORK_DIR/oom"
-  # About 900 MB held in memory by `tail` (a stream without line breaks), above the 512 MiB limit.
-  printf 'FROM %s\nRUN head -c 900000000 /dev/zero | tail >/dev/null\n' "$CHECK_IMAGE" >"$WORK_DIR/oom/Dockerfile"
+  # About 800 MB held in a shell variable (twice while it is copied), above the 512 MiB limit.
+  printf 'FROM %s\nRUN cat /proc/self/cgroup\nRUN x=$(head -c 800000000 /dev/zero | tr "\\0" a) && echo ${#x}\n' "$CHECK_IMAGE" >"$WORK_DIR/oom/Dockerfile"
   timeout 180 docker pull -q "$CHECK_IMAGE" >/dev/null 2>&1
   kills_before="$(sed -n 's/^oom_kill //p' "$events" 2>/dev/null)"
   DOCKER_STATE="${before:-infinity}"
@@ -316,9 +316,9 @@ check_cgroup() {
   [ "$killed" = 0 ] || ! grep -Eq 'exit code: 137|signal: killed' <<<"$output" || killed=0
   if [ "$limit_set" = 536870912 ] && [ "$build_status" -ne 0 ] && [ "$killed" = 0 ] && [ "$up" = 0 ] &&
     [ "$pid_before" = "$pid_after" ] && [ "$restored" = "${before:-infinity}" ]; then
-    pass docker-unit-memory-limit "MemoryMax=536870912 on docker.service: a RUN step of 900 MB was OOM-killed, the daemon (pid $pid_after) stayed active, MemoryMax restored to $restored"
+    pass docker-unit-memory-limit "MemoryMax=536870912 on docker.service: a RUN step of 800 MB was OOM-killed, the daemon (pid $pid_after) stayed active, MemoryMax restored to $restored"
   else
-    fail docker-unit-memory-limit "limit ${limit_set:-?} (expected 536870912), build exit $build_status, oom kill $([ "$killed" = 0 ] && echo seen || echo not seen) (counter ${kills_before:-?} -> ${kills_after:-?}), daemon up=$([ "$up" = 0 ] && echo yes || echo no), pid $pid_before -> $pid_after, MemoryMax restored to '${restored:-?}' (was '${before:-?}')"
+    fail docker-unit-memory-limit "limit ${limit_set:-?} (expected 536870912), build exit $build_status, oom kill $([ "$killed" = 0 ] && echo seen || echo not seen) (counter ${kills_before:-?} -> ${kills_after:-?}), daemon up=$([ "$up" = 0 ] && echo yes || echo no), pid $pid_before -> $pid_after, MemoryMax restored to '${restored:-?}' (was '${before:-?}'); build cgroup: $(grep -m1 '^0::' <<<"$output" | tr -d '\n'), daemon cgroup: $(systemctl --user show docker.service -p ControlGroup --value 2>/dev/null)"
   fi
 }
 

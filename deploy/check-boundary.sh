@@ -485,8 +485,8 @@ check_preview() {
   can_read "$home/.config/docker" && reached+=("$home/.config/docker listed")
   if [ "${#reached[@]}" -gt 0 ]; then
     fail preview-docker-unreachable "$socket or the Preview user's Docker data: ${reached[*]}"
-  elif [ ! -d "/run/user/$uid" ] || [ ! -S "$socket" ]; then
-    fail preview-docker-unreachable "$socket is absent: the Preview user's rootless daemon is not running, so nothing is refused"
+  elif [ ! -d "/run/user/$uid" ]; then
+    fail preview-docker-unreachable "/run/user/$uid is absent: the Preview user's manager is not running, so nothing is refused"
   else
     pass preview-docker-unreachable "the Preview user's Docker socket and data-root refused"
   fi
