@@ -171,7 +171,8 @@ async function startProxy({ studioDomain, previewDomain, tlsDir = certDir, refus
   dockerOut(args);
   proxies.push(name);
   const port = (target) => Number(dockerOut(['port', name, `${target}/tcp`]).match(/:(\d+)$/m)[1]);
-  const proxy = { name, https: port(443), http: port(80), ca: [] };
+  // A proxy that refuses to start may exit before its ports can be read.
+  const proxy = refuses ? { name } : { name, https: port(443), http: port(80), ca: [] };
   for (let attempt = 0; ; attempt++) {
     const running = dockerOut(['inspect', '-f', '{{.State.Running}}', name]) === 'true';
     if (!running) {
@@ -181,14 +182,17 @@ async function startProxy({ studioDomain, previewDomain, tlsDir = certDir, refus
       }
       throw new Error(`proxy stopped:\n${dockerLogs(name)}`);
     }
-    try {
-      // Trust only the throwaway wildcard certificate and this proxy's own internal CA.
-      const root = dockerOut(['exec', name, 'cat', '/data/caddy/pki/authorities/local/root.crt']);
-      proxy.ca = [root, readFileSync(join(certDir, 'fullchain.pem'), 'utf8')];
-      const answer = await request(proxy, { host: studioDomain, path: '/api/health' });
-      if (answer.status === 200) return proxy;
-    } catch {
-      // Not listening yet.
+    // A proxy expected to refuse is only waited for until it exits.
+    if (!refuses) {
+      try {
+        // Trust only the throwaway wildcard certificate and this proxy's own internal CA.
+        const root = dockerOut(['exec', name, 'cat', '/data/caddy/pki/authorities/local/root.crt']);
+        proxy.ca = [root, readFileSync(join(certDir, 'fullchain.pem'), 'utf8')];
+        const answer = await request(proxy, { host: studioDomain, path: '/api/health' });
+        if (answer.status === 200) return proxy;
+      } catch {
+        // Not listening yet.
+      }
     }
     if (attempt > 80 && refuses) throw new Error('the proxy did not refuse to start');
     if (attempt > 80) throw new Error(`proxy not ready:\n${dockerLogs(name)}`);
