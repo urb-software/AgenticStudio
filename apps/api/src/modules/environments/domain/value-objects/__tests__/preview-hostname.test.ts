@@ -24,6 +24,14 @@ describe('PreviewHostname', () => {
     expect(label.length).toBeLessThan(32);
   });
 
+  it('has a label, preview- and 12 hex digits, that the reverse proxy routes on', () => {
+    const hostname = PreviewHostname.of(PROJECT.toUpperCase(), 'example.test');
+
+    expect(hostname.label).toBe('preview-3f2b8c1e4d5a');
+    expect(hostname.label).toMatch(/^preview-[0-9a-f]{12}$/);
+    expect(hostname.value).toBe(`${hostname.label}.example.test`);
+  });
+
   it('differs between projects', () => {
     const other = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
 

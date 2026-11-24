@@ -215,6 +215,45 @@ cookie="$(public -D - -o /dev/null -X POST -H "Origin: https://$DOMAIN" -H 'Cont
 expect_line "the session cookie is Secure (https origin)" "$cookie" '; *secure'
 expect_line "the session cookie is HttpOnly" "$cookie" '; *httponly'
 
+section "Preview site of the reverse proxy: domain, hash, wildcard certificate"
+PREVIEW_DOMAIN=preview.example.test
+PREVIEW_LABEL=preview-aaaaaaaaaaaa
+PREVIEW_HOST="$PREVIEW_LABEL.$PREVIEW_DOMAIN"
+PREVIEW_PASSWORD="$(openssl rand -hex 16)"
+PROXY_IMAGE="$(agentic-studio-compose config --images | grep '^caddy:' | head -n 1)"
+preview_hash="$(docker run --rm --network none "$PROXY_IMAGE" caddy hash-password --plaintext "$PREVIEW_PASSWORD")"
+expect_line "caddy hash-password gives a bcrypt hash" "$preview_hash" '^\$2[aby]\$'
+# The operator's wildcard certificate: a throwaway one here, in the directory the setup made for
+# the proxy's data (owner 10001, 0700), files 0600.
+tls_dir=/var/lib/agentic-studio/proxy/preview-tls
+install -d -o 10001 -g 10001 -m 0700 "$tls_dir"
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 2 \
+  -subj "/CN=$PREVIEW_DOMAIN" -addext "subjectAltName=DNS:*.$PREVIEW_DOMAIN" \
+  -keyout "$tls_dir/privkey.pem" -out "$tls_dir/fullchain.pem" 2>/dev/null
+chown 10001:10001 "$tls_dir/privkey.pem" "$tls_dir/fullchain.pem" && chmod 0600 "$tls_dir/privkey.pem" "$tls_dir/fullchain.pem"
+set_env "$ENV_FILE" STUDIO_PREVIEW_DOMAIN "$PREVIEW_DOMAIN"
+set_env "$ENV_FILE" STUDIO_PREVIEW_PASSWORD_HASH "'$preview_hash'"
+if agentic-studio-compose up -d --wait; then
+  ok "the stack is up with the Preview site (the wrapper added the overlay)"
+else
+  not_ok "the stack did not start with the Preview site"
+  agentic-studio-compose logs --no-color --tail 60 api proxy 2>&1 | sed 's/^/      | /'
+fi
+proxy="$(agentic-studio-compose ps -q proxy)"
+expect_line "the proxy has the preview group" \
+  "$(docker inspect -f '{{.HostConfig.GroupAdd}}' "$proxy")" '^\[2003\]$'
+expect_line "the socket directory is mounted read-only" \
+  "$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/run/preview-proxy"}}{{.RW}}{{end}}{{end}}' "$proxy")" '^false$'
+expect_line "the proxy still runs as uid 10001 on a read-only root filesystem" \
+  "$(docker inspect -f '{{.Config.User}} {{.HostConfig.ReadonlyRootfs}}' "$proxy")" '^10001:10001 true$'
+preview_status() { curl -sk --max-time 10 --resolve "$PREVIEW_HOST:443:$HOST_IP" -o /dev/null -w '%{http_code}' "$@"; }
+expect_line "Studio's host still answers 200" "$(public_status "https://$DOMAIN/api/health")" '^200$'
+expect_line "a Preview host asks for the password: 401" "$(preview_status "https://$PREVIEW_HOST/")" '^401$'
+expect_line "a wrong password: 401" "$(preview_status -u "preview:wrong-$PREVIEW_PASSWORD" "https://$PREVIEW_HOST/")" '^401$'
+expect_line "with the password and no socket: 404" "$(preview_status -u "preview:$PREVIEW_PASSWORD" "https://$PREVIEW_HOST/")" '^404$'
+expect_line "the 404 says the Preview is not running" \
+  "$(curl -sk --max-time 10 --resolve "$PREVIEW_HOST:443:$HOST_IP" -u "preview:$PREVIEW_PASSWORD" "https://$PREVIEW_HOST/")" '^This Preview is not running\.$'
+
 section "Boundary checks as the agent user (every group, the API against the real stack)"
 out="$(as_agent /usr/local/bin/agentic-studio-check-boundary 2>&1)"
 status=$?

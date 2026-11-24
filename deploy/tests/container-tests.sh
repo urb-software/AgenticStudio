@@ -102,6 +102,8 @@ expect_stat /opt/agentic-studio root:root 700
 expect_stat /opt/agentic-studio/compose.yaml root:root 600
 expect_stat /opt/agentic-studio/compose.app.yaml root:root 600
 expect_stat /opt/agentic-studio/Caddyfile root:root 644
+expect_stat /opt/agentic-studio/Caddyfile.preview root:root 644
+expect_stat /opt/agentic-studio/compose.preview.yaml root:root 600
 expect_stat /usr/local/sbin/agentic-studio-compose root:root 700
 expect_stat /usr/local/bin/agentic-studio-check-boundary root:root 755
 for name in POSTGRES_PASSWORD DATABASE_URL STUDIO_OPERATOR_PASSWORD_HASH STUDIO_SECRETS_KEY STUDIO_WORKER_TOKEN; do

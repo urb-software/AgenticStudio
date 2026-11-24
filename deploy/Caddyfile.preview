@@ -1,0 +1,26 @@
+# The Preview site, imported by the Caddyfile when STUDIO_PREVIEW_DOMAIN is set (docs/engineering/security.md section 5).
+*.{$STUDIO_PREVIEW_DOMAIN} {
+	# The operator's wildcard certificate (files on the proxy's data volume, renewed by hand).
+	tls /data/preview-tls/fullchain.pem /data/preview-tls/privkey.pem
+
+	@preview header_regexp label Host ^(preview-[0-9a-f]{12})\.
+	handle @preview {
+		basic_auth bcrypt "Preview" {
+			preview {$STUDIO_PREVIEW_PASSWORD_HASH}
+		}
+		reverse_proxy unix//run/preview-proxy/{re.label.1}.sock {
+			header_up -Authorization
+			header_up Cookie "(?:^|;)\s*(?:__Host-)?studio_session=[^;]*" ""
+			header_up -X-Forwarded-For
+			header_up -Forwarded
+			header_up -X-Real-IP
+		}
+	}
+	handle {
+		respond "Not found" 404
+	}
+	handle_errors 502 503 504 {
+		header Content-Type "text/plain; charset=utf-8"
+		respond "This Preview is not running." 404
+	}
+}

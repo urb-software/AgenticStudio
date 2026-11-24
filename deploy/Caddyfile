@@ -10,6 +10,7 @@
 #   Studio's network (not published on the host), /api only.
 # - X-Forwarded-For: Caddy trusts no incoming X-Forwarded-* header (no trusted proxy is set) and
 #   sets it to the address the connection came from; the API trusts it from this proxy only.
+# - The Preview site is a separate file, imported when present (deploy/Caddyfile.preview).
 # - No response buffering or compression: live Run logs (server-sent events) stream as they come.
 {
 	admin off
@@ -18,8 +19,15 @@
 	# TCP only (HTTP/1.1 and HTTP/2): only TCP ports are published.
 	servers {
 		protocols h1 h2
+		# A request whose Host differs from the TLS server name gets 421, so a certificate
+		# for one site never serves another site's hostname (the Preview site, below).
+		strict_sni_host on
 	}
 }
+
+# The Preview site, only when compose.server.preview.yaml mounts it (STUDIO_PREVIEW_DOMAIN is
+# set); an empty glob changes nothing.
+import /etc/caddy/preview-site*.caddy
 
 {$STUDIO_DOMAIN} {
 	# An ACME account email (a public certificate) or `internal` (Caddy's own CA, for tests).

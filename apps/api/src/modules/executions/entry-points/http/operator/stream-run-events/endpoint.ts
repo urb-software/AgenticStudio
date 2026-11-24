@@ -42,8 +42,8 @@ async function writable(response: ServerResponse): Promise<void> {
 
 /**
  * Resumes after the larger of `after` and `Last-Event-ID` (a reconnect sends the URL's old
- * `after`). The session is re-checked every 15 s, idle or busy; `X-Accel-Buffering: no` keeps nginx
- * from buffering.
+ * `after`). The session is re-checked every 15 s, idle or busy; `X-Accel-Buffering: no` keeps a
+ * reverse proxy from buffering.
  */
 @ApiTags('runs')
 @Controller('runs')

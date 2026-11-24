@@ -1,0 +1,15 @@
+# Adds the Preview site, its password hash and the socket directory to the proxy (docs/engineering/deployment.md, "Previews: domain, certificate, password").
+services:
+  proxy:
+    environment:
+      STUDIO_PREVIEW_DOMAIN: ${STUDIO_PREVIEW_DOMAIN:?set STUDIO_PREVIEW_DOMAIN in /etc/agentic-studio/.env}
+      STUDIO_PREVIEW_PASSWORD_HASH: ${STUDIO_PREVIEW_PASSWORD_HASH:?set STUDIO_PREVIEW_PASSWORD_HASH in /etc/agentic-studio/.env}
+    group_add: ['${PREVIEW_PROXY_GID:-2003}']
+    volumes:
+      - ./Caddyfile.preview:/etc/caddy/preview-site.caddy:ro
+      - type: bind
+        source: /run/preview-proxy
+        target: /run/preview-proxy
+        read_only: true
+        bind:
+          create_host_path: true
