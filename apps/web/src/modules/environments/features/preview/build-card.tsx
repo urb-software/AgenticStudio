@@ -3,6 +3,7 @@
 import { DatabaseZapIcon, ExternalLinkIcon, HammerIcon, SquareIcon } from 'lucide-react';
 import Link from 'next/link';
 import { type ReactNode, useState } from 'react';
+import { RunTitle } from '@/modules/executions';
 import { Banner } from '@/shared/components/banner';
 import { LogViewer } from '@/shared/components/log-viewer';
 import { StatusPill, type PillStatus } from '@/shared/components/status-pill';
@@ -60,6 +61,55 @@ function Time({ iso, now }: { iso: string; now: number }) {
     <time dateTime={iso} title={formatExactTime(date)}>
       {formatTimeAgo(date, now)}
     </time>
+  );
+}
+
+/** The Run's title, linked to its page. The title is read through the executions module's public face. */
+function RunLink({ runId }: { runId: string }) {
+  return (
+    <Link href={`/executions/${runId}`} className="text-brand underline">
+      <RunTitle runId={runId} />
+    </Link>
+  );
+}
+
+function StartedBy({ startedBy }: { startedBy: PreviewBuildOutput['startedBy'] }) {
+  if (startedBy.kind === 'operator') return <>You</>;
+  return (
+    <>
+      The merge of Run <RunLink runId={startedBy.runId} />
+    </>
+  );
+}
+
+/** The Clone's Integration branch is ahead of what the Preview shows. */
+function BehindBanner({ preview }: { preview: PreviewOutput }) {
+  const shown = preview.running?.commit ?? preview.latestBuild?.commit;
+  const current = preview.repository.commit;
+  if (!preview.behind || !shown || !current) return null;
+  return (
+    <Banner tone="info" title="The Preview is behind.">
+      The Preview shows <Commit commit={shown} />; the Integration branch is at{' '}
+      <Commit commit={current} />. Rebuild to show it.
+    </Banner>
+  );
+}
+
+/** The rebuild a merge through Studio asked for: while it waits, or why it could not start. */
+function MergeRebuildNotice({ rebuild }: { rebuild: PreviewOutput['mergeRebuild'] }) {
+  if (!rebuild) return null;
+  if (rebuild.status === 'waiting') {
+    return (
+      <Banner tone="info" title="Rebuild waiting.">
+        After the merge of Run <RunLink runId={rebuild.runId} /> (for {rebuild.reason}).
+      </Banner>
+    );
+  }
+  return (
+    <Banner tone="danger" title="The rebuild did not start.">
+      The rebuild after the merge of Run <RunLink runId={rebuild.runId} /> could not start:{' '}
+      <span className="break-words">{rebuild.reason}</span>
+    </Banner>
   );
 }
 
@@ -147,6 +197,9 @@ function LatestBuild({
         <Detail term="Status">{BUILD_STATUS[build.status]}</Detail>
         <Detail term="Commit">
           <Commit commit={build.commit} />
+        </Detail>
+        <Detail term="Started by">
+          <StartedBy startedBy={build.startedBy} />
         </Detail>
         <Detail term="Requested">
           <Time iso={build.requestedAt} now={now} />
@@ -292,6 +345,8 @@ export function BuildCard({ projectId, preview, dataUpdatedAt }: BuildCardProps)
               {stopError.message}
             </Banner>
           ) : null}
+          <MergeRebuildNotice rebuild={preview.mergeRebuild} />
+          {preview.mergeRebuild?.status === 'waiting' ? null : <BehindBanner preview={preview} />}
           <LatestChange change={preview.latestChange} now={dataUpdatedAt} />
           {otherError ? (
             <Banner tone="danger" title="The build was not started.">

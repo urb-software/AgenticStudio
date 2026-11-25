@@ -105,6 +105,7 @@ export type {
   RunListOutput,
   RunMessageOutput,
   RunOutput,
+  RunPreviewAfterMergeOutput,
   RunQuestionOutput,
   RunsSummaryOutput,
   RunStepListOutput,

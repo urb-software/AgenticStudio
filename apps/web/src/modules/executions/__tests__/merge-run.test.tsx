@@ -202,6 +202,44 @@ describe('Run page: Approve and merge', () => {
     expect(mergeButton()).toBeNull();
   });
 
+  it.each([
+    ['not_configured', 'No Preview is configured for the Project.'],
+    ['not_started', 'The Preview was not running, so the merge started no build.'],
+    ['waiting', 'The Preview rebuild is waiting to start.'],
+    ['building', 'The Preview is building the merge.'],
+    ['running', 'The Preview runs the merge.'],
+    ['failed', 'The Preview rebuild failed.'],
+    ['replaced', 'A newer build or merge has replaced the Preview of this merge.'],
+  ] as const)('shows the Preview line for %s, linked to the Preview page', async (state, words) => {
+    const run = delivered({
+      pullRequest: { ...PULL_REQUEST, state: 'merged' },
+      latestMergeApproval: APPROVAL,
+      previewAfterMerge: { projectId: PROJECT.id, state },
+    });
+    await openChanges(run);
+
+    expect(within(card()).getByText(words, { exact: false })).toBeTruthy();
+    const link = within(card()).getByRole('link', { name: 'Open the Preview page' });
+    expect(link.getAttribute('href')).toBe(`/projects/${PROJECT.id}/preview`);
+    const asked = vi
+      .mocked(fetch)
+      .mock.calls.map(([request]) => new URL((request as Request).url).pathname);
+    expect(asked.filter((path) => path.includes('preview'))).toEqual([]);
+    await expect(document.body).toHaveNoAxeViolations();
+  });
+
+  it('shows no Preview line when the answer has none', async () => {
+    await openChanges(
+      delivered({
+        pullRequest: { ...PULL_REQUEST, state: 'merged' },
+        latestMergeApproval: APPROVAL,
+      }),
+    );
+
+    expect(within(card()).getByText('Merged from Studio')).toBeTruthy();
+    expect(within(card()).queryByText(/Preview:/)).toBeNull();
+  });
+
   it('keeps a refusal in the dialog, with its reason', async () => {
     const api = await openChanges(delivered());
     api.respondNext(

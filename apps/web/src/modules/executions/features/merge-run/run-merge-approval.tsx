@@ -5,11 +5,38 @@ import Link from 'next/link';
 import { Banner } from '@/shared/components/banner';
 import { formatExactTime } from '@/shared/lib/relative-time';
 import { Button } from '@/shared/ui/button';
-import { ApiError, type MergeApprovalOutput, type RunOutput } from '../../../../platform/api';
+import {
+  ApiError,
+  type MergeApprovalOutput,
+  type RunOutput,
+  type RunPreviewAfterMergeOutput,
+} from '../../../../platform/api';
 import { mergeMethodLabel } from '../../components/merge-method-label';
 import { MERGE_UNAVAILABLE_REASON } from '../../components/merge-unavailable-reason';
 import { Mono } from '../../components/mono';
 import { useMergeRun } from '../../api/runs-queries';
+
+const PREVIEW_AFTER_MERGE: Record<RunPreviewAfterMergeOutput['state'], string> = {
+  not_configured: 'No Preview is configured for the Project.',
+  not_started: 'The Preview was not running, so the merge started no build.',
+  waiting: 'The Preview rebuild is waiting to start.',
+  building: 'The Preview is building the merge.',
+  running: 'The Preview runs the merge.',
+  failed: 'The Preview rebuild failed.',
+  replaced: 'A newer build or merge has replaced the Preview of this merge.',
+};
+
+/** What the merge did to the Project's Preview, with a link to its page; the Preview is not asked. */
+function PreviewAfterMerge({ preview }: { preview: RunPreviewAfterMergeOutput }) {
+  return (
+    <p data-slot="run-preview-after-merge" className="m-0 text-small text-text-muted">
+      <span className="font-medium">Preview:</span> {PREVIEW_AFTER_MERGE[preview.state]}{' '}
+      <Link href={`/projects/${preview.projectId}/preview`} className="text-brand underline">
+        Open the Preview page
+      </Link>
+    </p>
+  );
+}
 
 function Time({ iso }: { iso: string }) {
   return (
@@ -171,6 +198,7 @@ export function RunMergeApproval({ run }: { run: RunOutput }) {
           shows why.
         </p>
       )}
+      {run.previewAfterMerge ? <PreviewAfterMerge preview={run.previewAfterMerge} /> : null}
     </div>
   );
 }
