@@ -3,696 +3,545 @@
 import * as z from 'zod';
 
 export const zHealthResponseOutput = z.object({
-  status: z.literal('ok'),
+    status: z.literal('ok')
 });
 
 export const zLoginRequest = z.object({
-  password: z.string().min(1).max(1024),
+    password: z.string().min(1).max(1024)
 });
 
 export const zSessionResponseOutput = z.object({
-  authenticated: z.literal(true),
+    authenticated: z.literal(true)
 });
 
 export const zCreateProjectRequest = z.object({
-  name: z.string().min(1).max(100),
-  kind: z.enum(['code', 'definitions']).optional(),
+    name: z.string().min(1).max(100),
+    kind: z.enum(['code', 'definitions']).optional()
 });
 
 export const zProjectOutput = z.object({
-  id: z
-    .uuid()
-    .regex(
-      /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/,
-    ),
-  name: z.string(),
-  mergeMethod: z.enum(['squash', 'merge_commit']),
-  kind: z.enum(['code', 'definitions']),
-  defaultAgent: z.string().nullable(),
-  createdAt: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    ),
+    id: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
+    name: z.string(),
+    mergeMethod: z.enum(['squash', 'merge_commit']),
+    kind: z.enum(['code', 'definitions']),
+    defaultAgent: z.string().nullable(),
+    createdAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/)
 });
 
 export const zProjectListOutput = z.object({
-  items: z.array(zProjectOutput),
+    items: z.array(zProjectOutput)
 });
 
 /**
  * awaiting_key: an SSH repository whose Deploy key (publicKey) the operator still has to add on the Git host, then verify; awaiting_host_key: the Git host is not trusted yet, and the operator has to confirm its host key fingerprint (hostKeyFingerprint) by verifying with acceptHostKeyFingerprint; connecting: the first Clone is being made; ready: the Clone is up to date as of lastFetchedAt; fetching: the Clone is being brought up to date; failed: the last operation failed (hasClone tells whether a usable Clone remains); disconnecting: the operator disconnected the repository and Studio is still removing its data (retried at start-up and on a repeated disconnect). Later stories add values; treat an unknown value as unavailable.
  */
 export const zRepositoryStateOutput = z.enum([
-  'awaiting_key',
-  'awaiting_host_key',
-  'connecting',
-  'ready',
-  'fetching',
-  'failed',
-  'disconnecting',
-]);
-
-export const zRepositorySummaryOutput = z.object({
-  state: zRepositoryStateOutput,
-  url: z.string(),
-  integrationBranch: z.string(),
-});
-
-export const zProjectDetailOutput = z.object({
-  id: z
-    .uuid()
-    .regex(
-      /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/,
-    ),
-  name: z.string(),
-  mergeMethod: z.enum(['squash', 'merge_commit']),
-  kind: z.enum(['code', 'definitions']),
-  defaultAgent: z.string().nullable(),
-  createdAt: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    ),
-  repository: zRepositorySummaryOutput.nullable(),
-});
-
-/**
- * The fixed failure reason codes. size_limit: the Clone exceeded Studio's disk or memory limit; remote_not_allowed: the remote host is or resolves to an address Studio does not connect to; redirect_refused: the remote answered with an HTTP redirect, which Studio does not follow; interrupted: the operation was cut off by a crash or a restart of Studio, not by the repository. Later versions may add values; treat an unknown value as a generic failure.
- */
-export const zRepositoryFailureCodeOutput = z.enum([
-  'auth_failed',
-  'host_unreachable',
-  'host_key_mismatch',
-  'repository_not_found',
-  'branch_not_found',
-  'timeout',
-  'size_limit',
-  'remote_not_allowed',
-  'redirect_refused',
-  'interrupted',
-  'unknown',
-]);
-
-export const zRepositoryFailureOutput = z.object({
-  code: zRepositoryFailureCodeOutput,
-  detail: z.string(),
-  remoteDefaultBranch: z.string().optional(),
-});
-
-export const zRepositoryOutput = z.object({
-  state: zRepositoryStateOutput,
-  url: z.string(),
-  integrationBranch: z.string(),
-  hasClone: z.boolean(),
-  headSha: z.string().optional(),
-  lastFetchedAt: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    )
-    .optional(),
-  failure: zRepositoryFailureOutput.optional(),
-  publicKey: z.string().optional(),
-  hostKeyFingerprint: z.string().optional(),
-});
-
-export const zConnectRepositoryRequest = z.object({
-  url: z.string().min(1).max(2048),
-  integrationBranch: z
-    .string()
-    .min(1)
-    .max(255)
-    .regex(
-      /^(?!@$)(?![-\/.])(?![\s\S]*(?:\.\.|\/\/|@\{|\/\.|\.lock\/|\.lock$|[\/.]$))[^\x00-\x20\x7f~^:?*[\\]+$/,
-    ),
-});
-
-export const zVerifyRepositoryRequest = z.object({
-  acceptHostKeyFingerprint: z.string().min(1).max(100).optional(),
-});
-
-export const zSetEnvironmentFileRequest = z.object({
-  path: z.string().max(255),
-  content: z.string().max(65536),
-});
-
-export const zEnvironmentFileInfoOutput = z.object({
-  path: z.string(),
-  sizeBytes: z.int().gte(0).lte(9007199254740991),
-  updatedAt: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    ),
-});
-
-export const zSetMergeMethodRequest = z.object({
-  mergeMethod: z.enum(['squash', 'merge_commit']),
-});
-
-export const zSetDefaultAgentRequest = z.object({
-  agent: z
-    .string()
-    .regex(/^[a-z0-9][a-z0-9-]{0,63}$/)
-    .nullable(),
-});
-
-export const zDefinitionsRepositoryOutput = z.object({
-  project: z
-    .object({
-      id: z
-        .uuid()
-        .regex(
-          /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/,
-        ),
-      repository: z
-        .object({
-          state: z.enum([
-            'awaiting_key',
-            'awaiting_host_key',
-            'connecting',
-            'ready',
-            'fetching',
-            'failed',
-            'disconnecting',
-          ]),
-          integrationBranch: z.string(),
-          headSha: z.string().nullable(),
-          lastFetchedAt: z.iso
-            .datetime()
-            .regex(
-              /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-            )
-            .nullable(),
-        })
-        .nullable(),
-    })
-    .nullable(),
-});
-
-export const zAgentsRepositoryOutput = z.object({
-  state: z.enum([
     'awaiting_key',
     'awaiting_host_key',
     'connecting',
     'ready',
     'fetching',
     'failed',
-    'disconnecting',
-  ]),
-  note: z.string().nullable(),
+    'disconnecting'
+]);
+
+export const zRepositorySummaryOutput = z.object({
+    state: zRepositoryStateOutput,
+    url: z.string(),
+    integrationBranch: z.string()
+});
+
+export const zProjectDetailOutput = z.object({
+    id: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
+    name: z.string(),
+    mergeMethod: z.enum(['squash', 'merge_commit']),
+    kind: z.enum(['code', 'definitions']),
+    defaultAgent: z.string().nullable(),
+    createdAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/),
+    repository: zRepositorySummaryOutput.nullable()
+});
+
+/**
+ * The fixed failure reason codes. size_limit: the Clone exceeded Studio's disk or memory limit; remote_not_allowed: the remote host is or resolves to an address Studio does not connect to; redirect_refused: the remote answered with an HTTP redirect, which Studio does not follow; interrupted: the operation was cut off by a crash or a restart of Studio, not by the repository. Later versions may add values; treat an unknown value as a generic failure.
+ */
+export const zRepositoryFailureCodeOutput = z.enum([
+    'auth_failed',
+    'host_unreachable',
+    'host_key_mismatch',
+    'repository_not_found',
+    'branch_not_found',
+    'timeout',
+    'size_limit',
+    'remote_not_allowed',
+    'redirect_refused',
+    'interrupted',
+    'unknown'
+]);
+
+export const zRepositoryFailureOutput = z.object({
+    code: zRepositoryFailureCodeOutput,
+    detail: z.string(),
+    remoteDefaultBranch: z.string().optional()
+});
+
+export const zRepositoryOutput = z.object({
+    state: zRepositoryStateOutput,
+    url: z.string(),
+    integrationBranch: z.string(),
+    hasClone: z.boolean(),
+    headSha: z.string().optional(),
+    lastFetchedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
+    failure: zRepositoryFailureOutput.optional(),
+    publicKey: z.string().optional(),
+    hostKeyFingerprint: z.string().optional()
+});
+
+export const zConnectRepositoryRequest = z.object({
+    url: z.string().min(1).max(2048),
+    integrationBranch: z.string().min(1).max(255).regex(/^(?!@$)(?![-\/.])(?![\s\S]*(?:\.\.|\/\/|@\{|\/\.|\.lock\/|\.lock$|[\/.]$))[^\x00-\x20\x7f~^:?*[\\]+$/)
+});
+
+export const zVerifyRepositoryRequest = z.object({
+    acceptHostKeyFingerprint: z.string().min(1).max(100).optional()
+});
+
+export const zSetEnvironmentFileRequest = z.object({
+    path: z.string().max(255),
+    content: z.string().max(65536)
+});
+
+export const zEnvironmentFileInfoOutput = z.object({
+    path: z.string(),
+    sizeBytes: z.int().gte(0).lte(9007199254740991),
+    updatedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/)
+});
+
+export const zSetMergeMethodRequest = z.object({
+    mergeMethod: z.enum(['squash', 'merge_commit'])
+});
+
+export const zSetDefaultAgentRequest = z.object({
+    agent: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/).nullable()
+});
+
+export const zDefinitionsRepositoryOutput = z.object({
+    project: z.object({
+        id: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
+        repository: z.object({
+            state: z.enum([
+                'awaiting_key',
+                'awaiting_host_key',
+                'connecting',
+                'ready',
+                'fetching',
+                'failed',
+                'disconnecting'
+            ]),
+            integrationBranch: z.string(),
+            headSha: z.string().nullable(),
+            lastFetchedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).nullable()
+        }).nullable()
+    }).nullable()
+});
+
+export const zAgentsRepositoryOutput = z.object({
+    state: z.enum([
+        'awaiting_key',
+        'awaiting_host_key',
+        'connecting',
+        'ready',
+        'fetching',
+        'failed',
+        'disconnecting'
+    ]),
+    note: z.string().nullable()
 });
 
 export const zAgentFileEntryOutput = z.object({
-  path: z.string(),
-  kind: z.enum(['file', 'symlink', 'submodule']),
-  size: z.int().gte(0).lte(9007199254740991),
-  openable: z.boolean(),
-  agent: z.string().nullable(),
+    path: z.string(),
+    kind: z.enum([
+        'file',
+        'symlink',
+        'submodule'
+    ]),
+    size: z.int().gte(0).lte(9007199254740991),
+    openable: z.boolean(),
+    agent: z.string().nullable()
 });
 
 export const zAgentFilesOutput = z.object({
-  commit: z.string().nullable(),
-  repository: zAgentsRepositoryOutput.nullable(),
-  truncated: z.boolean(),
-  entries: z.array(zAgentFileEntryOutput),
+    commit: z.string().nullable(),
+    repository: zAgentsRepositoryOutput.nullable(),
+    truncated: z.boolean(),
+    entries: z.array(zAgentFileEntryOutput)
 });
 
 export const zAgentFileTextOutput = z.object({
-  commit: z.string(),
-  path: z.string(),
-  kind: z.literal('text'),
-  content: z.string(),
+    commit: z.string(),
+    path: z.string(),
+    kind: z.literal('text'),
+    content: z.string()
 });
 
 export const zAgentFileBinaryOutput = z.object({
-  commit: z.string(),
-  path: z.string(),
-  kind: z.literal('binary'),
-  size: z.int().gte(0).lte(9007199254740991),
+    commit: z.string(),
+    path: z.string(),
+    kind: z.literal('binary'),
+    size: z.int().gte(0).lte(9007199254740991)
 });
 
 export const zAgentFileTooLargeOutput = z.object({
-  commit: z.string(),
-  path: z.string(),
-  kind: z.literal('too_large'),
-  size: z.int().gte(0).lte(9007199254740991),
+    commit: z.string(),
+    path: z.string(),
+    kind: z.literal('too_large'),
+    size: z.int().gte(0).lte(9007199254740991)
 });
 
 export const zAgentFileOutput = z.union([
-  zAgentFileTextOutput,
-  zAgentFileBinaryOutput,
-  zAgentFileTooLargeOutput,
+    zAgentFileTextOutput,
+    zAgentFileBinaryOutput,
+    zAgentFileTooLargeOutput
 ]);
 
 export const zAgentDraftFileOutput = z.object({
-  path: z.string(),
-  change: z.enum(['added', 'modified', 'deleted']),
-  size: z.int().gte(0).lte(9007199254740991),
-  movedFrom: z.string().nullable(),
+    path: z.string(),
+    change: z.enum([
+        'added',
+        'modified',
+        'deleted'
+    ]),
+    size: z.int().gte(0).lte(9007199254740991),
+    movedFrom: z.string().nullable()
 });
 
 export const zAgentDraftProblemOutput = z.object({
-  agent: z.string(),
-  code: z.enum([
-    'entry_missing',
-    'entry_unreadable',
-    'front_matter_missing',
-    'front_matter_malformed',
-    'front_matter_too_large',
-    'key_missing',
-    'key_invalid',
-    'provider_unknown',
-    'model_unknown',
-    'name_invalid',
-    'name_mismatch',
-    'name_reserved',
-    'unknown_key',
-    'forbidden_key',
-    'instructions_too_large',
-    'too_many_files',
-    'file_too_large',
-    'folder_too_large',
-    'path_outside_folder',
-    'nested_git',
-    'symlink_refused',
-    'kind_refused',
-    'duplicate_path',
-    'size_invalid',
-    'cli_config_path',
-    'short_name',
-  ]),
-  path: z.string(),
-  key: z.string().nullable(),
-  message: z.string(),
+    agent: z.string(),
+    code: z.enum([
+        'entry_missing',
+        'entry_unreadable',
+        'front_matter_missing',
+        'front_matter_malformed',
+        'front_matter_too_large',
+        'key_missing',
+        'key_invalid',
+        'provider_unknown',
+        'model_unknown',
+        'name_invalid',
+        'name_mismatch',
+        'name_reserved',
+        'unknown_key',
+        'forbidden_key',
+        'instructions_too_large',
+        'too_many_files',
+        'file_too_large',
+        'folder_too_large',
+        'path_outside_folder',
+        'nested_git',
+        'symlink_refused',
+        'kind_refused',
+        'duplicate_path',
+        'size_invalid',
+        'cli_config_path',
+        'short_name'
+    ]),
+    path: z.string(),
+    key: z.string().nullable(),
+    message: z.string()
 });
 
 export const zAgentDraftOutput = z.object({
-  baseCommit: z.string().nullable(),
-  currentCommit: z.string().nullable(),
-  version: z.int().gte(0).lte(9007199254740991),
-  files: z.array(zAgentDraftFileOutput),
-  problems: z.array(zAgentDraftProblemOutput),
-  movedUpstream: z.array(z.string()),
+    baseCommit: z.string().nullable(),
+    currentCommit: z.string().nullable(),
+    version: z.int().gte(0).lte(9007199254740991),
+    files: z.array(zAgentDraftFileOutput),
+    problems: z.array(zAgentDraftProblemOutput),
+    movedUpstream: z.array(z.string())
 });
 
 export const zSaveAgentDraftFileRequest = z.object({
-  path: z.string().min(1).max(255),
-  text: z.string().optional(),
-  contentBase64: z
-    .string()
-    .regex(/^(?:[A-Za-z0-9+\/]{4})*(?:[A-Za-z0-9+\/]{2}==|[A-Za-z0-9+\/]{3}=)?$/)
-    .optional(),
+    path: z.string().min(1).max(255),
+    text: z.string().optional(),
+    contentBase64: z.string().regex(/^(?:[A-Za-z0-9+\/]{4})*(?:[A-Za-z0-9+\/]{2}==|[A-Za-z0-9+\/]{3}=)?$/).optional()
 });
 
 export const zMoveAgentDraftFileRequest = z.object({
-  from: z.string().min(1).max(255),
-  to: z.string().min(1).max(255),
+    from: z.string().min(1).max(255),
+    to: z.string().min(1).max(255)
 });
 
 export const zRevertAgentDraftFileRequest = z.object({
-  path: z.string().min(1).max(255),
+    path: z.string().min(1).max(255)
 });
 
 export const zAgentProblemOutput = z.object({
-  code: z.enum([
-    'entry_missing',
-    'entry_unreadable',
-    'front_matter_missing',
-    'front_matter_malformed',
-    'front_matter_too_large',
-    'key_missing',
-    'key_invalid',
-    'provider_unknown',
-    'model_unknown',
-    'name_invalid',
-    'name_mismatch',
-    'name_reserved',
-    'unknown_key',
-    'forbidden_key',
-    'instructions_too_large',
-    'too_many_files',
-    'file_too_large',
-    'folder_too_large',
-    'path_outside_folder',
-    'nested_git',
-    'symlink_refused',
-    'kind_refused',
-    'duplicate_path',
-    'size_invalid',
-    'cli_config_path',
-    'short_name',
-  ]),
-  path: z.string(),
-  key: z.string().nullable(),
-  message: z.string(),
+    code: z.enum([
+        'entry_missing',
+        'entry_unreadable',
+        'front_matter_missing',
+        'front_matter_malformed',
+        'front_matter_too_large',
+        'key_missing',
+        'key_invalid',
+        'provider_unknown',
+        'model_unknown',
+        'name_invalid',
+        'name_mismatch',
+        'name_reserved',
+        'unknown_key',
+        'forbidden_key',
+        'instructions_too_large',
+        'too_many_files',
+        'file_too_large',
+        'folder_too_large',
+        'path_outside_folder',
+        'nested_git',
+        'symlink_refused',
+        'kind_refused',
+        'duplicate_path',
+        'size_invalid',
+        'cli_config_path',
+        'short_name'
+    ]),
+    path: z.string(),
+    key: z.string().nullable(),
+    message: z.string()
 });
 
 export const zAgentSummaryOutput = z.object({
-  name: z.string(),
-  description: z.string().nullable(),
-  provider: z.enum(['claude_code', 'codex']).nullable(),
-  model: z.string().nullable(),
-  source: z.enum(['built_in', 'definitions']),
-  usable: z.boolean(),
-  problems: z.array(zAgentProblemOutput),
+    name: z.string(),
+    description: z.string().nullable(),
+    provider: z.enum(['claude_code', 'codex']).nullable(),
+    model: z.string().nullable(),
+    source: z.enum(['built_in', 'definitions']),
+    usable: z.boolean(),
+    problems: z.array(zAgentProblemOutput)
 });
 
 export const zAgentListOutput = z.object({
-  commit: z.string().nullable(),
-  repository: zAgentsRepositoryOutput.nullable(),
-  truncated: z.boolean(),
-  baseRules: z.object({
-    version: z.string(),
-    text: z.string(),
-  }),
-  agents: z.array(zAgentSummaryOutput),
+    commit: z.string().nullable(),
+    repository: zAgentsRepositoryOutput.nullable(),
+    truncated: z.boolean(),
+    baseRules: z.object({
+        version: z.string(),
+        text: z.string()
+    }),
+    agents: z.array(zAgentSummaryOutput)
 });
 
 export const zAgentDetailAgentOutput = z.object({
-  name: z.string(),
-  description: z.string().nullable(),
-  provider: z.enum(['claude_code', 'codex']).nullable(),
-  model: z.string().nullable(),
-  source: z.enum(['built_in', 'definitions']),
-  usable: z.boolean(),
-  problems: z.array(zAgentProblemOutput),
-  instructions: z.string(),
-  files: z.array(
-    z.object({
-      path: z.string(),
-      size: z.int().gte(0).lte(9007199254740991),
-    }),
-  ),
+    name: z.string(),
+    description: z.string().nullable(),
+    provider: z.enum(['claude_code', 'codex']).nullable(),
+    model: z.string().nullable(),
+    source: z.enum(['built_in', 'definitions']),
+    usable: z.boolean(),
+    problems: z.array(zAgentProblemOutput),
+    instructions: z.string(),
+    files: z.array(z.object({
+        path: z.string(),
+        size: z.int().gte(0).lte(9007199254740991)
+    }))
 });
 
 export const zAgentDetailOutput = z.object({
-  commit: z.string().nullable(),
-  repository: zAgentsRepositoryOutput.nullable(),
-  agent: zAgentDetailAgentOutput,
+    commit: z.string().nullable(),
+    repository: zAgentsRepositoryOutput.nullable(),
+    agent: zAgentDetailAgentOutput
 });
 
 export const zRunAgentOptionOutput = z.object({
-  name: z.string(),
-  description: z.string().nullable(),
-  provider: z.enum(['claude_code', 'codex']),
-  model: z.string(),
-  source: z.enum(['built_in', 'definitions']),
+    name: z.string(),
+    description: z.string().nullable(),
+    provider: z.enum(['claude_code', 'codex']),
+    model: z.string(),
+    source: z.enum(['built_in', 'definitions'])
 });
 
 export const zRunAgentListOutput = z.object({
-  agents: z.array(zRunAgentOptionOutput),
-  preselected: z.string(),
-  preselectedReason: z.string().nullable(),
+    agents: z.array(zRunAgentOptionOutput),
+    preselected: z.string(),
+    preselectedReason: z.string().nullable()
 });
 
 export const zStartRunRequest = z.object({
-  task: z.string().min(1).max(20000),
-  agent: z.string().min(1).max(64).optional(),
-  provider: z.enum(['claude_code', 'codex']).optional(),
+    task: z.string().min(1).max(20000),
+    agent: z.string().min(1).max(64).optional(),
+    provider: z.enum(['claude_code', 'codex']).optional()
 });
 
 export const zStartRunResponseOutput = z.object({
-  id: z
-    .uuid()
-    .regex(
-      /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/,
-    ),
+    id: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/)
 });
 
 export const zRunAgentOutput = z.object({
-  name: z.string(),
-  source: z.enum(['built_in', 'definitions']),
-  commit: z.string().nullable(),
-  provider: z.enum(['claude_code', 'codex']),
-  model: z.string(),
-  instructions: z.string().optional(),
+    name: z.string(),
+    source: z.enum(['built_in', 'definitions']),
+    commit: z.string().nullable(),
+    provider: z.enum(['claude_code', 'codex']),
+    model: z.string(),
+    instructions: z.string().optional()
 });
 
 export const zRunLimitsOutput = z.object({
-  stepMinutes: z.int().gte(1).lte(9007199254740991),
-  maxSteps: z.int().gte(1).lte(9007199254740991),
-  waitingDays: z.int().gte(1).lte(9007199254740991),
-  maxTotalSteps: z.int().gte(1).lte(9007199254740991),
+    stepMinutes: z.int().gte(1).lte(9007199254740991),
+    maxSteps: z.int().gte(1).lte(9007199254740991),
+    waitingDays: z.int().gte(1).lte(9007199254740991),
+    maxTotalSteps: z.int().gte(1).lte(9007199254740991)
 });
 
 export const zRunStepTotalsOutput = z.object({
-  used: z.int().gte(0).lte(9007199254740991),
-  usedInPart: z.int().gte(0).lte(9007199254740991),
+    used: z.int().gte(0).lte(9007199254740991),
+    usedInPart: z.int().gte(0).lte(9007199254740991)
 });
 
 export const zRunFollowUpEligibilityOutput = z.object({
-  allowed: z.boolean(),
-  reason: z
-    .enum([
-      'not_finished',
-      'follow_up_queued',
-      'pull_request_merged',
-      'pull_request_closed',
-      'pull_request_missing',
-      'working_copy_removed',
-      'no_session',
-      'step_total_reached',
-      'provider_unavailable',
-      'worker_unavailable',
-    ])
-    .optional(),
-  openUntil: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    )
-    .optional(),
-  removalPending: z.literal(true).optional(),
+    allowed: z.boolean(),
+    reason: z.enum([
+        'not_finished',
+        'follow_up_queued',
+        'pull_request_merged',
+        'pull_request_closed',
+        'pull_request_missing',
+        'working_copy_removed',
+        'no_session',
+        'step_total_reached',
+        'provider_unavailable',
+        'worker_unavailable'
+    ]).optional(),
+    openUntil: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
+    removalPending: z.literal(true).optional()
 });
 
 export const zRunMergeAvailabilityOutput = z.union([
-  z.object({
-    available: z.literal(true),
-  }),
-  z.object({
-    available: z.literal(false),
-    reason: z.enum(['not_configured', 'unsupported_host']),
-  }),
+    z.object({
+        available: z.literal(true)
+    }),
+    z.object({
+        available: z.literal(false),
+        reason: z.enum(['not_configured', 'unsupported_host'])
+    })
 ]);
 
 export const zMergeApprovalOutput = z.object({
-  id: z
-    .uuid()
-    .regex(
-      /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/,
-    ),
-  approvedAt: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    ),
-  approvedBy: z.literal('operator'),
-  commit: z.string(),
-  integrationBranch: z.string(),
-  method: z.enum(['squash', 'merge_commit']),
-  checksSeen: z.array(
-    z.object({
-      name: z.string(),
-      state: z.enum(['success', 'failure', 'pending', 'neutral']),
-    }),
-  ),
-  result: z.enum(['pending', 'carried_out', 'not_carried_out']),
-  refusal: z
-    .object({
-      code: z.enum([
-        'checks_failing',
-        'checks_running',
-        'conflicting',
-        'run_active',
-        'commit_moved',
-        'review_out_of_date',
-        'pull_request_not_open',
-        'merge_unavailable',
-        'host_refused',
-        'merge_in_progress',
-        'interrupted',
-      ]),
-      reason: z.string().max(500),
-    })
-    .optional(),
-  mergedCommit: z.string().optional(),
-  completedAt: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    )
-    .optional(),
-  mergeOutcomeUnknown: z.literal(true).optional(),
-  cloneFetchStartedAt: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    )
-    .optional(),
+    id: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
+    approvedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/),
+    approvedBy: z.literal('operator'),
+    commit: z.string(),
+    integrationBranch: z.string(),
+    method: z.enum(['squash', 'merge_commit']),
+    checksSeen: z.array(z.object({
+        name: z.string(),
+        state: z.enum([
+            'success',
+            'failure',
+            'pending',
+            'neutral'
+        ])
+    })),
+    result: z.enum([
+        'pending',
+        'carried_out',
+        'not_carried_out'
+    ]),
+    refusal: z.object({
+        code: z.enum([
+            'checks_failing',
+            'checks_running',
+            'conflicting',
+            'run_active',
+            'commit_moved',
+            'review_out_of_date',
+            'pull_request_not_open',
+            'merge_unavailable',
+            'host_refused',
+            'merge_in_progress',
+            'interrupted'
+        ]),
+        reason: z.string().max(500)
+    }).optional(),
+    mergedCommit: z.string().optional(),
+    completedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
+    mergeOutcomeUnknown: z.literal(true).optional(),
+    cloneFetchStartedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional()
 });
 
 export const zRunPreviewAfterMergeOutput = z.object({
-  projectId: z
-    .uuid()
-    .regex(
-      /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/,
-    ),
-  state: z.enum([
-    'not_configured',
-    'not_started',
-    'waiting',
-    'building',
-    'running',
-    'failed',
-    'replaced',
-  ]),
+    projectId: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
+    state: z.enum([
+        'not_configured',
+        'not_started',
+        'waiting',
+        'building',
+        'running',
+        'failed',
+        'replaced'
+    ])
 });
 
 export const zRunPullRequestCheckOutput = z.object({
-  name: z.string(),
-  state: z.enum(['queued', 'running', 'passed', 'failed', 'skipped', 'cancelled']),
-  durationSeconds: z.int().gte(0).lte(9007199254740991).optional(),
-  url: z.url(),
+    name: z.string(),
+    state: z.enum([
+        'queued',
+        'running',
+        'passed',
+        'failed',
+        'skipped',
+        'cancelled'
+    ]),
+    durationSeconds: z.int().gte(0).lte(9007199254740991).optional(),
+    url: z.url()
 });
 
 export const zFailingChecksPreparationOutput = z.object({
-  state: z.enum(['preparing', 'ready', 'failed']),
-  error: z.string().optional(),
+    state: z.enum([
+        'preparing',
+        'ready',
+        'failed'
+    ]),
+    error: z.string().optional()
 });
 
 export const zRunPullRequestOutput = z.object({
-  url: z.url(),
-  number: z.int().gt(0).lte(9007199254740991),
-  state: z.enum(['draft', 'open', 'merged', 'closed', 'missing']).optional(),
-  behindBy: z.int().gte(0).lte(9007199254740991).optional(),
-  aheadBy: z.int().gte(0).lte(9007199254740991).optional(),
-  mergeable: z.boolean().optional(),
-  refreshedAt: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    )
-    .optional(),
-  refreshError: z.string().optional(),
-  retryAt: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    )
-    .optional(),
-  refreshing: z.literal(true).optional(),
-  checks: z.array(zRunPullRequestCheckOutput).optional(),
-  checksCommit: z.string().optional(),
-  checksUnavailable: z.literal(true).optional(),
-  checksOtherCommit: z.literal(true).optional(),
-  closedFromStudioAt: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    )
-    .optional(),
-  runBranchDeletedAt: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    )
-    .optional(),
-  runBranchDeletionFailure: z.string().max(500).optional(),
-  failingChecksPreparation: zFailingChecksPreparationOutput.optional(),
+    url: z.url(),
+    number: z.int().gt(0).lte(9007199254740991),
+    state: z.enum([
+        'draft',
+        'open',
+        'merged',
+        'closed',
+        'missing'
+    ]).optional(),
+    behindBy: z.int().gte(0).lte(9007199254740991).optional(),
+    aheadBy: z.int().gte(0).lte(9007199254740991).optional(),
+    mergeable: z.boolean().optional(),
+    refreshedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
+    refreshError: z.string().optional(),
+    retryAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
+    refreshing: z.literal(true).optional(),
+    checks: z.array(zRunPullRequestCheckOutput).optional(),
+    checksCommit: z.string().optional(),
+    checksUnavailable: z.literal(true).optional(),
+    checksOtherCommit: z.literal(true).optional(),
+    closedFromStudioAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
+    runBranchDeletedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
+    runBranchDeletionFailure: z.string().max(500).optional(),
+    failingChecksPreparation: zFailingChecksPreparationOutput.optional()
 });
 
 export const zRunQuestionOutput = z.object({
-  text: z.string(),
-  options: z.array(z.string()).optional(),
-  recommendation: z.string().optional(),
+    text: z.string(),
+    options: z.array(z.string()).optional(),
+    recommendation: z.string().optional()
 });
 
 export const zRunPartEndOutput = z.object({
-  state: z.enum(['succeeded', 'failed', 'cancelled', 'timed_out']),
-  failureCode: z
-    .enum([
-      'provider_disabled',
-      'preparation_failed',
-      'agent_failed',
-      'usage_limit',
-      'worker_lost',
-      'delivery_failed',
-      'step_limit',
-      'agent_folder_unavailable',
-      'agent_folder_invalid',
-      'model_not_allowed',
-      'model_refused',
-      'unknown',
-    ])
-    .optional(),
-  delivery: z.enum(['none', 'delivered', 'failed']).optional(),
-});
-
-export const zRunMessageOutput = z.object({
-  role: z.enum(['operator', 'agent', 'studio']),
-  kind: z.enum(['task', 'question', 'answer', 'follow_up', 'part_end']),
-  text: z.string(),
-  end: zRunPartEndOutput.optional(),
-  mergedCommit: z.string().optional(),
-  options: z.array(z.string()).optional(),
-  recommendation: z.string().optional(),
-  source: z.enum(['pull_request_checks', 'bring_up_to_date', 'review_comments']).optional(),
-  sourceCount: z.int().gte(-9007199254740991).lte(9007199254740991).optional(),
-  sourceAuthors: z.array(z.string()).optional(),
-  at: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    ),
-});
-
-export const zRunOutput = z.object({
-  id: z
-    .uuid()
-    .regex(
-      /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/,
-    ),
-  projectId: z
-    .uuid()
-    .regex(
-      /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/,
-    ),
-  provider: z.enum(['claude_code', 'codex']),
-  agent: zRunAgentOutput,
-  task: z.string(),
-  state: z.enum([
-    'queued',
-    'preparing',
-    'running',
-    'waiting_for_operator',
-    'succeeded',
-    'failed',
-    'cancelled',
-    'timed_out',
-  ]),
-  startCommit: z.string(),
-  createdAt: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    ),
-  startedAt: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    )
-    .optional(),
-  finishedAt: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    )
-    .optional(),
-  failure: z
-    .object({
-      code: z.enum([
+    state: z.enum([
+        'succeeded',
+        'failed',
+        'cancelled',
+        'timed_out'
+    ]),
+    failureCode: z.enum([
         'provider_disabled',
         'preparation_failed',
         'agent_failed',
@@ -704,918 +553,581 @@ export const zRunOutput = z.object({
         'agent_folder_invalid',
         'model_not_allowed',
         'model_refused',
-        'unknown',
-      ]),
-      detail: z.string(),
-    })
-    .optional(),
-  runBranch: z.string().optional(),
-  commits: z
-    .array(
-      z.object({
+        'unknown'
+    ]).optional(),
+    delivery: z.enum([
+        'none',
+        'delivered',
+        'failed'
+    ]).optional()
+});
+
+export const zRunMessageOutput = z.object({
+    role: z.enum([
+        'operator',
+        'agent',
+        'studio'
+    ]),
+    kind: z.enum([
+        'task',
+        'question',
+        'answer',
+        'follow_up',
+        'part_end'
+    ]),
+    text: z.string(),
+    end: zRunPartEndOutput.optional(),
+    mergedCommit: z.string().optional(),
+    options: z.array(z.string()).optional(),
+    recommendation: z.string().optional(),
+    source: z.enum([
+        'pull_request_checks',
+        'bring_up_to_date',
+        'review_comments'
+    ]).optional(),
+    sourceCount: z.int().gte(-9007199254740991).lte(9007199254740991).optional(),
+    sourceAuthors: z.array(z.string()).optional(),
+    at: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/)
+});
+
+export const zRunOutput = z.object({
+    id: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
+    projectId: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
+    provider: z.enum(['claude_code', 'codex']),
+    agent: zRunAgentOutput,
+    task: z.string(),
+    state: z.enum([
+        'queued',
+        'preparing',
+        'running',
+        'waiting_for_operator',
+        'succeeded',
+        'failed',
+        'cancelled',
+        'timed_out'
+    ]),
+    startCommit: z.string(),
+    createdAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/),
+    startedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
+    finishedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
+    failure: z.object({
+        code: z.enum([
+            'provider_disabled',
+            'preparation_failed',
+            'agent_failed',
+            'usage_limit',
+            'worker_lost',
+            'delivery_failed',
+            'step_limit',
+            'agent_folder_unavailable',
+            'agent_folder_invalid',
+            'model_not_allowed',
+            'model_refused',
+            'unknown'
+        ]),
+        detail: z.string()
+    }).optional(),
+    runBranch: z.string().optional(),
+    commits: z.array(z.object({
         id: z.string(),
         subject: z.string(),
-        pushed: z.boolean().optional(),
-      }),
-    )
-    .optional(),
-  hasUncommittedChanges: z.boolean().optional(),
-  environmentFileSupplied: z.boolean(),
-  limits: zRunLimitsOutput,
-  steps: zRunStepTotalsOutput,
-  followUps: z.int().gte(0).lte(9007199254740991),
-  followUp: zRunFollowUpEligibilityOutput.optional(),
-  merge: zRunMergeAvailabilityOutput.optional(),
-  integrationBranch: z.string().optional(),
-  latestMergeApproval: zMergeApprovalOutput.optional(),
-  previewAfterMerge: zRunPreviewAfterMergeOutput.optional(),
-  cancelRequestedAt: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    )
-    .optional(),
-  cancellation: z
-    .object({
-      by: z.enum(['operator', 'system']),
-      reason: z.string(),
-    })
-    .optional(),
-  delivery: z.enum(['none', 'delivered', 'failed']).optional(),
-  pullRequest: zRunPullRequestOutput.optional(),
-  deliveryRetryRequested: z.literal(true).optional(),
-  resumable: z.literal(true).optional(),
-  failingChecks: z.array(z.string()).optional(),
-  question: zRunQuestionOutput.optional(),
-  messages: z.array(zRunMessageOutput).optional(),
+        pushed: z.boolean().optional()
+    })).optional(),
+    hasUncommittedChanges: z.boolean().optional(),
+    environmentFileSupplied: z.boolean(),
+    limits: zRunLimitsOutput,
+    steps: zRunStepTotalsOutput,
+    followUps: z.int().gte(0).lte(9007199254740991),
+    followUp: zRunFollowUpEligibilityOutput.optional(),
+    merge: zRunMergeAvailabilityOutput.optional(),
+    integrationBranch: z.string().optional(),
+    latestMergeApproval: zMergeApprovalOutput.optional(),
+    previewAfterMerge: zRunPreviewAfterMergeOutput.optional(),
+    cancelRequestedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
+    cancellation: z.object({
+        by: z.enum(['operator', 'system']),
+        reason: z.string()
+    }).optional(),
+    delivery: z.enum([
+        'none',
+        'delivered',
+        'failed'
+    ]).optional(),
+    pullRequest: zRunPullRequestOutput.optional(),
+    deliveryRetryRequested: z.literal(true).optional(),
+    resumable: z.literal(true).optional(),
+    failingChecks: z.array(z.string()).optional(),
+    question: zRunQuestionOutput.optional(),
+    messages: z.array(zRunMessageOutput).optional()
 });
 
 export const zRunListOutput = z.array(zRunOutput);
 
 export const zRunsSummaryOutput = z.object({
-  running: z.int().gte(0).lte(9007199254740991),
-  waiting: z.int().gte(0).lte(9007199254740991),
+    running: z.int().gte(0).lte(9007199254740991),
+    waiting: z.int().gte(0).lte(9007199254740991)
 });
 
 export const zCancelRunResponseOutput = z.object({
-  outcome: z.enum(['cancelled', 'cancel_requested']),
+    outcome: z.enum(['cancelled', 'cancel_requested'])
 });
 
 export const zAnswerRunRequest = z.object({
-  text: z.string().min(1).max(10000),
+    text: z.string().min(1).max(10000)
 });
 
 export const zFollowUpRunRequest = z.object({
-  text: z.string().min(1).max(10000),
-  source: z.enum(['pull_request_checks', 'bring_up_to_date', 'review_comments']).optional(),
-  reviewCommentIds: z.array(z.string().min(1).max(40)).min(1).max(100).optional(),
+    text: z.string().min(1).max(10000),
+    source: z.enum([
+        'pull_request_checks',
+        'bring_up_to_date',
+        'review_comments'
+    ]).optional(),
+    reviewCommentIds: z.array(z.string().min(1).max(40)).min(1).max(100).optional()
 });
 
 export const zBringUpToDateRequest = z.object({
-  note: z.string().max(10000).optional(),
+    note: z.string().max(10000).optional()
 });
 
 export const zRefreshPullRequestRequest = z.object({
-  onOpen: z.boolean().optional(),
+    onOpen: z.boolean().optional()
 });
 
 export const zClosePullRequestResponseOutput = z.object({
-  closedFromStudioAt: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    ),
-  runBranchDeletedAt: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    )
-    .optional(),
-  runBranchDeletionFailure: z.string().max(500).optional(),
-  state: z.enum(['draft', 'open', 'merged', 'closed', 'missing']),
+    closedFromStudioAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/),
+    runBranchDeletedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
+    runBranchDeletionFailure: z.string().max(500).optional(),
+    state: z.enum([
+        'draft',
+        'open',
+        'merged',
+        'closed',
+        'missing'
+    ])
 });
 
 export const zMergeRunRequest = z.object({
-  commit: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/),
+    commit: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/)
 });
 
 export const zMergeRunResponseOutput = z.object({
-  id: z
-    .uuid()
-    .regex(
-      /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/,
-    ),
-  approvedAt: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    ),
-  approvedBy: z.literal('operator'),
-  commit: z.string(),
-  integrationBranch: z.string(),
-  method: z.enum(['squash', 'merge_commit']),
-  checksSeen: z.array(
-    z.object({
-      name: z.string(),
-      state: z.enum(['success', 'failure', 'pending', 'neutral']),
-    }),
-  ),
-  result: z.enum(['pending', 'carried_out', 'not_carried_out']),
-  refusal: z
-    .object({
-      code: z.enum([
-        'checks_failing',
-        'checks_running',
-        'conflicting',
-        'run_active',
-        'commit_moved',
-        'review_out_of_date',
-        'pull_request_not_open',
-        'merge_unavailable',
-        'host_refused',
-        'merge_in_progress',
-        'interrupted',
-      ]),
-      reason: z.string().max(500),
-    })
-    .optional(),
-  mergedCommit: z.string().optional(),
-  completedAt: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    )
-    .optional(),
-  mergeOutcomeUnknown: z.literal(true).optional(),
-  cloneFetchStartedAt: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    )
-    .optional(),
-  runBranchDeletedAt: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    )
-    .optional(),
-  runBranchDeletionFailure: z.string().max(500).optional(),
+    id: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
+    approvedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/),
+    approvedBy: z.literal('operator'),
+    commit: z.string(),
+    integrationBranch: z.string(),
+    method: z.enum(['squash', 'merge_commit']),
+    checksSeen: z.array(z.object({
+        name: z.string(),
+        state: z.enum([
+            'success',
+            'failure',
+            'pending',
+            'neutral'
+        ])
+    })),
+    result: z.enum([
+        'pending',
+        'carried_out',
+        'not_carried_out'
+    ]),
+    refusal: z.object({
+        code: z.enum([
+            'checks_failing',
+            'checks_running',
+            'conflicting',
+            'run_active',
+            'commit_moved',
+            'review_out_of_date',
+            'pull_request_not_open',
+            'merge_unavailable',
+            'host_refused',
+            'merge_in_progress',
+            'interrupted'
+        ]),
+        reason: z.string().max(500)
+    }).optional(),
+    mergedCommit: z.string().optional(),
+    completedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
+    mergeOutcomeUnknown: z.literal(true).optional(),
+    cloneFetchStartedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
+    runBranchDeletedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
+    runBranchDeletionFailure: z.string().max(500).optional()
 });
 
 export const zPreparedFollowUpCheckOutput = z.object({
-  name: z.string(),
-  url: z.url(),
-  logAvailable: z.boolean(),
-  section: z.string(),
+    name: z.string(),
+    url: z.url(),
+    logAvailable: z.boolean(),
+    section: z.string()
 });
 
 export const zPreparedFollowUpOutput = z.object({
-  source: z.enum(['pull_request_checks', 'bring_up_to_date', 'review_comments']),
-  text: z.string(),
-  checks: z.array(zPreparedFollowUpCheckOutput),
+    source: z.enum([
+        'pull_request_checks',
+        'bring_up_to_date',
+        'review_comments'
+    ]),
+    text: z.string(),
+    checks: z.array(zPreparedFollowUpCheckOutput)
 });
 
 export const zLoadReviewCommentsRequest = z.object({
-  scope: z.enum(['since_last_result', 'unresolved']),
+    scope: z.enum(['since_last_result', 'unresolved'])
 });
 
 export const zReviewCommentOutput = z.object({
-  id: z.string(),
-  author: z.string(),
-  byOperator: z.boolean(),
-  kind: z.enum(['review', 'inline', 'conversation']),
-  path: z.string().optional(),
-  line: z.int().gte(-9007199254740991).lte(9007199254740991).optional(),
-  diffContext: z.string().optional(),
-  verdict: z.enum(['commented', 'changes_requested', 'approved']).optional(),
-  text: z.string(),
-  textCut: z.literal(true).optional(),
-  createdAt: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    ),
+    id: z.string(),
+    author: z.string(),
+    byOperator: z.boolean(),
+    kind: z.enum([
+        'review',
+        'inline',
+        'conversation'
+    ]),
+    path: z.string().optional(),
+    line: z.int().gte(-9007199254740991).lte(9007199254740991).optional(),
+    diffContext: z.string().optional(),
+    verdict: z.enum([
+        'commented',
+        'changes_requested',
+        'approved'
+    ]).optional(),
+    text: z.string(),
+    textCut: z.literal(true).optional(),
+    createdAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/)
 });
 
 export const zReviewCommentsOutput = z.object({
-  operatorLogin: z.string().optional(),
-  comments: z.array(zReviewCommentOutput),
-  truncated: z.boolean(),
-  scope: z.enum(['since_last_result', 'unresolved']).optional(),
-  loadedAt: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    )
-    .optional(),
-  loading: z.boolean(),
-  error: z.string().optional(),
+    operatorLogin: z.string().optional(),
+    comments: z.array(zReviewCommentOutput),
+    truncated: z.boolean(),
+    scope: z.enum(['since_last_result', 'unresolved']).optional(),
+    loadedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).optional(),
+    loading: z.boolean(),
+    error: z.string().optional()
 });
 
 export const zRunEventOutput = z.object({
-  seq: z.int().gte(1).lte(9007199254740991),
-  at: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    ),
-  stepIndex: z.int().gte(1).lte(9007199254740991),
-  kind: z.enum(['message', 'command', 'output', 'step_started', 'step_finished', 'notice']),
-  text: z.string(),
-  truncated: z.literal(true).optional(),
-  redacted: z.literal(true).optional(),
+    seq: z.int().gte(1).lte(9007199254740991),
+    at: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/),
+    stepIndex: z.int().gte(1).lte(9007199254740991),
+    kind: z.enum([
+        'message',
+        'command',
+        'output',
+        'step_started',
+        'step_finished',
+        'notice'
+    ]),
+    text: z.string(),
+    truncated: z.literal(true).optional(),
+    redacted: z.literal(true).optional()
 });
 
 export const zRunEventPageOutput = z.object({
-  events: z.array(zRunEventOutput),
-  next: z.int().gte(1).lte(9007199254740991).optional(),
+    events: z.array(zRunEventOutput),
+    next: z.int().gte(1).lte(9007199254740991).optional()
 });
 
 export const zRunStepOutput = z.object({
-  index: z.int().gte(1).lte(9007199254740991),
-  kind: z.enum(['start', 'resume']),
-  outcome: z.enum(['done', 'needs_input']),
-  summary: z.string(),
-  checks: z.array(
-    z.object({
-      name: z.string(),
-      result: z.enum(['passed', 'failed', 'not_run']),
-      detail: z.string().optional(),
-    }),
-  ),
-  reportedAt: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    ),
+    index: z.int().gte(1).lte(9007199254740991),
+    kind: z.enum(['start', 'resume']),
+    outcome: z.enum(['done', 'needs_input']),
+    summary: z.string(),
+    checks: z.array(z.object({
+        name: z.string(),
+        result: z.enum([
+            'passed',
+            'failed',
+            'not_run'
+        ]),
+        detail: z.string().optional()
+    })),
+    reportedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/)
 });
 
 export const zRunStepListOutput = z.object({
-  steps: z.array(zRunStepOutput),
+    steps: z.array(zRunStepOutput)
 });
 
 export const zRunDiffFileSummaryOutput = z.object({
-  path: z.string(),
-  previousPath: z.string().optional(),
-  status: z.enum(['added', 'modified', 'deleted', 'renamed']),
-  tooLarge: z.literal(true).optional(),
-  binary: z.literal(true).optional(),
-  additions: z.int().gte(0).lte(9007199254740991),
-  deletions: z.int().gte(0).lte(9007199254740991),
+    path: z.string(),
+    previousPath: z.string().optional(),
+    status: z.enum([
+        'added',
+        'modified',
+        'deleted',
+        'renamed'
+    ]),
+    tooLarge: z.literal(true).optional(),
+    binary: z.literal(true).optional(),
+    additions: z.int().gte(0).lte(9007199254740991),
+    deletions: z.int().gte(0).lte(9007199254740991)
 });
 
 export const zRunDiffOutput = z.object({
-  scope: z.enum(['run', 'last']),
-  baseCommit: z.string().optional(),
-  includesUnpushed: z.boolean().optional(),
-  truncated: z.boolean(),
-  files: z.array(zRunDiffFileSummaryOutput),
-  unavailableReason: z.string().optional(),
+    scope: z.enum(['run', 'last']),
+    baseCommit: z.string().optional(),
+    includesUnpushed: z.boolean().optional(),
+    truncated: z.boolean(),
+    files: z.array(zRunDiffFileSummaryOutput),
+    unavailableReason: z.string().optional()
 });
 
 export const zRunDiffFileOutput = z.object({
-  path: z.string(),
-  previousPath: z.string().optional(),
-  status: z.enum(['added', 'modified', 'deleted', 'renamed']),
-  patch: z.string().optional(),
-  tooLarge: z.literal(true).optional(),
-  binary: z.literal(true).optional(),
+    path: z.string(),
+    previousPath: z.string().optional(),
+    status: z.enum([
+        'added',
+        'modified',
+        'deleted',
+        'renamed'
+    ]),
+    patch: z.string().optional(),
+    tooLarge: z.literal(true).optional(),
+    binary: z.literal(true).optional()
 });
 
 export const zMergeReviewFileSummaryOutput = z.object({
-  path: z.string(),
-  previousPath: z.string().optional(),
-  status: z.enum(['added', 'modified', 'deleted', 'renamed']),
-  binary: z.literal(true).optional(),
-  cut: z.boolean(),
+    path: z.string(),
+    previousPath: z.string().optional(),
+    status: z.enum([
+        'added',
+        'modified',
+        'deleted',
+        'renamed'
+    ]),
+    binary: z.literal(true).optional(),
+    cut: z.boolean()
 });
 
 export const zMergeReviewOutput = z.object({
-  state: z.enum(['none', 'preparing', 'ready', 'failed', 'out_of_date']),
-  runCommit: z.string().optional(),
-  integrationCommit: z.string().optional(),
-  files: z.array(zMergeReviewFileSummaryOutput),
-  truncated: z.boolean(),
-  failure: z.string().optional(),
+    state: z.enum([
+        'none',
+        'preparing',
+        'ready',
+        'failed',
+        'out_of_date'
+    ]),
+    runCommit: z.string().optional(),
+    integrationCommit: z.string().optional(),
+    files: z.array(zMergeReviewFileSummaryOutput),
+    truncated: z.boolean(),
+    failure: z.string().optional()
 });
 
 export const zMergeReviewFileOutput = z.object({
-  path: z.string(),
-  previousPath: z.string().optional(),
-  status: z.enum(['added', 'modified', 'deleted', 'renamed']),
-  binary: z.literal(true).optional(),
-  cut: z.boolean(),
-  patch: z.string().optional(),
+    path: z.string(),
+    previousPath: z.string().optional(),
+    status: z.enum([
+        'added',
+        'modified',
+        'deleted',
+        'renamed'
+    ]),
+    binary: z.literal(true).optional(),
+    cut: z.boolean(),
+    patch: z.string().optional()
 });
 
 export const zProviderAvailabilityOutput = z.object({
-  id: z.enum(['claude_code', 'codex']),
-  name: z.string(),
-  available: z.boolean(),
-  reason: z.string().optional(),
-  models: z.array(z.string()),
+    id: z.enum(['claude_code', 'codex']),
+    name: z.string(),
+    available: z.boolean(),
+    reason: z.string().optional(),
+    models: z.array(z.string())
 });
 
 export const zProviderListOutput = z.array(zProviderAvailabilityOutput);
 
 export const zAgentWorkerDiskOutput = z.object({
-  workingCopiesBytes: z.int().gte(0).lte(9007199254740991),
-  cachesBytes: z.int().gte(0).lte(9007199254740991),
-  keptRuns: z.int().gte(0).lte(9007199254740991),
-  freeBytes: z.int().gte(0).lte(9007199254740991),
-  totalBytes: z.int().gte(0).lte(9007199254740991),
-  minFreeBytes: z.int().gte(0).lte(9007199254740991),
-  low: z.boolean(),
-  partial: z.literal(true).optional(),
+    workingCopiesBytes: z.int().gte(0).lte(9007199254740991),
+    cachesBytes: z.int().gte(0).lte(9007199254740991),
+    keptRuns: z.int().gte(0).lte(9007199254740991),
+    freeBytes: z.int().gte(0).lte(9007199254740991),
+    totalBytes: z.int().gte(0).lte(9007199254740991),
+    minFreeBytes: z.int().gte(0).lte(9007199254740991),
+    low: z.boolean(),
+    partial: z.literal(true).optional()
 });
 
 export const zAgentWorkerOutput = z.object({
-  connected: z.boolean(),
-  disk: zAgentWorkerDiskOutput.optional(),
+    connected: z.boolean(),
+    disk: zAgentWorkerDiskOutput.optional()
 });
 
 export const zPreviewOutput = z.object({
-  settings: z
-    .object({
-      composeFile: z.string(),
-      service: z.string(),
-      port: z.int().gte(-9007199254740991).lte(9007199254740991),
-      updatedAt: z.iso
-        .datetime()
-        .regex(
-          /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-        ),
-    })
-    .nullable(),
-  hostname: z.string().nullable(),
-  hostnameUnavailable: z.enum(['not_configured']).optional(),
-  repository: z.object({
-    ready: z.boolean(),
-    reason: z.enum(['no_repository', 'repository_not_ready', 'unsupported_platform']).optional(),
-    commit: z.string().optional(),
-  }),
-  state: z.enum([
-    'not_configured',
-    'stopped',
-    'stopping',
-    'resetting_data',
-    'building',
-    'running',
-    'failed',
-  ]),
-  running: z
-    .object({
-      buildId: z
-        .uuid()
-        .regex(
-          /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/,
-        ),
-      commit: z.string(),
-      since: z.iso
-        .datetime()
-        .regex(
-          /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-        ),
-      url: z.string().nullable(),
-    })
-    .nullable(),
-  latestBuild: z
-    .object({
-      id: z
-        .uuid()
-        .regex(
-          /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/,
-        ),
-      commit: z.string(),
-      startedBy: z.union([
-        z.object({
-          kind: z.literal('operator'),
-        }),
-        z.object({
-          kind: z.literal('merge'),
-          runId: z
-            .uuid()
-            .regex(
-              /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/,
-            ),
-        }),
-      ]),
-      status: z.enum(['queued', 'building', 'succeeded', 'failed']),
-      requestedAt: z.iso
-        .datetime()
-        .regex(
-          /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-        ),
-      startedAt: z.iso
-        .datetime()
-        .regex(
-          /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-        )
-        .nullable(),
-      finishedAt: z.iso
-        .datetime()
-        .regex(
-          /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-        )
-        .nullable(),
-      timeLimitMinutes: z.int().gte(-9007199254740991).lte(9007199254740991),
-      failure: z
-        .object({
-          code: z.enum([
-            'validation_refused',
-            'compose_file_missing',
-            'source_unavailable',
-            'archive_invalid',
-            'environment_file_tracked',
-            'disk_full',
-            'egress_rules_missing',
-            'limits_failed',
-            'build_failed',
-            'build_timed_out',
-            'start_failed',
-            'runtime_failed',
-            'controller_stopped',
-            'controller_error',
-            'controller_lost',
-            'not_claimed',
-            'report_overdue',
-          ]),
-          detail: z.string(),
-          refusals: z.array(
-            z.object({
-              code: z.enum([
-                'text_too_large',
-                'too_many_nodes',
-                'too_many_services',
-                'yaml_syntax',
-                'custom_tag',
-                'not_a_mapping',
-                'duplicate_key',
-                'alias_limit',
-                'unjudgeable',
-                'unknown_key',
-                'invalid_value',
-                'interpolation',
-                'privileged',
-                'host_namespace',
-                'capability_added',
-                'device',
-                'mount_outside_source',
-                'docker_socket',
-                'external_network',
-                'external_volume',
-                'path_outside_source',
-                'build_context_not_local',
-                'external_file',
-                'entry_service_missing',
-                'entry_port_invalid',
-                'compose_file_missing',
-                'compose_file_too_large',
-                'invalid_path',
-              ]),
-              place: z.string(),
-              message: z.string(),
-            }),
-          ),
-          previewRemoved: z.boolean(),
-        })
-        .nullable(),
-      log: z.object({
-        bytes: z.int().gte(-9007199254740991).lte(9007199254740991),
-        truncated: z.boolean(),
-      }),
-    })
-    .nullable(),
-  latestChange: z
-    .object({
-      kind: z.enum(['stop', 'reset_data']),
-      status: z.enum(['queued', 'in_progress', 'succeeded', 'failed']),
-      requestedAt: z.iso
-        .datetime()
-        .regex(
-          /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-        ),
-      finishedAt: z.iso
-        .datetime()
-        .regex(
-          /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-        )
-        .nullable(),
-      failure: z
-        .object({
-          code: z.enum([
-            'validation_refused',
-            'compose_file_missing',
-            'source_unavailable',
-            'archive_invalid',
-            'environment_file_tracked',
-            'disk_full',
-            'egress_rules_missing',
-            'limits_failed',
-            'build_failed',
-            'build_timed_out',
-            'start_failed',
-            'runtime_failed',
-            'controller_stopped',
-            'controller_error',
-            'controller_lost',
-            'not_claimed',
-            'report_overdue',
-          ]),
-          detail: z.string(),
-        })
-        .nullable(),
-    })
-    .nullable(),
-  controller: z.object({
-    connected: z.boolean(),
-  }),
-  behind: z.boolean(),
-  mergeRebuild: z
-    .object({
-      runId: z
-        .uuid()
-        .regex(
-          /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/,
-        ),
-      status: z.enum(['waiting', 'failed']),
-      reason: z.string(),
-      since: z.iso
-        .datetime()
-        .regex(
-          /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-        ),
-    })
-    .nullable(),
-});
-
-export const zPreviewRefusedProblem = z.object({
-  type: z.string(),
-  title: z.string(),
-  status: z.int().gte(-9007199254740991).lte(9007199254740991),
-  detail: z.string(),
-  correlationId: z.string(),
-  refusals: z.array(
-    z.object({
-      code: z.enum([
-        'text_too_large',
-        'too_many_nodes',
-        'too_many_services',
-        'yaml_syntax',
-        'custom_tag',
-        'not_a_mapping',
-        'duplicate_key',
-        'alias_limit',
-        'unjudgeable',
-        'unknown_key',
-        'invalid_value',
-        'interpolation',
-        'privileged',
-        'host_namespace',
-        'capability_added',
-        'device',
-        'mount_outside_source',
-        'docker_socket',
-        'external_network',
-        'external_volume',
-        'path_outside_source',
-        'build_context_not_local',
-        'external_file',
-        'entry_service_missing',
-        'entry_port_invalid',
-        'compose_file_missing',
-        'compose_file_too_large',
-        'invalid_path',
-      ]),
-      place: z.string(),
-      message: z.string(),
-    }),
-  ),
-});
-
-export const zSavePreviewSettingsRequest = z.object({
-  composeFile: z.string().max(255),
-  service: z
-    .string()
-    .max(63)
-    .regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/),
-  port: z.int().gte(1).lte(65535),
-});
-
-export const zSavePreviewSettingsResponseOutput = z.object({
-  settings: z
-    .object({
-      composeFile: z.string(),
-      service: z.string(),
-      port: z.int().gte(-9007199254740991).lte(9007199254740991),
-      updatedAt: z.iso
-        .datetime()
-        .regex(
-          /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-        ),
-    })
-    .nullable(),
-  hostname: z.string().nullable(),
-  hostnameUnavailable: z.enum(['not_configured']).optional(),
-  repository: z.object({
-    ready: z.boolean(),
-    reason: z.enum(['no_repository', 'repository_not_ready', 'unsupported_platform']).optional(),
-    commit: z.string().optional(),
-  }),
-  state: z.enum([
-    'not_configured',
-    'stopped',
-    'stopping',
-    'resetting_data',
-    'building',
-    'running',
-    'failed',
-  ]),
-  running: z
-    .object({
-      buildId: z
-        .uuid()
-        .regex(
-          /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/,
-        ),
-      commit: z.string(),
-      since: z.iso
-        .datetime()
-        .regex(
-          /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-        ),
-      url: z.string().nullable(),
-    })
-    .nullable(),
-  latestBuild: z
-    .object({
-      id: z
-        .uuid()
-        .regex(
-          /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/,
-        ),
-      commit: z.string(),
-      startedBy: z.union([
-        z.object({
-          kind: z.literal('operator'),
-        }),
-        z.object({
-          kind: z.literal('merge'),
-          runId: z
-            .uuid()
-            .regex(
-              /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/,
-            ),
-        }),
-      ]),
-      status: z.enum(['queued', 'building', 'succeeded', 'failed']),
-      requestedAt: z.iso
-        .datetime()
-        .regex(
-          /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-        ),
-      startedAt: z.iso
-        .datetime()
-        .regex(
-          /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-        )
-        .nullable(),
-      finishedAt: z.iso
-        .datetime()
-        .regex(
-          /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-        )
-        .nullable(),
-      timeLimitMinutes: z.int().gte(-9007199254740991).lte(9007199254740991),
-      failure: z
-        .object({
-          code: z.enum([
-            'validation_refused',
-            'compose_file_missing',
-            'source_unavailable',
-            'archive_invalid',
-            'environment_file_tracked',
-            'disk_full',
-            'egress_rules_missing',
-            'limits_failed',
-            'build_failed',
-            'build_timed_out',
-            'start_failed',
-            'runtime_failed',
-            'controller_stopped',
-            'controller_error',
-            'controller_lost',
-            'not_claimed',
-            'report_overdue',
-          ]),
-          detail: z.string(),
-          refusals: z.array(
-            z.object({
-              code: z.enum([
-                'text_too_large',
-                'too_many_nodes',
-                'too_many_services',
-                'yaml_syntax',
-                'custom_tag',
-                'not_a_mapping',
-                'duplicate_key',
-                'alias_limit',
-                'unjudgeable',
-                'unknown_key',
-                'invalid_value',
-                'interpolation',
-                'privileged',
-                'host_namespace',
-                'capability_added',
-                'device',
-                'mount_outside_source',
-                'docker_socket',
-                'external_network',
-                'external_volume',
-                'path_outside_source',
-                'build_context_not_local',
-                'external_file',
-                'entry_service_missing',
-                'entry_port_invalid',
-                'compose_file_missing',
-                'compose_file_too_large',
-                'invalid_path',
-              ]),
-              place: z.string(),
-              message: z.string(),
-            }),
-          ),
-          previewRemoved: z.boolean(),
-        })
-        .nullable(),
-      log: z.object({
-        bytes: z.int().gte(-9007199254740991).lte(9007199254740991),
-        truncated: z.boolean(),
-      }),
-    })
-    .nullable(),
-  latestChange: z
-    .object({
-      kind: z.enum(['stop', 'reset_data']),
-      status: z.enum(['queued', 'in_progress', 'succeeded', 'failed']),
-      requestedAt: z.iso
-        .datetime()
-        .regex(
-          /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-        ),
-      finishedAt: z.iso
-        .datetime()
-        .regex(
-          /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-        )
-        .nullable(),
-      failure: z
-        .object({
-          code: z.enum([
-            'validation_refused',
-            'compose_file_missing',
-            'source_unavailable',
-            'archive_invalid',
-            'environment_file_tracked',
-            'disk_full',
-            'egress_rules_missing',
-            'limits_failed',
-            'build_failed',
-            'build_timed_out',
-            'start_failed',
-            'runtime_failed',
-            'controller_stopped',
-            'controller_error',
-            'controller_lost',
-            'not_claimed',
-            'report_overdue',
-          ]),
-          detail: z.string(),
-        })
-        .nullable(),
-    })
-    .nullable(),
-  controller: z.object({
-    connected: z.boolean(),
-  }),
-  behind: z.boolean(),
-  mergeRebuild: z
-    .object({
-      runId: z
-        .uuid()
-        .regex(
-          /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/,
-        ),
-      status: z.enum(['waiting', 'failed']),
-      reason: z.string(),
-      since: z.iso
-        .datetime()
-        .regex(
-          /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-        ),
-    })
-    .nullable(),
-  removedPorts: z
-    .array(
-      z.object({
+    settings: z.object({
+        composeFile: z.string(),
         service: z.string(),
-        place: z.string(),
-      }),
-    )
-    .optional(),
-});
-
-export const zPreviewLimitReachedProblem = z.object({
-  type: z.string(),
-  title: z.string(),
-  status: z.int().gte(-9007199254740991).lte(9007199254740991),
-  detail: z.string(),
-  correlationId: z.string(),
-  running: z.array(
-    z.object({
-      projectId: z
-        .uuid()
-        .regex(
-          /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/,
-        ),
-      name: z.string(),
-      state: z.enum([
+        port: z.int().gte(-9007199254740991).lte(9007199254740991),
+        updatedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/)
+    }).nullable(),
+    hostname: z.string().nullable(),
+    hostnameUnavailable: z.enum(['not_configured']).optional(),
+    repository: z.object({
+        ready: z.boolean(),
+        reason: z.enum([
+            'no_repository',
+            'repository_not_ready',
+            'unsupported_platform'
+        ]).optional(),
+        commit: z.string().optional()
+    }),
+    state: z.enum([
         'not_configured',
         'stopped',
         'stopping',
         'resetting_data',
         'building',
         'running',
-        'failed',
-      ]),
+        'failed'
+    ]),
+    running: z.object({
+        buildId: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
+        commit: z.string(),
+        since: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/),
+        url: z.string().nullable()
+    }).nullable(),
+    latestBuild: z.object({
+        id: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
+        commit: z.string(),
+        startedBy: z.union([
+            z.object({
+                kind: z.literal('operator')
+            }),
+            z.object({
+                kind: z.literal('merge'),
+                runId: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/)
+            })
+        ]),
+        status: z.enum([
+            'queued',
+            'building',
+            'succeeded',
+            'failed'
+        ]),
+        requestedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/),
+        startedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).nullable(),
+        finishedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).nullable(),
+        timeLimitMinutes: z.int().gte(-9007199254740991).lte(9007199254740991),
+        failure: z.object({
+            code: z.enum([
+                'validation_refused',
+                'compose_file_missing',
+                'source_unavailable',
+                'archive_invalid',
+                'environment_file_tracked',
+                'disk_full',
+                'egress_rules_missing',
+                'limits_failed',
+                'build_failed',
+                'build_timed_out',
+                'start_failed',
+                'runtime_failed',
+                'controller_stopped',
+                'controller_error',
+                'controller_lost',
+                'not_claimed',
+                'report_overdue'
+            ]),
+            detail: z.string(),
+            refusals: z.array(z.object({
+                code: z.enum([
+                    'text_too_large',
+                    'too_many_nodes',
+                    'too_many_services',
+                    'yaml_syntax',
+                    'custom_tag',
+                    'not_a_mapping',
+                    'duplicate_key',
+                    'alias_limit',
+                    'unjudgeable',
+                    'unknown_key',
+                    'invalid_value',
+                    'interpolation',
+                    'privileged',
+                    'host_namespace',
+                    'capability_added',
+                    'device',
+                    'mount_outside_source',
+                    'docker_socket',
+                    'external_network',
+                    'external_volume',
+                    'path_outside_source',
+                    'build_context_not_local',
+                    'external_file',
+                    'entry_service_missing',
+                    'entry_port_invalid',
+                    'compose_file_missing',
+                    'compose_file_too_large',
+                    'invalid_path'
+                ]),
+                place: z.string(),
+                message: z.string()
+            })),
+            previewRemoved: z.boolean()
+        }).nullable(),
+        log: z.object({
+            bytes: z.int().gte(-9007199254740991).lte(9007199254740991),
+            truncated: z.boolean()
+        })
+    }).nullable(),
+    latestChange: z.object({
+        kind: z.enum(['stop', 'reset_data']),
+        status: z.enum([
+            'queued',
+            'in_progress',
+            'succeeded',
+            'failed'
+        ]),
+        requestedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/),
+        finishedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).nullable(),
+        failure: z.object({
+            code: z.enum([
+                'validation_refused',
+                'compose_file_missing',
+                'source_unavailable',
+                'archive_invalid',
+                'environment_file_tracked',
+                'disk_full',
+                'egress_rules_missing',
+                'limits_failed',
+                'build_failed',
+                'build_timed_out',
+                'start_failed',
+                'runtime_failed',
+                'controller_stopped',
+                'controller_error',
+                'controller_lost',
+                'not_claimed',
+                'report_overdue'
+            ]),
+            detail: z.string()
+        }).nullable()
+    }).nullable(),
+    controller: z.object({
+        connected: z.boolean()
     }),
-  ),
+    behind: z.boolean(),
+    mergeRebuild: z.object({
+        runId: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
+        status: z.enum(['waiting', 'failed']),
+        reason: z.string(),
+        since: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/)
+    }).nullable()
 });
 
-export const zPreviewBuildOutput = z.object({
-  id: z
-    .uuid()
-    .regex(
-      /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/,
-    ),
-  commit: z.string(),
-  startedBy: z.union([
-    z.object({
-      kind: z.literal('operator'),
-    }),
-    z.object({
-      kind: z.literal('merge'),
-      runId: z
-        .uuid()
-        .regex(
-          /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/,
-        ),
-    }),
-  ]),
-  status: z.enum(['queued', 'building', 'succeeded', 'failed']),
-  requestedAt: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    ),
-  startedAt: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    )
-    .nullable(),
-  finishedAt: z.iso
-    .datetime()
-    .regex(
-      /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-    )
-    .nullable(),
-  timeLimitMinutes: z.int().gte(-9007199254740991).lte(9007199254740991),
-  failure: z
-    .object({
-      code: z.enum([
-        'validation_refused',
-        'compose_file_missing',
-        'source_unavailable',
-        'archive_invalid',
-        'environment_file_tracked',
-        'disk_full',
-        'egress_rules_missing',
-        'limits_failed',
-        'build_failed',
-        'build_timed_out',
-        'start_failed',
-        'runtime_failed',
-        'controller_stopped',
-        'controller_error',
-        'controller_lost',
-        'not_claimed',
-        'report_overdue',
-      ]),
-      detail: z.string(),
-      refusals: z.array(
-        z.object({
-          code: z.enum([
+export const zPreviewRefusedProblem = z.object({
+    type: z.string(),
+    title: z.string(),
+    status: z.int().gte(-9007199254740991).lte(9007199254740991),
+    detail: z.string(),
+    correlationId: z.string(),
+    refusals: z.array(z.object({
+        code: z.enum([
             'text_too_large',
             'too_many_nodes',
             'too_many_services',
@@ -1643,77 +1155,335 @@ export const zPreviewBuildOutput = z.object({
             'entry_port_invalid',
             'compose_file_missing',
             'compose_file_too_large',
-            'invalid_path',
-          ]),
-          place: z.string(),
-          message: z.string(),
-        }),
-      ),
-      previewRemoved: z.boolean(),
-    })
-    .nullable(),
-  log: z.object({
-    bytes: z.int().gte(-9007199254740991).lte(9007199254740991),
-    truncated: z.boolean(),
-  }),
+            'invalid_path'
+        ]),
+        place: z.string(),
+        message: z.string()
+    }))
 });
 
-export const zPreviewsListOutput = z.object({
-  limit: z.int().gte(-9007199254740991).lte(9007199254740991),
-  previews: z.array(
-    z.object({
-      projectId: z
-        .uuid()
-        .regex(
-          /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/,
-        ),
-      state: z.enum([
+export const zSavePreviewSettingsRequest = z.object({
+    composeFile: z.string().max(255),
+    service: z.string().max(63).regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/),
+    port: z.int().gte(1).lte(65535)
+});
+
+export const zSavePreviewSettingsResponseOutput = z.object({
+    settings: z.object({
+        composeFile: z.string(),
+        service: z.string(),
+        port: z.int().gte(-9007199254740991).lte(9007199254740991),
+        updatedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/)
+    }).nullable(),
+    hostname: z.string().nullable(),
+    hostnameUnavailable: z.enum(['not_configured']).optional(),
+    repository: z.object({
+        ready: z.boolean(),
+        reason: z.enum([
+            'no_repository',
+            'repository_not_ready',
+            'unsupported_platform'
+        ]).optional(),
+        commit: z.string().optional()
+    }),
+    state: z.enum([
         'not_configured',
         'stopped',
         'stopping',
         'resetting_data',
         'building',
         'running',
-        'failed',
-      ]),
+        'failed'
+    ]),
+    running: z.object({
+        buildId: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
+        commit: z.string(),
+        since: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/),
+        url: z.string().nullable()
+    }).nullable(),
+    latestBuild: z.object({
+        id: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
+        commit: z.string(),
+        startedBy: z.union([
+            z.object({
+                kind: z.literal('operator')
+            }),
+            z.object({
+                kind: z.literal('merge'),
+                runId: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/)
+            })
+        ]),
+        status: z.enum([
+            'queued',
+            'building',
+            'succeeded',
+            'failed'
+        ]),
+        requestedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/),
+        startedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).nullable(),
+        finishedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).nullable(),
+        timeLimitMinutes: z.int().gte(-9007199254740991).lte(9007199254740991),
+        failure: z.object({
+            code: z.enum([
+                'validation_refused',
+                'compose_file_missing',
+                'source_unavailable',
+                'archive_invalid',
+                'environment_file_tracked',
+                'disk_full',
+                'egress_rules_missing',
+                'limits_failed',
+                'build_failed',
+                'build_timed_out',
+                'start_failed',
+                'runtime_failed',
+                'controller_stopped',
+                'controller_error',
+                'controller_lost',
+                'not_claimed',
+                'report_overdue'
+            ]),
+            detail: z.string(),
+            refusals: z.array(z.object({
+                code: z.enum([
+                    'text_too_large',
+                    'too_many_nodes',
+                    'too_many_services',
+                    'yaml_syntax',
+                    'custom_tag',
+                    'not_a_mapping',
+                    'duplicate_key',
+                    'alias_limit',
+                    'unjudgeable',
+                    'unknown_key',
+                    'invalid_value',
+                    'interpolation',
+                    'privileged',
+                    'host_namespace',
+                    'capability_added',
+                    'device',
+                    'mount_outside_source',
+                    'docker_socket',
+                    'external_network',
+                    'external_volume',
+                    'path_outside_source',
+                    'build_context_not_local',
+                    'external_file',
+                    'entry_service_missing',
+                    'entry_port_invalid',
+                    'compose_file_missing',
+                    'compose_file_too_large',
+                    'invalid_path'
+                ]),
+                place: z.string(),
+                message: z.string()
+            })),
+            previewRemoved: z.boolean()
+        }).nullable(),
+        log: z.object({
+            bytes: z.int().gte(-9007199254740991).lte(9007199254740991),
+            truncated: z.boolean()
+        })
+    }).nullable(),
+    latestChange: z.object({
+        kind: z.enum(['stop', 'reset_data']),
+        status: z.enum([
+            'queued',
+            'in_progress',
+            'succeeded',
+            'failed'
+        ]),
+        requestedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/),
+        finishedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).nullable(),
+        failure: z.object({
+            code: z.enum([
+                'validation_refused',
+                'compose_file_missing',
+                'source_unavailable',
+                'archive_invalid',
+                'environment_file_tracked',
+                'disk_full',
+                'egress_rules_missing',
+                'limits_failed',
+                'build_failed',
+                'build_timed_out',
+                'start_failed',
+                'runtime_failed',
+                'controller_stopped',
+                'controller_error',
+                'controller_lost',
+                'not_claimed',
+                'report_overdue'
+            ]),
+            detail: z.string()
+        }).nullable()
+    }).nullable(),
+    controller: z.object({
+        connected: z.boolean()
     }),
-  ),
+    behind: z.boolean(),
+    mergeRebuild: z.object({
+        runId: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
+        status: z.enum(['waiting', 'failed']),
+        reason: z.string(),
+        since: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/)
+    }).nullable(),
+    removedPorts: z.array(z.object({
+        service: z.string(),
+        place: z.string()
+    })).optional()
+});
+
+export const zPreviewLimitReachedProblem = z.object({
+    type: z.string(),
+    title: z.string(),
+    status: z.int().gte(-9007199254740991).lte(9007199254740991),
+    detail: z.string(),
+    correlationId: z.string(),
+    running: z.array(z.object({
+        projectId: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
+        name: z.string(),
+        state: z.enum([
+            'not_configured',
+            'stopped',
+            'stopping',
+            'resetting_data',
+            'building',
+            'running',
+            'failed'
+        ])
+    }))
+});
+
+export const zPreviewBuildOutput = z.object({
+    id: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
+    commit: z.string(),
+    startedBy: z.union([
+        z.object({
+            kind: z.literal('operator')
+        }),
+        z.object({
+            kind: z.literal('merge'),
+            runId: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/)
+        })
+    ]),
+    status: z.enum([
+        'queued',
+        'building',
+        'succeeded',
+        'failed'
+    ]),
+    requestedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/),
+    startedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).nullable(),
+    finishedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).nullable(),
+    timeLimitMinutes: z.int().gte(-9007199254740991).lte(9007199254740991),
+    failure: z.object({
+        code: z.enum([
+            'validation_refused',
+            'compose_file_missing',
+            'source_unavailable',
+            'archive_invalid',
+            'environment_file_tracked',
+            'disk_full',
+            'egress_rules_missing',
+            'limits_failed',
+            'build_failed',
+            'build_timed_out',
+            'start_failed',
+            'runtime_failed',
+            'controller_stopped',
+            'controller_error',
+            'controller_lost',
+            'not_claimed',
+            'report_overdue'
+        ]),
+        detail: z.string(),
+        refusals: z.array(z.object({
+            code: z.enum([
+                'text_too_large',
+                'too_many_nodes',
+                'too_many_services',
+                'yaml_syntax',
+                'custom_tag',
+                'not_a_mapping',
+                'duplicate_key',
+                'alias_limit',
+                'unjudgeable',
+                'unknown_key',
+                'invalid_value',
+                'interpolation',
+                'privileged',
+                'host_namespace',
+                'capability_added',
+                'device',
+                'mount_outside_source',
+                'docker_socket',
+                'external_network',
+                'external_volume',
+                'path_outside_source',
+                'build_context_not_local',
+                'external_file',
+                'entry_service_missing',
+                'entry_port_invalid',
+                'compose_file_missing',
+                'compose_file_too_large',
+                'invalid_path'
+            ]),
+            place: z.string(),
+            message: z.string()
+        })),
+        previewRemoved: z.boolean()
+    }).nullable(),
+    log: z.object({
+        bytes: z.int().gte(-9007199254740991).lte(9007199254740991),
+        truncated: z.boolean()
+    })
+});
+
+export const zPreviewsListOutput = z.object({
+    limit: z.int().gte(-9007199254740991).lte(9007199254740991),
+    previews: z.array(z.object({
+        projectId: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
+        state: z.enum([
+            'not_configured',
+            'stopped',
+            'stopping',
+            'resetting_data',
+            'building',
+            'running',
+            'failed'
+        ])
+    }))
 });
 
 export const zPreviewBuildEventsOutput = z.object({
-  events: z.array(
-    z.object({
-      seq: z.int().gte(-9007199254740991).lte(9007199254740991),
-      at: z.iso
-        .datetime()
-        .regex(
-          /^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/,
-        ),
-      stream: z.enum(['build', 'start', 'controller']),
-      text: z.string(),
-      truncated: z.boolean(),
-      redacted: z.boolean(),
-    }),
-  ),
-  next: z.int().gte(-9007199254740991).lte(9007199254740991).optional(),
-  final: z.boolean(),
-  truncated: z.boolean(),
+    events: z.array(z.object({
+        seq: z.int().gte(-9007199254740991).lte(9007199254740991),
+        at: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/),
+        stream: z.enum([
+            'build',
+            'start',
+            'controller'
+        ]),
+        text: z.string(),
+        truncated: z.boolean(),
+        redacted: z.boolean()
+    })),
+    next: z.int().gte(-9007199254740991).lte(9007199254740991).optional(),
+    final: z.boolean(),
+    truncated: z.boolean()
 });
 
 export const zProblemDetails = z.object({
-  type: z.string(),
-  title: z.string(),
-  status: z.int().gte(400).lte(599),
-  detail: z.string(),
-  correlationId: z.string(),
-  errors: z
-    .array(
-      z.object({
+    type: z.string(),
+    title: z.string(),
+    status: z.int().gte(400).lte(599),
+    detail: z.string(),
+    correlationId: z.string(),
+    errors: z.array(z.object({
         path: z.string(),
-        message: z.string(),
-      }),
-    )
-    .optional(),
+        message: z.string()
+    })).optional()
 });
 
 export const zGetHealthResponse = zHealthResponseOutput;
@@ -1736,19 +1506,22 @@ export const zCreateProjectBody = zCreateProjectRequest;
 export const zCreateProjectResponse = zProjectOutput;
 
 export const zGetProjectPath = z.object({
-  id: z.string(),
+    id: z.string()
 });
 
 export const zGetProjectResponse = zProjectDetailOutput;
 
 export const zDisconnectRepositoryPath = z.object({
-  id: z.string(),
+    id: z.string()
 });
 
-export const zDisconnectRepositoryResponse = z.union([zRepositoryOutput, z.void()]);
+export const zDisconnectRepositoryResponse = z.union([
+    zRepositoryOutput,
+    z.void()
+]);
 
 export const zGetRepositoryPath = z.object({
-  id: z.string(),
+    id: z.string()
 });
 
 export const zGetRepositoryResponse = zRepositoryOutput;
@@ -1756,13 +1529,13 @@ export const zGetRepositoryResponse = zRepositoryOutput;
 export const zConnectRepositoryBody = zConnectRepositoryRequest;
 
 export const zConnectRepositoryPath = z.object({
-  id: z.string(),
+    id: z.string()
 });
 
 export const zConnectRepositoryResponse = zRepositoryOutput;
 
 export const zFetchRepositoryPath = z.object({
-  id: z.string(),
+    id: z.string()
 });
 
 export const zFetchRepositoryResponse = zRepositoryOutput;
@@ -1770,13 +1543,13 @@ export const zFetchRepositoryResponse = zRepositoryOutput;
 export const zVerifyRepositoryBody = zVerifyRepositoryRequest;
 
 export const zVerifyRepositoryPath = z.object({
-  id: z.string(),
+    id: z.string()
 });
 
 export const zVerifyRepositoryResponse = zRepositoryOutput;
 
 export const zRemoveEnvironmentFilePath = z.object({
-  id: z.string(),
+    id: z.string()
 });
 
 /**
@@ -1785,7 +1558,7 @@ export const zRemoveEnvironmentFilePath = z.object({
 export const zRemoveEnvironmentFileResponse = z.void();
 
 export const zGetEnvironmentFilePath = z.object({
-  id: z.string(),
+    id: z.string()
 });
 
 /**
@@ -1796,7 +1569,7 @@ export const zGetEnvironmentFileResponse = zEnvironmentFileInfoOutput.nullable()
 export const zSetEnvironmentFileBody = zSetEnvironmentFileRequest;
 
 export const zSetEnvironmentFilePath = z.object({
-  id: z.string(),
+    id: z.string()
 });
 
 export const zSetEnvironmentFileResponse = zEnvironmentFileInfoOutput;
@@ -1804,7 +1577,7 @@ export const zSetEnvironmentFileResponse = zEnvironmentFileInfoOutput;
 export const zSetMergeMethodBody = zSetMergeMethodRequest;
 
 export const zSetMergeMethodPath = z.object({
-  id: z.string(),
+    id: z.string()
 });
 
 export const zSetMergeMethodResponse = zProjectOutput;
@@ -1812,7 +1585,7 @@ export const zSetMergeMethodResponse = zProjectOutput;
 export const zSetDefaultAgentBody = zSetDefaultAgentRequest;
 
 export const zSetDefaultAgentPath = z.object({
-  id: z.string(),
+    id: z.string()
 });
 
 export const zSetDefaultAgentResponse = zProjectOutput;
@@ -1822,11 +1595,8 @@ export const zGetDefinitionsRepositoryResponse = zDefinitionsRepositoryOutput;
 export const zListAgentFilesResponse = zAgentFilesOutput;
 
 export const zGetAgentFileQuery = z.object({
-  path: z.string().min(1).max(255),
-  commit: z
-    .string()
-    .regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/)
-    .optional(),
+    path: z.string().min(1).max(255),
+    commit: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/).optional()
 });
 
 export const zGetAgentFileResponse = zAgentFileOutput;
@@ -1836,13 +1606,13 @@ export const zDiscardAgentDraftResponse = zAgentDraftOutput;
 export const zGetAgentDraftResponse = zAgentDraftOutput;
 
 export const zGetAgentDraftFileQuery = z.object({
-  path: z.string().min(1).max(255),
+    path: z.string().min(1).max(255)
 });
 
 export const zGetAgentDraftFileResponse = zAgentFileOutput;
 
 export const zDeleteAgentDraftFileQuery = z.object({
-  path: z.string().min(1).max(255),
+    path: z.string().min(1).max(255)
 });
 
 export const zDeleteAgentDraftFileResponse = zAgentDraftOutput;
@@ -1862,19 +1632,19 @@ export const zRevertAgentDraftFileResponse = zAgentDraftOutput;
 export const zListAgentsResponse = zAgentListOutput;
 
 export const zGetAgentPath = z.object({
-  name: z.string(),
+    name: z.string()
 });
 
 export const zGetAgentResponse = zAgentDetailOutput;
 
 export const zListRunAgentsPath = z.object({
-  id: z.string(),
+    id: z.string()
 });
 
 export const zListRunAgentsResponse = zRunAgentListOutput;
 
 export const zListProjectRunsPath = z.object({
-  id: z.string(),
+    id: z.string()
 });
 
 export const zListProjectRunsResponse = zRunListOutput;
@@ -1882,7 +1652,7 @@ export const zListProjectRunsResponse = zRunListOutput;
 export const zStartRunBody = zStartRunRequest;
 
 export const zStartRunPath = z.object({
-  id: z.string(),
+    id: z.string()
 });
 
 export const zStartRunResponse = zStartRunResponseOutput;
@@ -1892,53 +1662,53 @@ export const zListRunsResponse = zRunListOutput;
 export const zGetRunsSummaryResponse = zRunsSummaryOutput;
 
 export const zGetRunPath = z.object({
-  runId: z.string(),
+    runId: z.string()
 });
 
 export const zGetRunResponse = zRunOutput;
 
 export const zCancelRunPath = z.object({
-  runId: z.string(),
+    runId: z.string()
 });
 
 export const zCancelRunResponse = zCancelRunResponseOutput;
 
 export const zRetryRunDeliveryPath = z.object({
-  runId: z.string(),
+    runId: z.string()
 });
 
 export const zAnswerRunBody = zAnswerRunRequest;
 
 export const zAnswerRunPath = z.object({
-  runId: z.string(),
+    runId: z.string()
 });
 
 export const zResumeRunPath = z.object({
-  runId: z.string(),
+    runId: z.string()
 });
 
 export const zFollowUpRunBody = zFollowUpRunRequest;
 
 export const zFollowUpRunPath = z.object({
-  runId: z.string(),
+    runId: z.string()
 });
 
 export const zBringUpToDateRunBody = zBringUpToDateRequest;
 
 export const zBringUpToDateRunPath = z.object({
-  runId: z.string(),
+    runId: z.string()
 });
 
 export const zRefreshRunPullRequestBody = zRefreshPullRequestRequest;
 
 export const zRefreshRunPullRequestPath = z.object({
-  runId: z.string(),
+    runId: z.string()
 });
 
 export const zRefreshRunPullRequestResponse = zRunOutput;
 
 export const zCloseRunPullRequestPath = z.object({
-  runId: z.string(),
+    runId: z.string()
 });
 
 export const zCloseRunPullRequestResponse = zClosePullRequestResponseOutput;
@@ -1946,19 +1716,19 @@ export const zCloseRunPullRequestResponse = zClosePullRequestResponseOutput;
 export const zMergeRunBody = zMergeRunRequest;
 
 export const zMergeRunPath = z.object({
-  runId: z.string(),
+    runId: z.string()
 });
 
 export const zMergeRunResponse = zMergeRunResponseOutput;
 
 export const zPrepareRunFailingChecksPath = z.object({
-  runId: z.string(),
+    runId: z.string()
 });
 
 export const zPrepareRunFailingChecksResponse = zRunOutput;
 
 export const zDiscardRunPreparedFollowUpPath = z.object({
-  runId: z.string(),
+    runId: z.string()
 });
 
 /**
@@ -1967,7 +1737,7 @@ export const zDiscardRunPreparedFollowUpPath = z.object({
 export const zDiscardRunPreparedFollowUpResponse = zProblemDetails;
 
 export const zGetRunPreparedFollowUpPath = z.object({
-  runId: z.string(),
+    runId: z.string()
 });
 
 export const zGetRunPreparedFollowUpResponse = zPreparedFollowUpOutput;
@@ -1975,38 +1745,38 @@ export const zGetRunPreparedFollowUpResponse = zPreparedFollowUpOutput;
 export const zLoadRunReviewCommentsBody = zLoadReviewCommentsRequest;
 
 export const zLoadRunReviewCommentsPath = z.object({
-  runId: z.string(),
+    runId: z.string()
 });
 
 export const zLoadRunReviewCommentsResponse = zReviewCommentsOutput;
 
 export const zGetRunReviewCommentsPath = z.object({
-  runId: z.string(),
+    runId: z.string()
 });
 
 export const zGetRunReviewCommentsResponse = zReviewCommentsOutput;
 
 export const zListRunEventsPath = z.object({
-  runId: z.string(),
+    runId: z.string()
 });
 
 export const zListRunEventsQuery = z.object({
-  after: z.int().gte(0).lte(2147483647).optional().default(0),
-  limit: z.int().gte(1).lte(1000).optional().default(500),
+    after: z.int().gte(0).lte(2147483647).optional().default(0),
+    limit: z.int().gte(1).lte(1000).optional().default(500)
 });
 
 export const zListRunEventsResponse = zRunEventPageOutput;
 
 export const zStreamRunEventsHeaders = z.object({
-  'Last-Event-ID': z.string().optional(),
+    'Last-Event-ID': z.string().optional()
 });
 
 export const zStreamRunEventsPath = z.object({
-  runId: z.string(),
+    runId: z.string()
 });
 
 export const zStreamRunEventsQuery = z.object({
-  after: z.int().gte(0).lte(2147483647).optional(),
+    after: z.int().gte(0).lte(2147483647).optional()
 });
 
 /**
@@ -2015,48 +1785,48 @@ export const zStreamRunEventsQuery = z.object({
 export const zStreamRunEventsResponse = z.string();
 
 export const zListRunStepsPath = z.object({
-  runId: z.string(),
+    runId: z.string()
 });
 
 export const zListRunStepsResponse = zRunStepListOutput;
 
 export const zGetRunDiffPath = z.object({
-  runId: z.string(),
+    runId: z.string()
 });
 
 export const zGetRunDiffQuery = z.object({
-  scope: z.enum(['run', 'last']),
+    scope: z.enum(['run', 'last'])
 });
 
 export const zGetRunDiffResponse = zRunDiffOutput;
 
 export const zGetRunDiffFilePath = z.object({
-  runId: z.string(),
+    runId: z.string()
 });
 
 export const zGetRunDiffFileQuery = z.object({
-  scope: z.enum(['run', 'last']),
-  path: z.string().min(1).max(4096),
+    scope: z.enum(['run', 'last']),
+    path: z.string().min(1).max(4096)
 });
 
 export const zGetRunDiffFileResponse = zRunDiffFileOutput;
 
 export const zGetRunMergeReviewPath = z.object({
-  runId: z.string(),
+    runId: z.string()
 });
 
 export const zGetRunMergeReviewResponse = zMergeReviewOutput;
 
 export const zRequestRunMergeReviewPath = z.object({
-  runId: z.string(),
+    runId: z.string()
 });
 
 export const zGetRunMergeReviewFilePath = z.object({
-  runId: z.string(),
+    runId: z.string()
 });
 
 export const zGetRunMergeReviewFileQuery = z.object({
-  path: z.string().min(1).max(4096),
+    path: z.string().min(1).max(4096)
 });
 
 export const zGetRunMergeReviewFileResponse = zMergeReviewFileOutput;
@@ -2066,13 +1836,13 @@ export const zListProvidersResponse = zProviderListOutput;
 export const zGetAgentWorkerResponse = zAgentWorkerOutput;
 
 export const zGetPreviewPath = z.object({
-  id: z.string(),
+    id: z.string()
 });
 
 export const zGetPreviewResponse = zPreviewOutput;
 
 export const zRemovePreviewSettingsPath = z.object({
-  id: z.string(),
+    id: z.string()
 });
 
 /**
@@ -2083,25 +1853,25 @@ export const zRemovePreviewSettingsResponse = z.void();
 export const zSavePreviewSettingsBody = zSavePreviewSettingsRequest;
 
 export const zSavePreviewSettingsPath = z.object({
-  id: z.string(),
+    id: z.string()
 });
 
 export const zSavePreviewSettingsResponse = zSavePreviewSettingsResponseOutput;
 
 export const zRequestPreviewBuildPath = z.object({
-  id: z.string(),
+    id: z.string()
 });
 
 export const zRequestPreviewBuildResponse = zPreviewBuildOutput;
 
 export const zStopPreviewPath = z.object({
-  id: z.string(),
+    id: z.string()
 });
 
 export const zStopPreviewResponse = zPreviewOutput;
 
 export const zResetPreviewDataPath = z.object({
-  id: z.string(),
+    id: z.string()
 });
 
 export const zResetPreviewDataResponse = zPreviewOutput;
@@ -2109,13 +1879,13 @@ export const zResetPreviewDataResponse = zPreviewOutput;
 export const zListPreviewsResponse = zPreviewsListOutput;
 
 export const zListPreviewBuildEventsPath = z.object({
-  id: z.string(),
-  buildId: z.string(),
+    id: z.string(),
+    buildId: z.string()
 });
 
 export const zListPreviewBuildEventsQuery = z.object({
-  after: z.int().gte(0).lte(2147483647).optional().default(0),
-  limit: z.int().gte(1).lte(1000).optional().default(500),
+    after: z.int().gte(0).lte(2147483647).optional().default(0),
+    limit: z.int().gte(1).lte(1000).optional().default(500)
 });
 
 export const zListPreviewBuildEventsResponse = zPreviewBuildEventsOutput;
