@@ -19,7 +19,7 @@ describe('the package stays a pure function that runs in a browser', () => {
     expect(sources.length).toBeGreaterThan(3);
   });
 
-  it('imports only its own files, the shared contracts and the YAML parser', () => {
+  it('imports only its own files, the contracts providers subpath and the YAML parser', () => {
     const outside = sources.flatMap(({ file, text }) =>
       specifiers(text)
         .filter(
@@ -27,7 +27,7 @@ describe('the package stays a pure function that runs in a browser', () => {
             !name.startsWith('./') &&
             !name.startsWith('../') &&
             name !== 'yaml' &&
-            name !== '@agentic-studio/contracts',
+            name !== '@agentic-studio/contracts/providers',
         )
         .map((name) => `${file}: ${name}`),
     );

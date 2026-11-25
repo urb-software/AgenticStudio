@@ -1,14 +1,14 @@
 import { z } from 'zod';
+import { PROVIDERS, type Provider } from './providers.js';
+
+export { PROVIDERS, type Provider };
 
 /**
  * The Studio/agent-worker wire protocol: the API validates every worker request, the worker every
  * response, and a test in the API pins the Run states and failure codes to the domain's.
  */
 
-/** The agent CLI product that carries out a Run. */
-export const PROVIDERS = ['claude_code', 'codex'] as const;
 export const providerSchema = z.enum(PROVIDERS);
-export type Provider = z.infer<typeof providerSchema>;
 
 /** Display names of the providers, the one list for the API and the agent worker. */
 export const PROVIDER_NAMES = {

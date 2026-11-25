@@ -57,3 +57,16 @@ export const FORBIDDEN_KEYS = [
 
 /** The longest part of a key or path a problem repeats. */
 export const MAX_QUOTED_LENGTH = 64;
+
+/**
+ * File names (compared case-insensitively, at any depth) that an agent CLI discovers as memory,
+ * instructions or skills. Together with every path segment that starts with a dot, they are
+ * refused: a definition carries no settings in any form.
+ */
+export const CLI_DISCOVERED_FILES = [
+  'CLAUDE.md',
+  'CLAUDE.local.md',
+  'AGENTS.md',
+  'AGENTS.override.md',
+  'SKILL.md',
+] as const;

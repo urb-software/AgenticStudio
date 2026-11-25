@@ -3,11 +3,12 @@ import {
   PROVIDER_MODELS,
   PROVIDERS,
   type Provider,
-} from '@agentic-studio/contracts';
+} from '@agentic-studio/contracts/providers';
 import { parseEntry, utf8Length } from './front-matter.js';
 import {
   AGENT_ENTRY_FILE,
   AGENT_NAME_PATTERN,
+  CLI_DISCOVERED_FILES,
   DESCRIPTION_MAX_LENGTH,
   FORBIDDEN_KEYS,
   KNOWN_KEYS,
@@ -35,6 +36,10 @@ export interface AgentDefinition {
   description: string;
   provider: Provider;
   model: string;
+  /**
+   * The Markdown after the front matter. Consumers hand a CLI only this and the other parsed
+   * fields, never the raw AGENT.md: a CLI's own parser may cut the front matter elsewhere.
+   */
   instructions: string;
   /** Every file of the folder, the entry file included. */
   files: { path: string; size: number }[];
@@ -47,12 +52,31 @@ const normalise = (key: string): string =>
   key.toLowerCase().replaceAll('-', '').replaceAll('_', '');
 const FORBIDDEN = new Set(FORBIDDEN_KEYS.map(normalise));
 const KNOWN = new Set<string>(KNOWN_KEYS);
+// Controls, NEL and the Unicode line and paragraph separators: no second line, no escape codes.
+const DESCRIPTION_FORBIDDEN = /[\p{Cc}\u0085\u2028\u2029]/u;
 const WINDOWS_DRIVE = /^[A-Za-z]:/;
 // eslint-disable-next-line no-control-regex -- control characters are exactly what is refused
 const CONTROL = /[\u0000-\u001f\u007f]/;
 
+// Code points that some file systems ignore when they compare names (a zero-width joiner, a
+// bidirectional mark), so `.g<ZWNJ>it` is `.git` there.
+const IGNORED_IN_NAMES = /[\u200c-\u200f\u202a-\u202e\u206a-\u206f\ufeff]/g;
+const SHORT_NAME = /~\d/;
+const CLI_FILES = new Set(CLI_DISCOVERED_FILES.map((name) => name.toLowerCase()));
+
+/** True for a segment that Git, or a file system on an operator's machine, reads as `.git`. */
+function isGitName(segment: string): boolean {
+  const plain = segment
+    .replace(IGNORED_IN_NAMES, '')
+    .replace(/[. ]+$/, '')
+    .toLowerCase();
+  return plain === '.git' || /^git~\d+$/.test(plain);
+}
+
+type PathCode = 'path_outside_folder' | 'nested_git' | 'cli_config_path';
+
 /** The first reason a path is refused, or undefined when it is a plain relative path. */
-function pathProblem(path: string): 'path_outside_folder' | 'nested_git' | undefined {
+function pathProblem(path: string): PathCode | undefined {
   const segments = path.split('/');
   if (
     path.startsWith('/') ||
@@ -63,7 +87,13 @@ function pathProblem(path: string): 'path_outside_folder' | 'nested_git' | undef
   ) {
     return 'path_outside_folder';
   }
-  if (segments.some((segment) => segment.toLowerCase() === '.git')) return 'nested_git';
+  if (segments.some(isGitName)) return 'nested_git';
+  // An 8.3 short name (`PROGRA~1`) is another spelling of a longer name on some file systems.
+  if (segments.some((segment) => SHORT_NAME.test(segment))) return 'path_outside_folder';
+  const base = (segments[segments.length - 1] as string).toLowerCase();
+  if (segments.some((segment) => segment.startsWith('.')) || CLI_FILES.has(base)) {
+    return 'cli_config_path';
+  }
   return undefined;
 }
 
@@ -91,19 +121,28 @@ export function validateAgentFolder(
       problems.push(problem('kind_refused', entry.path));
       continue;
     }
-    if (seen.has(entry.path)) {
+    if (seen.has(entry.path.toLowerCase())) {
       problems.push(problem('duplicate_path', entry.path));
       continue;
     }
-    seen.add(entry.path);
+    seen.add(entry.path.toLowerCase());
     if (entry.kind === 'file') fileEntries.push(entry);
   }
 
   if (fileEntries.length > MAX_FILES) problems.push(problem('too_many_files', ''));
   let total = 0;
   for (const entry of fileEntries) {
-    total += entry.size;
-    if (entry.size > MAX_FILE_BYTES) problems.push(problem('file_too_large', entry.path));
+    if (!Number.isSafeInteger(entry.size) || entry.size < 0) {
+      problems.push(problem('size_invalid', entry.path));
+      continue;
+    }
+    // The entry file is also measured by its text, so a declared size cannot hide a large file.
+    const size =
+      entry.path === AGENT_ENTRY_FILE && entry.content !== undefined
+        ? Math.max(entry.size, utf8Length(entry.content))
+        : entry.size;
+    total += size;
+    if (size > MAX_FILE_BYTES) problems.push(problem('file_too_large', entry.path));
   }
   if (total > MAX_FOLDER_BYTES) problems.push(problem('folder_too_large', ''));
 
@@ -113,10 +152,14 @@ export function validateAgentFolder(
   let definition: Omit<AgentDefinition, 'files'> | undefined;
   if (entryFile) {
     definition = judgeEntry(folderName, entryFile, problems);
-  } else if (!seen.has(AGENT_ENTRY_FILE)) {
+  } else if (!problems.some((item) => item.path === AGENT_ENTRY_FILE)) {
     problems.push(problem('entry_missing', AGENT_ENTRY_FILE));
   }
 
+  // A refusal always carries a reason.
+  if (problems.length === 0 && !definition) {
+    problems.push(problem('entry_missing', AGENT_ENTRY_FILE));
+  }
   if (problems.length > 0 || !definition) return { ok: false, problems };
   return {
     ok: true,
@@ -182,9 +225,9 @@ function judgeEntry(
   const description = required('description');
   if (
     description !== undefined &&
-    (description.length < 1 ||
+    (description.trim() === '' ||
       description.length > DESCRIPTION_MAX_LENGTH ||
-      /[\r\n]/.test(description))
+      DESCRIPTION_FORBIDDEN.test(description))
   ) {
     problems.push(problem('key_invalid', path, 'description'));
   }

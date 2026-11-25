@@ -77,6 +77,31 @@ export const CONTROLLER_ALLOWED_IMPORTS = [
   npmPackages('zod', 'yaml'),
 ];
 
+/** The Agent definition validation's production code: its src/ outside tests. */
+const AGENT_DEFINITIONS_PRODUCTION = {
+  path: '^packages/agent-definitions/src/',
+  pathNot: '(^|/)__tests__/',
+};
+
+/**
+ * The one file of the contracts the web app and the Agent definition validation may import: the
+ * Provider ids and models, a leaf with no import of its own (subpath `contracts/providers`).
+ */
+const CONTRACTS_PROVIDERS = [
+  '^packages/contracts/src/providers\\.ts$',
+  '^@agentic-studio/contracts/providers$',
+];
+
+/**
+ * What the Agent definition validation imports: its own files, the contracts providers subpath
+ * and yaml. Node core modules are not listed, so none may be used: it runs in a browser too.
+ */
+export const AGENT_DEFINITIONS_ALLOWED_IMPORTS = [
+  '^packages/agent-definitions/src/',
+  ...CONTRACTS_PROVIDERS,
+  npmPackages('yaml'),
+];
+
 export const monorepoGate: Gate = {
   entries: ['apps', 'packages'],
   exclude: '^(apps|packages)/[^/]+/(node_modules|dist|\\.next|out|coverage)/',
@@ -125,7 +150,18 @@ export const monorepoGate: Gate = {
           '^packages/(compose-validation|contracts|database|log-redaction|testing)/',
           npmPackages(...SERVER_PACKAGES),
         ],
+        pathNot: CONTRACTS_PROVIDERS,
       },
+    },
+    {
+      name: 'mono-agent-definitions-allowed-imports-only',
+      comment:
+        "Deny by default: the Agent definition validation's production code imports only its " +
+        'own files, the contracts providers subpath and yaml, so it stays a pure function that ' +
+        'runs in a browser (no Node core module, no zod, no other package).',
+      severity: 'error',
+      from: AGENT_DEFINITIONS_PRODUCTION,
+      to: { pathNot: AGENT_DEFINITIONS_ALLOWED_IMPORTS },
     },
     {
       name: 'mono-agent-worker-no-studio-infrastructure',

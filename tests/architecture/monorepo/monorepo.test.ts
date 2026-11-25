@@ -5,6 +5,16 @@ import { monorepoGate, WEB_PACKAGE_CLASSIFICATION } from './gate';
 
 describeGate('monorepo', monorepoGate, '.', [
   { fixture: 'apps-use-packages', expected: [] },
+  { fixture: 'web-imports-contracts-providers-subpath', expected: [] },
+  { fixture: 'agent-definitions-uses-providers-and-yaml', expected: [] },
+  {
+    fixture: 'agent-definitions-imports-contracts-root',
+    expected: ['mono-agent-definitions-allowed-imports-only'],
+  },
+  {
+    fixture: 'agent-definitions-imports-node-core',
+    expected: ['mono-agent-definitions-allowed-imports-only'],
+  },
   { fixture: 'web-imports-api-implementation', expected: ['mono-no-cross-app-imports'] },
   { fixture: 'web-imports-database-package', expected: ['mono-web-no-server-implementations'] },
   { fixture: 'web-imports-contracts-package', expected: ['mono-web-no-server-implementations'] },

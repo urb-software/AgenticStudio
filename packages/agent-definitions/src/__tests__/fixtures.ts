@@ -277,6 +277,96 @@ export const FAILING: Record<string, Fixture> = {
   },
 };
 
+const reject = (
+  code: string,
+  path: string,
+  kind = 'file',
+  folder = 'reviewer',
+): [string, Fixture] => [
+  `${code} (${path})`,
+  {
+    folder,
+    entries: [valid(), { path, kind, size: kind === 'file' ? 5 : 0, content: 'x' }],
+    expected: [`${code}@${path}`],
+  },
+];
+
+const desc = (value: string): Fixture => ({
+  folder: 'reviewer',
+  entries: [entryFile(`name: reviewer\ndescription: ${value}\nprovider: codex`)],
+  expected: ['key_invalid@AGENT.md'],
+});
+
+const badSize = (size: unknown): Fixture => ({
+  folder: 'reviewer',
+  entries: [valid(), { path: 'a.bin', kind: 'file', size } as unknown as AgentEntry],
+  expected: ['size_invalid@a.bin'],
+});
+
+Object.assign(FAILING, {
+  // Files and folders a CLI discovers settings, skills or memory from.
+  ...Object.fromEntries(
+    [
+      '.claude/settings.json',
+      '.claude/skills/x/SKILL.md',
+      '.codex/config.toml',
+      '.mcp.json',
+      '.agents/skills/x',
+      '.cursor/rules',
+      '.hidden',
+      'a/.b/c.txt',
+      '.git.',
+      'CLAUDE.md',
+      'claude.md',
+      'CLAUDE.local.md',
+      'AGENTS.md',
+      'agents.OVERRIDE.md',
+      'docs/AGENTS.override.md',
+      'docs/skill.md',
+      'x/SKILL.md',
+    ].map((path) => reject(path === '.git.' ? 'nested_git' : 'cli_config_path', path)),
+  ),
+  ...Object.fromEntries([reject('cli_config_path', '.claude', 'directory')]),
+  // Lookalikes of .git that a checkout on another file system would treat as .git.
+  ...Object.fromEntries(
+    ['.git ', '.GIT.', 'git~1/config', '.g‌it/config', '.git‍'].map((path) =>
+      reject('nested_git', path),
+    ),
+  ),
+  // 8.3 short names.
+  ...Object.fromEntries(
+    ['PROGRA~1/x.sh', 'a/b~2.txt'].map((path) => reject('path_outside_folder', path)),
+  ),
+  'size_invalid (NaN)': badSize(Number.NaN),
+  'size_invalid (missing)': badSize(undefined),
+  'size_invalid (negative)': badSize(-1),
+  'size_invalid (fraction)': badSize(1.5),
+  'size_invalid (infinite)': badSize(Number.POSITIVE_INFINITY),
+  'size_invalid (text)': badSize('10'),
+  'entry_missing (AGENT.md is a directory)': {
+    folder: 'reviewer',
+    entries: [{ path: 'AGENT.md', kind: 'directory', size: 0 }],
+    expected: ['entry_missing@AGENT.md'],
+  },
+  'duplicate_path (differs in case)': {
+    folder: 'reviewer',
+    entries: [valid(), file('a.txt', '1'), file('A.TXT', '2')],
+    expected: ['duplicate_path@A.TXT'],
+  },
+  'duplicate_path (entry file in two cases)': {
+    folder: 'reviewer',
+    entries: [valid(), file('agent.md', 'x')],
+    expected: ['duplicate_path@agent.md'],
+  },
+  'key_invalid (description blank)': desc('"   "'),
+  'key_invalid (description NEL)': desc('"a\u0085tools: Bash"'),
+  'key_invalid (description line separator)': desc('"a\u2028b"'),
+  'key_invalid (description paragraph separator)': desc('"a\u2029b"'),
+  'key_invalid (description escape)': desc('"a\u001b[31mb"'),
+  'key_invalid (description tab)': desc('"a\tb"'),
+  'key_invalid (description C1 control)': desc('"a\u009fb"'),
+});
+
 export interface Passing {
   folder: string;
   entries: AgentEntry[];

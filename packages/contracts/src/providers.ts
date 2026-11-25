@@ -1,4 +1,12 @@
-import type { Provider } from './worker-protocol.js';
+/**
+ * The Provider ids and the models an Agent definition may name. This file has no import of
+ * its own, so the web app can use it through `@agentic-studio/contracts/providers` without the
+ * rest of the contracts (and zod).
+ */
+
+/** The agent CLI product that carries out a Run. */
+export const PROVIDERS = ['claude_code', 'codex'] as const;
+export type Provider = (typeof PROVIDERS)[number];
 
 /** The model value that names "the CLI's own default": no model option is passed. */
 export const MODEL_DEFAULT = 'default';

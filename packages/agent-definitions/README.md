@@ -1,0 +1,24 @@
+# @agentic-studio/agent-definitions
+
+The format of an Agent definition and its validation. One pure package, shared by the API and the web app: it imports only `yaml`, its own files and `@agentic-studio/contracts/providers`, reads no file system and starts no process. The format is also described in `docs/architecture/backend.md` (the `agents` module).
+
+## Format
+
+- An agent is the folder `agents/<name>/` of the definitions Repository. The entry file is `agents/<name>/AGENT.md`. The top-level `skills/` folder is reserved and ignored, and so is anything else outside `agents/`.
+- `AGENT.md` is UTF-8 text: YAML front matter between two `---` lines, then the instructions in Markdown.
+- Required keys: `name` (matches `AGENT_NAME_PATTERN` and equals the folder name), `description` (one line of 1 to 500 characters, no control character) and `provider` (one of `PROVIDERS`). Optional: `model`, default `default`, which must be in `PROVIDER_MODELS[provider]`.
+- Any other key is `unknown_key`. A key that asks for tools, permissions, hooks, MCP servers, memory or isolation is `forbidden_key` (`FORBIDDEN_KEYS`).
+- Limits (`limits.ts`): instructions 64 KiB, front matter 8 KiB, 100 files, 1 MiB per file, 5 MiB in total.
+- Refused paths: absolute, `..`, empty, backslash and 8.3 short-name segments, `.git` and its lookalikes, symbolic links and other non-file kinds, two paths that differ only in case.
+- No CLI settings in any form: a path segment that starts with `.`, or a file named `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `AGENTS.override.md` or `SKILL.md` (any case), is `cli_config_path`. Agent CLIs discover settings, hooks, MCP servers, skills and memory from these places, and a definition carries none.
+
+## Use
+
+```ts
+const result = validateAgentFolder(name, entries); // { ok: true, definition } | { ok: false, problems }
+const folders = findAgentFolders(repositoryEntries); // agents/<name>/ groups of a Repository tree
+```
+
+`entries` is `{ path, kind, size, content? }[]`, with paths relative to the folder. A refusal always holds at least one problem `{ code, path, key?, message }`. A message quotes at most the offending key or path, never a value or file content.
+
+Consumers use the parsed fields, above all `definition.instructions`, and never hand the raw `AGENT.md` to a CLI: a CLI's own parser may cut the front matter at a different line than this one does.

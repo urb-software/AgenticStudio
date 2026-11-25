@@ -175,6 +175,58 @@ describe('messages never carry content', () => {
   });
 });
 
+describe('a refusal always has a reason', () => {
+  it('gives at least one problem for every failing fixture', () => {
+    for (const fixture of Object.values(FAILING)) {
+      const result = validateAgentFolder(fixture.folder, fixture.entries);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.problems.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('gives a reason when AGENT.md is only a directory or the folder is empty', () => {
+    for (const entries of [[], [{ path: 'AGENT.md', kind: 'directory', size: 0 }]]) {
+      const result = validateAgentFolder('reviewer', entries);
+      if (result.ok) throw new Error('accepted');
+      expect(result.problems.map((problem) => problem.code)).toEqual(['entry_missing']);
+    }
+  });
+});
+
+describe('sizes', () => {
+  it('measures the entry file by its content when it is larger than the declared size', () => {
+    const entry = {
+      path: 'AGENT.md',
+      kind: 'file',
+      size: 0,
+      content: `---\n${VALID_FRONT}\n---\n${'x'.repeat(MAX_FILE_BYTES)}`,
+    };
+    const result = validateAgentFolder('reviewer', [entry]);
+    if (result.ok) throw new Error('accepted');
+    expect(result.problems.map((problem) => problem.code).sort()).toEqual([
+      'file_too_large',
+      'instructions_too_large',
+    ]);
+  });
+
+  it('does not let a negative size lower the total', () => {
+    const result = validateAgentFolder('reviewer', [
+      entryFile(VALID_FRONT),
+      ...Array.from({ length: 6 }, (_, index) => ({
+        path: `p${index}.bin`,
+        kind: 'file',
+        size: MAX_FILE_BYTES,
+      })),
+      { path: 'neg.bin', kind: 'file', size: -1e9 },
+    ]);
+    if (result.ok) throw new Error('accepted');
+    expect(result.problems.map((problem) => problem.code).sort()).toEqual([
+      'folder_too_large',
+      'size_invalid',
+    ]);
+  });
+});
+
 describe('purity', () => {
   it('does not mutate its input', () => {
     const entries = [entryFile(VALID_FRONT)];
