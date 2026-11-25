@@ -15,12 +15,13 @@ export function readBuffers(): Record<string, string> {
   return buffers;
 }
 
-/** Keeps the text of a path so a reload of the tab finds it; storage may refuse, which is fine. */
-export function writeBuffer(path: string, text: string): void {
+/** Keeps the text of a path so a reload finds it; false when storage refused and it is memory-only. */
+export function writeBuffer(path: string, text: string): boolean {
   try {
     window.sessionStorage.setItem(PREFIX + path, text);
+    return true;
   } catch {
-    // Without storage the edit lives in memory only.
+    return false;
   }
 }
 
@@ -34,4 +35,17 @@ export function clearBuffer(path: string): void {
 
 export function clearAllBuffers(): void {
   for (const path of Object.keys(readBuffers())) clearBuffer(path);
+}
+
+/** Makes the stored buffers equal `current`; false when a write was refused. */
+export function syncBuffers(current: Readonly<Record<string, string>>): boolean {
+  const stored = readBuffers();
+  let ok = true;
+  for (const [path, text] of Object.entries(current)) {
+    if (stored[path] !== text && !writeBuffer(path, text)) ok = false;
+  }
+  for (const path of Object.keys(stored)) {
+    if (!(path in current)) clearBuffer(path);
+  }
+  return ok;
 }

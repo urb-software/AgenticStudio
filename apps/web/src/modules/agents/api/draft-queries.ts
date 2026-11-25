@@ -118,6 +118,19 @@ export function useSaveDraftFile(applied?: (draft: AgentDraftOutput, path: strin
   );
 }
 
+/** Drops the cached content of every Draft file but `keep`, which a write of this tab has just set. */
+export function useDropDraftFilesExcept() {
+  const queryClient = useQueryClient();
+  return useCallback(
+    (keep: string | undefined) =>
+      queryClient.removeQueries({
+        queryKey: DRAFT_FILE_KEY,
+        predicate: (query) => query.queryKey[3] !== keep,
+      }),
+    [queryClient],
+  );
+}
+
 /** Drops the cached content of the Draft's files, which a move, a revert or a delete changes. */
 function useForgetDraftFiles() {
   const queryClient = useQueryClient();

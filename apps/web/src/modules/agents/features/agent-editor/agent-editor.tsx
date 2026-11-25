@@ -2,7 +2,7 @@
 
 import { RefreshCwIcon, TriangleAlertIcon } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Banner } from '@/shared/components/banner';
 import { EmptyState } from '@/shared/components/empty-state';
 import { SegmentedControl } from '@/shared/components/segmented-control';
@@ -25,6 +25,7 @@ import {
   useAgentDraftFile,
   useDeleteDraftFile,
   useDiscardDraft,
+  useDropDraftFilesExcept,
   useDraft,
   useMoveDraftFile,
   useReloadDraft,
@@ -47,10 +48,17 @@ import {
   overlayDraft,
   validateAgentLive,
 } from './draft-model';
-import { clearAllBuffers, clearBuffer, readBuffers, writeBuffer } from './editor-buffers';
-import { ancestorsOf, buildTree, frontMatterKeyLine, type ProblemTarget } from './editor-model';
+import { clearAllBuffers, readBuffers, syncBuffers } from './editor-buffers';
+import {
+  ancestorsOf,
+  buildTree,
+  CHANGE_LABEL,
+  frontMatterKeyLine,
+  type ProblemTarget,
+} from './editor-model';
 import { EditorPane, type PaneState } from './editor-pane';
 import { agentState, FileTree } from './file-tree';
+import { useDebouncedValue } from './use-debounced-value';
 import { useLeaveGuard } from './use-leave-guard';
 
 const TITLE_ID = 'agent-editor-title';
@@ -71,7 +79,10 @@ function agentStateOfCount(count: number): string {
 
 const utf8 = new TextEncoder();
 
-type DialogKind = 'add' | 'rename' | 'replace' | 'delete' | 'revert' | 'discard' | 'new-agent';
+type DialogKind =
+  'add' | 'rename' | 'replace' | 'delete' | 'revert' | 'discard' | 'new-agent' | 'confirm-save';
+
+const TYPING_DELAY_MS = 300;
 
 /**
  * The definitions Repository as a file tree on the left and the selected file in Monaco on the
@@ -110,16 +121,47 @@ function EditorBody() {
   const [accepted, setAccepted] = useState<AgentDraftOutput>();
   const [dialog, setDialog] = useState<DialogKind>();
   const [failure, setFailure] = useState<DraftFailure>();
+  const [stale, setStale] = useState(false);
+  const [storageFailed, setStorageFailed] = useState(false);
   const chooserId = useId();
 
   const dirty = Object.keys(buffers).length > 0;
   const guard = useLeaveGuard(dirty);
 
-  const save = useSaveDraftFile((draft) => setAccepted(draft));
-  const move = useMoveDraftFile((draft) => setAccepted(draft));
-  const revert = useRevertDraftFile((draft) => setAccepted(draft));
-  const remove = useDeleteDraftFile((draft) => setAccepted(draft));
-  const discard = useDiscardDraft((draft) => setAccepted(draft));
+  // A write of this tab answers with the version it made. Any other number means another writer
+  // was in between, so the cached files may be old and the notice stays up.
+  const acceptedRef = useRef<AgentDraftOutput | undefined>(undefined);
+  const buffersRef = useRef(buffers);
+  useEffect(() => {
+    acceptedRef.current = accepted;
+    buffersRef.current = buffers;
+  });
+  const dropFiles = useDropDraftFilesExcept();
+  function accept(draft: AgentDraftOutput, keep?: string) {
+    const previous = acceptedRef.current;
+    if (previous && draft.version !== previous.version + 1) {
+      dropFiles(keep);
+      setStale(true);
+    }
+    acceptedRef.current = draft;
+    setAccepted(draft);
+  }
+  const save = useSaveDraftFile((draft, saved) => accept(draft, saved));
+  const move = useMoveDraftFile((draft) => accept(draft));
+  const revert = useRevertDraftFile((draft) => accept(draft));
+  const remove = useDeleteDraftFile((draft) => accept(draft));
+  const discard = useDiscardDraft((draft) => {
+    accept(draft);
+    setStale(false);
+  });
+
+  // Edits reach session storage once typing pauses, and when the view goes away.
+  useEffect(() => {
+    const timer = setTimeout(() => setStorageFailed(!syncBuffers(buffers)), TYPING_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [buffers]);
+  useEffect(() => () => void syncBuffers(buffersRef.current), []);
+  const settled = useDebouncedValue(buffers, TYPING_DELAY_MS);
 
   // The first answer is what the view shows until it is reloaded or a write of this tab replaces
   // it; a newer `version` seen later only raises the notice.
@@ -135,6 +177,14 @@ function EditorBody() {
     () => overlayDraft(files.data?.entries ?? [], draft?.files ?? []),
     [files.data, draft?.files],
   );
+
+  // An unsaved edit of a file that is gone (reverted elsewhere, say) cannot be saved or shown.
+  if (files.data && !files.data.truncated && draftQuery.data) {
+    const known = new Set(entries.filter((item) => item.change !== 'deleted').map((i) => i.path));
+    if (Object.keys(buffers).some((buffered) => !known.has(buffered))) {
+      setBuffers(Object.fromEntries(Object.entries(buffers).filter(([name]) => known.has(name))));
+    }
+  }
   const nodes = useMemo(() => buildTree(entries), [entries]);
   const baseAgents = useMemo(
     () =>
@@ -156,12 +206,17 @@ function EditorBody() {
 
   // The open agent is validated here while it is edited; elsewhere the API's answer stands.
   const agentOpen = path === undefined ? null : agentOfPath(path);
-  const touched = new Set(
-    (draft?.files ?? []).flatMap((item) => {
-      const agent = agentOfPath(item.path);
-      return agent === null ? [] : [agent];
-    }),
+  const touchedByDraft = useMemo(
+    () =>
+      new Set(
+        (draft?.files ?? []).flatMap((item) => {
+          const agent = agentOfPath(item.path);
+          return agent === null ? [] : [agent];
+        }),
+      ),
+    [draft?.files],
   );
+  const touched = new Set(touchedByDraft);
   const liveWanted =
     agentOpen !== null &&
     (touched.has(agentOpen) ||
@@ -175,15 +230,22 @@ function EditorBody() {
   const entryDraft = useAgentDraftFile(entryWritten ? entryReadable : undefined);
   const entryData = (entryWritten ? entryDraft : entryBase).data;
 
-  const live =
-    liveWanted && entryPath !== undefined
-      ? validateAgentLive(
-          agentOpen,
-          entries,
-          buffers[entryPath] ?? (entryData?.kind === 'text' ? entryData.content : undefined),
-          new Map(Object.entries(buffers).map(([name, text]) => [name, utf8.encode(text).length])),
-        )
-      : undefined;
+  const sizes = useMemo(
+    () => new Map(Object.entries(settled).map(([name, text]) => [name, utf8.encode(text).length])),
+    [settled],
+  );
+  const live = useMemo(
+    () =>
+      liveWanted && agentOpen !== null && entryPath !== undefined
+        ? validateAgentLive(
+            agentOpen,
+            entries,
+            settled[entryPath] ?? (entryData?.kind === 'text' ? entryData.content : undefined),
+            sizes,
+          )
+        : undefined,
+    [liveWanted, entryPath, agentOpen, entries, settled, entryData, sizes],
+  );
   if (live && agentOpen !== null) touched.add(agentOpen);
   const problems = listProblems({
     base: marks.data?.agents ?? [],
@@ -224,8 +286,6 @@ function EditorBody() {
   }
 
   function setBuffer(target: string, text: string | undefined) {
-    if (text === undefined) clearBuffer(target);
-    else writeBuffer(target, text);
     setBuffers((current) => {
       const next = { ...current };
       if (text === undefined) delete next[target];
@@ -239,16 +299,27 @@ function EditorBody() {
     setBuffer(path, text === savedText ? undefined : text);
   }
 
-  async function saveOpenFile() {
+  async function storeOpenFile() {
     const text = path === undefined ? undefined : buffers[path];
     if (path === undefined || text === undefined) return;
+    await save.mutateAsync({ path, text });
+    setBuffer(path, undefined);
+  }
+
+  async function saveOpenFile() {
     setFailure(undefined);
     try {
-      await save.mutateAsync({ path, text });
-      setBuffer(path, undefined);
+      await storeOpenFile();
     } catch (error) {
       setFailure(draftFailureOf(error));
     }
+  }
+
+  function reloadFromServer() {
+    setFailure(undefined);
+    setStale(false);
+    if (draftQuery.data) setAccepted(draftQuery.data);
+    void reloadDraft();
   }
 
   async function addFile(target: string, content: FileContent | undefined) {
@@ -337,7 +408,13 @@ function EditorBody() {
   );
   const existing = new Set(entries.filter((c) => c.change !== 'deleted').map((c) => c.path));
   const deletedPaths = new Set(entries.filter((c) => c.change === 'deleted').map((c) => c.path));
-  const working = save.isPending || move.isPending || revert.isPending || remove.isPending;
+  const working =
+    save.isPending || move.isPending || revert.isPending || remove.isPending || discard.isPending;
+  // Untouched files are read at the commit this view shows; the Draft keeps the commit it began at.
+  const commitDiffers = newer || (draft.baseCommit !== null && commit !== draft.baseCommit);
+  const unsaved = new Set(Object.keys(buffers));
+  const entryChange = (candidate: { change?: 'added' | 'modified' | 'deleted' }) =>
+    candidate.change ? ` (${CHANGE_LABEL[candidate.change]})` : '';
 
   let pane: PaneState;
   if (path === undefined) pane = { kind: 'none' };
@@ -438,18 +515,12 @@ function EditorBody() {
             ) : null}
           </Banner>
         ) : null}
-        {elsewhere ? (
+        {elsewhere || stale ? (
           <Banner
             tone="warning"
             className="m-4"
             action={
-              <Button
-                size="sm"
-                onClick={() => {
-                  if (draftQuery.data) setAccepted(draftQuery.data);
-                  void reloadDraft();
-                }}
-              >
+              <Button size="sm" onClick={reloadFromServer}>
                 Reload the Draft
               </Button>
             }
@@ -467,20 +538,19 @@ function EditorBody() {
                   Discard the Draft
                 </Button>
               ) : failure.kind === 'conflict' ? (
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setFailure(undefined);
-                    if (draftQuery.data) setAccepted(draftQuery.data);
-                    void reloadDraft();
-                  }}
-                >
+                <Button size="sm" onClick={reloadFromServer}>
                   Reload the Draft
                 </Button>
               ) : undefined
             }
           >
             {failure.message}
+          </Banner>
+        ) : null}
+        {storageFailed ? (
+          <Banner tone="warning" className="m-4">
+            This browser refused to keep your unsaved edits for a reload. They stay in this page
+            until you save them or leave it.
           </Banner>
         ) : null}
         {commit === undefined ? (
@@ -517,7 +587,7 @@ function EditorBody() {
                 size="sm"
                 disabled={path === undefined || buffers[path] === undefined}
                 loading={save.isPending}
-                onClick={() => void saveOpenFile()}
+                onClick={() => (commitDiffers ? setDialog('confirm-save') : void saveOpenFile())}
               >
                 Save
               </Button>
@@ -538,6 +608,42 @@ function EditorBody() {
                 </Button>
               </span>
             </div>
+            {editing ? (
+              <p className="m-0 border-b border-border px-3 py-2 text-small text-text-muted">
+                Tab inserts a tab here. Press Ctrl+M to make Tab move focus instead.
+              </p>
+            ) : null}
+            {dirty ? (
+              <section
+                aria-labelledby="agent-editor-unsaved"
+                className="border-b border-border p-4"
+              >
+                <h2 id="agent-editor-unsaved" className="m-0 mb-2 text-label font-semibold">
+                  Unsaved edits
+                </h2>
+                <ul className="m-0 flex list-none flex-col gap-1 p-0 text-small">
+                  {Object.keys(buffers).map((buffered) => (
+                    <li key={buffered} className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => open(buffered)}
+                        className="cursor-pointer rounded-sm text-left font-mono text-code break-all hover:underline focus-visible:outline-2 focus-visible:outline-ring pointer-coarse:min-h-11"
+                      >
+                        {buffered}
+                      </button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        aria-label={`Discard unsaved edit of ${buffered}`}
+                        onClick={() => setBuffer(buffered, undefined)}
+                      >
+                        Discard unsaved edit
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
             {problems.length > 0 ? (
               <section
                 aria-labelledby="agent-editor-problems"
@@ -590,6 +696,8 @@ function EditorBody() {
                     {openable.map((candidate) => (
                       <option key={candidate.path} value={candidate.path}>
                         {candidate.path}
+                        {entryChange(candidate)}
+                        {unsaved.has(candidate.path) ? ' (Unsaved)' : ''}
                       </option>
                     ))}
                   </NativeSelect>
@@ -603,6 +711,7 @@ function EditorBody() {
                     selected={path}
                     expanded={expanded}
                     states={states}
+                    unsaved={unsaved}
                     onToggle={toggle}
                     onOpen={(next) => open(next)}
                   />
@@ -646,6 +755,7 @@ function EditorBody() {
         <FileDialog
           open
           onOpenChange={closeDialog}
+          onReload={reloadFromServer}
           mode="add"
           initialPath={path === undefined ? '' : path.slice(0, path.lastIndexOf('/') + 1)}
           existing={existing}
@@ -657,6 +767,7 @@ function EditorBody() {
         <FileDialog
           open
           onOpenChange={closeDialog}
+          onReload={reloadFromServer}
           mode="rename"
           initialPath={path}
           existing={existing}
@@ -668,6 +779,7 @@ function EditorBody() {
         <FileDialog
           open
           onOpenChange={closeDialog}
+          onReload={reloadFromServer}
           mode="replace"
           initialPath={path}
           existing={existing}
@@ -679,6 +791,7 @@ function EditorBody() {
         <NewAgentDialog
           open
           onOpenChange={closeDialog}
+          onReload={reloadFromServer}
           providers={providers.data ?? []}
           taken={taken}
           action={newAgent}
@@ -688,14 +801,22 @@ function EditorBody() {
         <ConfirmDialog
           open
           onOpenChange={closeDialog}
+          onReload={reloadFromServer}
           title="Delete file"
           description={<code className="text-code break-all">{path}</code>}
           confirmLabel="Delete file"
-          consequences={[
-            'The file is marked deleted in the Draft.',
-            'The Repository keeps it until the Draft is published.',
-            'Revert brings it back.',
-          ]}
+          consequences={
+            entry?.change === 'added'
+              ? [
+                  'This file exists only in the Draft: its content is removed for good.',
+                  'Nothing is left to revert; the Repository never had it.',
+                ]
+              : [
+                  'The file is marked deleted in the Draft.',
+                  'The Repository keeps it until the Draft is published.',
+                  'Revert brings it back.',
+                ]
+          }
           action={async () => {
             await remove.mutateAsync(path);
             setBuffer(path, undefined);
@@ -706,6 +827,7 @@ function EditorBody() {
         <ConfirmDialog
           open
           onOpenChange={closeDialog}
+          onReload={reloadFromServer}
           title="Revert file"
           description={<code className="text-code break-all">{path}</code>}
           confirmLabel="Revert file"
@@ -723,6 +845,7 @@ function EditorBody() {
         <ConfirmDialog
           open
           onOpenChange={closeDialog}
+          onReload={reloadFromServer}
           title="Discard the Draft"
           description="Every change in the Draft."
           confirmLabel="Discard the Draft"
@@ -739,7 +862,24 @@ function EditorBody() {
           }}
         />
       ) : null}
+      {dialog === 'confirm-save' ? (
+        <ConfirmDialog
+          open
+          onOpenChange={closeDialog}
+          onReload={reloadFromServer}
+          title="Save while the Repository has moved?"
+          description="This view and the Draft are not at the same commit."
+          confirmLabel="Save anyway"
+          consequences={[
+            'The Repository moved since the Draft began, or since this view was read.',
+            'Saving keeps the Draft’s base commit; files you did not touch stay as the base has them.',
+            'The text you edited is what this view shows, which may differ from the base: Reload first to see the newest.',
+          ]}
+          action={storeOpenFile}
+        />
+      ) : null}
       <LeaveDialog
+        unsaved={Object.keys(buffers)}
         open={guard.target !== undefined}
         onOpenChange={(next) => {
           if (!next) guard.stay();

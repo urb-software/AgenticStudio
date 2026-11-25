@@ -87,6 +87,9 @@ export function pathError(
   if (path === '') return 'Enter the path of the file.';
   const [refusal] = validateAgentFiles([{ path, kind: 'file', size: 0 }]);
   if (refusal) return refusal.message;
+  if (!/^agents\/[^/]+\/.+/.test(path)) {
+    return 'Files live under agents/<name>/: publishing refuses any other path.';
+  }
   if (existing.has(path) && !deleted.has(path)) return 'A file is already at this path.';
   return undefined;
 }

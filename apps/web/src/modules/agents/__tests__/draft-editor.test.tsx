@@ -279,12 +279,15 @@ describe('Draft editing: files in the tree', () => {
     await user.click(screen.getByRole('button', { name: 'New file' }));
     const dialog = await screen.findByRole('dialog');
 
-    await user.type(within(dialog).getByLabelText('Path'), 'docs/notes.md');
+    await user.type(within(dialog).getByLabelText('Path'), 'agents/reviewer/notes.md');
     await user.click(within(dialog).getByRole('button', { name: 'Add file' }));
 
     await waitFor(() =>
       expect(writes(api)).toEqual([
-        expect.objectContaining({ method: 'PUT', body: { path: 'docs/notes.md', text: '' } }),
+        expect.objectContaining({
+          method: 'PUT',
+          body: { path: 'agents/reviewer/notes.md', text: '' },
+        }),
       ]),
     );
     expect(await screen.findByTestId('monaco')).toBeTruthy();
@@ -315,7 +318,7 @@ describe('Draft editing: files in the tree', () => {
     const dialog = await screen.findByRole('dialog');
     const field = within(dialog).getByLabelText('Path');
     await user.clear(field);
-    await user.type(field, 'docs/README.md');
+    await user.type(field, 'agents/reviewer/README.md');
     await user.click(within(dialog).getByRole('button', { name: 'Rename' }));
 
     await waitFor(() =>
@@ -323,7 +326,7 @@ describe('Draft editing: files in the tree', () => {
         expect.objectContaining({
           method: 'POST',
           path: '/api/agents/definitions-repository/draft/files/move',
-          body: { from: 'README.md', to: 'docs/README.md' },
+          body: { from: 'README.md', to: 'agents/reviewer/README.md' },
         }),
       ]),
     );
@@ -639,5 +642,160 @@ describe('Draft editing: accessibility', () => {
     });
     await screen.findByText(/The Repository moved on/);
     await expect(container).toHaveNoAxeViolations();
+  });
+});
+
+const contentReads = (api: ReturnType<typeof fakeAgentsApi>, path: string) =>
+  api
+    .calls()
+    .filter(
+      (call) =>
+        call.path === '/api/agents/definitions-repository/draft/files/content' &&
+        new URLSearchParams(call.search).get('path') === path,
+    );
+
+describe('Draft editing: another tab writes in between', () => {
+  it('drops cached files and keeps the notice when a save answers a newer version than expected', async () => {
+    const { api } = setup({ path: 'agents/reviewer/run.sh', draft: MODIFIED_DRAFT });
+    const user = userEvent.setup();
+    await screen.findByTestId('monaco');
+    expect(contentReads(api, 'agents/reviewer/run.sh')).toHaveLength(1);
+
+    api.changeDraftElsewhere({});
+    act(() => focusManager.setFocused(true));
+    await screen.findByRole('button', { name: 'Reload the Draft' });
+
+    await user.click(within(treeNav()).getByRole('button', { name: 'README.md' }));
+    const editor = await startEditing(user);
+    fireEvent.change(editor, { target: { value: 'readme edited' } });
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(writes(api)).toHaveLength(1));
+
+    expect(await screen.findByText(/changed elsewhere/)).toBeTruthy();
+    await user.click(within(treeNav()).getByRole('button', { name: /^run.sh/ }));
+    await waitFor(() => expect(contentReads(api, 'agents/reviewer/run.sh')).toHaveLength(2));
+  });
+});
+
+describe('Draft editing: unsaved edits are visible and discardable', () => {
+  it('marks them in the tree, the chooser and the leave dialog, and discards one', async () => {
+    setup({ path: AGENT_PATH });
+    const user = userEvent.setup();
+    const editor = await startEditing(user);
+    fireEvent.change(editor, { target: { value: 'changed' } });
+
+    expect(await within(treeNav()).findByText('Unsaved')).toBeTruthy();
+    const chooser = screen.getByRole('combobox', { name: 'File' });
+    expect(within(chooser).getByRole('option', { name: `${AGENT_PATH} (Unsaved)` })).toBeTruthy();
+
+    await user.click(screen.getByRole('link', { name: 'Runs' }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText(AGENT_PATH)).toBeTruthy();
+    await user.click(within(dialog).getByRole('button', { name: 'Stay' }));
+
+    await user.click(screen.getByRole('button', { name: `Discard unsaved edit of ${AGENT_PATH}` }));
+    await waitFor(() => expect(screen.queryByText('Unsaved edits')).toBeNull());
+    const clean = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(clean);
+    expect(clean.defaultPrevented).toBe(false);
+  });
+
+  it('drops an unsaved edit of a file that no longer exists, so the leave guard clears', async () => {
+    window.sessionStorage.setItem('agent-editor:buffer:agents/gone/AGENT.md', 'orphan');
+    setup({ path: AGENT_PATH });
+    await screen.findByRole('navigation', { name: 'Files' });
+
+    await waitFor(() => expect(screen.queryByText('Unsaved edits')).toBeNull());
+    const event = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('keeps edits out of storage until typing pauses, and says when storage refuses', async () => {
+    setup({ path: AGENT_PATH });
+    const user = userEvent.setup();
+    const editor = await startEditing(user);
+    fireEvent.change(editor, { target: { value: 'changed' } });
+    expect(window.sessionStorage.length).toBe(0);
+    await waitFor(() => expect(window.sessionStorage.length).toBe(1));
+
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('quota');
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: /^File / }), {
+      target: { value: 'changed more' },
+    });
+    expect(await screen.findByText(/refused to keep your unsaved edits/)).toBeTruthy();
+    vi.restoreAllMocks();
+  });
+});
+
+describe('Draft editing: honest confirmations', () => {
+  it('says that deleting a file the Draft added removes it for good', async () => {
+    setup({
+      path: 'agents/reviewer/new.md',
+      draft: {
+        ...MODIFIED_DRAFT,
+        files: [{ path: 'agents/reviewer/new.md', change: 'added', size: 3, movedFrom: null }],
+      },
+    });
+    const user = userEvent.setup();
+    await screen.findByRole('navigation', { name: 'Files' });
+    await user.click(await screen.findByRole('button', { name: 'Delete' }));
+
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText(/removed for good/)).toBeTruthy();
+    expect(within(dialog).queryByText(/Revert brings it back/)).toBeNull();
+  });
+
+  it('says that Revert brings back a file of the base commit', async () => {
+    setup({ path: 'README.md' });
+    const user = userEvent.setup();
+    await screen.findByTestId('monaco');
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText(/Revert brings it back/)).toBeTruthy();
+  });
+
+  it('asks before saving while the view and the Draft are at different commits', async () => {
+    const { api } = setup({
+      path: AGENT_PATH,
+      draft: { ...MODIFIED_DRAFT, baseCommit: NEW_SHA, currentCommit: NEW_SHA },
+    });
+    const user = userEvent.setup();
+    const editor = await startEditing(user);
+    fireEvent.change(editor, { target: { value: 'changed' } });
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText(/Saving keeps the Draft’s base commit/)).toBeTruthy();
+    expect(writes(api)).toEqual([]);
+
+    await user.click(within(dialog).getByRole('button', { name: 'Save anyway' }));
+    await waitFor(() => expect(writes(api)).toHaveLength(1));
+  });
+
+  it('offers a reload inside a dialog that lost a race', async () => {
+    const { api } = setup({ path: 'README.md' });
+    const user = userEvent.setup();
+    await screen.findByTestId('monaco');
+    await user.click(screen.getByRole('button', { name: 'New file' }));
+    const dialog = await screen.findByRole('dialog');
+    api.failNextDraftWrite(
+      409,
+      problem(409, 'Draft changed', { type: 'urn:agentic-studio:problem:agent-draft-conflict' }),
+    );
+    await user.type(within(dialog).getByLabelText('Path'), 'agents/reviewer/x.md');
+    await user.click(within(dialog).getByRole('button', { name: 'Add file' }));
+
+    expect(await within(dialog).findByRole('button', { name: 'Reload the Draft' })).toBeTruthy();
+  });
+
+  it('shows a hint to leave the editor with the keyboard in edit mode', async () => {
+    setup({ path: AGENT_PATH });
+    const user = userEvent.setup();
+    await startEditing(user);
+    expect(screen.getByText(/Press Ctrl\+M/)).toBeTruthy();
   });
 });

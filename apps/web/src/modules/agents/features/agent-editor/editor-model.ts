@@ -1,3 +1,4 @@
+import { AGENT_ENTRY_FILE } from '@agentic-studio/agent-definitions';
 import type { AgentFileEntryOutput, AgentProblemOutput } from '../../../../platform/api';
 
 /** A file of the tree with what the Draft does to it, if anything. */
@@ -11,7 +12,7 @@ export interface EditorEntry extends AgentFileEntryOutput {
 export const CHANGE_LABEL = { added: 'Added', modified: 'Modified', deleted: 'Deleted' } as const;
 
 /** The file every agent folder is defined by. */
-export const ENTRY_FILE = 'AGENT.md';
+export const ENTRY_FILE = AGENT_ENTRY_FILE;
 
 /** Monaco language ids; anything else is plain text. */
 export type EditorLanguage =

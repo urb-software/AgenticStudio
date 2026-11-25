@@ -23,6 +23,8 @@ interface FileTreeProps {
   expanded: ReadonlySet<string>;
   /** The validation state of each agent folder by name, as shown beside it. */
   states: ReadonlyMap<string, string>;
+  /** Paths with edits that are not saved to the Draft. */
+  unsaved: ReadonlySet<string>;
   onToggle: (folder: string) => void;
   onOpen: (path: string) => void;
 }
@@ -31,7 +33,15 @@ const ROW =
   'flex w-full items-center gap-1.5 rounded-sm px-2 py-1 text-left text-code pointer-coarse:min-h-11';
 
 /** The files of the Repository as nested lists; folders are disclosure buttons. */
-export function FileTree({ nodes, selected, expanded, states, onToggle, onOpen }: FileTreeProps) {
+export function FileTree({
+  nodes,
+  selected,
+  expanded,
+  states,
+  unsaved,
+  onToggle,
+  onOpen,
+}: FileTreeProps) {
   return (
     <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
       {nodes.map((node) => {
@@ -69,6 +79,7 @@ export function FileTree({ nodes, selected, expanded, states, onToggle, onOpen }
                     selected={selected}
                     expanded={expanded}
                     states={states}
+                    unsaved={unsaved}
                     onToggle={onToggle}
                     onOpen={onOpen}
                   />
@@ -108,9 +119,14 @@ export function FileTree({ nodes, selected, expanded, states, onToggle, onOpen }
               >
                 {node.name}
               </span>
+              {unsaved.has(node.path) ? (
+                <span className="ml-auto shrink-0 text-caption font-medium whitespace-nowrap text-brand">
+                  Unsaved
+                </span>
+              ) : null}
               {node.entry.change ? (
                 <span
-                  className={`ml-auto shrink-0 text-caption font-medium whitespace-nowrap ${CHANGE_CLASS[node.entry.change]}`}
+                  className={`${unsaved.has(node.path) ? '' : 'ml-auto'}shrink-0 text-caption font-medium whitespace-nowrap ${CHANGE_CLASS[node.entry.change]}`}
                 >
                   {CHANGE_LABEL[node.entry.change]}
                 </span>

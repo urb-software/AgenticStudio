@@ -89,10 +89,12 @@ describe('agentNameError', () => {
 });
 
 describe('pathError', () => {
-  const existing = new Set(['README.md']);
+  const existing = new Set(['agents/a/README.md']);
   it('accepts a new plain path and a path the Draft deletes', () => {
-    expect(pathError('docs/new.md', existing)).toBeUndefined();
-    expect(pathError('README.md', existing, new Set(['README.md']))).toBeUndefined();
+    expect(pathError('agents/a/new.md', existing)).toBeUndefined();
+    expect(
+      pathError('agents/a/README.md', existing, new Set(['agents/a/README.md'])),
+    ).toBeUndefined();
   });
   it.each([
     ['', /path/i],
@@ -101,7 +103,9 @@ describe('pathError', () => {
     ['a\\b.md', /relative/i],
     ['a//b.md', /relative/i],
     ['.git/config', /git/i],
-    ['README.md', /already/i],
+    ['agents/a/README.md', /already/i],
+    ['docs/new.md', /agents\//i],
+    ['agents/loose.md', /agents\//i],
   ])('refuses %j', (path, message) => {
     expect(pathError(path, existing)).toMatch(message);
   });

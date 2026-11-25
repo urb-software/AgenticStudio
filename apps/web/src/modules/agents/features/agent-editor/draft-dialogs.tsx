@@ -18,7 +18,7 @@ import {
 import { Label } from '@/shared/ui/label';
 import { NativeSelect } from '@/shared/ui/native-select';
 import type { ProviderAvailabilityOutput } from '../../../../platform/api';
-import { draftFailureOf } from '../../api/draft-queries';
+import { draftFailureOf, type DraftFailure } from '../../api/draft-queries';
 import { formatSize } from '../../components/format-size';
 import { agentNameError, pathError } from './draft-model';
 
@@ -28,12 +28,14 @@ export type FileContent = { text: string } | { contentBase64: string };
 interface DialogShellProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Reads the Draft again; offered next to a lost-race message. */
+  onReload?: () => void;
 }
 
 /** Runs `action`; a failure becomes the message the dialog shows instead of closing. */
-function useDialogAction(onOpenChange: (open: boolean) => void) {
+function useDialogAction(onOpenChange: (open: boolean) => void, onReload?: () => void) {
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<DraftFailure>();
   async function run(action: () => Promise<void>) {
     setPending(true);
     setError(undefined);
@@ -41,7 +43,7 @@ function useDialogAction(onOpenChange: (open: boolean) => void) {
       await action();
       onOpenChange(false);
     } catch (failure) {
-      setError(draftFailureOf(failure).message);
+      setError(draftFailureOf(failure));
     } finally {
       setPending(false);
     }
@@ -51,7 +53,27 @@ function useDialogAction(onOpenChange: (open: boolean) => void) {
     if (!next) setError(undefined);
     onOpenChange(next);
   }
-  return { pending, error, run, changeOpen };
+  const errorBanner = error ? (
+    <Banner
+      tone="danger"
+      action={
+        error.kind === 'conflict' && onReload ? (
+          <Button
+            size="sm"
+            onClick={() => {
+              onReload();
+              onOpenChange(false);
+            }}
+          >
+            Reload the Draft
+          </Button>
+        ) : undefined
+      }
+    >
+      {error.message}
+    </Banner>
+  ) : null;
+  return { pending, errorBanner, run, changeOpen };
 }
 
 interface ConfirmDialogProps extends DialogShellProps {
@@ -67,13 +89,14 @@ interface ConfirmDialogProps extends DialogShellProps {
 export function ConfirmDialog({
   open,
   onOpenChange,
+  onReload,
   title,
   description,
   confirmLabel,
   consequences,
   action,
 }: ConfirmDialogProps) {
-  const { pending, error, run, changeOpen } = useDialogAction(onOpenChange);
+  const { pending, errorBanner, run, changeOpen } = useDialogAction(onOpenChange, onReload);
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
       <DialogContent destructive>
@@ -82,7 +105,7 @@ export function ConfirmDialog({
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <DialogBody>
-          {error ? <Banner tone="danger">{error}</Banner> : null}
+          {errorBanner}
           <ul className="m-0 flex list-disc flex-col gap-1.5 pl-5 text-body">
             {consequences.map((line) => (
               <li key={line}>{line}</li>
@@ -137,13 +160,14 @@ interface FileDialogProps extends DialogShellProps {
 export function FileDialog({
   open,
   onOpenChange,
+  onReload,
   mode,
   initialPath,
   existing,
   deleted,
   action,
 }: FileDialogProps) {
-  const { pending, error, run, changeOpen } = useDialogAction(onOpenChange);
+  const { pending, errorBanner, run, changeOpen } = useDialogAction(onOpenChange, onReload);
   const [path, setPath] = useState(initialPath);
   const [upload, setUpload] = useState<File>();
   const [touched, setTouched] = useState(false);
@@ -181,7 +205,7 @@ export function FileDialog({
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
-            {error ? <Banner tone="danger">{error}</Banner> : null}
+            {errorBanner}
             <TextField
               label="Path"
               mono
@@ -247,11 +271,12 @@ interface NewAgentDialogProps extends DialogShellProps {
 export function NewAgentDialog({
   open,
   onOpenChange,
+  onReload,
   providers,
   taken,
   action,
 }: NewAgentDialogProps) {
-  const { pending, error, run, changeOpen } = useDialogAction(onOpenChange);
+  const { pending, errorBanner, run, changeOpen } = useDialogAction(onOpenChange, onReload);
   const [name, setName] = useState('');
   const [touched, setTouched] = useState(false);
   const first = providers.find((provider) => provider.available) ?? providers[0];
@@ -278,7 +303,7 @@ export function NewAgentDialog({
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
-            {error ? <Banner tone="danger">{error}</Banner> : null}
+            {errorBanner}
             <TextField
               label="Name"
               mono
@@ -323,10 +348,12 @@ export function NewAgentDialog({
 
 interface LeaveDialogProps extends DialogShellProps {
   onLeave: () => void;
+  /** The files with edits that are not in the Draft. */
+  unsaved: readonly string[];
 }
 
 /** Asked when a link would leave the editor with unsaved edits. */
-export function LeaveDialog({ open, onOpenChange, onLeave }: LeaveDialogProps) {
+export function LeaveDialog({ open, onOpenChange, onLeave, unsaved }: LeaveDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent destructive>
@@ -337,6 +364,15 @@ export function LeaveDialog({ open, onOpenChange, onLeave }: LeaveDialogProps) {
             Draft.
           </DialogDescription>
         </DialogHeader>
+        <DialogBody>
+          <ul aria-label="Files with unsaved edits" className="m-0 list-disc pl-5 text-body">
+            {unsaved.map((path) => (
+              <li key={path} className="font-mono text-code break-all">
+                {path}
+              </li>
+            ))}
+          </ul>
+        </DialogBody>
         <DialogFooter>
           <DialogClose asChild>
             <Button variant="ghost">Stay</Button>
