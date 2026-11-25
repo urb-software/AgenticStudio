@@ -76,7 +76,7 @@ export class SetEnvironmentFileEndpoint {
   @ZodResponse({ status: 200, type: EnvironmentFileInfoDto })
   @ApiProblemResponses({
     404: `Unknown project (${PROJECTS_PROBLEM_TYPES.projectNotFound})`,
-    409: `The project is the definitions Repository (${PROJECTS_PROBLEM_TYPES.definitionsProject})`,
+    409: `The project is the definitions Repository (${PROJECTS_PROBLEM_TYPES.definitionsProject}; refused: environment_file)`,
     422:
       'Invalid path (not a safe relative path, inside .git, or tracked in the repository) or ' +
       'content (over 64 KiB, not UTF-8); field errors on path or content say why',

@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest';
-import { REPOSITORY_STATES } from '../../../contracts/index.js';
-import { PROJECT_KINDS } from '../../../domain/value-objects/project-kind.js';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+import { type ProjectKind, REPOSITORY_STATES } from '../../../contracts/index.js';
+import {
+  type ProjectKind as DomainProjectKind,
+  PROJECT_KIND_VALUES,
+} from '../../../domain/value-objects/project-kind.js';
 import { REPOSITORY_STATES as DOMAIN_REPOSITORY_STATES } from '../../../domain/value-objects/repository-state.js';
 
 describe('values the public face repeats', () => {
@@ -9,6 +12,7 @@ describe('values the public face repeats', () => {
   });
 
   it('keeps the two Project kinds the contract names', () => {
-    expect([...PROJECT_KINDS]).toEqual(['code', 'definitions']);
+    expect([...PROJECT_KIND_VALUES]).toEqual(['code', 'definitions']);
+    expectTypeOf<ProjectKind>().toEqualTypeOf<DomainProjectKind>();
   });
 });

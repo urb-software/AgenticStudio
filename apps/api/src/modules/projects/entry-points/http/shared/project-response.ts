@@ -1,7 +1,10 @@
 import { mergeMethodSchema, type MergeMethod } from '@agentic-studio/contracts';
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
-import { PROJECT_KINDS, type ProjectKind } from '../../../domain/value-objects/project-kind.js';
+import {
+  PROJECT_KIND_VALUES,
+  type ProjectKind,
+} from '../../../domain/value-objects/project-kind.js';
 
 /**
  * A project in API responses (create and list items). Within this module only: other modules
@@ -15,7 +18,7 @@ export const projectResponseSchema = z
       "How the project's Runs are merged: `squash` (the default) or `merge_commit`.",
     ),
     kind: z
-      .enum(PROJECT_KINDS)
+      .enum(PROJECT_KIND_VALUES)
       .describe(
         '`code` for an ordinary Project; `definitions` for the Repository that holds agent definitions.',
       ),

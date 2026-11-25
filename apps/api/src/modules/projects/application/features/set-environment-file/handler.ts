@@ -27,10 +27,7 @@ import {
   REPOSITORY_GIT,
   type RepositoryGit,
 } from '../../ports/repository-git.js';
-import {
-  DefinitionsProjectError,
-  ProjectNotFoundError,
-} from '../../../domain/errors/project-errors.js';
+import { ProjectNotFoundError } from '../../../domain/errors/project-errors.js';
 
 export interface SetEnvironmentFileInput {
   projectId: string;
@@ -62,7 +59,7 @@ export class SetEnvironmentFileHandler {
       ? await this.projects.findById(input.projectId)
       : null;
     if (!project) throw new ProjectNotFoundError();
-    if (project.kind === 'definitions') throw new DefinitionsProjectError();
+    project.assertAcceptsEnvironmentFile();
     const path = EnvironmentFilePath.of(input.path);
     const content = EnvironmentFileContent.of(input.content);
     await this.refuseTrackedPath(input.projectId, path.value);

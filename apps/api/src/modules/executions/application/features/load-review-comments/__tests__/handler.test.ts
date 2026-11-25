@@ -30,6 +30,7 @@ import {
 } from '../../report-lookup-result/handler.js';
 import { LoadReviewCommentsHandler } from '../handler.js';
 import { ReviewCommentsLoadRunningError } from '../../../../domain/errors/review-comments-errors.js';
+import { FakeProjectKinds } from '../../../ports/__tests__/fake-project-kinds.js';
 
 const T1 = new Date(T0.getTime() + 5_000);
 const LEASE = { seconds: 60 };
@@ -98,7 +99,7 @@ describe('review comments', () => {
       LEASE,
     );
     get = new GetReviewCommentsHandler(runs, executions.reviewComments, lookups, operator);
-    claims = new ClaimLookupsHandler(lookups, clock);
+    claims = new ClaimLookupsHandler(new FakeProjectKinds(), lookups, clock);
     report = new ReportLookupResultHandler(
       lookups,
       clock,

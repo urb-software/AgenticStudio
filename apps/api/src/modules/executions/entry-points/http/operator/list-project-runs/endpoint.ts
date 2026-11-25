@@ -24,7 +24,7 @@ export class ListProjectRunsEndpoint {
   @ZodResponse({ status: 200, type: RunListResponseDto })
   @ApiProblemResponses({
     404: `Unknown project (${EXECUTIONS_PROBLEM_TYPES.projectNotFound})`,
-    409: `The project is the definitions Repository (${EXECUTIONS_PROBLEM_TYPES.definitionsProject})`,
+    409: `The project is the definitions Repository (${EXECUTIONS_PROBLEM_TYPES.definitionsProject}; refused: run)`,
   })
   async list(@Param('id') projectId: string) {
     try {

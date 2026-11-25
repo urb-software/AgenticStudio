@@ -45,9 +45,13 @@ export interface RunLookupRepository {
 
   /**
    * Oldest first, first returning the claims older than the lease to the queue.
-   * Any worker may claim.
+   * Any worker may claim. Lookups of Runs of `excludeProjectId` are never handed out.
    */
-  claim(workerId: string, rule: LookupHandOutRule): Promise<ClaimedLookup[]>;
+  claim(
+    workerId: string,
+    rule: LookupHandOutRule,
+    excludeProjectId?: string | null,
+  ): Promise<ClaimedLookup[]>;
 
   /** Returns how many were removed. */
   deleteFinishedBefore(before: Date): Promise<number>;

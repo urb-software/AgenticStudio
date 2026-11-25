@@ -1,9 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
+  PROJECT_KINDS,
+  type ProjectKinds,
   RUN_PREVIEW_SOURCES,
   type RunPreviewSources,
 } from '../../../../projects/contracts/index.js';
-import { PROJECT_KINDS, type ProjectKinds } from '../../../../projects/contracts/index.js';
 import {
   DefinitionsProjectError,
   ProjectNotFoundError,

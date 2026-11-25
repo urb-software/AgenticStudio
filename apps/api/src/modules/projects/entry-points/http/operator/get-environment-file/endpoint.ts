@@ -40,7 +40,7 @@ export class GetEnvironmentFileEndpoint {
   })
   @ApiProblemResponses({
     404: `Unknown project (${PROJECTS_PROBLEM_TYPES.projectNotFound})`,
-    409: `The project is the definitions Repository (${PROJECTS_PROBLEM_TYPES.definitionsProject})`,
+    409: `The project is the definitions Repository (${PROJECTS_PROBLEM_TYPES.definitionsProject}; refused: environment_file)`,
   })
   async get(
     @Param('id') id: string,

@@ -13,8 +13,9 @@ import {
   RUN_PREVIEW_SOURCES,
   RUN_START_POINTS,
 } from './contracts/index.js';
-import { GetDefinitionsRepositoryHandler } from './application/features/get-definitions-repository/handler.js';
+import { GetDefinitionsRepositoryStateHandler } from './application/features/get-definitions-repository-state/handler.js';
 import { ProjectDefinitionsRepositories } from './entry-points/contracts/definitions-repositories.js';
+import { GetDefinitionsProjectIdHandler } from './application/features/get-definitions-project-id/handler.js';
 import { GetProjectKindHandler } from './application/features/get-project-kind/handler.js';
 import { ProjectProjectKinds } from './entry-points/contracts/project-kinds.js';
 import { GetProjectNamesHandler } from './application/features/get-project-names/handler.js';
@@ -133,7 +134,8 @@ const DISCONNECT_RETRY_MS = 30_000;
 
 /**
  * `projects` business module: projects, their Repository (Git adapter, background jobs),
- * Environment file and merge method. Other modules reach it through {@link PROJECT_KINDS}, {@link DEFINITIONS_REPOSITORIES}, {@link RUN_START_POINTS}, {@link RUN_ENVIRONMENT_FILES} and {@link RUN_BRANCH_REVIEWS}, {@link RUN_INTEGRATION_FETCHES}, {@link RUN_MERGE_METHODS} and {@link RUN_PREVIEW_SOURCES}.
+ * Environment file and merge method. Other modules reach it through the symbols that its
+ * `contracts/` exports, such as `PROJECT_KINDS` and `RUN_START_POINTS`.
  */
 @Module({})
 export class ProjectsModule {
@@ -252,7 +254,8 @@ export class ProjectsModule {
         OpenPreviewArchiveHandler,
         GetProjectNamesHandler,
         GetProjectKindHandler,
-        GetDefinitionsRepositoryHandler,
+        GetDefinitionsProjectIdHandler,
+        GetDefinitionsRepositoryStateHandler,
         { provide: DEFINITIONS_REPOSITORIES, useClass: ProjectDefinitionsRepositories },
         { provide: PROJECT_KINDS, useClass: ProjectProjectKinds },
         { provide: RUN_PREVIEW_SOURCES, useClass: ProjectRunPreviewSources },

@@ -36,7 +36,7 @@ export class StartRunEndpoint {
   @ApiProblemResponses({
     404: `Unknown project (${EXECUTIONS_PROBLEM_TYPES.projectNotFound})`,
     409:
-      `The project is the definitions Repository (${EXECUTIONS_PROBLEM_TYPES.definitionsProject}), ` +
+      `The project is the definitions Repository (${EXECUTIONS_PROBLEM_TYPES.definitionsProject}; refused: run), ` +
       `or the project's repository is missing or not ready (${EXECUTIONS_PROBLEM_TYPES.repositoryNotReady}), ` +
       'or the provider is switched off on the agent worker or no agent worker is connected ' +
       `(${EXECUTIONS_PROBLEM_TYPES.providerUnavailable})`,

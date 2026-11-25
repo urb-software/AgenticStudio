@@ -176,8 +176,10 @@ export class InMemoryRunRepository implements RunRepository {
     );
   }
 
-  claimNext(workerId: string, now: Date): Promise<Run | null> {
-    const next = HandOutRule.for(workerId).next(this.runs);
+  claimNext(workerId: string, now: Date, excludeProjectId?: string | null): Promise<Run | null> {
+    const next = HandOutRule.for(workerId).next(
+      this.runs.filter((run) => run.projectId !== excludeProjectId),
+    );
     if (!next) return Promise.resolve(null);
     return Promise.resolve(this.changeStored(next.id, (run) => run.claimBy(workerId, now)));
   }

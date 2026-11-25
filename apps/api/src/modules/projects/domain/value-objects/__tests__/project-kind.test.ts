@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { isProjectKind, PROJECT_KINDS } from '../project-kind.js';
+import { isProjectKind, PROJECT_KIND_VALUES } from '../project-kind.js';
 
 describe('ProjectKind', () => {
   it('is code or definitions', () => {
-    expect([...PROJECT_KINDS]).toEqual(['code', 'definitions']);
+    expect([...PROJECT_KIND_VALUES]).toEqual(['code', 'definitions']);
   });
 
   it.each(['code', 'definitions'])('accepts %s', (value) => {

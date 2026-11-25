@@ -5,6 +5,8 @@ import {
 } from '../../../domain/repositories/run-diff-repository.js';
 import { SECRET_STORE, type SecretStore } from '../../../../../platform/secrets/index.js';
 import {
+  PROJECT_KINDS,
+  type ProjectKinds,
   RUN_ENVIRONMENT_FILES,
   type RunEnvironmentFiles,
 } from '../../../../projects/contracts/index.js';
@@ -117,13 +119,14 @@ const SNAPSHOT_FAILED = Symbol('SNAPSHOT_FAILED');
 /**
  * `null` when no Run is eligible. A resume goes only to the worker that last claimed the Run. A
  * Follow-up, or a usage-limit resume inside one, takes the Project's current Environment file;
- * other resumes keep their snapshot.
+ * other resumes keep their snapshot. The definitions Project's Runs are never handed out.
  */
 @Injectable()
 export class ClaimRunHandler {
   private readonly logger = new Logger('ClaimRun');
 
   constructor(
+    @Inject(PROJECT_KINDS) private readonly kinds: ProjectKinds,
     @Inject(RUN_REPOSITORY) private readonly runs: RunRepository,
     @Inject(RUN_LOG) private readonly logs: RunLog,
     @Inject(CLOCK) private readonly clock: Clock,
@@ -152,8 +155,9 @@ export class ClaimRunHandler {
     }
     const overdue = OverdueStepRule.at(now);
     await this.runs.timeOutOverdueSteps(overdue.now, overdue.graceMinutes);
+    const excluded = await this.kinds.definitionsProjectId();
     for (;;) {
-      const run = await this.runs.claimNext(workerId, now);
+      const run = await this.runs.claimNext(workerId, now, excluded);
       if (!run) return null;
       const handOut = run.handOut();
       switch (handOut.kind) {

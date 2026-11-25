@@ -21,7 +21,10 @@ export class DefinitionsProjectExistsError extends Error {
   }
 }
 
-/** The Project is the definitions Repository, which accepts no Run, no Preview and no Environment file. */
+/**
+ * The Project is the definitions Repository, which accepts no Run, no Preview and no Environment
+ * file.
+ */
 export class DefinitionsProjectError extends Error {
   constructor() {
     super('The definitions Repository accepts no Run, no Preview and no Environment file.');

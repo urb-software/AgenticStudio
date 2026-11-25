@@ -33,7 +33,7 @@ export class RemovePreviewSettingsEndpoint {
   @ApiProblemResponses({
     404: `Unknown project (${ENVIRONMENTS_PROBLEM_TYPES.projectNotFound})`,
     409:
-      `The project is the definitions Repository (${ENVIRONMENTS_PROBLEM_TYPES.definitionsProject}), ` +
+      `The project is the definitions Repository (${ENVIRONMENTS_PROBLEM_TYPES.definitionsProject}; refused: preview), ` +
       `The Preview is running (${ENVIRONMENTS_PROBLEM_TYPES.previewRunning}) or a build is ` +
       `running (${ENVIRONMENTS_PROBLEM_TYPES.buildRunning})`,
   })

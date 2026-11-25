@@ -705,7 +705,7 @@
             }
           },
           "409": {
-            "description": "The project is the definitions Repository (urn:agentic-studio:problem:definitions-project)",
+            "description": "The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: environment_file)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -775,7 +775,7 @@
             }
           },
           "409": {
-            "description": "The project is the definitions Repository (urn:agentic-studio:problem:definitions-project)",
+            "description": "The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: environment_file)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -838,7 +838,7 @@
             }
           },
           "409": {
-            "description": "The project is the definitions Repository (urn:agentic-studio:problem:definitions-project)",
+            "description": "The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: environment_file)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1004,7 +1004,7 @@
             }
           },
           "409": {
-            "description": "The project is the definitions Repository (urn:agentic-studio:problem:definitions-project), or the project's repository is missing or not ready (urn:agentic-studio:problem:repository-not-ready), or the provider is switched off on the agent worker or no agent worker is connected (urn:agentic-studio:problem:provider-unavailable)",
+            "description": "The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: run), or the project's repository is missing or not ready (urn:agentic-studio:problem:repository-not-ready), or the provider is switched off on the agent worker or no agent worker is connected (urn:agentic-studio:problem:provider-unavailable)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1073,7 +1073,7 @@
             }
           },
           "409": {
-            "description": "The project is the definitions Repository (urn:agentic-studio:problem:definitions-project)",
+            "description": "The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: run)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2827,7 +2827,7 @@
             }
           },
           "409": {
-            "description": "The project is the definitions Repository (urn:agentic-studio:problem:definitions-project), The repository cannot be read now (urn:agentic-studio:problem:preview-repository-not-ready), or the API is not on Linux (urn:agentic-studio:problem:preview-unsupported-platform)",
+            "description": "The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: preview), The repository cannot be read now (urn:agentic-studio:problem:preview-repository-not-ready), or the API is not on Linux (urn:agentic-studio:problem:preview-unsupported-platform)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2900,7 +2900,7 @@
             }
           },
           "409": {
-            "description": "The project is the definitions Repository (urn:agentic-studio:problem:definitions-project), The Preview is running (urn:agentic-studio:problem:preview-running) or a build is running (urn:agentic-studio:problem:preview-build-running)",
+            "description": "The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: preview), The Preview is running (urn:agentic-studio:problem:preview-running) or a build is running (urn:agentic-studio:problem:preview-build-running)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2962,7 +2962,7 @@
             }
           },
           "409": {
-            "description": "The project is the definitions Repository (urn:agentic-studio:problem:definitions-project), No Preview settings (urn:agentic-studio:problem:preview-not-configured), the repository cannot be read now (urn:agentic-studio:problem:preview-repository-not-ready), the API is not on Linux (urn:agentic-studio:problem:preview-unsupported-platform), no environment controller is connected (urn:agentic-studio:problem:preview-controller-unavailable), a build is already running (urn:agentic-studio:problem:preview-build-running), a stop or a reset is running (urn:agentic-studio:problem:preview-busy), or every place of the running limit is taken (urn:agentic-studio:problem:preview-limit-reached; `running` lists the projects that hold them)",
+            "description": "The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: preview), No Preview settings (urn:agentic-studio:problem:preview-not-configured), the repository cannot be read now (urn:agentic-studio:problem:preview-repository-not-ready), the API is not on Linux (urn:agentic-studio:problem:preview-unsupported-platform), no environment controller is connected (urn:agentic-studio:problem:preview-controller-unavailable), a build is already running (urn:agentic-studio:problem:preview-build-running), a stop or a reset is running (urn:agentic-studio:problem:preview-busy), or every place of the running limit is taken (urn:agentic-studio:problem:preview-limit-reached; `running` lists the projects that hold them)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3044,7 +3044,7 @@
             }
           },
           "409": {
-            "description": "The project is the definitions Repository (urn:agentic-studio:problem:definitions-project), No environment controller is connected (urn:agentic-studio:problem:preview-controller-unavailable), a build is running (urn:agentic-studio:problem:preview-build-running), a stop or a reset is running (urn:agentic-studio:problem:preview-busy) or the Preview is not running (urn:agentic-studio:problem:preview-not-running)",
+            "description": "The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: preview), No environment controller is connected (urn:agentic-studio:problem:preview-controller-unavailable), a build is running (urn:agentic-studio:problem:preview-build-running), a stop or a reset is running (urn:agentic-studio:problem:preview-busy) or the Preview is not running (urn:agentic-studio:problem:preview-not-running)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3106,7 +3106,7 @@
             }
           },
           "409": {
-            "description": "The project is the definitions Repository (urn:agentic-studio:problem:definitions-project), No environment controller is connected (urn:agentic-studio:problem:preview-controller-unavailable), a build is running (urn:agentic-studio:problem:preview-build-running) or a stop or a reset is running (urn:agentic-studio:problem:preview-busy)",
+            "description": "The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: preview), No environment controller is connected (urn:agentic-studio:problem:preview-controller-unavailable), a build is running (urn:agentic-studio:problem:preview-build-running) or a stop or a reset is running (urn:agentic-studio:problem:preview-busy)",
             "content": {
               "application/problem+json": {
                 "schema": {

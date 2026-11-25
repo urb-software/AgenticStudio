@@ -72,7 +72,7 @@ export class RequestPreviewBuildEndpoint {
   @ApiProblemResponses({
     404: `Unknown project (${ENVIRONMENTS_PROBLEM_TYPES.projectNotFound})`,
     409:
-      `The project is the definitions Repository (${ENVIRONMENTS_PROBLEM_TYPES.definitionsProject}), ` +
+      `The project is the definitions Repository (${ENVIRONMENTS_PROBLEM_TYPES.definitionsProject}; refused: preview), ` +
       `No Preview settings (${ENVIRONMENTS_PROBLEM_TYPES.previewNotConfigured}), the repository ` +
       `cannot be read now (${ENVIRONMENTS_PROBLEM_TYPES.repositoryNotReady}), the API is not on ` +
       `Linux (${ENVIRONMENTS_PROBLEM_TYPES.unsupportedPlatform}), no environment controller is ` +

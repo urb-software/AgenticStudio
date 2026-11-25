@@ -29,7 +29,7 @@ export class RemoveEnvironmentFileEndpoint {
   @ApiNoContentResponse({ description: 'Removed (or there was none)' })
   @ApiProblemResponses({
     404: `Unknown project (${PROJECTS_PROBLEM_TYPES.projectNotFound})`,
-    409: `The project is the definitions Repository (${PROJECTS_PROBLEM_TYPES.definitionsProject})`,
+    409: `The project is the definitions Repository (${PROJECTS_PROBLEM_TYPES.definitionsProject}; refused: environment_file)`,
   })
   async remove(@Param('id') id: string): Promise<void> {
     try {

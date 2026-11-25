@@ -72,7 +72,11 @@ export class PrismaRunLookupRepository implements RunLookupRepository {
     return row === null ? null : toLookup(row);
   }
 
-  async claim(workerId: string, rule: LookupHandOutRule): Promise<ClaimedLookup[]> {
+  async claim(
+    workerId: string,
+    rule: LookupHandOutRule,
+    excludeProjectId: string | null = null,
+  ): Promise<ClaimedLookup[]> {
     return inTransaction(this.db, async (tx) => {
       // A worker that never answered loses its claim: the lookup is handed out again.
       await tx.$executeRaw`
@@ -96,8 +100,8 @@ export class PrismaRunLookupRepository implements RunLookupRepository {
                r.integration_branch, l.scope, l.since
         FROM run_lookups l
         JOIN runs r ON r.id = l.run_id
-        JOIN projects p ON p.id = r.project_id AND p.kind = 'code'
         WHERE l.status = 'requested'
+          AND (${excludeProjectId}::uuid IS NULL OR r.project_id <> ${excludeProjectId}::uuid)
           AND (l.retry_at IS NULL OR l.retry_at <= ${rule.now}::timestamptz)
           AND r.pull_request_number IS NOT NULL AND r.run_branch IS NOT NULL
         ORDER BY l.requested_at, l.id

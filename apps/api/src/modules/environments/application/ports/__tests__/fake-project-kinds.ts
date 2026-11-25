@@ -4,7 +4,13 @@ import type { ProjectKind, ProjectKinds } from '../../../../projects/contracts/i
 export class FakeProjectKinds implements ProjectKinds {
   kind: ProjectKind | null = 'code';
 
+  definitionsId: string | null = null;
+
   kindOf(): Promise<ProjectKind | null> {
     return Promise.resolve(this.kind);
+  }
+
+  definitionsProjectId(): Promise<string | null> {
+    return Promise.resolve(this.definitionsId);
   }
 }

@@ -51,7 +51,7 @@ export class ResetPreviewDataEndpoint {
   @ApiProblemResponses({
     404: `Unknown project (${ENVIRONMENTS_PROBLEM_TYPES.projectNotFound})`,
     409:
-      `The project is the definitions Repository (${ENVIRONMENTS_PROBLEM_TYPES.definitionsProject}), ` +
+      `The project is the definitions Repository (${ENVIRONMENTS_PROBLEM_TYPES.definitionsProject}; refused: preview), ` +
       `No environment controller is connected (${ENVIRONMENTS_PROBLEM_TYPES.controllerUnavailable}), ` +
       `a build is running (${ENVIRONMENTS_PROBLEM_TYPES.buildRunning}) or a stop or a reset is ` +
       `running (${ENVIRONMENTS_PROBLEM_TYPES.previewBusy})`,

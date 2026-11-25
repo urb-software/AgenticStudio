@@ -15,8 +15,8 @@ export interface RequestPreviewBuildResult {
 
 /**
  * Asks the controller to build and start the Preview, checking as backend.md section 7 lists.
- * Throws `DefinitionsProjectError` and the refusals of `PreviewBuildRequests`: not found, settings, Repository, controller,
- * build running, busy, limit reached, refused file and unreadable source.
+ * Throws `DefinitionsProjectError` and the refusals of `PreviewBuildRequests`: not found, settings,
+ * Repository, controller, build running, busy, limit reached, refused file and unreadable source.
  */
 @Injectable()
 export class RequestPreviewBuildHandler {

@@ -22,7 +22,10 @@ export interface ListProjectRunsInput {
 
 export type ListProjectRunsResult = RunView[];
 
-/** Throws {@link RunProjectNotFoundError} for an unknown project, {@link DefinitionsProjectRunError} for the definitions Repository. */
+/**
+ * Throws {@link RunProjectNotFoundError} for an unknown project, {@link DefinitionsProjectRunError}
+ * for the definitions Repository.
+ */
 @Injectable()
 export class ListProjectRunsHandler {
   constructor(

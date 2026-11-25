@@ -1,3 +1,4 @@
+import { DefinitionsProjectError } from '../errors/project-errors.js';
 import type { MergeMethod } from '../value-objects/merge-method.js';
 import type { ProjectKind } from '../value-objects/project-kind.js';
 import type { ProjectData } from './project-data.js';
@@ -19,6 +20,13 @@ export class Project {
 
   static restore(data: ProjectData): Project {
     return new Project(data);
+  }
+
+  /**
+   * Throws {@link DefinitionsProjectError}: the definitions Repository accepts no Environment file.
+   */
+  assertAcceptsEnvironmentFile(): void {
+    if (this.kind === 'definitions') throw new DefinitionsProjectError();
   }
 
   /** The same Project with another merge method. */

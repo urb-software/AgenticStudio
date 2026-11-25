@@ -72,7 +72,7 @@ export class SavePreviewSettingsEndpoint {
   @ApiProblemResponses({
     404: `Unknown project (${ENVIRONMENTS_PROBLEM_TYPES.projectNotFound})`,
     409:
-      `The project is the definitions Repository (${ENVIRONMENTS_PROBLEM_TYPES.definitionsProject}), ` +
+      `The project is the definitions Repository (${ENVIRONMENTS_PROBLEM_TYPES.definitionsProject}; refused: preview), ` +
       `The repository cannot be read now (${ENVIRONMENTS_PROBLEM_TYPES.repositoryNotReady}), ` +
       `or the API is not on Linux (${ENVIRONMENTS_PROBLEM_TYPES.unsupportedPlatform})`,
     502: `The Compose file could not be read (${ENVIRONMENTS_PROBLEM_TYPES.sourceUnavailable})`,

@@ -12,10 +12,7 @@ import {
   ENVIRONMENT_FILE_CONTENTS,
   type EnvironmentFileContents,
 } from '../../ports/environment-file-contents.js';
-import {
-  DefinitionsProjectError,
-  ProjectNotFoundError,
-} from '../../../domain/errors/project-errors.js';
+import { ProjectNotFoundError } from '../../../domain/errors/project-errors.js';
 
 export interface RemoveEnvironmentFileInput {
   projectId: string;
@@ -37,7 +34,7 @@ export class RemoveEnvironmentFileHandler {
     const { projectId } = input;
     const project = isProjectId(projectId) ? await this.projects.findById(projectId) : null;
     if (!project) throw new ProjectNotFoundError();
-    if (project.kind === 'definitions') throw new DefinitionsProjectError();
+    project.assertAcceptsEnvironmentFile();
     const secretRef = await this.files.delete(projectId);
     if (secretRef !== null) await this.contents.discard(secretRef);
   }

@@ -23,9 +23,9 @@ export interface RequestPreviewResetDataResult {
 }
 
 /**
- * Removes the Preview's data for good; a running Preview is rebuilt from its own build in the
- * same transaction, after the removal. Throws `ProjectNotFoundError`, `DefinitionsProjectError`, `PreviewControllerUnavailableError`,
- * `PreviewBuildRunningError` and `PreviewBusyError`.
+ * Removes the Preview's data for good; a running Preview is rebuilt from its own build in the same
+ * transaction, after the removal. Throws `ProjectNotFoundError`, `DefinitionsProjectError`,
+ * `PreviewControllerUnavailableError`, `PreviewBuildRunningError` and `PreviewBusyError`.
  */
 @Injectable()
 export class RequestPreviewResetDataHandler {

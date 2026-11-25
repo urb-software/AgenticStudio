@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { PROJECT_KINDS, type ProjectKinds } from '../../../../projects/contracts/index.js';
 import { LookupHandOutRule } from '../../../domain/value-objects/lookup-hand-out-rule.js';
 import type { ClaimedLookup } from '../../../domain/repositories/run-lookup-repository.js';
 import {
@@ -15,18 +16,27 @@ export interface ClaimLookupsResult {
   lookups: ClaimedLookup[];
 }
 
-/** A claim the worker never answered goes back to the queue after the lease. */
+/**
+ * A claim the worker never answered goes back to the queue after the lease. The definitions
+ * Project's Runs are never handed out.
+ */
 @Injectable()
 export class ClaimLookupsHandler {
   constructor(
+    @Inject(PROJECT_KINDS) private readonly kinds: ProjectKinds,
     @Inject(RUN_LOOKUP_REPOSITORY) private readonly lookups: RunLookupRepository,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
   async execute(input: ClaimLookupsInput): Promise<ClaimLookupsResult> {
     // The hand-out is the store's one atomic step; the rule supplies its lease and limit.
+    const excluded = await this.kinds.definitionsProjectId();
     return {
-      lookups: await this.lookups.claim(input.workerId, LookupHandOutRule.at(this.clock.now())),
+      lookups: await this.lookups.claim(
+        input.workerId,
+        LookupHandOutRule.at(this.clock.now()),
+        excluded,
+      ),
     };
   }
 }

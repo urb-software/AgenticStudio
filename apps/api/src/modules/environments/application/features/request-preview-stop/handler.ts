@@ -21,8 +21,8 @@ export interface RequestPreviewStopResult {
 
 /**
  * Asks the controller to stop a running Preview. Throws `ProjectNotFoundError`,
- * `DefinitionsProjectError`, `PreviewControllerUnavailableError`, `PreviewBuildRunningError`, `PreviewBusyError` and
- * `PreviewNotRunningError`.
+ * `DefinitionsProjectError`, `PreviewControllerUnavailableError`, `PreviewBuildRunningError`,
+ * `PreviewBusyError` and `PreviewNotRunningError`.
  */
 @Injectable()
 export class RequestPreviewStopHandler {

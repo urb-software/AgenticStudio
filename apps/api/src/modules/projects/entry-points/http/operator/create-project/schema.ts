@@ -1,6 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
-import { PROJECT_KINDS } from '../../../../domain/value-objects/project-kind.js';
+import { PROJECT_KIND_VALUES } from '../../../../domain/value-objects/project-kind.js';
 import { NormalizedName } from '../../../../domain/value-objects/normalized-name.js';
 import {
   PROJECT_NAME_MAX_LENGTH,
@@ -21,7 +21,7 @@ export const createProjectRequestSchema = z
         error: `Use at most ${PROJECT_NAME_MAX_LENGTH} characters.`,
       }),
     kind: z
-      .enum(PROJECT_KINDS)
+      .enum(PROJECT_KIND_VALUES)
       .optional()
       .describe(
         '`code` (the default) is an ordinary Project. `definitions` is the one Repository that ' +

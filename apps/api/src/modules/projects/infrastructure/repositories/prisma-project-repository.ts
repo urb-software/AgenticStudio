@@ -42,6 +42,15 @@ function toProject(row: {
   });
 }
 
+const ONE_DEFINITIONS_INDEX = 'projects_one_definitions_key';
+
+/** Which unique index a violation names, read from the error's metadata; `null` when neither. */
+function violatedIndex(error: unknown): 'definitions' | 'name' | null {
+  const named = JSON.stringify((error as { meta?: unknown }).meta ?? '');
+  if (named.includes(ONE_DEFINITIONS_INDEX)) return 'definitions';
+  return named.includes('name_normalized') ? 'name' : null;
+}
+
 /**
  * PostgreSQL adapter of {@link ProjectRepository}: the `projects` table only. The unique index
  * `projects.name_normalized`, not a prior read, decides duplicate names.
@@ -60,7 +69,10 @@ export class PrismaProjectRepository implements ProjectRepository {
       );
     } catch (error) {
       if (!isUniqueConstraintViolation(error)) throw error;
-      // Besides the primary key, two unique indexes: the name, and one definitions Project.
+      const violated = violatedIndex(error);
+      if (violated === 'definitions') throw new DefinitionsProjectExistsError();
+      if (violated === 'name') throw new ProjectNameTakenError();
+      // The error names neither index: the existing definitions Project decides.
       if (kind === 'definitions' && (await this.definitionsExists())) {
         throw new DefinitionsProjectExistsError();
       }

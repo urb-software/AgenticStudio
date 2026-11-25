@@ -4,7 +4,10 @@ import { ZodResponse } from 'nestjs-zod';
 import { GetDefinitionsRepositoryHandler } from '../../../../application/features/get-definitions-repository/handler.js';
 import { DefinitionsRepositoryResponseDto } from './schema.js';
 
-/** `GET /api/agents/definitions-repository`, behind the global session guard: an operator route only. */
+/**
+ * `GET /api/agents/definitions-repository`, behind the global session guard: an operator route
+ * only.
+ */
 @ApiTags('agents')
 @Controller('agents')
 export class GetDefinitionsRepositoryEndpoint {

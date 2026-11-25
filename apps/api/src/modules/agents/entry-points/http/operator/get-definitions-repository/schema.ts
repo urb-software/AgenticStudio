@@ -2,7 +2,9 @@ import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 import { REPOSITORY_STATES } from '../../../../../projects/contracts/index.js';
 
-/** `GET /api/agents/definitions-repository` response; `project` is `null` when none is connected. */
+/**
+ * `GET /api/agents/definitions-repository` response; `project` is `null` when none is connected.
+ */
 export const definitionsRepositoryResponseSchema = z
   .object({
     project: z

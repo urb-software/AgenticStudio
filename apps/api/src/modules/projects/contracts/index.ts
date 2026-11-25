@@ -2,7 +2,9 @@ import type { EnvironmentFile, MergeMethod } from '@agentic-studio/contracts';
 
 export const PROJECT_KINDS = Symbol('PROJECT_KINDS');
 
-/** `code` for an ordinary Project; `definitions` for the Repository that holds agent definitions. */
+/**
+ * `code` for an ordinary Project; `definitions` for the Repository that holds agent definitions.
+ */
 export type ProjectKind = 'code' | 'definitions';
 
 /** The states of a Repository connection, as `projects` reports them. */
@@ -20,6 +22,9 @@ export type RepositoryState = (typeof REPOSITORY_STATES)[number];
 export interface ProjectKinds {
   /** The kind of the project with this id, or `null` when none has it (also for a non-UUID). */
   kindOf(projectId: string): Promise<ProjectKind | null>;
+
+  /** The id of the definitions Project, or `null` when none exists. */
+  definitionsProjectId(): Promise<string | null>;
 }
 
 export const DEFINITIONS_REPOSITORIES = Symbol('DEFINITIONS_REPOSITORIES');

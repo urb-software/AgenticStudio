@@ -9,10 +9,7 @@ import {
   type ProjectRepository,
 } from '../../../domain/repositories/project-repository.js';
 import { isProjectId } from '../../../domain/value-objects/project-id.js';
-import {
-  DefinitionsProjectError,
-  ProjectNotFoundError,
-} from '../../../domain/errors/project-errors.js';
+import { ProjectNotFoundError } from '../../../domain/errors/project-errors.js';
 
 export interface GetEnvironmentFileInput {
   projectId: string;
@@ -21,8 +18,8 @@ export interface GetEnvironmentFileInput {
 export type GetEnvironmentFileResult = EnvironmentFileView | null;
 
 /**
- * Never returns the content. Throws {@link ProjectNotFoundError}, or {@link DefinitionsProjectError} for the
- * definitions Repository.
+ * Never returns the content. Throws {@link ProjectNotFoundError}, or {@link
+ * DefinitionsProjectError} for the definitions Repository.
  */
 @Injectable()
 export class GetEnvironmentFileHandler {
@@ -35,7 +32,7 @@ export class GetEnvironmentFileHandler {
     const { projectId } = input;
     const project = isProjectId(projectId) ? await this.projects.findById(projectId) : null;
     if (!project) throw new ProjectNotFoundError();
-    if (project.kind === 'definitions') throw new DefinitionsProjectError();
+    project.assertAcceptsEnvironmentFile();
     const file = await this.files.find(projectId);
     return file ? environmentFileView(file) : null;
   }

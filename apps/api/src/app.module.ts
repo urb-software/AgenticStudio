@@ -30,8 +30,8 @@ export class AppModule {
       environments?: EnvironmentsModuleOptions;
     } = {},
   ): DynamicModule {
-    // One instance each: `executions`, `environments` and `agents` import `projects`, and `executions` imports
-    // `environments`, to reach their public contracts.
+    // One instance each: `executions`, `environments` and `agents` import `projects`, and
+    // `executions` imports `environments`, to reach their public contracts.
     const projects = ProjectsModule.register(options.projects);
     const environments = EnvironmentsModule.register(projects, options.environments);
     return {
