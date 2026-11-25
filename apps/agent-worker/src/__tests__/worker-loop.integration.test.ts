@@ -1,3 +1,4 @@
+import { PROVIDER_MODELS } from '@agentic-studio/agent-definitions';
 import { createDatabaseClient, type DatabaseClient } from '@agentic-studio/database';
 import { deployMigrations } from '@agentic-studio/database/migrations';
 import { startPostgres, startRedis, type TestService } from '@agentic-studio/testing';
@@ -867,8 +868,9 @@ describe.skipIf(process.platform !== 'linux')('agent worker loop against the rea
           name: 'Claude Code',
           available: false,
           reason: 'Switched off on the agent worker',
+          models: [...PROVIDER_MODELS.claude_code],
         },
-        { id: 'codex', name: 'Codex', available: true },
+        { id: 'codex', name: 'Codex', available: true, models: [...PROVIDER_MODELS.codex] },
       ]);
       expect(refused.status).toBe(409);
       expect(await refused.json()).toMatchObject({
