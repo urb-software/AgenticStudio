@@ -322,20 +322,20 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
 
       await expect(git.listTreeAtCommit(PROJECT_ID, commit, 'agents', 100)).resolves.toEqual({
         entries: [
-          { path: 'agents/linked/AGENT.md', kind: 'symlink', size: 0, executable: false },
-          { path: 'agents/reviewer/AGENT.md', kind: 'file', size: 4, executable: false },
-          { path: 'agents/reviewer/notes/a.txt', kind: 'file', size: 3, executable: false },
+          { path: 'agents/linked/AGENT.md', kind: 'symlink', size: 0 },
+          { path: 'agents/reviewer/AGENT.md', kind: 'file', size: 4 },
+          { path: 'agents/reviewer/notes/a.txt', kind: 'file', size: 3 },
           { path: 'agents/reviewer/run.sh', kind: 'file', size: 10, executable: true },
-          { path: 'agents/vendored', kind: 'submodule', size: 0, executable: false },
-          { path: 'agents/zeta/AGENT.md', kind: 'file', size: 2, executable: false },
+          { path: 'agents/vendored', kind: 'submodule', size: 0 },
+          { path: 'agents/zeta/AGENT.md', kind: 'file', size: 2 },
         ],
         truncated: false,
       });
       // Over the entry bound: the first entries only, and it says so.
       await expect(git.listTreeAtCommit(PROJECT_ID, commit, 'agents', 2)).resolves.toEqual({
         entries: [
-          { path: 'agents/linked/AGENT.md', kind: 'symlink', size: 0, executable: false },
-          { path: 'agents/reviewer/AGENT.md', kind: 'file', size: 4, executable: false },
+          { path: 'agents/linked/AGENT.md', kind: 'symlink', size: 0 },
+          { path: 'agents/reviewer/AGENT.md', kind: 'file', size: 4 },
         ],
         truncated: true,
       });

@@ -297,7 +297,7 @@ function parseTree(output: string, cut: boolean, maxEntries: number): CommitTree
         path: entry.path,
         kind,
         size: kind === 'file' ? entry.size : 0,
-        executable: entry.mode === '100755',
+        ...(entry.mode === '100755' ? { executable: true } : {}),
       };
     }),
     truncated: cut || entries.length > maxEntries,
