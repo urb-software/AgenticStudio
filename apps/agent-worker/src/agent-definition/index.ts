@@ -1,17 +1,14 @@
-import { BASE_RULES, runCheckSchema, runQuestionSchema } from '@agentic-studio/contracts';
+import {
+  BASE_RULES,
+  type BaseRules,
+  runCheckSchema,
+  runQuestionSchema,
+} from '@agentic-studio/contracts';
 import { z } from 'zod';
 
-/**
- * The built-in agent definition: the instructions every real runner gives its agent besides the
- * Task. A wording change that changes behaviour gets a new version, so a Run's log says which ran.
- */
-export interface AgentDefinition {
-  /** `<date>.<n>`, raised whenever the text changes. */
-  version: string;
-  text: string;
-}
+/** What the runners give an agent besides the Task: the base rules, which the contracts own. */
+export type AgentDefinition = BaseRules;
 
-/** The base rules, which live in the contracts so the Agents page can show them too. */
 export const AGENT_DEFINITION: AgentDefinition = BASE_RULES;
 
 /**

@@ -18,7 +18,8 @@ export class GetAgentEndpoint {
     operationId: 'getAgent',
     description:
       'One agent with its instructions (plain text) and the files of its folder with their ' +
-      'sizes, read at the last fetched commit of the definitions Repository.',
+      'sizes, read at the last fetched commit of the definitions Repository. A name that a ' +
+      'built-in agent has always answers the built-in one (rows are unique by `source` and `name`).',
   })
   @ZodResponse({ status: 200, type: AgentDetailResponseDto })
   @ApiProblemResponses({ 404: `Unknown agent (${AGENTS_PROBLEM_TYPES.agentNotFound})` })

@@ -225,6 +225,9 @@ const LIST_OUTPUT_LIMIT_BYTES = 2 * 1024 * 1024;
 /** The most output of a tree listing kept; a longer one is cut and reported as truncated. */
 const TREE_OUTPUT_LIMIT_BYTES = 16 * 1024 * 1024;
 
+/** The time a read of a tree or of files may take. */
+const READ_TIMEOUT_MS = 10_000;
+
 /** Paths per `ls-tree` call when reading several files, so the argument list stays short. */
 const READ_BATCH_PATHS = 50;
 
@@ -980,39 +983,37 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
       throw new GitRequestRejectedError('The path is not a safe relative path.');
     }
     this.paths.clone(projectId);
-    return this.guarded('ls-tree', () =>
-      this.queued(projectId, this.settings.fetchTimeoutMs, options, async (options) => {
-        const clone = await this.paths.existingClone(projectId);
-        if (!clone) {
-          throw new GitCloneMissingError();
+    return this.guarded('ls-tree', async () => {
+      const clone = await this.paths.existingClone(projectId);
+      if (!clone) {
+        throw new GitCloneMissingError();
+      }
+      return this.withOperation(this.readTimeoutMs(), options, async (context) => {
+        const gitDir = `--git-dir=${clone}`;
+        await this.assertKnownCommit(context, gitDir, commit);
+        // The trailing slash names the folder's contents; without it Git lists the entry itself.
+        const listed = await this.git(
+          context,
+          [
+            '--literal-pathspecs',
+            gitDir,
+            'ls-tree',
+            '-r',
+            '-l',
+            '-z',
+            commit,
+            '--',
+            `${directory}/`,
+          ],
+          undefined,
+          TREE_OUTPUT_LIMIT_BYTES,
+        );
+        if (listed.exitCode !== 0 && !listed.stdoutCut) {
+          throw new GitOperationError('unknown', redactGitOutput(listed.stderr));
         }
-        return this.withOperation(this.settings.fetchTimeoutMs, options, async (context) => {
-          const gitDir = `--git-dir=${clone}`;
-          await this.assertKnownCommit(context, gitDir, commit);
-          // The trailing slash names the folder's contents; without it Git lists the entry itself.
-          const listed = await this.git(
-            context,
-            [
-              '--literal-pathspecs',
-              gitDir,
-              'ls-tree',
-              '-r',
-              '-l',
-              '-z',
-              commit,
-              '--',
-              `${directory}/`,
-            ],
-            undefined,
-            TREE_OUTPUT_LIMIT_BYTES,
-          );
-          if (listed.exitCode !== 0 && !listed.stdoutCut) {
-            throw new GitOperationError('unknown', redactGitOutput(listed.stderr));
-          }
-          return parseTree(listed.stdout, listed.stdoutCut, maxEntries);
-        });
-      }),
-    );
+        return parseTree(listed.stdout, listed.stdoutCut, maxEntries);
+      });
+    });
   }
 
   async readFilesAtCommit(
@@ -1027,70 +1028,77 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
       throw new GitRequestRejectedError('The commit id is not a full commit id.');
     }
     this.paths.clone(projectId);
-    return this.guarded('cat-file', () =>
-      this.queued(projectId, this.settings.fetchTimeoutMs, options, async (options) => {
-        const clone = await this.paths.existingClone(projectId);
-        if (!clone) {
-          throw new GitCloneMissingError();
+    return this.guarded('cat-file', async () => {
+      const clone = await this.paths.existingClone(projectId);
+      if (!clone) {
+        throw new GitCloneMissingError();
+      }
+      return this.withOperation(this.readTimeoutMs(), options, async (context) => {
+        const gitDir = `--git-dir=${clone}`;
+        await this.assertKnownCommit(context, gitDir, commit);
+        const safe = [
+          ...new Set(paths.filter((path) => environmentFilePathProblem(path) === null)),
+        ];
+        const regular = new Map<string, TreeEntry>();
+        for (let from = 0; from < safe.length; from += READ_BATCH_PATHS) {
+          const listed = await this.git(
+            context,
+            [
+              '--literal-pathspecs',
+              gitDir,
+              'ls-tree',
+              '-l',
+              '-z',
+              commit,
+              '--',
+              ...safe.slice(from, from + READ_BATCH_PATHS),
+            ],
+            undefined,
+            LIST_OUTPUT_LIMIT_BYTES,
+          );
+          if (listed.exitCode !== 0) {
+            throw new GitOperationError('unknown', redactGitOutput(listed.stderr));
+          }
+          for (const entry of parseTreeEntries(listed.stdout)) {
+            if (entry.regular) regular.set(entry.path, entry);
+          }
         }
-        return this.withOperation(this.settings.fetchTimeoutMs, options, async (context) => {
-          const gitDir = `--git-dir=${clone}`;
-          await this.assertKnownCommit(context, gitDir, commit);
-          const safe = [
-            ...new Set(paths.filter((path) => environmentFilePathProblem(path) === null)),
-          ];
-          const regular = new Map<string, TreeEntry>();
-          for (let from = 0; from < safe.length; from += READ_BATCH_PATHS) {
-            const listed = await this.git(
+        const reads: CommitFileRead[] = [];
+        for (const path of paths) {
+          const entry = regular.get(path);
+          if (!entry) {
+            reads.push({ path, outcome: { status: 'missing' } });
+          } else if (entry.size > maxBytes) {
+            reads.push({ path, outcome: { status: 'too_large' } });
+          } else {
+            // `cat-file blob` applies no filter, textconv or attribute: the stored bytes.
+            const blob = await this.git(
               context,
-              [
-                '--literal-pathspecs',
-                gitDir,
-                'ls-tree',
-                '-l',
-                '-z',
-                commit,
-                '--',
-                ...safe.slice(from, from + READ_BATCH_PATHS),
-              ],
+              [gitDir, 'cat-file', 'blob', entry.object],
               undefined,
-              LIST_OUTPUT_LIMIT_BYTES,
+              maxBytes,
             );
-            if (listed.exitCode !== 0) {
-              throw new GitOperationError('unknown', redactGitOutput(listed.stderr));
-            }
-            for (const entry of parseTreeEntries(listed.stdout)) {
-              if (entry.regular) regular.set(entry.path, entry);
-            }
-          }
-          const reads: CommitFileRead[] = [];
-          for (const path of paths) {
-            const entry = regular.get(path);
-            if (!entry) {
-              reads.push({ path, outcome: { status: 'missing' } });
-            } else if (entry.size > maxBytes) {
+            if (blob.stdoutCut) {
               reads.push({ path, outcome: { status: 'too_large' } });
+            } else if (blob.exitCode !== 0) {
+              throw new GitOperationError('unknown', redactGitOutput(blob.stderr));
             } else {
-              // `cat-file blob` applies no filter, textconv or attribute: the stored bytes.
-              const blob = await this.git(
-                context,
-                [gitDir, 'cat-file', 'blob', entry.object],
-                undefined,
-                maxBytes,
-              );
-              if (blob.stdoutCut) {
-                reads.push({ path, outcome: { status: 'too_large' } });
-              } else if (blob.exitCode !== 0) {
-                throw new GitOperationError('unknown', redactGitOutput(blob.stderr));
-              } else {
-                reads.push({ path, outcome: { status: 'found', text: blob.stdout } });
-              }
+              reads.push({ path, outcome: { status: 'found', text: blob.stdout } });
             }
           }
-          return reads;
-        });
-      }),
-    );
+        }
+        return reads;
+      });
+    });
+  }
+
+  /**
+   * Reads of a fixed commit (a tree, some files) take no per-project lock: they only read objects
+   * Git never rewrites, so they may run beside a fetch, and a fetch is not delayed by them. They get
+   * their own short budget instead of waiting up to a fetch's.
+   */
+  private readTimeoutMs(): number {
+    return Math.min(READ_TIMEOUT_MS, this.settings.fetchTimeoutMs);
   }
 
   private async assertKnownCommit(

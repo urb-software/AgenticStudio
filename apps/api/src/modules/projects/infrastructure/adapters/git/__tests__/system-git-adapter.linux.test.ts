@@ -428,6 +428,33 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
       );
     });
 
+    it('reads a tree and files while a fetch holds the project lock', async () => {
+      const source = createFixture(
+        fixtures,
+        'agents-locked',
+        { 'agents/a/AGENT.md': 'alpha\n' },
+        { branch: 'dev' },
+      );
+      const git = adapter();
+      const { commit } = await git.clone(PROJECT_ID, source.url, 'dev');
+      let release: () => void = () => undefined;
+      const held = new Promise<void>((resolve) => (release = resolve));
+      // The lock a running fetch or clone holds, taken by hand.
+      const lock = (
+        git as unknown as { exclusive(id: string, work: () => Promise<void>): Promise<void> }
+      ).exclusive(PROJECT_ID, () => held);
+      try {
+        const listed = await git.listTreeAtCommit(PROJECT_ID, commit, 'agents', 10);
+        const read = await git.readFilesAtCommit(PROJECT_ID, commit, ['agents/a/AGENT.md'], 100);
+
+        expect(listed.entries).toHaveLength(1);
+        expect(read[0]!.outcome).toEqual({ status: 'found', text: 'alpha\n' });
+      } finally {
+        release();
+        await lock;
+      }
+    });
+
     describe('archiving a commit', () => {
       const archiveFolder = () => join(tempRoot, 'preview-archives');
 

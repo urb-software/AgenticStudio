@@ -79,6 +79,12 @@ const UNAVAILABLE_NOTES: Record<DefinitionsUnavailable, string> = {
   failed: 'The Clone of the Repository could not be read.',
 };
 
+/** Commits whose judged list is kept. */
+const MEMOISED_COMMITS = 4;
+
+type ReadOk = { status: 'read'; agents: AgentView[]; truncated: boolean };
+type Read = ReadOk | { status: DefinitionsUnavailable };
+
 const builtIns = (name: string | undefined) =>
   BUILT_IN_AGENTS.filter((agent) => name === undefined || agent.name === name);
 
@@ -89,6 +95,8 @@ const builtIns = (name: string | undefined) =>
  */
 @Injectable()
 export class ReadAgentsHandler {
+  private readonly memo = new Map<string, ReadOk>();
+
   constructor(@Inject(DEFINITIONS_FILES) private readonly definitions: DefinitionsFiles) {}
 
   async execute(input: ReadAgentsInput = {}): Promise<ReadAgentsResult> {
@@ -109,7 +117,7 @@ export class ReadAgentsHandler {
         `${stateNote ?? UNAVAILABLE_NOTES.repository_not_ready} No agents are read from it yet.`,
       );
     }
-    const read = await this.readDefinitions(snapshot.commit, name);
+    const read = await this.readMemoised(snapshot.commit, name);
     if (read.status !== 'read') return unread(UNAVAILABLE_NOTES[read.status]);
     return {
       commit: snapshot.commit,
@@ -122,12 +130,30 @@ export class ReadAgentsHandler {
     };
   }
 
-  private async readDefinitions(
-    commit: string,
-    name: string | undefined,
-  ): Promise<
-    { status: 'read'; agents: AgentView[]; truncated: boolean } | { status: DefinitionsUnavailable }
-  > {
+  /**
+   * What a commit holds never changes, so the judged list of a commit is kept for the next
+   * requests (a page refetching on focus starts no Git process); a new commit is a new key. The
+   * four latest commits asked for are kept.
+   */
+  private async readMemoised(commit: string, name: string | undefined): Promise<Read> {
+    let all = this.memo.get(commit);
+    if (all) {
+      this.memo.delete(commit);
+    } else {
+      const read = await this.readDefinitions(commit, undefined);
+      if (read.status !== 'read') return read;
+      all = read;
+    }
+    this.memo.set(commit, all);
+    while (this.memo.size > MEMOISED_COMMITS) this.memo.delete(this.memo.keys().next().value!);
+    if (name === undefined) return all;
+    const found = all.agents.filter((agent) => agent.name === name);
+    // A folder beyond the listed ones is read by itself.
+    if (found.length === 0 && all.truncated) return this.readDefinitions(commit, name);
+    return { status: 'read', agents: found, truncated: all.truncated };
+  }
+
+  private async readDefinitions(commit: string, name: string | undefined): Promise<Read> {
     const tree = await this.definitions.listTree(commit);
     if (tree.status !== 'listed') return tree;
 

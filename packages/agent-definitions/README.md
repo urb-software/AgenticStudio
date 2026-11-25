@@ -6,7 +6,7 @@ The format of an Agent definition and its validation. One pure package, shared b
 
 - An agent is the folder `agents/<name>/` of the definitions Repository. The entry file is `agents/<name>/AGENT.md`. The top-level `skills/` folder is reserved and ignored, and so is anything else outside `agents/`.
 - `AGENT.md` is UTF-8 text: YAML front matter between two `---` lines, then the instructions in Markdown.
-- Required keys: `name` (matches `AGENT_NAME_PATTERN`, equals the folder name and is not one of `RESERVED_AGENT_NAMES`, the built-in Default agents: `name_reserved`), `description` (one line of 1 to 500 characters, no control character) and `provider` (one of `PROVIDERS`). Optional: `model`, default `default`, which must be in `PROVIDER_MODELS[provider]`.
+- Required keys: `name` (matches `AGENT_NAME_PATTERN`, equals the folder name and is not one of `RESERVED_AGENT_NAMES`, the names Studio keeps: the built-in Default agents and `definitions-repository`: `name_reserved`), `description` (one line of 1 to 500 characters, no control character) and `provider` (one of `PROVIDERS`). Optional: `model`, default `default`, which must be in `PROVIDER_MODELS[provider]`.
 - Any other key is `unknown_key`. A key that asks for tools, permissions, hooks, MCP servers, memory or isolation is `forbidden_key` (`FORBIDDEN_KEYS`).
 - Limits (`limits.ts`): instructions 64 KiB, front matter 8 KiB, 100 files, 1 MiB per file, 5 MiB in total.
 - Refused paths: absolute, `..`, empty and backslash segments, 8.3 short names (`short_name`, such as `PROGRA~1`), `.git` and its lookalikes, symbolic links and other non-file kinds, two paths that differ only in case.

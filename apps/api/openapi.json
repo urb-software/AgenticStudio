@@ -961,7 +961,7 @@
     },
     "/api/agents": {
       "get": {
-        "description": "The agents Studio knows: a built-in Default agent per Provider, then the folders of the definitions Repository at its last fetched commit, each with its problems and whether it is usable. Computed on each request. Also the base rules every Run starts with.",
+        "description": "The agents Studio knows: a built-in Default agent per Provider, then the folders of the definitions Repository at its last fetched commit, each with its problems and whether it is usable. Computed on each request. Also the base rules every Run starts with. Rows are unique by `source` and `name`, not by `name` alone: a folder named like a built-in agent is listed as refused beside it.",
         "operationId": "listAgents",
         "parameters": [],
         "responses": {
@@ -994,7 +994,7 @@
     },
     "/api/agents/{name}": {
       "get": {
-        "description": "One agent with its instructions (plain text) and the files of its folder with their sizes, read at the last fetched commit of the definitions Repository.",
+        "description": "One agent with its instructions (plain text) and the files of its folder with their sizes, read at the last fetched commit of the definitions Repository. A name that a built-in agent has always answers the built-in one (rows are unique by `source` and `name`).",
         "operationId": "getAgent",
         "parameters": [
           {
@@ -3846,7 +3846,8 @@
         "type": "object",
         "properties": {
           "name": {
-            "type": "string"
+            "type": "string",
+            "description": "Unique together with `source`: a built-in and a refused folder can share a name."
           },
           "description": {
             "description": "Null for an agent that is not usable.",
@@ -4028,7 +4029,8 @@
         "type": "object",
         "properties": {
           "name": {
-            "type": "string"
+            "type": "string",
+            "description": "Unique together with `source`: a built-in and a refused folder can share a name."
           },
           "description": {
             "description": "Null for an agent that is not usable.",

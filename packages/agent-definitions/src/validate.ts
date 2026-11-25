@@ -189,7 +189,9 @@ function judgeEntry(
   const path = AGENT_ENTRY_FILE;
   const text = entry.content;
   if (text === undefined || text.includes('�') || text.includes('\u0000')) {
-    problems.push(problem('entry_unreadable', path));
+    // An entry file over the size limit is never read: the size problem already says it.
+    const tooLarge = problems.some((item) => item.code === 'file_too_large' && item.path === path);
+    if (!tooLarge) problems.push(problem('entry_unreadable', path));
     return undefined;
   }
   const parsed = parseEntry(text);

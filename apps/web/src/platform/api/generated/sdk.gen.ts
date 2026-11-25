@@ -119,12 +119,12 @@ export const setMergeMethod = <ThrowOnError extends boolean = false>(options: Op
 export const getDefinitionsRepository = <ThrowOnError extends boolean = false>(options?: Options<GetDefinitionsRepositoryData, ThrowOnError>): RequestResult<GetDefinitionsRepositoryResponses, GetDefinitionsRepositoryErrors, ThrowOnError> => (options?.client ?? client).get<GetDefinitionsRepositoryResponses, GetDefinitionsRepositoryErrors, ThrowOnError>({ url: '/api/agents/definitions-repository', ...options });
 
 /**
- * The agents Studio knows: a built-in Default agent per Provider, then the folders of the definitions Repository at its last fetched commit, each with its problems and whether it is usable. Computed on each request. Also the base rules every Run starts with.
+ * The agents Studio knows: a built-in Default agent per Provider, then the folders of the definitions Repository at its last fetched commit, each with its problems and whether it is usable. Computed on each request. Also the base rules every Run starts with. Rows are unique by `source` and `name`, not by `name` alone: a folder named like a built-in agent is listed as refused beside it.
  */
 export const listAgents = <ThrowOnError extends boolean = false>(options?: Options<ListAgentsData, ThrowOnError>): RequestResult<ListAgentsResponses, ListAgentsErrors, ThrowOnError> => (options?.client ?? client).get<ListAgentsResponses, ListAgentsErrors, ThrowOnError>({ url: '/api/agents', ...options });
 
 /**
- * One agent with its instructions (plain text) and the files of its folder with their sizes, read at the last fetched commit of the definitions Repository.
+ * One agent with its instructions (plain text) and the files of its folder with their sizes, read at the last fetched commit of the definitions Repository. A name that a built-in agent has always answers the built-in one (rows are unique by `source` and `name`).
  */
 export const getAgent = <ThrowOnError extends boolean = false>(options: Options<GetAgentData, ThrowOnError>): RequestResult<GetAgentResponses, GetAgentErrors, ThrowOnError> => (options.client ?? client).get<GetAgentResponses, GetAgentErrors, ThrowOnError>({ url: '/api/agents/{name}', ...options });
 

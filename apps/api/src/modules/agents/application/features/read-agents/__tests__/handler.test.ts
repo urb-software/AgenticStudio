@@ -88,7 +88,9 @@ describe('ReadAgentsHandler', () => {
 
       const { agents } = await handler.execute();
 
-      expect(agents.map((agent) => agent.name).sort()).toEqual([...RESERVED_AGENT_NAMES].sort());
+      expect(agents.map((agent) => agent.name).sort()).toEqual(
+        RESERVED_AGENT_NAMES.filter((reserved) => reserved.startsWith('default-')).sort(),
+      );
     });
 
     it('can be read one by one', async () => {
@@ -205,9 +207,7 @@ describe('ReadAgentsHandler', () => {
 
       expect(codes('a-empty')).toEqual(['entry_missing']);
       expect(codes('b-binary')).toEqual(['entry_unreadable']);
-      expect(codes('c-big')).toEqual(
-        expect.arrayContaining(['file_too_large', 'entry_unreadable']),
-      );
+      expect(codes('c-big')).toEqual(['file_too_large']);
     });
 
     it('lists at most 200 agent folders and says so', async () => {
@@ -351,5 +351,57 @@ describe('ReadAgentsHandler', () => {
 
     expect(second.commit).toBe(next);
     expect(fake.listTree).toHaveBeenLastCalledWith(next);
+  });
+
+  describe('the memo of judged lists', () => {
+    const at = (commit: string) => ({ state: 'ready' as const, commit });
+    const one = () =>
+      scripted({
+        tree: listed(file('agents/a/AGENT.md')),
+        files: { 'agents/a/AGENT.md': VALID('a') },
+      });
+
+    it('starts no read at a commit it has judged, for the list or for one agent', async () => {
+      const { handler, fake } = one();
+
+      const first = await handler.execute();
+      const again = await handler.execute();
+      const detail = await handler.execute({ name: 'a' });
+
+      expect(again).toEqual(first);
+      expect(detail.agents.map((agent) => agent.name)).toEqual(['a']);
+      expect(fake.listTree).toHaveBeenCalledTimes(1);
+      expect(fake.readFiles).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the four latest commits, the least recently used going first', async () => {
+      const { handler, fake } = one();
+      const commits = ['1', '2', '3', '4', '5'].map((digit) => digit.repeat(40));
+      for (const commit of commits.slice(0, 4)) {
+        fake.snapshot.mockResolvedValueOnce(at(commit));
+        await handler.execute();
+      }
+      fake.snapshot.mockResolvedValueOnce(at(commits[0]!));
+      await handler.execute();
+      fake.snapshot.mockResolvedValueOnce(at(commits[4]!));
+      await handler.execute();
+      expect(fake.listTree).toHaveBeenCalledTimes(5);
+
+      fake.snapshot.mockResolvedValueOnce(at(commits[0]!));
+      await handler.execute();
+      expect(fake.listTree).toHaveBeenCalledTimes(5);
+      fake.snapshot.mockResolvedValueOnce(at(commits[1]!));
+      await handler.execute();
+      expect(fake.listTree).toHaveBeenCalledTimes(6);
+    });
+
+    it('keeps nothing of a read that failed', async () => {
+      const { handler, fake } = scripted({ tree: { status: 'failed' } });
+
+      await handler.execute();
+      await handler.execute();
+
+      expect(fake.listTree).toHaveBeenCalledTimes(2);
+    });
   });
 });

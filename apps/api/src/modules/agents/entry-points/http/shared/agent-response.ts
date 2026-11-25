@@ -20,7 +20,9 @@ const problemSchema = z
 /** What the list shows of one agent, and the first part of the detail. */
 export const agentSummarySchema = z
   .object({
-    name: z.string(),
+    name: z
+      .string()
+      .describe('Unique together with `source`: a built-in and a refused folder can share a name.'),
     description: z.string().nullable().describe('Null for an agent that is not usable.'),
     provider: z.enum(PROVIDERS).nullable().describe('Null for an agent that is not usable.'),
     model: z.string().nullable().describe('Null for an agent that is not usable.'),

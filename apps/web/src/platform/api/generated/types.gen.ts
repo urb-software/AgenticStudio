@@ -154,6 +154,9 @@ export type AgentsRepositoryOutput = {
 };
 
 export type AgentSummaryOutput = {
+    /**
+     * Unique together with `source`: a built-in and a refused folder can share a name.
+     */
     name: string;
     /**
      * Null for an agent that is not usable.
@@ -221,6 +224,9 @@ export type AgentListOutput = {
 };
 
 export type AgentDetailAgentOutput = {
+    /**
+     * Unique together with `source`: a built-in and a refused folder can share a name.
+     */
     name: string;
     /**
      * Null for an agent that is not usable.

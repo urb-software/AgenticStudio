@@ -179,6 +179,11 @@ export const FAILING: Record<string, Fixture> = {
     entries: [entryFile('name: default-codex\ndescription: d\nprovider: codex')],
     expected: ['name_reserved@'],
   },
+  'name_reserved (the agents route)': {
+    folder: 'definitions-repository',
+    entries: [entryFile('name: definitions-repository\ndescription: d\nprovider: codex')],
+    expected: ['name_reserved@'],
+  },
   name_mismatch: {
     folder: 'planner',
     entries: [valid()],
@@ -216,6 +221,11 @@ export const FAILING: Record<string, Fixture> = {
     folder: 'reviewer',
     entries: [valid(), binary('assets/big.bin', 1024 * 1024 + 1)],
     expected: ['file_too_large@assets/big.bin'],
+  },
+  'file_too_large (the entry file, never read)': {
+    folder: 'reviewer',
+    entries: [binary('AGENT.md', 1024 * 1024 + 1)],
+    expected: ['file_too_large@AGENT.md'],
   },
   folder_too_large: {
     folder: 'reviewer',

@@ -18,7 +18,9 @@ export class ListAgentsEndpoint {
     description:
       'The agents Studio knows: a built-in Default agent per Provider, then the folders of the ' +
       'definitions Repository at its last fetched commit, each with its problems and whether it ' +
-      'is usable. Computed on each request. Also the base rules every Run starts with.',
+      'is usable. Computed on each request. Also the base rules every Run starts with. Rows are ' +
+      'unique by `source` and `name`, not by `name` alone: a folder named like a built-in agent is ' +
+      'listed as refused beside it.',
   })
   @ZodResponse({ status: 200, type: AgentListResponseDto })
   async list() {
