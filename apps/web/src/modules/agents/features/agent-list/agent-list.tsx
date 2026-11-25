@@ -2,6 +2,7 @@
 
 import { useId, useState } from 'react';
 import { RefreshCwIcon, TriangleAlertIcon } from 'lucide-react';
+import Link from 'next/link';
 import { Badge } from '@/shared/components/badge';
 import { Banner } from '@/shared/components/banner';
 import { EmptyState } from '@/shared/components/empty-state';
@@ -26,6 +27,11 @@ function readRequestOf(error: unknown): string {
   if (!(error instanceof ApiError) || error.status === 0) return READ_REQUEST;
   const status = [error.status, error.problem?.title].filter(Boolean).join(' ');
   return `${READ_REQUEST} · ${status}`;
+}
+
+/** The editor on the agent's entry file. */
+function editorHref(name: string): string {
+  return `/agents/editor?${new URLSearchParams({ path: `agents/${name}/AGENT.md` })}`;
 }
 
 function shortSha(sha: string): string {
@@ -66,9 +72,16 @@ function AgentRow({
           </span>
         )}
         {/* A reserved name is judged here only: the API answers another route for it. */}
+        {openable && agent.source === 'definitions' ? (
+          <Button asChild className="ml-auto">
+            <Link href={editorHref(agent.name)}>
+              Open in editor<span className="sr-only"> ({agent.name})</span>
+            </Link>
+          </Button>
+        ) : null}
         {openable ? (
           <Button
-            className="ml-auto"
+            className={agent.source === 'definitions' ? undefined : 'ml-auto'}
             aria-expanded={open}
             aria-controls={open ? detailId : undefined}
             aria-label={`${open ? 'Hide' : 'Show'} ${agent.name}`}

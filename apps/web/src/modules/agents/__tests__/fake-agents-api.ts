@@ -1,6 +1,8 @@
 import { vi } from 'vitest';
 import type {
   AgentDetailOutput,
+  AgentFileOutput,
+  AgentFilesOutput,
   AgentListOutput,
   AgentSummaryOutput,
   ProblemDetails,
@@ -75,24 +77,30 @@ const REPOSITORY = /^\/api\/projects\/([^/]+)\/repository(\/fetch)?$/;
  */
 export function fakeAgentsApi(
   initial: { repository: RepositoryOutput | null } | null,
-  agents: { list?: AgentListOutput; details?: Record<string, AgentDetailOutput> } = {},
+  agents: {
+    list?: AgentListOutput;
+    details?: Record<string, AgentDetailOutput>;
+    /** The definitions Repository's files: the tree and each file's content by path. */
+    files?: { tree: AgentFilesOutput; contents?: Record<string, AgentFileOutput> };
+  } = {},
 ) {
   let list = agents.list ?? agentList();
   const details = { ...agents.details };
+  let files = agents.files;
   let project: ProjectOutput | null = initial ? DEFINITIONS_PROJECT : null;
   let repository: RepositoryOutput | null = initial?.repository ?? null;
-  const calls: { method: string; path: string; body?: unknown }[] = [];
+  const calls: { method: string; path: string; search: string; body?: unknown }[] = [];
   const scripted: { status: number; body: unknown }[] = [];
   const listFailures: { status: number; body: unknown }[] = [];
   const detailFailures: { status: number; body: unknown }[] = [];
   const gates: { list?: Promise<void>; detail?: Promise<void> } = {};
 
   const fetch = vi.fn(async (request: Request): Promise<Response> => {
-    const { pathname } = new URL(request.url);
+    const { pathname, search } = new URL(request.url);
     // A body-less POST (the fetch command) has no JSON to read.
     const text = request.method === 'POST' || request.method === 'PUT' ? await request.text() : '';
     const body: unknown = text ? JSON.parse(text) : undefined;
-    calls.push({ method: request.method, path: pathname, body });
+    calls.push({ method: request.method, path: pathname, search, body });
     const response = request.method === 'GET' ? scripted.shift() : undefined;
     if (response) return json(response.status, response.body);
 
@@ -108,6 +116,14 @@ export function fakeAgentsApi(
       if (failure) return json(failure.status, failure.body);
       const found = details[decodeURIComponent(detail[1] ?? '')];
       return found ? json(200, found) : json(404, problem(404, 'Unknown agent'));
+    }
+    if (pathname === '/api/agents/definitions-repository/files') {
+      return files ? json(200, files.tree) : json(404, problem(404, 'No files'));
+    }
+    if (pathname === '/api/agents/definitions-repository/files/content') {
+      const path = new URL(request.url).searchParams.get('path') ?? '';
+      const found = files?.contents?.[path];
+      return found ? json(200, found) : json(404, problem(404, 'No such file'));
     }
     if (pathname === '/api/agents/definitions-repository') {
       return json(200, {
@@ -184,6 +200,10 @@ export function fakeAgentsApi(
         };
       });
       return release;
+    },
+    /** The files the next reads answer, as after a fetch brought new commits. */
+    setFiles(next: { tree: AgentFilesOutput; contents?: Record<string, AgentFileOutput> }) {
+      files = next;
     },
     /** The next read of the agent list fails with this response. */
     failNextList(status: number, body: unknown) {

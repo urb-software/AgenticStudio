@@ -3,6 +3,8 @@
 import * as sdk from './generated';
 import type {
   AgentDetailOutput,
+  AgentFileOutput,
+  AgentFilesOutput,
   AgentListOutput,
   AgentWorkerOutput,
   AnswerRunRequest,
@@ -65,6 +67,9 @@ import {
 
 export type {
   AgentDetailOutput,
+  AgentFileEntryOutput,
+  AgentFileOutput,
+  AgentFilesOutput,
   AgentListOutput,
   AgentProblemOutput,
   AgentSummaryOutput,
@@ -280,6 +285,9 @@ export const api = {
     unwrap(sdk.getDefinitionsRepository()),
   listAgents: (): Promise<AgentListOutput> => unwrap(sdk.listAgents()),
   getAgent: (name: string): Promise<AgentDetailOutput> => unwrap(sdk.getAgent({ path: { name } })),
+  listAgentFiles: (): Promise<AgentFilesOutput> => unwrap(sdk.listAgentFiles()),
+  getAgentFile: (path: string, commit?: string): Promise<AgentFileOutput> =>
+    unwrap(sdk.getAgentFile({ query: { path, commit } })),
   getProject: (id: string): Promise<ProjectDetailOutput> =>
     unwrap(sdk.getProject({ path: { id } })),
   getRepository: (projectId: string): Promise<RepositoryOutput> =>

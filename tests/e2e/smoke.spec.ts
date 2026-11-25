@@ -1405,3 +1405,107 @@ test(RUN_TEST, async ({ page }, testInfo) => {
   await expect(pullRequestCard).toContainText('The Run branch was deleted');
   await expect.poll(async () => (await readRun()).latestMergeApproval?.result).toBe('carried_out');
 });
+
+// Story #306 (the read-only editor): the agent editor opens a definitions file in Monaco, which
+// is bundled with the app (no request leaves the Studio's origin), cannot change the text,
+// moves to a problem's line, and passes axe in both themes. The three API reads that the editor
+// makes are answered in the browser: the content of a definitions Repository is not what this
+// test is about, and it needs no Repository (so it also runs where Repository features do not).
+test('the agent editor shows a definitions file in a bundled, read-only Monaco', async ({
+  page,
+}) => {
+  const sha = '0123456789abcdef0123456789abcdef01234567';
+  const repository = { state: 'ready', note: null };
+  const agentMd = ['---', 'name: reviewer', 'provider: nope', 'model: opus', '---', 'Review.'];
+  const entry = (path: string, agent: string | null) => ({
+    path,
+    kind: 'file',
+    size: 40,
+    openable: true,
+    agent,
+  });
+  const json = { contentType: 'application/json' };
+  await page.route('**/api/agents', (route) =>
+    route.fulfill({
+      ...json,
+      body: JSON.stringify({
+        commit: sha,
+        repository,
+        truncated: false,
+        baseRules: { version: 'e2e', text: 'Rules.' },
+        agents: [
+          {
+            name: 'reviewer',
+            description: null,
+            provider: null,
+            model: null,
+            source: 'definitions',
+            usable: false,
+            problems: [
+              {
+                code: 'provider_unknown',
+                path: 'AGENT.md',
+                key: 'provider',
+                message: 'The provider is not one Studio knows.',
+              },
+            ],
+          },
+        ],
+      }),
+    }),
+  );
+  await page.route('**/api/agents/definitions-repository/files', (route) =>
+    route.fulfill({
+      ...json,
+      body: JSON.stringify({
+        commit: sha,
+        repository,
+        truncated: false,
+        entries: [entry('agents/reviewer/AGENT.md', 'reviewer'), entry('README.md', null)],
+      }),
+    }),
+  );
+  await page.route(/\/api\/agents\/definitions-repository\/files\/content\?/, (route) => {
+    const path = new URL(route.request().url()).searchParams.get('path');
+    const content = path === 'README.md' ? '# Agents\n' : agentMd.join('\n');
+    return route.fulfill({
+      ...json,
+      body: JSON.stringify({ commit: sha, path, kind: 'text', content }),
+    });
+  });
+  const foreign: string[] = [];
+  const own = new URL(test.info().project.use.baseURL ?? 'http://localhost').origin;
+  page.on('request', (request) => {
+    const url = new URL(request.url());
+    if (url.protocol.startsWith('http') && url.origin !== own) foreign.push(request.url());
+  });
+
+  await signIn(page);
+  await page.goto('/agents/editor?path=agents%2Freviewer%2FAGENT.md');
+  const editor = page.locator('.monaco-editor');
+  await expect(editor).toBeVisible();
+  await expect(editor.locator('.view-lines')).toContainText('provider: nope');
+
+  // Read-only: typing changes nothing.
+  await editor.locator('.view-lines').click();
+  await page.keyboard.type('zzz');
+  await expect(editor.locator('.view-lines')).not.toContainText('zzz');
+
+  // A problem with a front matter key moves to that key's line.
+  await page.getByRole('button', { name: /provider/ }).click();
+  await expect(editor.locator('.line-numbers.active-line-number')).toHaveText('3');
+
+  // The file tree on a desktop, the chooser on a phone.
+  if ((page.viewportSize()?.width ?? 0) < 768) {
+    await page.getByRole('combobox', { name: 'File' }).selectOption('README.md');
+  } else {
+    await page
+      .getByRole('navigation', { name: 'Files' })
+      .getByRole('button', { name: 'README.md' })
+      .click();
+  }
+  await expect(editor.locator('.view-lines')).toContainText('# Agents');
+
+  await expectInBothThemes(page, editor);
+  expect(foreign, 'a request left the Studio origin').toEqual([]);
+});
