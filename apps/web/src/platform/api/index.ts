@@ -2,6 +2,8 @@
 // rewrites them to the API, so no CORS. The session is an HttpOnly cookie: no code here reads it.
 import * as sdk from './generated';
 import type {
+  AgentDetailOutput,
+  AgentListOutput,
   AgentWorkerOutput,
   AnswerRunRequest,
   BringUpToDateRequest,
@@ -60,6 +62,10 @@ import {
 } from './generated/zod.gen';
 
 export type {
+  AgentDetailOutput,
+  AgentListOutput,
+  AgentProblemOutput,
+  AgentSummaryOutput,
   AgentWorkerDiskOutput,
   AgentWorkerOutput,
   AnswerRunRequest,
@@ -266,6 +272,8 @@ export const api = {
     unwrap(sdk.createProject({ body })),
   getDefinitionsRepository: (): Promise<DefinitionsRepositoryOutput> =>
     unwrap(sdk.getDefinitionsRepository()),
+  listAgents: (): Promise<AgentListOutput> => unwrap(sdk.listAgents()),
+  getAgent: (name: string): Promise<AgentDetailOutput> => unwrap(sdk.getAgent({ path: { name } })),
   getProject: (id: string): Promise<ProjectDetailOutput> =>
     unwrap(sdk.getProject({ path: { id } })),
   getRepository: (projectId: string): Promise<RepositoryOutput> =>
