@@ -712,9 +712,9 @@ describe('choosing an agent for a Run (PostgreSQL + Redis via Testcontainers)', 
       expect((await claim()).status).toBe(200);
 
       for (const extra of [`&agent=other`, `&commit=${'a'.repeat(40)}`, '&path=x']) {
-        expectProblem(await workerGet(created.body.id, `${folderQuery()}${extra}`), 422);
+        expectProblem(await workerGet(created.body.id, `${folderQuery()}${extra}`), 400);
       }
-      expectProblem(await workerGet(created.body.id, ''), 422);
+      expectProblem(await workerGet(created.body.id, ''), 400);
     });
 
     it('needs the worker token, and no session or other token reaches it', async () => {
