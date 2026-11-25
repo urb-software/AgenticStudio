@@ -1701,12 +1701,12 @@ test('the agent editor publishes a saved Draft and reads the new commit', async 
   await expect.poll(() => draft.files.size).toBe(1);
   const publish = page.getByRole('button', { name: 'Publish', exact: true });
   await expect(publish).toBeEnabled();
+  await expectInBothThemes(page, publish);
   await publish.click();
 
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('navigation', { name: 'Changed files' })).toContainText('Modified');
   await expect(dialog.locator('.monaco-diff-editor')).toBeVisible();
-  await expectInBothThemes(page, dialog);
   await dialog.getByLabel('Commit message').fill('Describe the reviewer');
   await dialog.getByRole('button', { name: 'Publish', exact: true }).click();
 
