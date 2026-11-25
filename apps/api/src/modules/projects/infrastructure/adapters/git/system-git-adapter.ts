@@ -9,6 +9,7 @@ import { parseSshHostKey } from '../../../../../platform/config/ssh-known-hosts.
 import {
   type CommitArchive,
   type CommitArchiveOutcome,
+  type CommitBlobRead,
   type CommitFileOutcome,
   type CommitFileRead,
   type CommitTree,
@@ -266,6 +267,12 @@ function parseTreeEntries(output: string): TreeEntry[] {
 const UTF8 = new TextDecoder('utf-8', { fatal: true });
 
 /** A NUL byte, or bytes that are not UTF-8. */
+/** The stored bytes of a found blob; a read that kept none is an error, never an empty file. */
+export function blobBytes(raw: Buffer | undefined): Uint8Array {
+  if (raw === undefined) throw new GitOperationError('unknown', 'The blob bytes were not kept.');
+  return Uint8Array.from(raw);
+}
+
 function isBinary(bytes: Buffer | undefined): boolean {
   if (!bytes) return false;
   if (bytes.includes(0)) return true;
@@ -292,7 +299,12 @@ function parseTree(output: string, cut: boolean, maxEntries: number): CommitTree
     entries: entries.slice(0, maxEntries).map((entry) => {
       const kind = TREE_KINDS[entry.mode] ?? 'other';
       // A link's blob is its target path: its size is no file size.
-      return { path: entry.path, kind, size: kind === 'file' ? entry.size : 0 };
+      return {
+        path: entry.path,
+        kind,
+        size: kind === 'file' ? entry.size : 0,
+        ...(entry.mode === '100755' ? { executable: true } : {}),
+      };
     }),
     truncated: cut || entries.length > maxEntries,
   };
@@ -1039,6 +1051,36 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     maxBytes: number,
     options: GitOperationOptions = {},
   ): Promise<CommitFileRead[]> {
+    const reads = await this.readRaw(projectId, commit, paths, maxBytes, options);
+    return reads.map((read) => ({
+      path: read.path,
+      outcome: read.outcome,
+      size: read.size,
+      binary: read.binary,
+    }));
+  }
+
+  async readBlobsAtCommit(
+    projectId: string,
+    commit: string,
+    paths: readonly string[],
+    maxBytes: number,
+    options: GitOperationOptions = {},
+  ): Promise<CommitBlobRead[]> {
+    const reads = await this.readRaw(projectId, commit, paths, maxBytes, options);
+    return reads.map(({ path, outcome, raw }) => ({
+      path,
+      outcome: outcome.status === 'found' ? { status: 'found', bytes: blobBytes(raw) } : outcome,
+    }));
+  }
+
+  private async readRaw(
+    projectId: string,
+    commit: string,
+    paths: readonly string[],
+    maxBytes: number,
+    options: GitOperationOptions,
+  ): Promise<(CommitFileRead & { raw?: Buffer })[]> {
     this.assertSupportedPlatform();
     if (!COMMIT_ID.test(commit)) {
       throw new GitRequestRejectedError('The commit id is not a full commit id.');
@@ -1079,7 +1121,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
             if (entry.regular) regular.set(entry.path, entry);
           }
         }
-        const reads: CommitFileRead[] = [];
+        const reads: (CommitFileRead & { raw?: Buffer })[] = [];
         for (const path of paths) {
           const entry = regular.get(path);
           if (!entry) {
@@ -1109,6 +1151,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
                 outcome: { status: 'found', text: blob.stdout },
                 size: entry.size,
                 binary: isBinary(blob.stdoutRaw),
+                ...(blob.stdoutRaw ? { raw: blob.stdoutRaw } : {}),
               });
             }
           }

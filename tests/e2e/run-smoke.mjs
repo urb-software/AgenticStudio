@@ -41,12 +41,12 @@
 //    directories.
 import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { REVIEWER_FILE, runAgentPhase } from './agent-phase.mjs';
+import { REVIEWER_ASSET, REVIEWER_FILE, REVIEWER_SCRIPT, runAgentPhase } from './agent-phase.mjs';
 import { COMPOSE, runControllerPhase } from './controller-phase.mjs';
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
@@ -189,7 +189,10 @@ async function createAgentFixtures(root) {
     fixtureGit(work, ['checkout', '--quiet', '-b', 'dev']);
     for (const [path, content] of Object.entries(files)) {
       await mkdir(join(work, path, '..'), { recursive: true });
-      await writeFile(join(work, path), content);
+      // `{ executable }` is a file Git tracks as 100755.
+      const executable = typeof content === 'object' && !Buffer.isBuffer(content);
+      await writeFile(join(work, path), executable ? content.executable : content);
+      if (executable) await chmod(join(work, path), 0o755);
     }
     fixtureGit(work, ['add', '--all']);
     fixtureGit(work, ['commit', '--quiet', '-m', 'on dev']);
@@ -202,6 +205,8 @@ async function createAgentFixtures(root) {
   const code = await make('agent-code', { 'dev.txt': 'dev\n' });
   const definitions = await make('agent-definitions', {
     'agents/reviewer/AGENT.md': REVIEWER_FILE,
+    'agents/reviewer/scripts/check.sh': { executable: REVIEWER_SCRIPT },
+    'agents/reviewer/assets/logo.bin': REVIEWER_ASSET,
   });
   return {
     codeUrl: code.url,

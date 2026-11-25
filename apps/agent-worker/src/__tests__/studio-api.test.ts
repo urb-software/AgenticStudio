@@ -47,6 +47,45 @@ describe('StudioApi', () => {
     await expect(invalid.runStates([runId])).rejects.toThrow();
   });
 
+  it('fetches the agent folder of a Run with a GET that carries only the worker id', async () => {
+    const runId = '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b';
+    const answer = {
+      commit: 'a'.repeat(40),
+      files: [{ path: 'scripts/run.sh', executable: true, contentBase64: 'IyEvYmluL3NoCg==' }],
+    };
+    const { api, calls } = client(async () => Response.json(answer));
+
+    expect(await api.agentFolder(runId)).toEqual(answer);
+
+    expect(calls[0]?.url).toBe(
+      `http://studio.test/api/worker/runs/${runId}/agent-folder?workerId=${WORKER_ID}`,
+    );
+    expect(calls[0]?.init.method).toBe('GET');
+    expect(calls[0]?.init.body).toBeUndefined();
+    expect((calls[0]?.init.headers as Record<string, string>).Authorization).toBe(
+      `Bearer ${TOKEN}`,
+    );
+    const { api: invalid } = client(async () =>
+      Response.json({ commit: null, files: [{ path: 'a', executable: false, contentBase64: '' }] }),
+    );
+    await expect(invalid.agentFolder(runId)).rejects.toThrow();
+  });
+
+  it('keeps the problem type of a refused agent folder', async () => {
+    const runId = '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b';
+    const { api } = client(async () =>
+      Response.json(
+        { type: 'urn:agentic-studio:problem:agent-folder-unavailable' },
+        { status: 409 },
+      ),
+    );
+
+    await expect(api.agentFolder(runId)).rejects.toMatchObject({
+      status: 409,
+      problemType: 'urn:agentic-studio:problem:agent-folder-unavailable',
+    });
+  });
+
   it('reports removed Working copies with a states request', async () => {
     const runId = '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b';
     const { api, calls } = client(async () => Response.json([]));

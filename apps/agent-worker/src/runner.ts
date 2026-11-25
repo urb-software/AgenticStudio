@@ -20,6 +20,11 @@ export interface RunWorkspace {
   runDir: string;
   /** Variables the Run step's processes get, e.g. `COMPOSE_PROJECT_NAME`. */
   env: Record<string, string>;
+  /**
+   * The absolute path of the agent's files, rebuilt for this step, when the agent has any. It is
+   * named in the instructions and given to no CLI option: nothing loads it by itself.
+   */
+  agentFolder?: string | null;
 }
 
 export interface StartRunStepInput {

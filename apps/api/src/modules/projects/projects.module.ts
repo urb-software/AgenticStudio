@@ -17,6 +17,7 @@ import {
 } from './contracts/index.js';
 import { GetDefinitionsRepositoryStateHandler } from './application/features/get-definitions-repository-state/handler.js';
 import { ListDefinitionsTreeHandler } from './application/features/list-definitions-tree/handler.js';
+import { ReadDefinitionsBlobsHandler } from './application/features/read-definitions-blobs/handler.js';
 import { ReadDefinitionsFilesHandler } from './application/features/read-definitions-files/handler.js';
 import { ProjectDefinitionsFiles } from './entry-points/contracts/definitions-files.js';
 import { ProjectDefinitionsRepositories } from './entry-points/contracts/definitions-repositories.js';
@@ -272,6 +273,7 @@ export class ProjectsModule {
         { provide: DEFINITIONS_REPOSITORIES, useClass: ProjectDefinitionsRepositories },
         ListDefinitionsTreeHandler,
         ReadDefinitionsFilesHandler,
+        ReadDefinitionsBlobsHandler,
         { provide: DEFINITIONS_FILES, useClass: ProjectDefinitionsFiles },
         { provide: PROJECT_KINDS, useClass: ProjectProjectKinds },
         { provide: RUN_PREVIEW_SOURCES, useClass: ProjectRunPreviewSources },

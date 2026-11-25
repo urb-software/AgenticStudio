@@ -44,7 +44,10 @@ describe('ListDefinitionsTreeHandler', () => {
 
   it('lists the agents folder of the definitions Clone at the commit, within the bound', async () => {
     await connected();
-    const entries = [{ path: 'agents/a/AGENT.md', kind: 'file', size: 10 }] as const;
+    const entries = [
+      { path: 'agents/a/AGENT.md', kind: 'file', size: 10, executable: false },
+      { path: 'agents/a/run.sh', kind: 'file', size: 5, executable: true },
+    ] as const;
     git.listTreeAtCommit.mockResolvedValueOnce({ entries: [...entries], truncated: true });
 
     await expect(handler.execute({ commit: HEAD })).resolves.toEqual({

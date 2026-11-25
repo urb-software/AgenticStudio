@@ -25,8 +25,14 @@ import { type Backoff, ReportOutbox } from './report-outbox.js';
 import type { ComputedRunDiff, RunDiffPort, RunDiffReport } from './run-diff.js';
 import { RunDiffUnavailableError } from './run-diff.js';
 import { RunLog } from './run-log.js';
-import { composeProjectName, STEP_PROCESSES_FILE } from './run-layout.js';
+import { AGENT_DIRECTORY_NAME, composeProjectName, STEP_PROCESSES_FILE } from './run-layout.js';
 import type { RunResources } from './run-resources.js';
+import {
+  AgentFolderInvalidError,
+  AgentFolderTransientError,
+  AgentFolderUnavailableError,
+  type PlacedAgentFolder,
+} from './agent-folder.js';
 import { AgentFailedError, drainRunStep, type Runner, UsageLimitError } from './runner.js';
 import { StepProcesses } from './step-processes.js';
 import { isRunLost, type StudioApi } from './studio-api.js';
@@ -53,6 +59,12 @@ export type WorkerApi = Pick<
 /** The process groups of one Run step ({@link StepProcesses} in production). */
 export type StepProcessGroups = Pick<StepProcesses, 'register' | 'terminate' | 'release'>;
 
+/** The agent folder of a Run, rebuilt before every step ({@link AgentFolders} in production). */
+export interface AgentFolderPort {
+  /** Throws {@link AgentFolderUnavailableError} or {@link AgentFolderInvalidError}. */
+  place(run: RunPayload, dir: string, signal: AbortSignal): Promise<PlacedAgentFolder | null>;
+}
+
 export interface AgentWorkerOptions {
   api: WorkerApi;
   runner: Runner;
@@ -66,6 +78,11 @@ export interface AgentWorkerOptions {
   branchUpdates: BranchUpdatePort;
   diffs: RunDiffPort;
   resources: RunResources;
+  /**
+   * Rebuilds the Run's agent files in its directory before every Run step. Without it no agent
+   * files are placed.
+   */
+  agentFolders?: AgentFolderPort;
   /**
    * Answers Studio's pull request lookups in a loop of its own, whatever the worker is carrying,
    * and reads the pull request before a Follow-up starts. Without it neither happens.
@@ -245,6 +262,7 @@ export class AgentWorker {
       logger,
     });
     let prepared: PreparedRun | undefined;
+    let agentFolder: string | null = null;
     let processes: StepProcessGroups | undefined;
     /** Whether the end of the Follow-up the Run works on was logged already. */
     let followUpMarked = false;
@@ -323,6 +341,15 @@ export class AgentWorker {
         run.kind === 'resume'
           ? await this.options.workingCopies.locate(run, abort.signal)
           : await this.options.workingCopies.prepare(run, abort.signal);
+      abort.signal.throwIfAborted();
+      // The agent's files are rebuilt from Studio's copy before every step, before anything the
+      // agent could act on; a refusal fails the Run before any CLI starts.
+      const placed = await this.options.agentFolders?.place(
+        run,
+        posix.join(prepared.runDir, AGENT_DIRECTORY_NAME),
+        abort.signal,
+      );
+      agentFolder = placed?.dir ?? null;
       abort.signal.throwIfAborted();
       // A new part starts clean: a merge an earlier part left open is aborted, so nothing of it is
       // built on or committed; a bring-up part that never succeeded returns the branch to where it
@@ -448,6 +475,7 @@ export class AgentWorker {
           abort.signal,
           log,
           instruction,
+          agentFolder,
         );
       } finally {
         clearTimeout(limit);
@@ -719,8 +747,14 @@ export class AgentWorker {
     signal: AbortSignal,
     log: RunLog,
     instruction?: string,
+    agentFolder: string | null = null,
   ): Promise<RunStepResult> {
-    const workspace = { repoDir: prepared.repoDir, runDir: prepared.runDir, env: prepared.env };
+    const workspace = {
+      repoDir: prepared.repoDir,
+      runDir: prepared.runDir,
+      env: prepared.env,
+      ...(agentFolder === null ? {} : { agentFolder }),
+    };
     // The Environment file is in the Working copy; its content reaches the runner no other way
     // (never a prompt, an argument or the process environment).
     const { environmentFile, ...forRunner } = run;
@@ -948,6 +982,14 @@ function failureOf(error: unknown): RunFailure {
   if (error instanceof PullRequestEndedError) return failure('preparation_failed', error.message);
   if (error instanceof ProviderDisabledError) return failure('provider_disabled', error.message);
   if (error instanceof StepLimitError) return failure('step_limit', error.message);
+  if (error instanceof AgentFolderUnavailableError) {
+    return failure('agent_folder_unavailable', error.message);
+  }
+  if (error instanceof AgentFolderInvalidError)
+    return failure('agent_folder_invalid', error.detail);
+  if (error instanceof AgentFolderTransientError) {
+    return failure('preparation_failed', error.message);
+  }
   if (error instanceof AgentFailedError) return failure('agent_failed', error.message);
   // The agent ended without resolving the conflicts; the merge was aborted.
   if (error instanceof MergeIncompleteError) return failure('agent_failed', error.message);

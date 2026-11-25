@@ -420,7 +420,7 @@ export type RunOutput = {
     startedAt?: string;
     finishedAt?: string;
     failure?: {
-        code: 'provider_disabled' | 'preparation_failed' | 'agent_failed' | 'usage_limit' | 'worker_lost' | 'delivery_failed' | 'step_limit' | 'unknown';
+        code: 'provider_disabled' | 'preparation_failed' | 'agent_failed' | 'usage_limit' | 'worker_lost' | 'delivery_failed' | 'step_limit' | 'agent_folder_unavailable' | 'agent_folder_invalid' | 'unknown';
         detail: string;
     };
     runBranch?: string;
@@ -582,7 +582,7 @@ export type RunMessageOutput = {
 
 export type RunPartEndOutput = {
     state: 'succeeded' | 'failed' | 'cancelled' | 'timed_out';
-    failureCode?: 'provider_disabled' | 'preparation_failed' | 'agent_failed' | 'usage_limit' | 'worker_lost' | 'delivery_failed' | 'step_limit' | 'unknown';
+    failureCode?: 'provider_disabled' | 'preparation_failed' | 'agent_failed' | 'usage_limit' | 'worker_lost' | 'delivery_failed' | 'step_limit' | 'agent_folder_unavailable' | 'agent_folder_invalid' | 'unknown';
     delivery?: 'none' | 'delivered' | 'failed';
 };
 

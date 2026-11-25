@@ -46,11 +46,13 @@ const AGENT_WORKER_PRODUCTION = { path: '^apps/agent-worker/src/', pathNot: '(^|
 
 /**
  * What the agent worker's production code may import besides Node core modules: its own files,
- * the worker protocol and zod. Everything else is denied by default.
+ * the worker protocol, the Agent definition validation (a pure package, which the worker applies to
+ * an agent folder before it writes it) and zod. Everything else is denied by default.
  */
 export const AGENT_WORKER_ALLOWED_IMPORTS = [
   '^apps/agent-worker/src/',
   '^packages/contracts/',
+  '^packages/agent-definitions/',
   npmPackages('zod'),
 ];
 

@@ -188,6 +188,43 @@ describe("Studio's PreToolUse hook", () => {
   });
 });
 
+describe("Studio's PreToolUse hook and the agent folder", () => {
+  // The agent folder is /data/runs/r1/agent: beside the Working copy, in the Run's directory.
+  const env = { projectDir: '/data/runs/r1/repo', home: '/home/agent' };
+  const tool = (name: string, input: Record<string, unknown>) =>
+    decide({ tool_name: name, tool_input: input }, env);
+
+  it('lets the agent read and search its files', () => {
+    expect(tool('Read', { file_path: '/data/runs/r1/agent/scripts/check.sh' })).toBeNull();
+    expect(tool('Glob', { path: '/data/runs/r1/agent', pattern: '**/*' })).toBeNull();
+    expect(tool('Grep', { path: '/data/runs/r1/agent', pattern: 'x' })).toBeNull();
+    expect(
+      decide(
+        { tool_name: 'Bash', tool_input: { command: 'cat /data/runs/r1/agent/notes.txt' } },
+        env,
+      ),
+    ).toBeNull();
+  });
+
+  it('does not let the file tools write there: only the Working copy is written', () => {
+    for (const name of ['Write', 'Edit', 'MultiEdit']) {
+      expect(tool(name, { file_path: '/data/runs/r1/agent/scripts/check.sh' })).toEqual(
+        expect.stringContaining('only inside the Working copy'),
+      );
+    }
+  });
+
+  it('does not stand in the way of running a script there through the command tool', () => {
+    for (const command of [
+      'python3 /data/runs/r1/agent/scripts/check.py',
+      'node /data/runs/r1/agent/scripts/check.mjs --all',
+      '/data/runs/r1/agent/scripts/check.sh',
+    ]) {
+      expect(decide({ tool_name: 'Bash', tool_input: { command } }, env), command).toBeNull();
+    }
+  });
+});
+
 describe("Studio's PreToolUse hook run by Codex", () => {
   // Codex gives no CLAUDE_PROJECT_DIR: the session's working directory (the Working copy) is
   // `cwd` in the hook input. File edits are `apply_patch` with the patch as `command`.

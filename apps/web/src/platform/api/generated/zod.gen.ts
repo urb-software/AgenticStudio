@@ -479,6 +479,8 @@ export const zRunPartEndOutput = z.object({
         'worker_lost',
         'delivery_failed',
         'step_limit',
+        'agent_folder_unavailable',
+        'agent_folder_invalid',
         'unknown'
     ]).optional(),
     delivery: z.enum([
@@ -545,6 +547,8 @@ export const zRunOutput = z.object({
             'worker_lost',
             'delivery_failed',
             'step_limit',
+            'agent_folder_unavailable',
+            'agent_folder_invalid',
             'unknown'
         ]),
         detail: z.string()

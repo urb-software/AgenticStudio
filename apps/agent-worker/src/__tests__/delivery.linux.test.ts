@@ -1,5 +1,5 @@
 import type { RunPayload, RunStepResult } from '@agentic-studio/contracts';
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import {
   appendFileSync,
   existsSync,
@@ -12,7 +12,12 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { Deliveries, DeliveryFailedError, NO_WORKING_COPY } from '../delivery.js';
+import {
+  Deliveries,
+  type DeliveriesOptions,
+  DeliveryFailedError,
+  NO_WORKING_COPY,
+} from '../delivery.js';
 import { type GitOptions, GitRunner } from '../git.js';
 import { type PreparedRun, WorkingCopies } from '../working-copy.js';
 import { createRemote, type FixtureRemote, git, isolatedGitEnv } from './fixtures/git-fixture.js';
@@ -84,13 +89,19 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
 
   const logger = { error: (message: string) => logs.push(message) };
 
-  function deliveries(github: { token?: string; apiUrl?: string } = { token }) {
+  function deliveries(
+    github: { token?: string; apiUrl?: string } = { token },
+    agentFolderBlobs?: DeliveriesOptions['agentFolderBlobs'],
+    more: Partial<DeliveriesOptions> = {},
+  ) {
     return new Deliveries({
       dataDir,
       git: gitRunner,
       ...AGENT,
       allowFileRemotes: true,
       github: { apiUrl: stub.url, ...github },
+      ...(agentFolderBlobs ? { agentFolderBlobs } : {}),
+      ...more,
       logger,
     });
   }
@@ -336,6 +347,179 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
     );
     expect(gitRunner.pushes()).toEqual([]);
     expect(remoteBranches()).toEqual(['refs/heads/main']);
+  });
+
+  describe("the agent's files", () => {
+    const SCRIPT = '#!/bin/sh\necho checks\n';
+    const reviewerRun = () =>
+      payload({
+        agent: {
+          name: 'reviewer',
+          source: 'definitions',
+          commit: 'c'.repeat(40),
+          provider: 'claude_code',
+          model: 'default',
+          instructions: 'Review.',
+        },
+      });
+    const blobsOf = (content: string, path = 'scripts/check.sh') =>
+      new Map([
+        [
+          createHash('sha1')
+            .update(`blob ${Buffer.byteLength(content)}\0`)
+            .update(content)
+            .digest('hex'),
+          path,
+        ],
+      ]);
+
+    async function finishWith(
+      run: RunPayload,
+      prepared: PreparedRun,
+      blobs: DeliveriesOptions['agentFolderBlobs'],
+      more: Partial<DeliveriesOptions> = {},
+    ) {
+      const subject = deliveries({ token }, blobs, more);
+      await subject.commit(prepared, run, DONE, signal());
+      return subject.deliver(prepared, run, DONE, signal());
+    }
+
+    it('are never pushed: a script the agent copied into the Working copy stops the delivery', async () => {
+      const run = reviewerRun();
+      const prepared = await prepare(run);
+      mkdirSync(join(prepared.repoDir, 'tools'));
+      agentWrites(prepared, { 'tools/check.sh': SCRIPT, 'pages.ts': 'x\n' });
+
+      const error = await finishWith(run, prepared, async () => blobsOf(SCRIPT)).catch(
+        (caught: unknown) => caught,
+      );
+
+      expect(error).toBeInstanceOf(DeliveryFailedError);
+      expect((error as DeliveryFailedError).detail).toMatch(
+        /contains tools\/check\.sh, a copy of the agent's file scripts\/check\.sh.*never pushes/,
+      );
+      expect(gitRunner.pushes()).toEqual([]);
+      expect(remoteBranches()).toEqual(['refs/heads/main']);
+      expect(stub.requests).toEqual([]);
+    });
+
+    it('are found in any commit of the branch, also one a later commit removed again', async () => {
+      const run = reviewerRun();
+      const prepared = await prepare(run);
+      agentWrites(prepared, { 'copy.sh': SCRIPT }, 'Copy the script');
+      inRepo(prepared, ['rm', '--quiet', 'copy.sh']);
+      inRepo(prepared, ['commit', '--quiet', '-m', 'Remove the copy']);
+
+      const error = await finishWith(run, prepared, async () => blobsOf(SCRIPT)).catch(
+        (caught: unknown) => caught,
+      );
+
+      expect((error as DeliveryFailedError).detail).toMatch(/contains copy\.sh/);
+      expect(gitRunner.pushes()).toEqual([]);
+    });
+
+    it('are found in a merge commit too: a copy staged in a Bring up to date resolution', async () => {
+      const run = reviewerRun();
+      const prepared = await prepare(run);
+      agentWrites(prepared, { 'pages.ts': 'x\n' }, 'Run change');
+      remote.commit('Integration change', { 'other.txt': 'main side\n' });
+      inRepo(prepared, ['fetch', '--quiet', remote.url, 'main']);
+      inRepo(prepared, ['merge', '--no-commit', '--no-ff', 'FETCH_HEAD']);
+      agentWrites(prepared, { 'sneaky.sh': SCRIPT });
+      inRepo(prepared, ['add', 'sneaky.sh']);
+      inRepo(prepared, ['commit', '--quiet', '-m', 'Merge main']);
+
+      const error = await finishWith(run, prepared, async () => blobsOf(SCRIPT)).catch(
+        (caught: unknown) => caught,
+      );
+
+      expect((error as DeliveryFailedError).detail).toMatch(/contains sneaky\.sh/);
+      expect(gitRunner.pushes()).toEqual([]);
+    });
+
+    it('fail closed when the list of what the branch added is longer than can be checked', async () => {
+      const run = reviewerRun();
+      const prepared = await prepare(run);
+      const many: Record<string, string> = {};
+      for (let index = 0; index < 60; index += 1)
+        many[`f${index}.txt`] = `file ${index}
+`;
+      agentWrites(prepared, many, 'Many files');
+      agentWrites(prepared, { 'late.sh': SCRIPT }, 'Late copy');
+
+      const error = await finishWith(run, prepared, async () => blobsOf(SCRIPT), {
+        agentFilesScanMaxBytes: 200,
+      }).catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(DeliveryFailedError);
+      expect((error as DeliveryFailedError).detail).toMatch(
+        /could not be checked.*nothing was pushed.*too many changes/s,
+      );
+      expect(gitRunner.pushes()).toEqual([]);
+      expect(remoteBranches()).toEqual(['refs/heads/main']);
+    });
+
+    it('fail closed when Git cannot list what the branch added', async () => {
+      const run = reviewerRun();
+      const prepared = await prepare(run);
+      agentWrites(prepared, { 'pages.ts': 'x\n' }, 'Add pagination');
+      const broken = {
+        run: (args: readonly string[], options: GitOptions) =>
+          args[0] === 'rev-list' && args.includes('--objects')
+            ? Promise.reject(new Error('git is down'))
+            : gitRunner.run(args, options),
+      };
+
+      const error = await finishWith(run, prepared, async () => blobsOf(SCRIPT), {
+        git: broken as unknown as GitRunner,
+      }).catch((caught: unknown) => caught);
+
+      expect((error as DeliveryFailedError).detail).toMatch(
+        /could not be checked.*nothing was pushed/s,
+      );
+      expect(gitRunner.pushes()).toEqual([]);
+    });
+
+    it('do not stop a file that only resembles one: other content is delivered', async () => {
+      const run = reviewerRun();
+      const prepared = await prepare(run);
+      agentWrites(prepared, { 'check.sh': `${SCRIPT}echo more\n` }, 'A script of its own');
+
+      const delivery = await finishWith(run, prepared, async () => blobsOf(SCRIPT));
+
+      expect(delivery.outcome).toBe('delivered');
+      expect(remoteBranches()).toContain(`refs/heads/${prepared.runBranch}`);
+    });
+
+    it('are not looked up for the built-in agent', async () => {
+      const run = payload();
+      const prepared = await prepare(run);
+      agentWrites(prepared, { 'pages.ts': 'x\n' }, 'Add pagination');
+      let asked = 0;
+
+      await finishWith(run, prepared, async () => {
+        asked += 1;
+        return new Map();
+      });
+
+      expect(asked).toBe(0);
+    });
+
+    it('fail the delivery before the push when they cannot be checked', async () => {
+      const run = reviewerRun();
+      const prepared = await prepare(run);
+      agentWrites(prepared, { 'pages.ts': 'x\n' }, 'Add pagination');
+
+      const error = await finishWith(run, prepared, async () => {
+        throw new Error('The Studio API answered 503');
+      }).catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(DeliveryFailedError);
+      expect((error as DeliveryFailedError).detail).toMatch(
+        /could not be checked.*nothing was pushed/,
+      );
+      expect(gitRunner.pushes()).toEqual([]);
+    });
   });
 
   it('fails with what to check when the push is refused, and opens no pull request', async () => {

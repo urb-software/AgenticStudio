@@ -275,11 +275,16 @@ export interface DefinitionsSnapshot {
   commit: string | null;
 }
 
-/** One tracked item of the tree that was listed (below `agents/`, or anywhere); `size` is 0 for anything that is not a regular file. */
+/**
+ * One tracked item of the tree that was listed (below `agents/`, or anywhere); `size` is 0 for anything
+ * that is not a regular file. `executable` is Git's mode `100755`.
+ */
 export interface DefinitionsTreeEntry {
   path: string;
   kind: 'file' | 'symlink' | 'submodule' | 'other';
   size: number;
+  /** Absent means false. */
+  executable?: boolean;
 }
 
 /**
@@ -307,6 +312,14 @@ export type DefinitionsFileRead =
 export type DefinitionsFilesResult =
   { status: 'read'; files: DefinitionsFileRead[] } | { status: DefinitionsUnavailable };
 
+/** The stored bytes of a regular file; `missing` and `too_large` as for {@link DefinitionsFileRead}. */
+export type DefinitionsBlobRead =
+  | { path: string; status: 'found'; bytes: Uint8Array }
+  | { path: string; status: 'missing' | 'too_large' };
+
+export type DefinitionsBlobsResult =
+  { status: 'read'; files: DefinitionsBlobRead[] } | { status: DefinitionsUnavailable };
+
 /**
  * Reads the definitions Repository's Clone at a commit, from Git's object store only: no checkout
  * and no working-tree change. The caller judges what it reads.
@@ -327,4 +340,11 @@ export interface DefinitionsFiles {
     paths: readonly string[],
     maxBytes: number,
   ): Promise<DefinitionsFilesResult>;
+
+  /** The stored bytes of each regular file (no text decoding), in the order of `paths`. */
+  readBlobs(
+    commit: string,
+    paths: readonly string[],
+    maxBytes: number,
+  ): Promise<DefinitionsBlobsResult>;
 }

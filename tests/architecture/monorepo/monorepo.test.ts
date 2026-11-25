@@ -64,6 +64,10 @@ describeGate('monorepo', monorepoGate, '.', [
     qualityRow: '`packages/contracts` exports no name shaped like an event version',
   },
   {
+    fixture: 'agent-worker-uses-agent-definitions',
+    expected: [],
+  },
+  {
     fixture: 'packages-contracts-exports-event-version',
     expected: ['mono-contracts-no-event-versions'],
     qualityRow: '`packages/contracts` exports a `<Name>V<n>` or `<Name>V<n>Schema` name',

@@ -209,3 +209,35 @@ export class AgentProviderMismatchError extends Error {
     this.name = 'AgentProviderMismatchError';
   }
 }
+
+/** The Clone no longer holds what the Run's agent folder is read from. */
+export class AgentFolderUnavailableError extends Error {
+  constructor() {
+    super("The agent's files are no longer available in the definitions Repository.");
+    this.name = 'AgentFolderUnavailableError';
+  }
+}
+
+/** The Run's agent folder fails the shared validation; `detail` names paths and codes only. */
+export class AgentFolderInvalidError extends Error {
+  constructor(readonly detail: string) {
+    super(detail);
+    this.name = 'AgentFolderInvalidError';
+  }
+}
+
+/** The agent's files could not be read right now (Git failed); trying again may work. */
+export class AgentFolderReadFailedError extends Error {
+  constructor() {
+    super("The agent's files could not be read from the definitions Repository right now.");
+    this.name = 'AgentFolderReadFailedError';
+  }
+}
+
+/** The definitions Repository's listing is cut, so the agent's folder may be partial. */
+export class AgentFolderCutError extends Error {
+  constructor() {
+    super("The definitions Repository has too many files to read this agent's folder safely.");
+    this.name = 'AgentFolderCutError';
+  }
+}
