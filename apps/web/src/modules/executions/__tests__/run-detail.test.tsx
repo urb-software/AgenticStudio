@@ -302,6 +302,9 @@ describe('Run page', () => {
         'default-claude-code',
       ),
     );
+    const note = within(dialog).getByTestId('agent-fallback-note');
+    expect(note.textContent).toContain('removed-agent');
+    await expect(document.body).toHaveNoAxeViolations();
   });
 
   it("moves Run again to an agent with an available Provider when the Run's own is switched off (Issue #101)", async () => {

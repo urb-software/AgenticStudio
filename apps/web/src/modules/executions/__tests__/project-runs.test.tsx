@@ -499,6 +499,7 @@ describe('New run dialog: provider availability (Issue #101)', () => {
     expect(optionOf('default-claude-code').disabled).toBe(true);
     expect(optionOf('default-codex').disabled).toBe(true);
     expect(startButton()).toHaveProperty('disabled', true);
+    expect(within(dialog()).getByText(/No agent can start a run now/)).toBeTruthy();
     await expect(document.body).toHaveNoAxeViolations();
     expect(api.calls('start')).toHaveLength(0);
   });
@@ -562,5 +563,86 @@ describe('New run dialog: provider availability (Issue #101)', () => {
     );
     await vi.waitFor(() => expect(startButton()).toHaveProperty('disabled', false));
     expect(optionOf('default-codex').disabled).toBe(false);
+  });
+});
+
+describe('New run dialog: review round 1', () => {
+  it('shows the server detail of a Provider refusal and reads the availability again, so the agent is disabled', async () => {
+    const api = fakeRunsApi([]);
+    api.respondNext(
+      'start',
+      409,
+      refusal('provider-unavailable', 'Provider unavailable', SWITCHED_OFF),
+    );
+    renderRuns();
+    await openDialog();
+    api.respondNext('providers', 200, [
+      { id: 'claude_code', name: 'Claude Code', available: true },
+      { id: 'codex', name: 'Codex', available: false, reason: SWITCHED_OFF },
+    ]);
+    await userEvent.selectOptions(agentSelect(), 'default-codex');
+
+    await userEvent.type(taskInput(), 'Add pagination');
+    await userEvent.click(startButton());
+
+    const alert = await within(dialog()).findByRole('alert');
+    expect(alert.textContent).toContain(SWITCHED_OFF);
+    await vi.waitFor(() => expect(optionOf('default-codex').disabled).toBe(true));
+    expect(api.calls('providers')).toHaveLength(2);
+    expect(selectedAgent()).toBe('default-claude-code');
+    await expect(document.body).toHaveNoAxeViolations();
+  });
+
+  it('shows the preselection reason only while the preselected agent is the chosen one', async () => {
+    const api = fakeRunsApi([]);
+    const reason =
+      'The default agent "reviewer" is not usable. The built-in Default agent is offered.';
+    api.respondNext('runAgents', 200, { ...DEFAULT_RUN_AGENTS, preselectedReason: reason });
+    api.respondNext('providers', 200, [
+      { id: 'claude_code', name: 'Claude Code', available: false, reason: SWITCHED_OFF },
+      { id: 'codex', name: 'Codex', available: true },
+    ]);
+    renderRuns();
+    await openDialog();
+
+    await vi.waitFor(() => expect(selectedAgent()).toBe('default-codex'));
+    expect(within(dialog()).queryByTestId('preselected-reason')).toBeNull();
+    const note = within(dialog()).getByTestId('agent-fallback-note');
+    expect(note.textContent).toContain('default-claude-code');
+    expect(note.textContent).toContain('default-codex');
+    expect(note.textContent).toContain(SWITCHED_OFF);
+    await expect(document.body).toHaveNoAxeViolations();
+  });
+
+  it('says nothing about a fallback once the operator picks an agent', async () => {
+    const api = fakeRunsApi([]);
+    api.respondNext('runAgents', 200, { ...AGENTS_WITH_DEFINITIONS, preselected: 'reviewer' });
+    renderRuns();
+    await openDialog();
+
+    await userEvent.selectOptions(agentSelect(), 'default-codex');
+
+    expect(within(dialog()).queryByTestId('agent-fallback-note')).toBeNull();
+  });
+
+  it('moves focus to the agent select on a server field error for it', async () => {
+    const api = fakeRunsApi([]);
+    api.respondNext(
+      'start',
+      422,
+      problem(422, 'Invalid request', 'The request body is invalid.', [
+        { path: 'agent', message: 'Unknown agent.' },
+      ]),
+    );
+    renderRuns();
+    await openDialog();
+
+    await userEvent.type(taskInput(), 'Add pagination');
+    await userEvent.click(startButton());
+
+    expect(await within(dialog()).findByText('Unknown agent.')).toBeTruthy();
+    expect(document.activeElement).toBe(agentSelect());
+    expect(agentSelect().getAttribute('aria-invalid')).toBe('true');
+    await expect(document.body).toHaveNoAxeViolations();
   });
 });

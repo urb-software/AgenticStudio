@@ -2,10 +2,9 @@
 
 import { useId, useState } from 'react';
 import { Banner } from '@/shared/components/banner';
-import { cn } from '@/shared/lib/utils';
 import { Button } from '@/shared/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card';
-import { inputClassName } from '@/shared/ui/input';
+import { NativeSelect } from '@/shared/ui/native-select';
 import { Label } from '@/shared/ui/label';
 import { Skeleton } from '@/shared/ui/skeleton';
 import { toast } from '@/shared/ui/sonner';
@@ -84,10 +83,8 @@ export function DefaultAgentCard({
               <Label htmlFor={selectId} className="mb-1.5">
                 Agent offered first
               </Label>
-              <select
+              <NativeSelect
                 id={selectId}
-                data-slot="select"
-                className={cn(inputClassName, 'h-[38px]')}
                 aria-describedby={reason ? reasonId : undefined}
                 disabled={save.isPending}
                 value={choice}
@@ -103,7 +100,7 @@ export function DefaultAgentCard({
                     {agent.name}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
               {reason ? (
                 <p
                   id={reasonId}

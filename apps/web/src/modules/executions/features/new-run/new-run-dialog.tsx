@@ -18,9 +18,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/shared/ui/dialog';
-import { inputClassName } from '@/shared/ui/input';
+import { NativeSelect } from '@/shared/ui/native-select';
 import { Label } from '@/shared/ui/label';
-import { cn } from '@/shared/lib/utils';
 import { ApiError, type StartRunRequest, startRunRequestHint } from '../../../../platform/api';
 import { useProviderAvailability, useRunAgents, useStartRun } from '../../api/runs-queries';
 import { PROVIDER_LABEL } from '../../components/run-presentation';
@@ -103,6 +102,8 @@ export function NewRunDialog({
   }
   const agents = useRunAgents(projectId, opening, open);
   const availability = useProviderAvailability(opening, open);
+  // Whether the operator chose the agent, so a fallback is only explained when we made it.
+  const [picked, setPicked] = useState(false);
   const checking =
     (agents.isPending && !agents.isError) || (availability.isPending && !availability.isError);
   const {
@@ -152,14 +153,32 @@ export function NewRunDialog({
     if (chosenName !== (getValues('agent') ?? '')) setValue('agent', chosenName);
   }, [chosenName, opening, getValues, setValue]);
   const chosen = offered.find((agent) => agent.name === chosenName);
-  const reason = agents.data?.preselectedReason ?? null;
+  // The server's reason describes the preselected agent, so it shows only while that is chosen.
+  const reason =
+    agents.data && chosenName === agents.data.preselected
+      ? (agents.data.preselectedReason ?? null)
+      : null;
+  const wanted = initialValues.agent || agents.data?.preselected;
+  const fallbackFrom = picked || !chosen || !wanted || wanted === chosenName ? null : wanted;
+  const wantedWhy = fallbackFrom ? offered.find((agent) => agent.name === fallbackFrom) : undefined;
+  const fallbackNote = fallbackFrom
+    ? wantedWhy && unavailable.has(wantedWhy.provider)
+      ? `${fallbackFrom} cannot start a run now (${PROVIDER_LABEL[wantedWhy.provider]}: ${unavailable.get(wantedWhy.provider)}), so ${chosenName} is chosen.`
+      : `${fallbackFrom} is not offered any more, so ${chosenName} is chosen.`
+    : null;
 
   const submitting = isSubmitting || startRun.isPending;
+  // The select is disabled while submitting, so a server error for it takes focus afterwards.
+  const agentError = errors.agent?.message;
+  useEffect(() => {
+    if (agentError && !submitting) document.getElementById(AGENT_ID)?.focus();
+  }, [agentError, submitting, AGENT_ID]);
   // The disabled button stops clicks; this stops a second submit by other means (Enter, script).
   const inFlight = useRef(false);
 
   function close() {
     reset();
+    setPicked(false);
     startRun.reset();
     onOpenChange(false);
   }
@@ -191,7 +210,10 @@ export function NewRunDialog({
         setError(field, { type: 'server', message }, { shouldFocus: index === 0 }),
       );
       // The offered agents are out of date: read them again (the selection follows the list).
-      if (startRefusalOf(cause).refreshAgents) void agents.refetch();
+      const refused = startRefusalOf(cause);
+      if (refused.refreshAgents) void agents.refetch();
+      // The Provider went off after the dialog opened: the agent becomes disabled with its reason.
+      if (refused.refreshProviders) void availability.refetch();
       return;
     }
     inFlight.current = false;
@@ -220,6 +242,9 @@ export function NewRunDialog({
             {serverError ? (
               <Banner tone="danger" title={problem?.title}>
                 {refusal.message || problem?.detail || 'Could not start the run. Try again.'}
+                {refusal.message && refusal.showDetail && problem?.detail ? (
+                  <span className="mt-1 block">{problem.detail}</span>
+                ) : null}
               </Banner>
             ) : null}
             <TextField
@@ -248,10 +273,8 @@ export function NewRunDialog({
                 </div>
               ) : (
                 <>
-                  <select
+                  <NativeSelect
                     id={AGENT_ID}
-                    data-slot="select"
-                    className={cn(inputClassName, 'h-[38px]')}
                     aria-invalid={errors.agent ? true : undefined}
                     aria-describedby={
                       [
@@ -264,7 +287,7 @@ export function NewRunDialog({
                     }
                     disabled={submitting}
                     value={chosenName}
-                    onChange={(event) => setValue('agent', event.target.value)}
+                    {...register('agent', { onChange: () => setPicked(true) })}
                   >
                     {offered.map((agent) => {
                       const why = unavailable.get(agent.provider);
@@ -276,7 +299,7 @@ export function NewRunDialog({
                         </option>
                       );
                     })}
-                  </select>
+                  </NativeSelect>
                   <div id={AGENT_FACTS_ID} className="mt-2 flex flex-col gap-1">
                     {chosen ? (
                       <>
@@ -299,6 +322,14 @@ export function NewRunDialog({
                       className="mt-1.5 mb-0 text-code break-words whitespace-pre-wrap text-text-muted"
                     >
                       {reason}
+                    </p>
+                  ) : null}
+                  {fallbackNote ? (
+                    <p
+                      data-testid="agent-fallback-note"
+                      className="mt-1.5 mb-0 text-code break-words text-text-muted"
+                    >
+                      {fallbackNote}
                     </p>
                   ) : null}
                   {noneUsable && offered.length > 0 && !availability.isError ? (

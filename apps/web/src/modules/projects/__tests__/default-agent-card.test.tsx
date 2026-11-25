@@ -148,6 +148,7 @@ describe('Default agent card', () => {
     expect(await within(region).findByText('No project has this id.')).toBeTruthy();
     expect(select(region).value).toBe('default-codex');
     expect(screen.queryByText('Default agent saved')).toBeNull();
+    await expect(document.body).toHaveNoAxeViolations();
   });
 
   it('says the agents could not be loaded and offers Try again', async () => {
