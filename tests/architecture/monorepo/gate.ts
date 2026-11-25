@@ -20,7 +20,7 @@ import {
  * in SERVER_PACKAGES.
  */
 export const WEB_PACKAGE_CLASSIFICATION: { allowed: string[]; forbidden: string[] } = {
-  allowed: [],
+  allowed: ['@agentic-studio/agent-definitions'],
   forbidden: [
     '@agentic-studio/compose-validation',
     '@agentic-studio/contracts',
