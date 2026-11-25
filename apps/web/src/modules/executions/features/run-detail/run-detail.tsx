@@ -43,6 +43,7 @@ import { RunMergeReview } from '../run-merge-review/run-merge-review';
 import { AnswerQuestion, RunConversation } from './run-conversation';
 import { RunCommits, RunDelivery } from './run-delivery';
 import { RunFollowUp } from './run-follow-up';
+import { RunAgentInstructions } from './run-agent-instructions';
 import { RunPullRequest } from './run-pull-request';
 import { ResumeRun } from './run-resume';
 
@@ -196,7 +197,7 @@ function RunAgain({ run }: { run: RunOutput }) {
       </Button>
       <NewRunDialog
         projectId={run.projectId}
-        initialValues={{ task: run.task, provider: run.provider }}
+        initialValues={{ task: run.task, agent: run.agent.name }}
         open={open}
         onOpenChange={setOpen}
       />
@@ -428,7 +429,30 @@ export function RunDetail({ runId }: { runId: string }) {
           </CardHeader>
           <CardContent>
             <dl className="m-0 flex flex-col gap-3.5">
+              <Fact term="Agent">
+                <span className="font-mono text-code break-all">{run.agent.name}</span>
+                <span className="block text-small text-text-muted">
+                  {run.agent.source === 'built_in' ? 'Built in' : 'From the definitions Repository'}
+                </span>
+              </Fact>
+              {run.agent.commit ? (
+                <Fact term="Agent commit">
+                  <code className="font-mono text-code text-text" title={run.agent.commit}>
+                    {run.agent.commit.slice(0, 8)}
+                  </code>
+                </Fact>
+              ) : null}
               <Fact term="Provider">{PROVIDER_LABEL[run.provider]}</Fact>
+              <Fact term="Model">
+                <span className="font-mono text-code break-all">{run.agent.model}</span>
+              </Fact>
+              <Fact term="Agent instructions">
+                {run.agent.instructions ? (
+                  <RunAgentInstructions instructions={run.agent.instructions} />
+                ) : (
+                  <span className="text-text-dim">None</span>
+                )}
+              </Fact>
               {run.provider === 'codex' ? <CodexFacts /> : null}
               <Fact term="Start commit">
                 <span className="font-mono text-code break-all">{run.startCommit}</span>

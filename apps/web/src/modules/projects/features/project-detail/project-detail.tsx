@@ -16,6 +16,7 @@ import { ProjectRuns, type RepositoryStatus } from '@/modules/executions';
 import { ApiError, type RepositorySummaryOutput } from '../../../../platform/api';
 import { useProject } from '../../api/projects-queries';
 import { formatExactTime, formatTimeAgo } from '@/shared/lib/relative-time';
+import { DefaultAgentCard } from '../default-agent/default-agent-card';
 import { EnvironmentFileCard } from '../environment-file/environment-file-card';
 import { MergeMethodCard } from '../merge-method/merge-method-card';
 import { RepositoryCard } from '../repository-card/repository-card';
@@ -110,6 +111,9 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
         {definitions ? null : <EnvironmentFileCard projectId={projectId} />}
         {definitions ? null : (
           <MergeMethodCard projectId={projectId} mergeMethod={data.mergeMethod} />
+        )}
+        {definitions ? null : (
+          <DefaultAgentCard projectId={projectId} defaultAgent={data.defaultAgent} />
         )}
       </div>
       {/* The executions module owns the Runs section; this screen only composes it. */}

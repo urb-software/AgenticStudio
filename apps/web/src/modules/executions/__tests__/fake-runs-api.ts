@@ -8,6 +8,7 @@ import type {
   ProblemDetails,
   ProjectOutput,
   ProviderAvailabilityOutput,
+  RunAgentListOutput,
   RunDiffFileOutput,
   RunDiffOutput,
   RunEventOutput,
@@ -26,6 +27,7 @@ type Route =
   | 'retryDelivery'
   | 'resume'
   | 'providers'
+  | 'runAgents'
   | 'agentWorker'
   | 'events'
   | 'steps'
@@ -63,6 +65,7 @@ const ROUTES: readonly [RegExp, (method: string) => Route][] = [
   [/^\/api\/runs\/([^/]+)\/retry-delivery$/, () => 'retryDelivery'],
   [/^\/api\/runs\/([^/]+)\/resume$/, () => 'resume'],
   [/^\/api\/providers()$/, () => 'providers'],
+  [/^\/api\/projects\/([^/]+)\/run-agents$/, () => 'runAgents'],
   [/^\/api\/agent-worker()$/, () => 'agentWorker'],
   [/^\/api\/runs\/([^/]+)\/cancel$/, () => 'cancel'],
   [/^\/api\/runs\/([^/]+)\/answer$/, () => 'answer'],
@@ -131,6 +134,28 @@ export const BOTH_AVAILABLE: ProviderAvailabilityOutput[] = [
   { id: 'codex', name: 'Codex', available: true },
 ];
 
+/** What `GET /api/projects/:id/run-agents` answers unless a test scripts it: the two Defaults. */
+export const DEFAULT_RUN_AGENTS: RunAgentListOutput = {
+  agents: [
+    {
+      name: 'default-claude-code',
+      description: null,
+      provider: 'claude_code',
+      model: 'default',
+      source: 'built_in',
+    },
+    {
+      name: 'default-codex',
+      description: null,
+      provider: 'codex',
+      model: 'default',
+      source: 'built_in',
+    },
+  ],
+  preselected: 'default-claude-code',
+  preselectedReason: null,
+};
+
 let nextRun = 1;
 
 /** A Run of `PROJECT` with defaults; tests override what they look at. */
@@ -181,6 +206,7 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     retryDelivery: [],
     resume: [],
     providers: [],
+    runAgents: [],
     agentWorker: [],
     cancel: [],
     answer: [],
@@ -310,6 +336,8 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
         });
       case 'providers':
         return json(200, BOTH_AVAILABLE);
+      case 'runAgents':
+        return json(200, DEFAULT_RUN_AGENTS);
       case 'agentWorker':
         return json(200, agentWorker);
       case 'run': {
