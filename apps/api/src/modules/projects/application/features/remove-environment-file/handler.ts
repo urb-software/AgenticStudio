@@ -12,7 +12,10 @@ import {
   ENVIRONMENT_FILE_CONTENTS,
   type EnvironmentFileContents,
 } from '../../ports/environment-file-contents.js';
-import { ProjectNotFoundError } from '../../../domain/errors/project-errors.js';
+import {
+  DefinitionsProjectError,
+  ProjectNotFoundError,
+} from '../../../domain/errors/project-errors.js';
 
 export interface RemoveEnvironmentFileInput {
   projectId: string;
@@ -20,7 +23,7 @@ export interface RemoveEnvironmentFileInput {
 
 /**
  * Removing none changes nothing; Runs claimed earlier keep their snapshot. Throws
- * {@link ProjectNotFoundError}.
+ * {@link ProjectNotFoundError}, or {@link DefinitionsProjectError} for the definitions Repository.
  */
 @Injectable()
 export class RemoveEnvironmentFileHandler {
@@ -32,9 +35,9 @@ export class RemoveEnvironmentFileHandler {
 
   async execute(input: RemoveEnvironmentFileInput): Promise<void> {
     const { projectId } = input;
-    if (!isProjectId(projectId) || !(await this.projects.findById(projectId))) {
-      throw new ProjectNotFoundError();
-    }
+    const project = isProjectId(projectId) ? await this.projects.findById(projectId) : null;
+    if (!project) throw new ProjectNotFoundError();
+    if (project.kind === 'definitions') throw new DefinitionsProjectError();
     const secretRef = await this.files.delete(projectId);
     if (secretRef !== null) await this.contents.discard(secretRef);
   }

@@ -1,4 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import { PROJECT_KINDS, type ProjectKinds } from '../../../../projects/contracts/index.js';
+import { DefinitionsProjectError } from '../../../domain/errors/preview-settings-errors.js';
 import { type PreviewBuildView, previewBuildView } from '../../preview-view.js';
 import { PreviewBuildRequests } from '../../preview-build-requests.js';
 
@@ -13,15 +15,20 @@ export interface RequestPreviewBuildResult {
 
 /**
  * Asks the controller to build and start the Preview, checking as backend.md section 7 lists.
- * Throws the refusals of `PreviewBuildRequests`: not found, settings, Repository, controller,
+ * Throws `DefinitionsProjectError` and the refusals of `PreviewBuildRequests`: not found, settings, Repository, controller,
  * build running, busy, limit reached, refused file and unreadable source.
  */
 @Injectable()
 export class RequestPreviewBuildHandler {
-  constructor(private readonly builds: PreviewBuildRequests) {}
+  constructor(
+    @Inject(PROJECT_KINDS) private readonly kinds: ProjectKinds,
+    private readonly builds: PreviewBuildRequests,
+  ) {}
 
   async execute(input: RequestPreviewBuildInput): Promise<RequestPreviewBuildResult> {
-    const prepared = await this.builds.prepareFromSettings(input.projectId);
+    const { projectId } = input;
+    if ((await this.kinds.kindOf(projectId)) === 'definitions') throw new DefinitionsProjectError();
+    const prepared = await this.builds.prepareFromSettings(projectId);
     const operation = await this.builds.request(prepared);
     return { operationId: operation.id, build: previewBuildView(operation) };
   }

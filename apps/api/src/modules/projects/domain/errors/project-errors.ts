@@ -12,3 +12,19 @@ export class ProjectNotFoundError extends Error {
     this.name = 'ProjectNotFoundError';
   }
 }
+
+/** A definitions Project exists already; at most one does. */
+export class DefinitionsProjectExistsError extends Error {
+  constructor() {
+    super('A definitions Repository is already connected.');
+    this.name = 'DefinitionsProjectExistsError';
+  }
+}
+
+/** The Project is the definitions Repository, which accepts no Run, no Preview and no Environment file. */
+export class DefinitionsProjectError extends Error {
+  constructor() {
+    super('The definitions Repository accepts no Run, no Preview and no Environment file.');
+    this.name = 'DefinitionsProjectError';
+  }
+}

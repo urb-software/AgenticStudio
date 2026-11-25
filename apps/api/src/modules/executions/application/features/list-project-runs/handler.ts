@@ -1,7 +1,15 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { RUN_START_POINTS, type RunStartPoints } from '../../../../projects/contracts/index.js';
+import {
+  PROJECT_KINDS,
+  type ProjectKinds,
+  RUN_START_POINTS,
+  type RunStartPoints,
+} from '../../../../projects/contracts/index.js';
 import { runView, type RunView } from '../../run-view.js';
-import { RunProjectNotFoundError } from '../../../domain/errors/run-errors.js';
+import {
+  DefinitionsProjectRunError,
+  RunProjectNotFoundError,
+} from '../../../domain/errors/run-errors.js';
 import {
   PREPARED_FOLLOW_UP_REPOSITORY,
   type PreparedFollowUpRepository,
@@ -14,10 +22,11 @@ export interface ListProjectRunsInput {
 
 export type ListProjectRunsResult = RunView[];
 
-/** Throws {@link RunProjectNotFoundError} for an unknown project. */
+/** Throws {@link RunProjectNotFoundError} for an unknown project, {@link DefinitionsProjectRunError} for the definitions Repository. */
 @Injectable()
 export class ListProjectRunsHandler {
   constructor(
+    @Inject(PROJECT_KINDS) private readonly kinds: ProjectKinds,
     @Inject(RUN_REPOSITORY) private readonly runs: RunRepository,
     @Inject(RUN_START_POINTS) private readonly projects: RunStartPoints,
     @Inject(PREPARED_FOLLOW_UP_REPOSITORY)
@@ -25,6 +34,9 @@ export class ListProjectRunsHandler {
   ) {}
 
   async execute(input: ListProjectRunsInput): Promise<ListProjectRunsResult> {
+    if ((await this.kinds.kindOf(input.projectId)) === 'definitions') {
+      throw new DefinitionsProjectRunError();
+    }
     const startPoint = await this.projects.forProject(input.projectId);
     if (startPoint.status === 'project_not_found') throw new RunProjectNotFoundError();
     const runs = await this.runs.listByProjectNewestFirst(input.projectId);

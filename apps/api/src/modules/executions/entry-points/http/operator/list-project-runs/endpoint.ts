@@ -2,9 +2,16 @@ import { Controller, Get, Param } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ZodResponse } from 'nestjs-zod';
 import { ApiProblemResponses } from '../../../../../../platform/http/problem-details.js';
-import { EXECUTIONS_PROBLEM_TYPES, projectNotFound } from '../../shared/problems.js';
+import {
+  definitionsProject,
+  EXECUTIONS_PROBLEM_TYPES,
+  projectNotFound,
+} from '../../shared/problems.js';
 import { RunListResponseDto, toRunListItem } from '../../shared/run-response.js';
-import { RunProjectNotFoundError } from '../../../../domain/errors/run-errors.js';
+import {
+  DefinitionsProjectRunError,
+  RunProjectNotFoundError,
+} from '../../../../domain/errors/run-errors.js';
 import { ListProjectRunsHandler } from '../../../../application/features/list-project-runs/handler.js';
 
 @ApiTags('runs')
@@ -15,12 +22,16 @@ export class ListProjectRunsEndpoint {
   @Get(':id/runs')
   @ApiOperation({ operationId: 'listProjectRuns' })
   @ZodResponse({ status: 200, type: RunListResponseDto })
-  @ApiProblemResponses({ 404: `Unknown project (${EXECUTIONS_PROBLEM_TYPES.projectNotFound})` })
+  @ApiProblemResponses({
+    404: `Unknown project (${EXECUTIONS_PROBLEM_TYPES.projectNotFound})`,
+    409: `The project is the definitions Repository (${EXECUTIONS_PROBLEM_TYPES.definitionsProject})`,
+  })
   async list(@Param('id') projectId: string) {
     try {
       return (await this.handler.execute({ projectId })).map((run) => toRunListItem(run));
     } catch (error) {
       if (error instanceof RunProjectNotFoundError) throw projectNotFound();
+      if (error instanceof DefinitionsProjectRunError) throw definitionsProject();
       throw error;
     }
   }

@@ -96,6 +96,7 @@ export class PrismaRunLookupRepository implements RunLookupRepository {
                r.integration_branch, l.scope, l.since
         FROM run_lookups l
         JOIN runs r ON r.id = l.run_id
+        JOIN projects p ON p.id = r.project_id AND p.kind = 'code'
         WHERE l.status = 'requested'
           AND (l.retry_at IS NULL OR l.retry_at <= ${rule.now}::timestamptz)
           AND r.pull_request_number IS NOT NULL AND r.run_branch IS NOT NULL

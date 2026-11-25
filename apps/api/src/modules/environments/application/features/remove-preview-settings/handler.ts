@@ -3,7 +3,11 @@ import {
   RUN_PREVIEW_SOURCES,
   type RunPreviewSources,
 } from '../../../../projects/contracts/index.js';
-import { ProjectNotFoundError } from '../../../domain/errors/preview-settings-errors.js';
+import { PROJECT_KINDS, type ProjectKinds } from '../../../../projects/contracts/index.js';
+import {
+  DefinitionsProjectError,
+  ProjectNotFoundError,
+} from '../../../domain/errors/preview-settings-errors.js';
 import {
   PREVIEW_OPERATION_REPOSITORY,
   type PreviewOperationRepository,
@@ -20,11 +24,12 @@ export interface RemovePreviewSettingsInput {
 
 /**
  * Removing settings that are not set changes nothing. Throws `ProjectNotFoundError`,
- * `PreviewRunningError` and `PreviewBuildRunningError`.
+ * `DefinitionsProjectError`, `PreviewRunningError` and `PreviewBuildRunningError`.
  */
 @Injectable()
 export class RemovePreviewSettingsHandler {
   constructor(
+    @Inject(PROJECT_KINDS) private readonly kinds: ProjectKinds,
     @Inject(RUN_PREVIEW_SOURCES) private readonly sources: RunPreviewSources,
     @Inject(PREVIEW_SETTINGS_REPOSITORY) private readonly settings: PreviewSettingsRepository,
     @Inject(PREVIEW_OPERATION_REPOSITORY) private readonly operations: PreviewOperationRepository,
@@ -32,6 +37,7 @@ export class RemovePreviewSettingsHandler {
 
   async execute(input: RemovePreviewSettingsInput): Promise<void> {
     const { projectId } = input;
+    if ((await this.kinds.kindOf(projectId)) === 'definitions') throw new DefinitionsProjectError();
     if ((await this.sources.status(projectId)).status === 'project_not_found') {
       throw new ProjectNotFoundError();
     }

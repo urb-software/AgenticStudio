@@ -4,6 +4,7 @@ import {
   PreviewBusyError,
   PreviewControllerUnavailableError,
   ProjectNotFoundError,
+  DefinitionsProjectError,
 } from '../../../../domain/errors/preview-settings-errors.js';
 import { PreviewOperation } from '../../../../domain/entities/preview-operation.js';
 import { InMemoryPreviewOperationRepository } from '../../../../domain/repositories/__tests__/in-memory-preview-operation-repository.js';
@@ -17,6 +18,7 @@ import {
   seedBuild,
 } from '../../../__tests__/preview-test-kit.js';
 import { RequestPreviewResetDataHandler } from '../handler.js';
+import { FakeProjectKinds } from '../../../ports/__tests__/fake-project-kinds.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const BUILD = '0b2f6d52-3d0b-4d6e-8a44-6b3c1d8f2a10';
@@ -24,6 +26,7 @@ const COMMIT = 'e'.repeat(40);
 
 describe('RequestPreviewResetDataHandler', () => {
   let sources: FakePreviewSources;
+  const kinds = new FakeProjectKinds();
   let operations: InMemoryPreviewOperationRepository;
   let settings: InMemoryPreviewSettingsRepository;
   let kit: ReturnType<typeof previewBuildRequests>;
@@ -31,10 +34,11 @@ describe('RequestPreviewResetDataHandler', () => {
 
   beforeEach(() => {
     sources = new FakePreviewSources();
+    kinds.kind = 'code';
     operations = new InMemoryPreviewOperationRepository();
     settings = new InMemoryPreviewSettingsRepository();
     kit = previewBuildRequests(operations, sources, settings);
-    handler = new RequestPreviewResetDataHandler(operations, kit.clock, kit.requests);
+    handler = new RequestPreviewResetDataHandler(kinds, operations, kit.clock, kit.requests);
   });
 
   const stored = () => [...operations.operations.values()];
@@ -67,6 +71,7 @@ describe('RequestPreviewResetDataHandler', () => {
     });
 
     const { buildId } = await new RequestPreviewResetDataHandler(
+      kinds,
       operations,
       changed.clock,
       changed.requests,
@@ -134,7 +139,7 @@ describe('RequestPreviewResetDataHandler', () => {
     const other = new InMemoryPreviewOperationRepository();
     await seedBuild(other, PROJECT, BUILD, 'succeeded');
     const again = previewBuildRequests(other, sources, settings);
-    const second = new RequestPreviewResetDataHandler(other, again.clock, again.requests);
+    const second = new RequestPreviewResetDataHandler(kinds, other, again.clock, again.requests);
     await second.execute({ projectId: PROJECT });
     await expect(second.execute({ projectId: PROJECT })).rejects.toBeInstanceOf(PreviewBusyError);
     expect([...other.operations.values()]).toHaveLength(3);
@@ -145,9 +150,19 @@ describe('RequestPreviewResetDataHandler', () => {
     await seedBuild(operations, PROJECT, BUILD, 'succeeded');
 
     await expect(
-      new RequestPreviewResetDataHandler(operations, full.clock, full.requests).execute({
+      new RequestPreviewResetDataHandler(kinds, operations, full.clock, full.requests).execute({
         projectId: PROJECT,
       }),
     ).resolves.toMatchObject({ buildId: expect.any(String) });
+  });
+
+  it('refuses the definitions Repository before it reads anything else', async () => {
+    kinds.kind = 'definitions';
+
+    await expect(handler.execute({ projectId: PROJECT })).rejects.toBeInstanceOf(
+      DefinitionsProjectError,
+    );
+    expect(sources.status).not.toHaveBeenCalled();
+    expect(stored()).toEqual([]);
   });
 });

@@ -8,6 +8,7 @@ import {
 import { RequestPreviewBuildHandler } from '../../../../application/features/request-preview-build/handler.js';
 import { PreviewSettingsMissingError } from '../../../../domain/errors/preview-operation-errors.js';
 import {
+  DefinitionsProjectError,
   PreviewBuildRunningError,
   PreviewBusyError,
   PreviewControllerUnavailableError,
@@ -25,6 +26,7 @@ import {
 } from '../../shared/preview-response.js';
 import {
   buildRunning,
+  definitionsProject,
   controllerUnavailable,
   ENVIRONMENTS_PROBLEM_TYPES,
   previewBusy,
@@ -38,6 +40,7 @@ import {
 
 function toHttpError(error: unknown): unknown {
   if (error instanceof ProjectNotFoundError) return projectNotFound();
+  if (error instanceof DefinitionsProjectError) return definitionsProject();
   if (error instanceof PreviewSettingsMissingError) return previewNotConfigured();
   if (error instanceof PreviewRepositoryNotReadyError) return repositoryNotReady(error.reason);
   if (error instanceof PreviewControllerUnavailableError) return controllerUnavailable();
@@ -69,6 +72,7 @@ export class RequestPreviewBuildEndpoint {
   @ApiProblemResponses({
     404: `Unknown project (${ENVIRONMENTS_PROBLEM_TYPES.projectNotFound})`,
     409:
+      `The project is the definitions Repository (${ENVIRONMENTS_PROBLEM_TYPES.definitionsProject}), ` +
       `No Preview settings (${ENVIRONMENTS_PROBLEM_TYPES.previewNotConfigured}), the repository ` +
       `cannot be read now (${ENVIRONMENTS_PROBLEM_TYPES.repositoryNotReady}), the API is not on ` +
       `Linux (${ENVIRONMENTS_PROBLEM_TYPES.unsupportedPlatform}), no environment controller is ` +

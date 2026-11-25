@@ -9,21 +9,29 @@ import {
 } from '../../../../domain/value-objects/project-name.js';
 import { CreateProjectHandler } from '../handler.js';
 import { NormalizedName } from '../../../../domain/value-objects/normalized-name.js';
-import { ProjectNameTakenError } from '../../../../domain/errors/project-errors.js';
+import {
+  DefinitionsProjectExistsError,
+  ProjectNameTakenError,
+} from '../../../../domain/errors/project-errors.js';
+import type { ProjectKind } from '../../../../domain/value-objects/project-kind.js';
 
 class InMemoryProjectRepository implements ProjectRepository {
-  readonly stored: { name: string; uniquenessKey: string }[] = [];
+  readonly stored: { name: string; uniquenessKey: string; kind: ProjectKind }[] = [];
 
-  add(name: ProjectName): Promise<Project> {
+  add(name: ProjectName, kind: ProjectKind): Promise<Project> {
+    if (kind === 'definitions' && this.stored.some((project) => project.kind === 'definitions')) {
+      return Promise.reject(new DefinitionsProjectExistsError());
+    }
     if (this.stored.some((project) => project.uniquenessKey === name.uniquenessKey)) {
       return Promise.reject(new ProjectNameTakenError());
     }
-    this.stored.push({ name: name.value, uniquenessKey: name.uniquenessKey });
+    this.stored.push({ name: name.value, uniquenessKey: name.uniquenessKey, kind });
     return Promise.resolve(
       Project.restore({
         id: `id-${this.stored.length}`,
         name: name.value,
         mergeMethod: 'squash',
+        kind,
         createdAt: new Date('2026-11-12T10:00:00.000Z'),
       }),
     );
@@ -34,6 +42,8 @@ class InMemoryProjectRepository implements ProjectRepository {
   }
 
   findById = notUsed;
+
+  findDefinitions = notUsed;
 
   findByIds = notUsed;
 
@@ -130,7 +140,8 @@ describe('CreateProjectHandler: project name normalization', () => {
     expect(project.name).toBe('Caf\u00e9 Or\u00e9');
     expect(projects.stored[0]).toEqual({
       name: 'Caf\u00e9 Or\u00e9',
-      uniquenessKey: 'caf\u00e9 or\u00e9',
+      uniquenessKey: 'café oré',
+      kind: 'code',
     });
   });
 
@@ -193,5 +204,34 @@ describe('CreateProjectHandler: project name normalization', () => {
     await expect(handler.execute({ name: '  agentic   STUDIO ' })).rejects.toBeInstanceOf(
       ProjectNameTakenError,
     );
+  });
+});
+
+describe('CreateProjectHandler: project kind', () => {
+  it('creates an ordinary Project unless a kind is given', async () => {
+    const { handler, projects } = setUp();
+
+    const project = await handler.execute({ name: 'Shop' });
+
+    expect(project.kind).toBe('code');
+    expect(projects.stored[0]?.kind).toBe('code');
+  });
+
+  it('creates the definitions Project when asked', async () => {
+    const { handler } = setUp();
+
+    const project = await handler.execute({ name: 'Agents', kind: 'definitions' });
+
+    expect(project.kind).toBe('definitions');
+  });
+
+  it('refuses a second definitions Project, and still accepts ordinary ones', async () => {
+    const { handler } = setUp();
+    await handler.execute({ name: 'Agents', kind: 'definitions' });
+
+    await expect(
+      handler.execute({ name: 'More agents', kind: 'definitions' }),
+    ).rejects.toBeInstanceOf(DefinitionsProjectExistsError);
+    await expect(handler.execute({ name: 'Shop' })).resolves.toMatchObject({ kind: 'code' });
   });
 });

@@ -27,7 +27,10 @@ import {
   REPOSITORY_GIT,
   type RepositoryGit,
 } from '../../ports/repository-git.js';
-import { ProjectNotFoundError } from '../../../domain/errors/project-errors.js';
+import {
+  DefinitionsProjectError,
+  ProjectNotFoundError,
+} from '../../../domain/errors/project-errors.js';
 
 export interface SetEnvironmentFileInput {
   projectId: string;
@@ -39,7 +42,8 @@ export interface SetEnvironmentFileInput {
 export type SetEnvironmentFileResult = EnvironmentFileView;
 
 /**
- * Throws {@link ProjectNotFoundError}, `InvalidEnvironmentFilePathError` (including
+ * Throws {@link ProjectNotFoundError}, {@link DefinitionsProjectError},
+ * `InvalidEnvironmentFilePathError` (including
  * {@link EnvironmentFilePathTrackedError}) or `InvalidEnvironmentFileContentError`.
  */
 @Injectable()
@@ -54,9 +58,11 @@ export class SetEnvironmentFileHandler {
   ) {}
 
   async execute(input: SetEnvironmentFileInput): Promise<SetEnvironmentFileResult> {
-    if (!isProjectId(input.projectId) || !(await this.projects.findById(input.projectId))) {
-      throw new ProjectNotFoundError();
-    }
+    const project = isProjectId(input.projectId)
+      ? await this.projects.findById(input.projectId)
+      : null;
+    if (!project) throw new ProjectNotFoundError();
+    if (project.kind === 'definitions') throw new DefinitionsProjectError();
     const path = EnvironmentFilePath.of(input.path);
     const content = EnvironmentFileContent.of(input.content);
     await this.refuseTrackedPath(input.projectId, path.value);

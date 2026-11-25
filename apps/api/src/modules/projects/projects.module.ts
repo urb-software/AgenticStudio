@@ -3,6 +3,8 @@ import { APP_CONFIG, type AppConfig } from '../../platform/config/config.js';
 import { DatabaseModule } from '../../platform/database/database.module.js';
 import { SecretsModule } from '../../platform/secrets/secrets.module.js';
 import {
+  DEFINITIONS_REPOSITORIES,
+  PROJECT_KINDS,
   RUN_BRANCH_REVIEWS,
   RUN_ENVIRONMENT_FILES,
   RUN_INTEGRATION_FETCHES,
@@ -11,6 +13,10 @@ import {
   RUN_PREVIEW_SOURCES,
   RUN_START_POINTS,
 } from './contracts/index.js';
+import { GetDefinitionsRepositoryHandler } from './application/features/get-definitions-repository/handler.js';
+import { ProjectDefinitionsRepositories } from './entry-points/contracts/definitions-repositories.js';
+import { GetProjectKindHandler } from './application/features/get-project-kind/handler.js';
+import { ProjectProjectKinds } from './entry-points/contracts/project-kinds.js';
 import { GetProjectNamesHandler } from './application/features/get-project-names/handler.js';
 import { ProjectRepositoryDisconnectSteps } from './entry-points/contracts/repository-disconnect-steps.js';
 import {
@@ -127,7 +133,7 @@ const DISCONNECT_RETRY_MS = 30_000;
 
 /**
  * `projects` business module: projects, their Repository (Git adapter, background jobs),
- * Environment file and merge method. Other modules reach it through {@link RUN_START_POINTS}, {@link RUN_ENVIRONMENT_FILES} and {@link RUN_BRANCH_REVIEWS}, {@link RUN_INTEGRATION_FETCHES}, {@link RUN_MERGE_METHODS} and {@link RUN_PREVIEW_SOURCES}.
+ * Environment file and merge method. Other modules reach it through {@link PROJECT_KINDS}, {@link DEFINITIONS_REPOSITORIES}, {@link RUN_START_POINTS}, {@link RUN_ENVIRONMENT_FILES} and {@link RUN_BRANCH_REVIEWS}, {@link RUN_INTEGRATION_FETCHES}, {@link RUN_MERGE_METHODS} and {@link RUN_PREVIEW_SOURCES}.
  */
 @Module({})
 export class ProjectsModule {
@@ -245,9 +251,15 @@ export class ProjectsModule {
         ReadIntegrationFileHandler,
         OpenPreviewArchiveHandler,
         GetProjectNamesHandler,
+        GetProjectKindHandler,
+        GetDefinitionsRepositoryHandler,
+        { provide: DEFINITIONS_REPOSITORIES, useClass: ProjectDefinitionsRepositories },
+        { provide: PROJECT_KINDS, useClass: ProjectProjectKinds },
         { provide: RUN_PREVIEW_SOURCES, useClass: ProjectRunPreviewSources },
       ],
       exports: [
+        PROJECT_KINDS,
+        DEFINITIONS_REPOSITORIES,
         RUN_START_POINTS,
         RUN_ENVIRONMENT_FILES,
         RUN_BRANCH_REVIEWS,

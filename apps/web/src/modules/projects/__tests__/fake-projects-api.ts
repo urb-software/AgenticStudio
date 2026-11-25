@@ -45,6 +45,7 @@ export function fakeProjectsApi(
       id: `00000000-0000-4000-8000-${String(nextId++).padStart(12, '0')}`,
       name: (body as { name: string }).name,
       mergeMethod: 'squash',
+      kind: 'code',
       createdAt: new Date(Date.UTC(2026, 10, 12, 12, nextId)).toISOString(),
     };
     projects.unshift(created);

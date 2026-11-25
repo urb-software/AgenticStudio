@@ -96,3 +96,11 @@ export class PreviewSourceUnavailableError extends Error {
     this.name = 'PreviewSourceUnavailableError';
   }
 }
+
+/** The Project is the definitions Repository, which accepts no Preview. */
+export class DefinitionsProjectError extends Error {
+  constructor() {
+    super('The definitions Repository accepts no Preview.');
+    this.name = 'DefinitionsProjectError';
+  }
+}

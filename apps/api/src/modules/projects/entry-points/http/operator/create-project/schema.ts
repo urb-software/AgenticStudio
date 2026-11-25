@@ -1,5 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
+import { PROJECT_KINDS } from '../../../../domain/value-objects/project-kind.js';
 import { NormalizedName } from '../../../../domain/value-objects/normalized-name.js';
 import {
   PROJECT_NAME_MAX_LENGTH,
@@ -19,6 +20,13 @@ export const createProjectRequestSchema = z
       .max(PROJECT_NAME_MAX_LENGTH, {
         error: `Use at most ${PROJECT_NAME_MAX_LENGTH} characters.`,
       }),
+    kind: z
+      .enum(PROJECT_KINDS)
+      .optional()
+      .describe(
+        '`code` (the default) is an ordinary Project. `definitions` is the one Repository that ' +
+          'holds agent definitions; it accepts no Run, no Preview and no Environment file.',
+      ),
   })
   .meta({ id: 'CreateProjectRequest' });
 

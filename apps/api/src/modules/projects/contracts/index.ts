@@ -1,5 +1,47 @@
 import type { EnvironmentFile, MergeMethod } from '@agentic-studio/contracts';
 
+export const PROJECT_KINDS = Symbol('PROJECT_KINDS');
+
+/** `code` for an ordinary Project; `definitions` for the Repository that holds agent definitions. */
+export type ProjectKind = 'code' | 'definitions';
+
+/** The states of a Repository connection, as `projects` reports them. */
+export const REPOSITORY_STATES = [
+  'awaiting_key',
+  'awaiting_host_key',
+  'connecting',
+  'ready',
+  'fetching',
+  'failed',
+  'disconnecting',
+] as const;
+export type RepositoryState = (typeof REPOSITORY_STATES)[number];
+
+export interface ProjectKinds {
+  /** The kind of the project with this id, or `null` when none has it (also for a non-UUID). */
+  kindOf(projectId: string): Promise<ProjectKind | null>;
+}
+
+export const DEFINITIONS_REPOSITORIES = Symbol('DEFINITIONS_REPOSITORIES');
+
+/** The definitions Repository as `agents` reads it: no secret reference and no host key. */
+export interface DefinitionsRepositoryState {
+  projectId: string;
+  /** `null` while the Project has no Repository connected yet. */
+  repository: {
+    state: RepositoryState;
+    integrationBranch: string;
+    /** The Integration branch's commit the Clone holds; `null` without a usable Clone. */
+    headSha: string | null;
+    lastFetchedAt: Date | null;
+  } | null;
+}
+
+export interface DefinitionsRepositories {
+  /** The definitions Project and its Repository, or `null` when none is connected. */
+  current(): Promise<DefinitionsRepositoryState | null>;
+}
+
 export const RUN_START_POINTS = Symbol('RUN_START_POINTS');
 
 /**

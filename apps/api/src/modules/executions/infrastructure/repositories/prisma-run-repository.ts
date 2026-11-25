@@ -567,10 +567,12 @@ export class PrismaRunRepository implements RunRepository {
         // Serializes claims (released at commit or rollback); other writers are not blocked.
         await tx.$queryRaw`
           SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext('studio.executions.claim'))`;
-        // FOR UPDATE waits for a held row lock and re-checks the row, so a concurrent cancel
-        // cannot fail the claim and no Run is skipped for being briefly locked.
+        // The join on `kind` keeps a definitions Project's Run (never created) out of every claim.
+        // FOR UPDATE waits for a held lock and re-checks the row: a concurrent cancel cannot fail
+        // the claim, and no Run is skipped for being briefly locked.
         const [selected] = await tx.$queryRaw<{ id: string }[]>`
           SELECT r.id FROM runs r
+          JOIN projects p ON p.id = r.project_id AND p.kind = 'code'
           WHERE ((r.state = 'queued'
                   AND (r.session_ref IS NULL OR r.last_claimed_by = ${workerId}::uuid))
                  OR (r.state = 'failed' AND r.delivery_requested AND r.claimed_by IS NULL

@@ -177,10 +177,11 @@
     "projects/ProjectRepository": {
       "add": {
         "kind": "atomic",
-        "reason": "The unique index on the normalized name decides a simultaneous create, because there is no row to lock before it exists."
+        "reason": "The unique indexes on the normalized name and on the one definitions Project decide a simultaneous create, because there is no row to lock before it exists."
       },
       "listNewestFirst": { "kind": "query" },
       "findById": { "kind": "load" },
+      "findDefinitions": { "kind": "query" },
       "findByIds": { "kind": "query" },
       "saveMergeMethod": { "kind": "save" }
     },

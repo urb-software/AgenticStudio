@@ -5,6 +5,7 @@ import {
   PreviewRepositoryNotReadyError,
   PreviewSourceUnavailableError,
   ProjectNotFoundError,
+  DefinitionsProjectError,
 } from '../../../../domain/errors/preview-settings-errors.js';
 import { InMemoryPreviewOperationRepository } from '../../../../domain/repositories/__tests__/in-memory-preview-operation-repository.js';
 import { InMemoryPreviewSettingsRepository } from '../../../../domain/repositories/__tests__/in-memory-preview-settings-repository.js';
@@ -17,22 +18,32 @@ import {
 } from '../../../ports/__tests__/fake-preview-sources.js';
 import { previewKit } from '../../../__tests__/preview-test-kit.js';
 import { SavePreviewSettingsHandler } from '../handler.js';
+import { FakeProjectKinds } from '../../../ports/__tests__/fake-project-kinds.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const INPUT = { projectId: PROJECT, composeFile: 'compose.yaml', service: 'web', port: 80 };
 
 describe('SavePreviewSettingsHandler', () => {
   let sources: FakePreviewSources;
+  const kinds = new FakeProjectKinds();
   let settings: InMemoryPreviewSettingsRepository;
   let domain: { domain: string | null };
   let handler: SavePreviewSettingsHandler;
 
   beforeEach(() => {
     sources = new FakePreviewSources();
+    kinds.kind = 'code';
     settings = new InMemoryPreviewSettingsRepository();
     domain = { domain: 'preview.example.test' };
     const kit = previewKit(new InMemoryPreviewOperationRepository(), sources);
-    handler = new SavePreviewSettingsHandler(sources, settings, domain, kit.judge, kit.states);
+    handler = new SavePreviewSettingsHandler(
+      kinds,
+      sources,
+      settings,
+      domain,
+      kit.judge,
+      kit.states,
+    );
   });
 
   async function refusalsOf(input = INPUT) {
@@ -206,5 +217,13 @@ describe('SavePreviewSettingsHandler', () => {
     };
 
     await expect(handler.execute(INPUT)).resolves.toMatchObject({ removedPorts: [] });
+  });
+
+  it('refuses the definitions Repository before it reads anything else', async () => {
+    kinds.kind = 'definitions';
+
+    await expect(handler.execute(INPUT)).rejects.toBeInstanceOf(DefinitionsProjectError);
+    expect(sources.status).not.toHaveBeenCalled();
+    expect(await settings.find(PROJECT)).toBeNull();
   });
 });

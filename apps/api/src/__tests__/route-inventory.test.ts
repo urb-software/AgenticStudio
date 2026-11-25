@@ -49,15 +49,17 @@ function routes(controllers: Controller[]): string[] {
 }
 
 describe('route and guard inventory', () => {
-  it('lists every route of projects, executions and environments with its authentication and guards', () => {
+  it('lists every route of projects, agents, executions and environments with its authentication and guards', () => {
     // Reached through the composition root: nothing outside a module imports its internals.
-    // Only the three business modules are listed; the platform's controllers are not.
+    // Only the four business modules are listed; the platform's controllers are not.
     const modules = (AppModule.register(testConfig()).imports ?? []).filter(
       (entry): entry is DynamicModule =>
         'module' in entry &&
-        ['ProjectsModule', 'ExecutionsModule', 'EnvironmentsModule'].includes(entry.module.name),
+        ['ProjectsModule', 'AgentsModule', 'ExecutionsModule', 'EnvironmentsModule'].includes(
+          entry.module.name,
+        ),
     );
-    expect(modules).toHaveLength(3);
+    expect(modules).toHaveLength(4);
     const controllers = modules.flatMap((entry) => entry.controllers ?? []);
     expect(routes(controllers as Controller[])).toMatchInlineSnapshot(`
       [
@@ -66,6 +68,7 @@ describe('route and guard inventory', () => {
         "DELETE /api/projects/:id/repository [session]",
         "DELETE /api/runs/:runId/pull-request/failing-checks/prepared [session]",
         "GET /api/agent-worker [session]",
+        "GET /api/agents/definitions-repository [session]",
         "GET /api/controller/operations/:operationId/source [controller-token]",
         "GET /api/previews [session]",
         "GET /api/projects [session]",

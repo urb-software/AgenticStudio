@@ -9,7 +9,10 @@ import {
   type ProjectRepository,
 } from '../../../domain/repositories/project-repository.js';
 import { isProjectId } from '../../../domain/value-objects/project-id.js';
-import { ProjectNotFoundError } from '../../../domain/errors/project-errors.js';
+import {
+  DefinitionsProjectError,
+  ProjectNotFoundError,
+} from '../../../domain/errors/project-errors.js';
 
 export interface GetEnvironmentFileInput {
   projectId: string;
@@ -18,7 +21,8 @@ export interface GetEnvironmentFileInput {
 export type GetEnvironmentFileResult = EnvironmentFileView | null;
 
 /**
- * Never returns the content. Throws {@link ProjectNotFoundError}.
+ * Never returns the content. Throws {@link ProjectNotFoundError}, or {@link DefinitionsProjectError} for the
+ * definitions Repository.
  */
 @Injectable()
 export class GetEnvironmentFileHandler {
@@ -29,9 +33,9 @@ export class GetEnvironmentFileHandler {
 
   async execute(input: GetEnvironmentFileInput): Promise<GetEnvironmentFileResult> {
     const { projectId } = input;
-    if (!isProjectId(projectId) || !(await this.projects.findById(projectId))) {
-      throw new ProjectNotFoundError();
-    }
+    const project = isProjectId(projectId) ? await this.projects.findById(projectId) : null;
+    if (!project) throw new ProjectNotFoundError();
+    if (project.kind === 'definitions') throw new DefinitionsProjectError();
     const file = await this.files.find(projectId);
     return file ? environmentFileView(file) : null;
   }

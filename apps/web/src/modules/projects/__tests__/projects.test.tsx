@@ -11,12 +11,14 @@ const ALPHA: ProjectOutput = {
   id: '00000000-0000-4000-8000-0000000000a1',
   name: 'Alpha',
   mergeMethod: 'squash',
+  kind: 'code',
   createdAt: '2026-11-12T09:00:00.000Z',
 };
 const BETA: ProjectOutput = {
   id: '00000000-0000-4000-8000-0000000000b2',
   name: 'Beta',
   mergeMethod: 'squash',
+  kind: 'code',
   createdAt: '2026-11-12T10:00:00.000Z',
 };
 

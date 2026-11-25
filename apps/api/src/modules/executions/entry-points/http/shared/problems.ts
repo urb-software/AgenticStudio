@@ -7,6 +7,8 @@ import type { followUpRefusalSchema } from './run-response.js';
 
 export const EXECUTIONS_PROBLEM_TYPES = {
   projectNotFound: 'urn:agentic-studio:problem:project-not-found',
+  /** 409: the Project is the definitions Repository, which accepts no Run. */
+  definitionsProject: 'urn:agentic-studio:problem:definitions-project',
   runNotFound: 'urn:agentic-studio:problem:run-not-found',
   repositoryNotReady: 'urn:agentic-studio:problem:repository-not-ready',
   providerUnavailable: 'urn:agentic-studio:problem:provider-unavailable',
@@ -317,6 +319,15 @@ export function projectNotFound(): ProblemException {
     type: EXECUTIONS_PROBLEM_TYPES.projectNotFound,
     title: 'Project not found',
     detail: 'No project has this id.',
+  });
+}
+
+export function definitionsProject(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: EXECUTIONS_PROBLEM_TYPES.definitionsProject,
+    title: 'Definitions Repository',
+    detail: 'The definitions Repository accepts no Run.',
+    extensions: { refused: 'run' },
   });
 }
 

@@ -8,6 +8,7 @@ import {
 } from '../../../../../../platform/http/problem-details.js';
 import { SavePreviewSettingsHandler } from '../../../../application/features/save-preview-settings/handler.js';
 import {
+  DefinitionsProjectError,
   PreviewRefusedError,
   PreviewRepositoryNotReadyError,
   PreviewSourceUnavailableError,
@@ -21,6 +22,7 @@ import {
   toPreviewResponse,
 } from '../../shared/preview-response.js';
 import {
+  definitionsProject,
   ENVIRONMENTS_PROBLEM_TYPES,
   previewRefused,
   projectNotFound,
@@ -37,6 +39,7 @@ function fieldError(path: string, message: string): FieldProblemException {
 
 function toHttpError(error: unknown): unknown {
   if (error instanceof ProjectNotFoundError) return projectNotFound();
+  if (error instanceof DefinitionsProjectError) return definitionsProject();
   if (error instanceof PreviewRepositoryNotReadyError) return repositoryNotReady(error.reason);
   if (error instanceof PreviewRefusedError) return previewRefused(error.refusals);
   if (error instanceof PreviewSourceUnavailableError) return sourceUnavailable();
@@ -69,6 +72,7 @@ export class SavePreviewSettingsEndpoint {
   @ApiProblemResponses({
     404: `Unknown project (${ENVIRONMENTS_PROBLEM_TYPES.projectNotFound})`,
     409:
+      `The project is the definitions Repository (${ENVIRONMENTS_PROBLEM_TYPES.definitionsProject}), ` +
       `The repository cannot be read now (${ENVIRONMENTS_PROBLEM_TYPES.repositoryNotReady}), ` +
       `or the API is not on Linux (${ENVIRONMENTS_PROBLEM_TYPES.unsupportedPlatform})`,
     502: `The Compose file could not be read (${ENVIRONMENTS_PROBLEM_TYPES.sourceUnavailable})`,

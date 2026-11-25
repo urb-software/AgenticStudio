@@ -109,7 +109,7 @@ describe('PrismaRepositoryConnectionRepository (PostgreSQL)', () => {
 
   beforeEach(async () => {
     await db.$executeRaw`TRUNCATE TABLE projects CASCADE`;
-    projectId = (await projects.add(ProjectName.parse('Shop'))).id;
+    projectId = (await projects.add(ProjectName.parse('Shop'), 'code')).id;
   });
 
   describe('a Retry that keeps its Deploy key', () => {
@@ -162,7 +162,7 @@ describe('PrismaRepositoryConnectionRepository (PostgreSQL)', () => {
 
   describe('a remote held by another project', () => {
     it('refuses the connect and names the holder by id', async () => {
-      const other = (await projects.add(ProjectName.parse('Other'))).id;
+      const other = (await projects.add(ProjectName.parse('Other'), 'code')).id;
       await connections.connect({
         projectId,
         url: 'https://github.com/acme/shop.git',
@@ -189,7 +189,7 @@ describe('PrismaRepositoryConnectionRepository (PostgreSQL)', () => {
     it.each([1, 2, 3, 4, 5])(
       'connects exactly one; the other is told which project holds the remote (round %i)',
       async () => {
-        const other = (await projects.add(ProjectName.parse('Other'))).id;
+        const other = (await projects.add(ProjectName.parse('Other'), 'code')).id;
         // The store names the holder by id and the Connect handler turns it into its name, so
         // the race runs through the handler over the real stores.
         const connect = new ConnectRepositoryHandler(
@@ -244,7 +244,7 @@ describe('PrismaRepositoryConnectionRepository (PostgreSQL)', () => {
 
   describe('the interrupted migration', () => {
     it('moves the failures stored as unknown / "Interrupted" to interrupted, and only those', async () => {
-      const other = (await projects.add(ProjectName.parse('Other'))).id;
+      const other = (await projects.add(ProjectName.parse('Other'), 'code')).id;
       // Test setup only: failures as the earlier code stored them.
       await db.$executeRaw`
         INSERT INTO repositories (project_id, url, url_normalized, integration_branch, state, failure_code, failure_detail)

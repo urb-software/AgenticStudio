@@ -5,6 +5,7 @@ import { ApiProblemResponses } from '../../../../../../platform/http/problem-det
 import { GetPreviewHandler } from '../../../../application/features/get-preview/handler.js';
 import { RequestPreviewResetDataHandler } from '../../../../application/features/request-preview-reset-data/handler.js';
 import {
+  DefinitionsProjectError,
   PreviewBuildRunningError,
   PreviewBusyError,
   PreviewControllerUnavailableError,
@@ -13,6 +14,7 @@ import {
 import { PreviewDto, toPreviewResponse } from '../../shared/preview-response.js';
 import {
   buildRunning,
+  definitionsProject,
   controllerUnavailable,
   ENVIRONMENTS_PROBLEM_TYPES,
   previewBusy,
@@ -21,6 +23,7 @@ import {
 
 function toHttpError(error: unknown): unknown {
   if (error instanceof ProjectNotFoundError) return projectNotFound();
+  if (error instanceof DefinitionsProjectError) return definitionsProject();
   if (error instanceof PreviewControllerUnavailableError) return controllerUnavailable();
   if (error instanceof PreviewBuildRunningError) return buildRunning();
   if (error instanceof PreviewBusyError) return previewBusy();
@@ -48,6 +51,7 @@ export class ResetPreviewDataEndpoint {
   @ApiProblemResponses({
     404: `Unknown project (${ENVIRONMENTS_PROBLEM_TYPES.projectNotFound})`,
     409:
+      `The project is the definitions Repository (${ENVIRONMENTS_PROBLEM_TYPES.definitionsProject}), ` +
       `No environment controller is connected (${ENVIRONMENTS_PROBLEM_TYPES.controllerUnavailable}), ` +
       `a build is running (${ENVIRONMENTS_PROBLEM_TYPES.buildRunning}) or a stop or a reset is ` +
       `running (${ENVIRONMENTS_PROBLEM_TYPES.previewBusy})`,

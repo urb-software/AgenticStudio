@@ -109,6 +109,7 @@ describe('projects API (PostgreSQL + Redis via Testcontainers)', () => {
         id: expect.stringMatching(UUID),
         name: 'Agentic Studio',
         mergeMethod: 'squash',
+        kind: 'code',
         createdAt: expect.stringMatching(ISO_8601),
       });
       expect(await listedNames()).toEqual(['Agentic Studio']);

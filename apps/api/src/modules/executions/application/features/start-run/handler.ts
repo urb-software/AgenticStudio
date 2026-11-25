@@ -1,8 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
-import { RUN_START_POINTS, type RunStartPoints } from '../../../../projects/contracts/index.js';
+import {
+  PROJECT_KINDS,
+  type ProjectKinds,
+  RUN_START_POINTS,
+  type RunStartPoints,
+} from '../../../../projects/contracts/index.js';
 import { type Provider } from '../../../domain/value-objects/provider.js';
 import {
+  DefinitionsProjectRunError,
   RepositoryNotReadyError,
   RunProjectNotFoundError,
   ProviderUnavailableError,
@@ -30,12 +36,13 @@ export interface StartRunResult {
 
 /**
  * Refuses a provider known to be unavailable from the latest worker status; the worker's own check
- * stays authoritative. Throws {@link RunProjectNotFoundError}, {@link RepositoryNotReadyError},
+ * stays authoritative. Throws {@link RunProjectNotFoundError}, {@link DefinitionsProjectRunError}, {@link RepositoryNotReadyError},
  * {@link ProviderUnavailableError} or `InvalidTaskError`.
  */
 @Injectable()
 export class StartRunHandler {
   constructor(
+    @Inject(PROJECT_KINDS) private readonly kinds: ProjectKinds,
     @Inject(RUN_REPOSITORY) private readonly runs: RunRepository,
     @Inject(RUN_START_POINTS) private readonly startPoints: RunStartPoints,
     @Inject(WORKER_STATUS_STORE) private readonly statuses: WorkerStatusStore,
@@ -45,6 +52,9 @@ export class StartRunHandler {
   ) {}
 
   async execute(input: StartRunInput): Promise<StartRunResult> {
+    if ((await this.kinds.kindOf(input.projectId)) === 'definitions') {
+      throw new DefinitionsProjectRunError();
+    }
     const startPoint = await this.startPoints.forProject(input.projectId);
     switch (startPoint.status) {
       case 'project_not_found':

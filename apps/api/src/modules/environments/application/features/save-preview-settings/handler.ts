@@ -3,8 +3,10 @@ import {
   RUN_PREVIEW_SOURCES,
   type RunPreviewSources,
 } from '../../../../projects/contracts/index.js';
+import { PROJECT_KINDS, type ProjectKinds } from '../../../../projects/contracts/index.js';
 import { PreviewSettings } from '../../../domain/entities/preview-settings.js';
 import {
+  DefinitionsProjectError,
   PreviewRepositoryNotReadyError,
   ProjectNotFoundError,
 } from '../../../domain/errors/preview-settings-errors.js';
@@ -33,10 +35,12 @@ export type SavePreviewSettingsResult = PreviewView & {
 
 /**
  * Saves only what the Compose validation accepts, judged on the file as the Clone holds it.
+ * Throws `DefinitionsProjectError` for the definitions Repository.
  */
 @Injectable()
 export class SavePreviewSettingsHandler {
   constructor(
+    @Inject(PROJECT_KINDS) private readonly kinds: ProjectKinds,
     @Inject(RUN_PREVIEW_SOURCES) private readonly sources: RunPreviewSources,
     @Inject(PREVIEW_SETTINGS_REPOSITORY) private readonly settings: PreviewSettingsRepository,
     @Inject(PREVIEW_DOMAIN_SETTINGS) private readonly domain: PreviewDomainSettings,
@@ -46,6 +50,7 @@ export class SavePreviewSettingsHandler {
 
   async execute(input: SavePreviewSettingsInput): Promise<SavePreviewSettingsResult> {
     const { projectId } = input;
+    if ((await this.kinds.kindOf(projectId)) === 'definitions') throw new DefinitionsProjectError();
     const source = await this.sources.status(projectId);
     if (source.status === 'project_not_found') throw new ProjectNotFoundError();
     const composeFile = this.judge.composeFile(input.composeFile);
