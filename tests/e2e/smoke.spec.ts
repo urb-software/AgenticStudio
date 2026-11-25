@@ -1406,15 +1406,20 @@ test(RUN_TEST, async ({ page }, testInfo) => {
   await expect.poll(async () => (await readRun()).latestMergeApproval?.result).toBe('carried_out');
 });
 
-// The agent editor opens definitions files in a bundled, read-only Monaco (no request leaves
-// the origin) that follows the app's theme. The editor's three API reads are answered in the
-// browser, so the test needs no definitions Repository.
-test('the agent editor shows a definitions file in a bundled, read-only Monaco', async ({
-  page,
-}) => {
-  const sha = '0123456789abcdef0123456789abcdef01234567';
+// The agent editor's API, answered in the browser, so the tests need no definitions Repository.
+// `draft` is the Draft the page has written: each saved file's text by path.
+const EDITOR_SHA = '0123456789abcdef0123456789abcdef01234567';
+const EDITOR_AGENT_MD = [
+  '---',
+  'name: reviewer',
+  'provider: nope',
+  'model: opus',
+  '---',
+  'Review.',
+];
+
+async function mockEditorApi(page: Page) {
   const repository = { state: 'ready', note: null };
-  const agentMd = ['---', 'name: reviewer', 'provider: nope', 'model: opus', '---', 'Review.'];
   const entry = (path: string, agent: string | null) => ({
     path,
     kind: 'file',
@@ -1423,11 +1428,31 @@ test('the agent editor shows a definitions file in a bundled, read-only Monaco',
     agent,
   });
   const json = { contentType: 'application/json' };
+  const base: Record<string, string> = {
+    'README.md': '# Agents\n',
+    'config.json': '{"mode": 1}\n',
+    'agents/reviewer/AGENT.md': EDITOR_AGENT_MD.join('\n'),
+  };
+  const draft = { version: 0, files: new Map<string, string>() };
+  const draftBody = () => ({
+    baseCommit: draft.files.size > 0 ? EDITOR_SHA : null,
+    currentCommit: EDITOR_SHA,
+    version: draft.version,
+    files: [...draft.files].map(([path, text]) => ({
+      path,
+      change: path in base ? 'modified' : 'added',
+      size: text.length,
+      movedFrom: null,
+    })),
+    problems: [],
+    movedUpstream: [],
+  });
+
   await page.route('**/api/agents', (route) =>
     route.fulfill({
       ...json,
       body: JSON.stringify({
-        commit: sha,
+        commit: EDITOR_SHA,
         repository,
         truncated: false,
         baseRules: { version: 'e2e', text: 'Rules.' },
@@ -1456,7 +1481,7 @@ test('the agent editor shows a definitions file in a bundled, read-only Monaco',
     route.fulfill({
       ...json,
       body: JSON.stringify({
-        commit: sha,
+        commit: EDITOR_SHA,
         repository,
         truncated: false,
         entries: [
@@ -1468,23 +1493,59 @@ test('the agent editor shows a definitions file in a bundled, read-only Monaco',
     }),
   );
   await page.route(/\/api\/agents\/definitions-repository\/files\/content\?/, (route) => {
-    const path = new URL(route.request().url()).searchParams.get('path');
-    const contents: Record<string, string> = {
-      'README.md': '# Agents\n',
-      'config.json': '{"mode": 1}\n',
-    };
-    const content = contents[path ?? ''] ?? agentMd.join('\n');
+    const path = new URL(route.request().url()).searchParams.get('path') ?? '';
     return route.fulfill({
       ...json,
-      body: JSON.stringify({ commit: sha, path, kind: 'text', content }),
+      body: JSON.stringify({
+        commit: EDITOR_SHA,
+        path,
+        kind: 'text',
+        content: base[path] ?? EDITOR_AGENT_MD.join('\n'),
+      }),
     });
   });
+  await page.route('**/api/agents/definitions-repository/draft', (route) =>
+    route.fulfill({ ...json, body: JSON.stringify(draftBody()) }),
+  );
+  await page.route('**/api/agents/definitions-repository/draft/files', (route) => {
+    const body = route.request().postDataJSON() as { path: string; text: string };
+    draft.files.set(body.path, body.text);
+    draft.version += 1;
+    return route.fulfill({ ...json, body: JSON.stringify(draftBody()) });
+  });
+  await page.route(/\/api\/agents\/definitions-repository\/draft\/files\/content\?/, (route) => {
+    const path = new URL(route.request().url()).searchParams.get('path') ?? '';
+    return route.fulfill({
+      ...json,
+      body: JSON.stringify({
+        commit: EDITOR_SHA,
+        path,
+        kind: 'text',
+        content: draft.files.get(path) ?? base[path] ?? '',
+      }),
+    });
+  });
+  return { draft };
+}
+
+/** Records every request that leaves the Studio origin. */
+function watchForeignRequests(page: Page): string[] {
   const foreign: string[] = [];
   const own = new URL(test.info().project.use.baseURL ?? 'http://localhost').origin;
   page.on('request', (request) => {
     const url = new URL(request.url());
     if (url.protocol.startsWith('http') && url.origin !== own) foreign.push(request.url());
   });
+  return foreign;
+}
+
+// The agent editor opens definitions files in a bundled, read-only Monaco (no request leaves
+// the origin) that follows the app's theme.
+test('the agent editor shows a definitions file in a bundled, read-only Monaco', async ({
+  page,
+}) => {
+  await mockEditorApi(page);
+  const foreign = watchForeignRequests(page);
 
   await signIn(page);
   await page.goto('/agents/editor?path=agents%2Freviewer%2FAGENT.md');
@@ -1552,6 +1613,57 @@ test('the agent editor shows a definitions file in a bundled, read-only Monaco',
     await expect.poll(async () => (await background()).actual).toBe((await background()).expected);
   }
 
+  await expectInBothThemes(page, editor);
+  expect(foreign, 'a request left the Studio origin').toEqual([]);
+});
+
+// Edit mode makes Monaco editable; a save goes to the Draft; the browser validates the agent
+// while the operator types; the Changes view shows the file against the base commit in Monaco's
+// diff editor, from the same bundled chunk.
+test('the agent editor edits into a Draft, shows a problem while typing and the Changes view', async ({
+  page,
+}) => {
+  const { draft } = await mockEditorApi(page);
+  const foreign = watchForeignRequests(page);
+
+  await signIn(page);
+  await page.goto('/agents/editor?path=agents%2Freviewer%2FAGENT.md');
+  const editor = page.locator('.monaco-editor');
+  await expect(editor.locator('.view-lines')).toContainText('provider: nope');
+
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  const replaceText = async (text: string) => {
+    await editor.locator('.view-lines').click();
+    await page.keyboard.press('ControlOrMeta+A');
+    await page.keyboard.insertText(text);
+  };
+
+  // No description: the browser finds the problem as the text changes.
+  await replaceText('---\nname: reviewer\nprovider: claude_code\n---\nReview.');
+  const problems = page.getByRole('region', { name: 'Problems' });
+  await expect(problems).toContainText('description');
+
+  await replaceText(
+    '---\nname: reviewer\ndescription: Reviews a change\nprovider: claude_code\n---\nReview.',
+  );
+  await expect(problems).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect
+    .poll(() => draft.files.get('agents/reviewer/AGENT.md'))
+    .toContain('description: Reviews a change');
+  const phone = (page.viewportSize()?.width ?? 0) < 768;
+  if (!phone) {
+    await expect(
+      page.getByRole('navigation', { name: 'Files' }).getByText('Modified'),
+    ).toBeVisible();
+  }
+
+  await page.getByRole('button', { name: /^Changes/ }).click();
+  const diff = page.locator('.monaco-diff-editor');
+  await expect(diff).toBeVisible();
+  await expect(diff).toContainText('provider: nope');
+  await expect(diff).toContainText('description: Reviews a change');
   await expectInBothThemes(page, editor);
   expect(foreign, 'a request left the Studio origin').toEqual([]);
 });

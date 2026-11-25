@@ -25,7 +25,8 @@ WORKDIR /app
 COPY . .
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
   pnpm install --frozen-lockfile --store-dir /pnpm/store --filter "@agentic-studio/web..."
-RUN STUDIO_WEB_STANDALONE=true pnpm --filter @agentic-studio/web run build
+RUN pnpm run build:web-packages \
+  && STUDIO_WEB_STANDALONE=true pnpm --filter @agentic-studio/web run build
 
 FROM ${NODE_IMAGE} AS runtime
 RUN groupadd --gid 10001 studio \

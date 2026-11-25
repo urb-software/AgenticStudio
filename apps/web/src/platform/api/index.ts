@@ -3,6 +3,7 @@
 import * as sdk from './generated';
 import type {
   AgentDetailOutput,
+  AgentDraftOutput,
   AgentFileOutput,
   AgentFilesOutput,
   AgentListOutput,
@@ -67,6 +68,9 @@ import {
 
 export type {
   AgentDetailOutput,
+  AgentDraftFileOutput,
+  AgentDraftOutput,
+  AgentDraftProblemOutput,
   AgentFileEntryOutput,
   AgentFileOutput,
   AgentFilesOutput,
@@ -288,6 +292,19 @@ export const api = {
   listAgentFiles: (): Promise<AgentFilesOutput> => unwrap(sdk.listAgentFiles()),
   getAgentFile: (path: string, commit?: string): Promise<AgentFileOutput> =>
     unwrap(sdk.getAgentFile({ query: { path, commit } })),
+  getAgentDraft: (): Promise<AgentDraftOutput> => unwrap(sdk.getAgentDraft()),
+  getAgentDraftFile: (path: string): Promise<AgentFileOutput> =>
+    unwrap(sdk.getAgentDraftFile({ query: { path } })),
+  saveAgentDraftFile: (
+    body: { path: string; text: string } | { path: string; contentBase64: string },
+  ): Promise<AgentDraftOutput> => unwrap(sdk.saveAgentDraftFile({ body })),
+  moveAgentDraftFile: (from: string, to: string): Promise<AgentDraftOutput> =>
+    unwrap(sdk.moveAgentDraftFile({ body: { from, to } })),
+  revertAgentDraftFile: (path: string): Promise<AgentDraftOutput> =>
+    unwrap(sdk.revertAgentDraftFile({ body: { path } })),
+  deleteAgentDraftFile: (path: string): Promise<AgentDraftOutput> =>
+    unwrap(sdk.deleteAgentDraftFile({ query: { path } })),
+  discardAgentDraft: (): Promise<AgentDraftOutput> => unwrap(sdk.discardAgentDraft()),
   getProject: (id: string): Promise<ProjectDetailOutput> =>
     unwrap(sdk.getProject({ path: { id } })),
   getRepository: (projectId: string): Promise<RepositoryOutput> =>

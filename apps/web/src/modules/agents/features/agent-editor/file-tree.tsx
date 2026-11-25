@@ -1,6 +1,13 @@
 import { ChevronRightIcon, FileIcon, FolderIcon } from 'lucide-react';
+import { cn } from '@/shared/lib/utils';
 import type { AgentSummaryOutput } from '../../../../platform/api';
-import { type TreeNode } from './editor-model';
+import { CHANGE_LABEL, type TreeNode } from './editor-model';
+
+const CHANGE_CLASS = {
+  added: 'text-run-succeeded',
+  modified: 'text-run-awaiting',
+  deleted: 'text-run-failed',
+} as const;
 
 /** The validation state of an agent folder, as shown beside its name. */
 export function agentState(agent: AgentSummaryOutput | undefined): string | undefined {
@@ -15,8 +22,10 @@ interface FileTreeProps {
   /** The open file's path. */
   selected: string | undefined;
   expanded: ReadonlySet<string>;
-  /** The definitions agents by name, for the marks on agent folders. */
-  agents: ReadonlyMap<string, AgentSummaryOutput>;
+  /** The validation state of each agent folder by name, as shown beside it. */
+  states: ReadonlyMap<string, string>;
+  /** Paths with edits that are not saved to the Draft. */
+  unsaved: ReadonlySet<string>;
   onToggle: (folder: string) => void;
   onOpen: (path: string) => void;
 }
@@ -25,13 +34,21 @@ const ROW =
   'flex w-full items-center gap-1.5 rounded-sm px-2 py-1 text-left text-code pointer-coarse:min-h-11';
 
 /** The files of the Repository as nested lists; folders are disclosure buttons. */
-export function FileTree({ nodes, selected, expanded, agents, onToggle, onOpen }: FileTreeProps) {
+export function FileTree({
+  nodes,
+  selected,
+  expanded,
+  states,
+  unsaved,
+  onToggle,
+  onOpen,
+}: FileTreeProps) {
   return (
     <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
       {nodes.map((node) => {
         if (node.kind === 'folder') {
           const open = expanded.has(node.path);
-          const state = node.agent ? agentState(agents.get(node.agent)) : undefined;
+          const state = node.agent ? states.get(node.agent) : undefined;
           return (
             <li key={node.path}>
               <button
@@ -62,7 +79,8 @@ export function FileTree({ nodes, selected, expanded, agents, onToggle, onOpen }
                     nodes={node.children}
                     selected={selected}
                     expanded={expanded}
-                    agents={agents}
+                    states={states}
+                    unsaved={unsaved}
                     onToggle={onToggle}
                     onOpen={onOpen}
                   />
@@ -71,7 +89,7 @@ export function FileTree({ nodes, selected, expanded, agents, onToggle, onOpen }
             </li>
           );
         }
-        if (!node.entry.openable) {
+        if (!node.entry.openable && node.entry.change !== 'deleted') {
           return (
             <li key={node.path}>
               <span className={`${ROW} text-text-dim`}>
@@ -96,7 +114,28 @@ export function FileTree({ nodes, selected, expanded, agents, onToggle, onOpen }
               }`}
             >
               <FileIcon aria-hidden="true" className="size-3.5 shrink-0" />
-              <span className="min-w-0 break-all">{node.name}</span>
+              <span
+                className={`min-w-0 break-all ${node.entry.change === 'deleted' ? 'line-through' : ''}`}
+                title={node.entry.movedFrom ? `Moved from ${node.entry.movedFrom}` : undefined}
+              >
+                {node.name}
+              </span>
+              {unsaved.has(node.path) ? (
+                <span className="ml-auto shrink-0 text-caption font-medium whitespace-nowrap text-brand">
+                  Unsaved
+                </span>
+              ) : null}
+              {node.entry.change ? (
+                <span
+                  className={cn(
+                    !unsaved.has(node.path) && 'ml-auto',
+                    'shrink-0 text-caption font-medium whitespace-nowrap',
+                    CHANGE_CLASS[node.entry.change],
+                  )}
+                >
+                  {CHANGE_LABEL[node.entry.change]}
+                </span>
+              ) : null}
             </button>
           </li>
         );
