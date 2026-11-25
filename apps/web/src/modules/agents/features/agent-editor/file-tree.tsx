@@ -1,4 +1,5 @@
 import { ChevronRightIcon, FileIcon, FolderIcon } from 'lucide-react';
+import { cn } from '@/shared/lib/utils';
 import type { AgentSummaryOutput } from '../../../../platform/api';
 import { CHANGE_LABEL, type TreeNode } from './editor-model';
 
@@ -126,7 +127,11 @@ export function FileTree({
               ) : null}
               {node.entry.change ? (
                 <span
-                  className={`${unsaved.has(node.path) ? '' : 'ml-auto'}shrink-0 text-caption font-medium whitespace-nowrap ${CHANGE_CLASS[node.entry.change]}`}
+                  className={cn(
+                    !unsaved.has(node.path) && 'ml-auto',
+                    'shrink-0 text-caption font-medium whitespace-nowrap',
+                    CHANGE_CLASS[node.entry.change],
+                  )}
                 >
                   {CHANGE_LABEL[node.entry.change]}
                 </span>

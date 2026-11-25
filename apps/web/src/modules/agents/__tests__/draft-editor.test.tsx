@@ -180,7 +180,9 @@ describe('Draft editing: saving a file', () => {
         }),
       ]),
     );
-    expect(await within(treeNav()).findByText('Modified')).toBeTruthy();
+    const mark = await within(treeNav()).findByText('Modified');
+    expect(mark.classList.contains('ml-auto')).toBe(true);
+    expect(mark.classList.contains('shrink-0')).toBe(true);
     await waitFor(() =>
       expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(
         true,
