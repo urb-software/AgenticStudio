@@ -19,11 +19,20 @@ export function useDefinitionsRepository() {
   });
 }
 
-/** Whether a failed create is a taken name (the operator can pick another), not a second Project. */
-export function isNameConflict(error: unknown): boolean {
-  return (
-    error instanceof ApiError && error.status === 409 && error.problem?.type !== EXISTS_PROBLEM
-  );
+/** What the form says for a taken name (the API's own 409 text is not about the field). */
+const TAKEN_MESSAGE = 'A project with this name already exists. Choose another name.';
+
+/**
+ * The message for the name field when a create failed because of the name (a taken name, or one
+ * the API rejects), so the operator can change it; undefined for any other failure. A second
+ * definitions Repository is a refusal no name can fix.
+ */
+export function nameProblemOf(error: unknown): string | undefined {
+  if (!(error instanceof ApiError)) return undefined;
+  const field = error.problem?.errors?.find((fieldError) => fieldError.path === 'name');
+  if (field) return field.message;
+  if (error.status === 409 && error.problem?.type !== EXISTS_PROBLEM) return TAKEN_MESSAGE;
+  return undefined;
 }
 
 /**
@@ -38,7 +47,7 @@ export function useCreateDefinitionsProject() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: DEFINITIONS_REPOSITORY_KEY }),
     // 409 for a second definitions Repository (created elsewhere): read the server's state again.
     onError: async (error) => {
-      if (error instanceof ApiError && error.status === 409 && !isNameConflict(error)) {
+      if (error instanceof ApiError && error.status === 409 && nameProblemOf(error) === undefined) {
         await queryClient.invalidateQueries({ queryKey: DEFINITIONS_REPOSITORY_KEY });
       }
     },

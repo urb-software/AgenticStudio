@@ -8,11 +8,11 @@ import { Button } from '@/shared/ui/button';
 import { TextField } from '@/shared/components/text-field';
 import { Skeleton } from '@/shared/ui/skeleton';
 import { toast } from '@/shared/ui/sonner';
-import { ApiError } from '../../../../platform/api';
+import { ApiError, createProjectRequestHint } from '../../../../platform/api';
 import { ProjectRepository } from '../../../projects';
 import {
   DEFINITIONS_PROJECT_NAME,
-  isNameConflict,
+  nameProblemOf,
   useCreateDefinitionsProject,
   useDefinitionsRepository,
 } from '../../api/agents-queries';
@@ -24,6 +24,15 @@ function readRequestOf(error: unknown): string {
   if (!(error instanceof ApiError) || error.status === 0) return READ_REQUEST;
   const status = [error.status, error.problem?.title].filter(Boolean).join(' ');
   return `${READ_REQUEST} · ${status}`;
+}
+
+/** A form hint only (the API stays authoritative): blank, or longer than the API's limit. */
+function nameHintError(name: string): string | undefined {
+  // The API measures the name after trimming and collapsing whitespace, in code points.
+  const normalized = name.normalize('NFC').trim().replace(/\s+/gu, ' ');
+  const parsed = createProjectRequestHint.shape.name.safeParse(normalized);
+  if (parsed.success) return undefined;
+  return normalized === '' ? 'Enter a project name.' : 'Use at most 100 characters.';
 }
 
 function LoadingAgents() {
@@ -45,11 +54,15 @@ function NotConnected({ onCreated }: { onCreated: () => void }) {
   const create = useCreateDefinitionsProject();
   const [name, setName] = useState(DEFINITIONS_PROJECT_NAME);
   const problem = create.error instanceof ApiError ? create.error.problem : undefined;
-  // A taken name is the operator's to change; only a second definitions Repository is a refusal.
-  const taken = isNameConflict(create.error);
+  const [hintError, setHintError] = useState<string>();
+  // A name problem is the operator's to change; only other failures are banners.
+  const nameProblem = hintError ?? nameProblemOf(create.error);
 
   function submit(event?: FormEvent) {
     event?.preventDefault();
+    const invalid = nameHintError(name);
+    setHintError(invalid);
+    if (invalid) return;
     create.mutate(name, {
       onSuccess: () => {
         onCreated();
@@ -60,19 +73,23 @@ function NotConnected({ onCreated }: { onCreated: () => void }) {
 
   return (
     <div className="flex flex-col gap-4">
-      {create.error && !taken ? (
+      {create.error && nameProblemOf(create.error) === undefined ? (
         <Banner tone="danger" title={problem?.title}>
           {problem?.detail || 'Could not create the definitions Repository. Try again.'}
         </Banner>
       ) : null}
-      {taken ? (
+      {nameProblem ? (
         <form onSubmit={submit} noValidate className="flex max-w-md flex-col gap-3">
           <TextField
             label="Project name"
             autoComplete="off"
             value={name}
-            onChange={(event) => setName(event.target.value)}
-            error="A project with this name already exists. Choose another name."
+            onChange={(event) => {
+              setName(event.target.value);
+              setHintError(undefined);
+            }}
+            error={nameProblem}
+            autoFocus
             readOnly={create.isPending}
           />
           <div>

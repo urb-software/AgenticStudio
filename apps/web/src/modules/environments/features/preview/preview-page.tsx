@@ -125,6 +125,9 @@ function Hostname({ preview }: { preview: PreviewOutput }) {
  */
 export function PreviewPage({ projectId }: { projectId: string }) {
   const kind = useProjectKind(projectId);
+  // Starts the Preview read at the same time as the kind's (one cache entry, shared with the
+  // content below), so an ordinary project does not wait for two round trips in a row.
+  usePreview(projectId);
   if (kind.isPending) return <LoadingPreview />;
   if (kind.data === 'definitions') {
     return (

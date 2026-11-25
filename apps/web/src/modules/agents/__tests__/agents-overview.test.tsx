@@ -112,6 +112,7 @@ describe('Agents page: nothing connected', () => {
 
     const field = await screen.findByLabelText<HTMLInputElement>('Project name');
     expect(field.value).toBe('Agent definitions');
+    expect(document.activeElement).toBe(field);
     expect(screen.getByText(/already exists. Choose another name/)).toBeTruthy();
     await expect(document.body).toHaveNoAxeViolations();
     await userEvent.clear(field);
@@ -128,6 +129,36 @@ describe('Agents page: nothing connected', () => {
       { name: 'Agent definitions', kind: 'definitions' },
       { name: 'Team agents', kind: 'definitions' },
     ]);
+  });
+
+  it('checks the name before sending and keeps the form for a name the API rejects', async () => {
+    const api = fakeAgentsApi(null);
+    renderAgents();
+    await screen.findByRole('button', { name: 'Connect definitions Repository' });
+    api.respondNext(409, { ...problem(409, 'Conflict') });
+    await userEvent.click(screen.getByRole('button', { name: 'Connect definitions Repository' }));
+    const field = await screen.findByLabelText<HTMLInputElement>('Project name');
+
+    await userEvent.clear(field);
+    await userEvent.type(field, '   ');
+    await userEvent.click(screen.getByRole('button', { name: 'Create' }));
+    expect(await screen.findByText('Enter a project name.')).toBeTruthy();
+    await userEvent.clear(field);
+    await userEvent.click(field);
+    await userEvent.paste('x'.repeat(101));
+    await userEvent.click(screen.getByRole('button', { name: 'Create' }));
+    expect(await screen.findByText('Use at most 100 characters.')).toBeTruthy();
+    expect(api.calls().filter((call) => call.method === 'POST')).toHaveLength(1);
+
+    // The API's own 400 on the name keeps the field, with its message.
+    await userEvent.clear(field);
+    await userEvent.type(field, 'Team agents');
+    api.respondNext(400, {
+      ...problem(400, 'Bad Request', { errors: [{ path: 'name', message: 'Not allowed.' }] }),
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Create' }));
+    expect(await screen.findByText('Not allowed.')).toBeTruthy();
+    expect(screen.getByLabelText('Project name')).toBeTruthy();
   });
 
   it('says so, with a Retry, when the page cannot be read', async () => {

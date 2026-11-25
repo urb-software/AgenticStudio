@@ -13,7 +13,7 @@ function Badge({ className, ...props }: BadgeProps) {
       data-slot="badge"
       data-variant="neutral"
       className={cn(
-        'inline-flex items-center rounded-sm border border-border bg-bg-subtle px-2 py-0.5 text-caption font-medium whitespace-nowrap text-text-muted',
+        'inline-flex items-center rounded-sm border border-border-strong bg-transparent px-2 py-0.5 text-caption font-medium whitespace-nowrap text-text-muted',
         className,
       )}
       {...props}
