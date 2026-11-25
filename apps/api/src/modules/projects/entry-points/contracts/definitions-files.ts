@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type {
+  DefinitionsBlobsResult,
   DefinitionsFiles,
   DefinitionsFilesResult,
   DefinitionsSnapshot,
@@ -7,6 +8,7 @@ import type {
 } from '../../contracts/index.js';
 import { GetDefinitionsRepositoryStateHandler } from '../../application/features/get-definitions-repository-state/handler.js';
 import { ListDefinitionsTreeHandler } from '../../application/features/list-definitions-tree/handler.js';
+import { ReadDefinitionsBlobsHandler } from '../../application/features/read-definitions-blobs/handler.js';
 import { ReadDefinitionsFilesHandler } from '../../application/features/read-definitions-files/handler.js';
 
 /**
@@ -19,6 +21,7 @@ export class ProjectDefinitionsFiles implements DefinitionsFiles {
     private readonly stateHandler: GetDefinitionsRepositoryStateHandler,
     private readonly treeHandler: ListDefinitionsTreeHandler,
     private readonly readHandler: ReadDefinitionsFilesHandler,
+    private readonly blobsHandler: ReadDefinitionsBlobsHandler,
   ) {}
 
   async snapshot(): Promise<DefinitionsSnapshot | null> {
@@ -37,5 +40,9 @@ export class ProjectDefinitionsFiles implements DefinitionsFiles {
     maxBytes: number,
   ): Promise<DefinitionsFilesResult> {
     return this.readHandler.execute({ commit, paths, maxBytes });
+  }
+
+  blobIds(commit: string, paths: readonly string[]): Promise<DefinitionsBlobsResult> {
+    return this.blobsHandler.execute({ commit, paths });
   }
 }

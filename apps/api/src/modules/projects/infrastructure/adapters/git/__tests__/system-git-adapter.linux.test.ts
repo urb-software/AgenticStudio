@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { lstat, mkdir, mkdtemp, readdir, readFile, rm, writeFile, chmod } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -420,6 +420,63 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
       ]);
       const roomy = await git.readFilesAtCommit(PROJECT_ID, commit, ['a.txt'], 100);
       expect(roomy[0]).toMatchObject({ size: 6, outcome: { status: 'found' } });
+    });
+
+    it('names the blob of each regular file without reading it, null for any other path', async () => {
+      const source = createFixture(
+        fixtures,
+        'blobs-source',
+        {
+          'a.txt': 'alpha\n',
+          'copy.txt': 'alpha\n',
+          'other.txt': 'beta\n',
+          'dir/inner.txt': 'x',
+          'link.md': { symlink: 'a.txt' },
+        },
+        { branch: 'dev' },
+      );
+      const git = adapter();
+      const { commit } = await git.clone(PROJECT_ID, source.url, 'dev');
+      // Git names a blob by the SHA-1 of its header and content.
+      const blobOf = (text: string) =>
+        createHash('sha1')
+          .update(`blob ${Buffer.byteLength(text)}\0${text}`)
+          .digest('hex');
+
+      const blobs = await git.blobIdsAtCommit(PROJECT_ID, commit, [
+        'a.txt',
+        'copy.txt',
+        'other.txt',
+        'dir/inner.txt',
+        'dir',
+        'link.md',
+        'missing.txt',
+        '../escape',
+      ]);
+
+      expect(blobs).toEqual([
+        { path: 'a.txt', blob: blobOf('alpha\n') },
+        { path: 'copy.txt', blob: blobOf('alpha\n') },
+        { path: 'other.txt', blob: blobOf('beta\n') },
+        { path: 'dir/inner.txt', blob: blobOf('x') },
+        { path: 'dir', blob: null },
+        { path: 'link.md', blob: null },
+        { path: 'missing.txt', blob: null },
+        { path: '../escape', blob: null },
+      ]);
+    });
+
+    it('refuses to name blobs at a commit the Clone does not hold', async () => {
+      const git = adapter();
+      const { commit } = await git.clone(PROJECT_ID, fixture.url, 'dev');
+      const absent = commit === 'f'.repeat(40) ? 'e'.repeat(40) : 'f'.repeat(40);
+
+      await expect(git.blobIdsAtCommit(PROJECT_ID, absent, ['a'])).rejects.toThrow(
+        GitCommitMissingError,
+      );
+      await expect(git.blobIdsAtCommit(PROJECT_ID, 'HEAD', ['a'])).rejects.toThrow(
+        GitRequestRejectedError,
+      );
     });
 
     it('counts the limit in raw bytes and tells binary from UTF-8 text by the bytes', async () => {

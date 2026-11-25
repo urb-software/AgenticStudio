@@ -111,6 +111,12 @@ export interface CommitFileRead {
   binary: boolean;
 }
 
+/** The Git object name of the regular file at a path of a commit; `null` when it names none. */
+export interface CommitBlobId {
+  path: string;
+  blob: string | null;
+}
+
 export type GitFailureReason = Exclude<RepositoryFailureCode, 'interrupted'>;
 
 export const GIT_FAILURE_REASONS: readonly GitFailureReason[] = REPOSITORY_FAILURE_CODES.filter(
@@ -247,6 +253,19 @@ export interface RepositoryGit {
     maxBytes: number,
     options?: GitOperationOptions,
   ): Promise<CommitFileRead[]>;
+
+  /**
+   * The object name of the regular file at each path in `commit`, in the order given, from the
+   * Clone's object store and without reading any file: two commits hold the same content at a
+   * path exactly when the names are equal. A path that is unsafe, or names no regular file, has
+   * `null`. Throws the errors of {@link RepositoryGit.readFileAtCommit} for the commit and Clone.
+   */
+  blobIdsAtCommit(
+    projectId: string,
+    commit: string,
+    paths: readonly string[],
+    options?: GitOperationOptions,
+  ): Promise<CommitBlobId[]>;
 
   /**
    * The tracked tree of `commit` as a tar archive of at most `maxBytes`, built from the Clone's

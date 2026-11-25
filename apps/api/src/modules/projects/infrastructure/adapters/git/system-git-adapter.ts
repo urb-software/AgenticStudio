@@ -10,6 +10,7 @@ import {
   type CommitArchive,
   type CommitArchiveOutcome,
   type CommitFileOutcome,
+  type CommitBlobId,
   type CommitFileRead,
   type CommitTree,
   type CommitTreeEntry,
@@ -1114,6 +1115,57 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
           }
         }
         return reads;
+      });
+    });
+  }
+
+  async blobIdsAtCommit(
+    projectId: string,
+    commit: string,
+    paths: readonly string[],
+    options: GitOperationOptions = {},
+  ): Promise<CommitBlobId[]> {
+    this.assertSupportedPlatform();
+    if (!COMMIT_ID.test(commit)) {
+      throw new GitRequestRejectedError('The commit id is not a full commit id.');
+    }
+    this.paths.clone(projectId);
+    return this.guarded('ls-tree', async () => {
+      const clone = await this.paths.existingClone(projectId);
+      if (!clone) {
+        throw new GitCloneMissingError();
+      }
+      return this.withOperation(this.readTimeoutMs(), options, async (context) => {
+        const gitDir = `--git-dir=${clone}`;
+        await this.assertKnownCommit(context, gitDir, commit);
+        const safe = [
+          ...new Set(paths.filter((path) => environmentFilePathProblem(path) === null)),
+        ];
+        const blobs = new Map<string, string>();
+        for (let from = 0; from < safe.length; from += READ_BATCH_PATHS) {
+          const listed = await this.git(
+            context,
+            [
+              '--literal-pathspecs',
+              gitDir,
+              'ls-tree',
+              '-l',
+              '-z',
+              commit,
+              '--',
+              ...safe.slice(from, from + READ_BATCH_PATHS),
+            ],
+            undefined,
+            LIST_OUTPUT_LIMIT_BYTES,
+          );
+          if (listed.exitCode !== 0) {
+            throw new GitOperationError('unknown', redactGitOutput(listed.stderr));
+          }
+          for (const entry of parseTreeEntries(listed.stdout)) {
+            if (entry.regular) blobs.set(entry.path, entry.object);
+          }
+        }
+        return paths.map((path) => ({ path, blob: blobs.get(path) ?? null }));
       });
     });
   }
