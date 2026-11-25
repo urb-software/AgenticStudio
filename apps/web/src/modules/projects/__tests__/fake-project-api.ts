@@ -1,6 +1,7 @@
 import { vi } from 'vitest';
 import type {
   EnvironmentFileInfoOutput,
+  RunAgentListOutput,
   ProblemDetails,
   ProjectOutput,
   RepositoryOutput,
@@ -22,7 +23,9 @@ type Route =
   | 'environmentFile'
   | 'setEnvironmentFile'
   | 'removeEnvironmentFile'
-  | 'setMergeMethod';
+  | 'setMergeMethod'
+  | 'runAgents'
+  | 'setDefaultAgent';
 
 /** A synthetic public key line for SSH connects (not key material). */
 export const FAKE_PUBLIC_KEY =
@@ -32,7 +35,7 @@ export const FAKE_FINGERPRINT = 'SHA256:c3ludGhldGljLWZpbmdlcnByaW50LWZvci10ZXN0
 
 const RUNS_ROUTE = /^\/api\/projects\/[^/]+\/runs$/;
 const ROUTE =
-  /^\/api\/projects\/([^/]+)(\/repository(\/fetch|\/verify)?|\/environment-file|\/merge-method)?$/;
+  /^\/api\/projects\/([^/]+)(\/repository(\/fetch|\/verify)?|\/environment-file|\/merge-method|\/run-agents|\/default-agent)?$/;
 
 /**
  * A fake of the project detail API behind `fetch`. `repository` is the server's state; tests
@@ -52,6 +55,28 @@ export function fakeProjectApi(project: ProjectOutput, initial: RepositoryOutput
     environmentFile: null as EnvironmentFileInfoOutput | null,
     environmentFileContent: null as string | null,
     mergeMethod: project.mergeMethod,
+    defaultAgent: project.defaultAgent,
+    // What `GET /api/projects/:id/run-agents` answers: the built-in Defaults.
+    runAgents: {
+      agents: [
+        {
+          name: 'default-claude-code',
+          description: null,
+          provider: 'claude_code',
+          model: 'default',
+          source: 'built_in',
+        },
+        {
+          name: 'default-codex',
+          description: null,
+          provider: 'codex',
+          model: 'default',
+          source: 'built_in',
+        },
+      ],
+      preselected: 'default-claude-code',
+      preselectedReason: null,
+    } as RunAgentListOutput,
   };
   const scripted: Record<Route, ScriptedResponse[]> = {
     project: [],
@@ -64,6 +89,8 @@ export function fakeProjectApi(project: ProjectOutput, initial: RepositoryOutput
     setEnvironmentFile: [],
     removeEnvironmentFile: [],
     setMergeMethod: [],
+    runAgents: [],
+    setDefaultAgent: [],
   };
   const calls: { route: Route; body?: unknown }[] = [];
   const held: Partial<Record<Route, Promise<void>>> = {};
@@ -90,6 +117,8 @@ export function fakeProjectApi(project: ProjectOutput, initial: RepositoryOutput
     const projectId = match[1]!;
     if (!match[2]) return { route: 'project', projectId };
     if (match[2] === '/merge-method') return { route: 'setMergeMethod', projectId };
+    if (match[2] === '/run-agents') return { route: 'runAgents', projectId };
+    if (match[2] === '/default-agent') return { route: 'setDefaultAgent', projectId };
     if (match[2] === '/environment-file') {
       if (request.method === 'PUT') return { route: 'setEnvironmentFile', projectId };
       if (request.method === 'DELETE') return { route: 'removeEnvironmentFile', projectId };
@@ -111,7 +140,8 @@ export function fakeProjectApi(project: ProjectOutput, initial: RepositoryOutput
       route === 'connect' ||
       route === 'verify' ||
       route === 'setEnvironmentFile' ||
-      route === 'setMergeMethod'
+      route === 'setMergeMethod' ||
+      route === 'setDefaultAgent'
         ? await request.json()
         : undefined;
     calls.push({ route, body });
@@ -123,6 +153,7 @@ export function fakeProjectApi(project: ProjectOutput, initial: RepositoryOutput
         return json(200, {
           ...project,
           mergeMethod: state.mergeMethod,
+          defaultAgent: state.defaultAgent,
           repository: state.repository && {
             state: state.repository.state,
             url: state.repository.url,
@@ -214,6 +245,12 @@ export function fakeProjectApi(project: ProjectOutput, initial: RepositoryOutput
       case 'setMergeMethod': {
         state.mergeMethod = (body as { mergeMethod: ProjectOutput['mergeMethod'] }).mergeMethod;
         return json(200, { ...project, mergeMethod: state.mergeMethod });
+      }
+      case 'runAgents':
+        return json(200, state.runAgents);
+      case 'setDefaultAgent': {
+        state.defaultAgent = (body as { agent: string | null }).agent;
+        return json(200, { ...project, defaultAgent: state.defaultAgent });
       }
       case 'removeEnvironmentFile':
         state.environmentFile = null;

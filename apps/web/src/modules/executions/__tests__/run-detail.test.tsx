@@ -247,9 +247,14 @@ describe('Run page', () => {
   });
 
   it.each(['succeeded', 'failed', 'cancelled', 'timed_out'] as const)(
-    'offers Run again on a %s Run, prefilled with its Task and Provider',
+    'offers Run again on a %s Run, prefilled with its Task and agent',
     async (state) => {
-      const run = aRun({ state, task: 'Add pagination\nUse cursors.', provider: 'codex' });
+      const run = aRun({
+        state,
+        task: 'Add pagination\nUse cursors.',
+        provider: 'codex',
+        agent: { ...aRun().agent, name: 'default-codex', provider: 'codex' },
+      });
       const api = fakeRunsApi([run]);
       renderRun(run.id);
       await heading();
@@ -259,9 +264,11 @@ describe('Run page', () => {
       expect(within(dialog).getByLabelText<HTMLTextAreaElement>('Task').value).toBe(
         'Add pagination\nUse cursors.',
       );
-      expect(
-        within(dialog).getByRole('button', { name: 'Codex' }).getAttribute('aria-pressed'),
-      ).toBe('true');
+      await vi.waitFor(() =>
+        expect(within(dialog).getByLabelText<HTMLSelectElement>('Agent').value).toBe(
+          'default-codex',
+        ),
+      );
       await vi.waitFor(() =>
         expect(
           within(dialog).getByRole('button', { name: 'Start run' }).hasAttribute('disabled'),
@@ -272,14 +279,37 @@ describe('Run page', () => {
       await vi.waitFor(() => expect(push).toHaveBeenCalledTimes(1));
       expect(api.calls('start')[0]!.body).toEqual({
         task: 'Add pagination\nUse cursors.',
-        provider: 'codex',
+        agent: 'default-codex',
       });
       push.mockReset();
     },
   );
 
-  it('switches Run again to an available provider when its own is switched off (Issue #101)', async () => {
-    const run = aRun({ state: 'failed', provider: 'codex' });
+  it("offers the preselected agent when the Run's agent is no longer among the usable ones", async () => {
+    const run = aRun({
+      state: 'failed',
+      agent: { ...aRun().agent, name: 'removed-agent', source: 'definitions', commit: SHA },
+    });
+    fakeRunsApi([run]);
+    renderRun(run.id);
+    await heading();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Run again' }));
+    const dialog = screen.getByRole('dialog', { name: 'New run' });
+
+    await vi.waitFor(() =>
+      expect(within(dialog).getByLabelText<HTMLSelectElement>('Agent').value).toBe(
+        'default-claude-code',
+      ),
+    );
+  });
+
+  it("moves Run again to an agent with an available Provider when the Run's own is switched off (Issue #101)", async () => {
+    const run = aRun({
+      state: 'failed',
+      provider: 'codex',
+      agent: { ...aRun().agent, name: 'default-codex', provider: 'codex' },
+    });
     const api = fakeRunsApi([run]);
     api.respondNext('providers', 200, [
       { id: 'claude_code', name: 'Claude Code', available: true },
@@ -292,17 +322,21 @@ describe('Run page', () => {
     const dialog = screen.getByRole('dialog', { name: 'New run' });
 
     await vi.waitFor(() =>
-      expect(
-        within(dialog).getByRole('button', { name: 'Claude Code' }).getAttribute('aria-pressed'),
-      ).toBe('true'),
+      expect(within(dialog).getByLabelText<HTMLSelectElement>('Agent').value).toBe(
+        'default-claude-code',
+      ),
     );
     expect(
-      within(dialog).getByRole('button', { name: 'Codex' }).getAttribute('aria-disabled'),
-    ).toBe('true');
+      within(dialog).getByRole<HTMLOptionElement>('option', { name: /default-codex/ }).disabled,
+    ).toBe(true);
   });
 
   it('re-applies it on every Run again, also with the same answer (review r1 of #120)', async () => {
-    const run = aRun({ state: 'failed', provider: 'codex' });
+    const run = aRun({
+      state: 'failed',
+      provider: 'codex',
+      agent: { ...aRun().agent, name: 'default-codex', provider: 'codex' },
+    });
     const api = fakeRunsApi([run]);
     const codexOff = [
       { id: 'claude_code', name: 'Claude Code', available: true },
@@ -312,19 +346,18 @@ describe('Run page', () => {
     api.respondNext('providers', 200, codexOff);
     renderRun(run.id);
     await heading();
-    const pressed = (name: string) =>
-      within(screen.getByRole('dialog', { name: 'New run' }))
-        .getByRole('button', { name })
-        .getAttribute('aria-pressed');
+    const chosen = () =>
+      within(screen.getByRole('dialog', { name: 'New run' })).getByLabelText<HTMLSelectElement>(
+        'Agent',
+      ).value;
 
     await userEvent.click(screen.getByRole('button', { name: 'Run again' }));
-    await vi.waitFor(() => expect(pressed('Claude Code')).toBe('true'));
+    await vi.waitFor(() => expect(chosen()).toBe('default-claude-code'));
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     await userEvent.click(screen.getByRole('button', { name: 'Run again' }));
 
     await vi.waitFor(() => expect(api.calls('providers')).toHaveLength(2));
-    await vi.waitFor(() => expect(pressed('Claude Code')).toBe('true'));
-    expect(pressed('Codex')).toBe('false');
+    await vi.waitFor(() => expect(chosen()).toBe('default-claude-code'));
   });
 
   it.each(['queued', 'preparing', 'running', 'waiting_for_operator'] as const)(
@@ -357,5 +390,101 @@ describe('Run page', () => {
     await userEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
 
     expect((await heading()).textContent).toBe(run.task);
+  });
+});
+
+describe('Run page: the agent that ran', () => {
+  const COMMIT = 'abcdef0123456789abcdef0123456789abcdef01';
+  const fact = (term: string) => {
+    const dt = screen.getByText(term, { selector: 'dt' });
+    return dt.parentElement!.querySelector('dd')!;
+  };
+  const withAgent = (agent: Partial<RunOutput['agent']>) =>
+    aRun({ state: 'succeeded', agent: { ...aRun().agent, ...agent } });
+
+  it('names a built-in agent as Built in, with its Provider and model and no commit', async () => {
+    const run = aRun({ state: 'succeeded' });
+    fakeRunsApi([run]);
+    const { container } = renderRun(run.id);
+    await heading();
+
+    expect(fact('Agent').textContent).toContain('default-claude-code');
+    expect(fact('Agent').textContent).toContain('Built in');
+    expect(fact('Provider').textContent).toBe('Claude Code');
+    expect(fact('Model').textContent).toBe('default');
+    expect(screen.queryByText('Agent commit', { selector: 'dt' })).toBeNull();
+    await expect(container).toHaveNoAxeViolations();
+  });
+
+  it('names a definitions agent with its commit, short with the full id on hover', async () => {
+    const run = withAgent({
+      name: 'reviewer',
+      source: 'definitions',
+      commit: COMMIT,
+      provider: 'codex',
+      model: 'gpt-5',
+      instructions: 'Review carefully.',
+    });
+    fakeRunsApi([{ ...run, provider: 'codex' }]);
+    const { container } = renderRun(run.id);
+    await heading();
+
+    expect(fact('Agent').textContent).toContain('reviewer');
+    expect(fact('Agent').textContent).toContain('From the definitions Repository');
+    const commit = fact('Agent commit').querySelector('code')!;
+    expect(commit.textContent).toBe(COMMIT.slice(0, 8));
+    expect(commit.getAttribute('title')).toBe(COMMIT);
+    expect(fact('Provider').textContent).toBe('Codex');
+    expect(fact('Model').textContent).toBe('gpt-5');
+    await expect(container).toHaveNoAxeViolations();
+  });
+
+  it('keeps the instructions collapsed, then shows them as plain text with their line breaks', async () => {
+    const run = withAgent({ instructions: 'Line one.\n\n  Line two.' });
+    fakeRunsApi([run]);
+    const { container } = renderRun(run.id);
+    await heading();
+
+    const details = container.querySelector<HTMLDetailsElement>(
+      'details[data-slot="agent-instructions"]',
+    )!;
+    expect(details.open).toBe(false);
+    await userEvent.click(within(details).getByText('Show instructions'));
+    expect(details.open).toBe(true);
+    const text = within(details).getByTestId('agent-instructions-text');
+    expect(text.tagName).toBe('PRE');
+    expect(text.className).toContain('whitespace-pre-wrap');
+    expect(text.textContent).toBe('Line one.\n\n  Line two.');
+    await expect(container).toHaveNoAxeViolations();
+  });
+
+  it('shows markup and Markdown in the instructions as text: no link, no script, no element', async () => {
+    const instructions =
+      '<a href="https://evil.example">click</a><script>window.__pwned = 1</script>\n[md](https://evil.example/md) **bold** <img src=x onerror="window.__pwned = 2">';
+    const run = withAgent({ instructions });
+    fakeRunsApi([run]);
+    const { container } = renderRun(run.id);
+    await heading();
+
+    const details = container.querySelector<HTMLDetailsElement>(
+      'details[data-slot="agent-instructions"]',
+    )!;
+    await userEvent.click(within(details).getByText('Show instructions'));
+    const text = within(details).getByTestId('agent-instructions-text');
+
+    expect(text.textContent).toBe(instructions);
+    expect(details.querySelector('a, script, img, strong')).toBeNull();
+    expect(within(details).queryByRole('link')).toBeNull();
+    expect((window as unknown as { __pwned?: number }).__pwned).toBeUndefined();
+  });
+
+  it('says there are no instructions when the agent has none, with nothing to expand', async () => {
+    const run = aRun({ state: 'succeeded' });
+    fakeRunsApi([run]);
+    const { container } = renderRun(run.id);
+    await heading();
+
+    expect(container.querySelector('details[data-slot="agent-instructions"]')).toBeNull();
+    expect(fact('Agent instructions').textContent).toBe('None');
   });
 });

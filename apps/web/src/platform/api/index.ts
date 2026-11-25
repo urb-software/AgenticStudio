@@ -33,6 +33,7 @@ import type {
   RefreshPullRequestRequest,
   RepositoryOutput,
   ReviewCommentsOutput,
+  RunAgentListOutput,
   RunEventOutput,
   RunDiffFileOutput,
   RunDiffOutput,
@@ -44,6 +45,7 @@ import type {
   SessionResponseOutput,
   SavePreviewSettingsRequest,
   SavePreviewSettingsResponseOutput,
+  SetDefaultAgentRequest,
   SetEnvironmentFileRequest,
   SetMergeMethodRequest,
   StartRunRequest,
@@ -105,6 +107,9 @@ export type {
   RepositorySummaryOutput,
   ReviewCommentOutput,
   ReviewCommentsOutput,
+  RunAgentListOutput,
+  RunAgentOptionOutput,
+  RunAgentOutput,
   RunDiffFileOutput,
   RunDiffFileSummaryOutput,
   RunDiffOutput,
@@ -121,6 +126,7 @@ export type {
   SavePreviewSettingsRequest,
   SavePreviewSettingsResponseOutput,
   SessionResponseOutput,
+  SetDefaultAgentRequest,
   SetEnvironmentFileRequest,
   SetMergeMethodRequest,
   StartRunRequest,
@@ -356,6 +362,12 @@ export const api = {
   /** Sets how the project's Runs are merged (200: the project). */
   setMergeMethod: (projectId: string, body: SetMergeMethodRequest): Promise<ProjectOutput> =>
     unwrap(sdk.setMergeMethod({ path: { id: projectId }, body })),
+  /** The usable agents a Run can start with, the one to offer first and why not the default. */
+  listRunAgents: (projectId: string): Promise<RunAgentListOutput> =>
+    unwrap(sdk.listRunAgents({ path: { id: projectId } })),
+  /** Names the agent a Run offers first, or none (200: the project). A definitions Project answers 409. */
+  setDefaultAgent: (projectId: string, body: SetDefaultAgentRequest): Promise<ProjectOutput> =>
+    unwrap(sdk.setDefaultAgent({ path: { id: projectId }, body })),
   /** Removes the project's Environment file (204, also when none was set). */
   removeEnvironmentFile: async (projectId: string): Promise<void> => {
     await unwrap(sdk.removeEnvironmentFile({ path: { id: projectId } }));
