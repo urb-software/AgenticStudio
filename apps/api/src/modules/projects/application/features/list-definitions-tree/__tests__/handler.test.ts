@@ -5,6 +5,7 @@ import { InMemoryProjectRepository } from '../../../../domain/repositories/__tes
 import { InMemoryRepositoryConnectionRepository } from '../../../../domain/repositories/__tests__/in-memory-repository-connection-repository.js';
 import {
   GitCloneMissingError,
+  GitCommitMissingError,
   GitOperationError,
   GitUnsupportedPlatformError,
 } from '../../../ports/repository-git.js';
@@ -59,6 +60,26 @@ describe('ListDefinitionsTreeHandler', () => {
     );
   });
 
+  it('lists the whole tree when asked, within the same bound', async () => {
+    await connected();
+    git.listTreeAtCommit.mockResolvedValueOnce({
+      entries: [{ path: 'README.md', kind: 'file', size: 3 }],
+      truncated: false,
+    });
+
+    await expect(handler.execute({ commit: HEAD, whole: true })).resolves.toEqual({
+      status: 'listed',
+      entries: [{ path: 'README.md', kind: 'file', size: 3 }],
+      truncated: false,
+    });
+    expect(git.listTreeAtCommit).toHaveBeenCalledWith(
+      DEFINITIONS,
+      HEAD,
+      '',
+      DEFINITIONS_TREE_MAX_ENTRIES,
+    );
+  });
+
   it('is not ready without a definitions Project or without a Repository', async () => {
     projects.addProject(CODE, 'Shop');
     await expect(handler.execute({ commit: HEAD })).resolves.toEqual({
@@ -74,6 +95,7 @@ describe('ListDefinitionsTreeHandler', () => {
   it.each([
     [new GitUnsupportedPlatformError('win32'), 'unsupported_platform'],
     [new GitCloneMissingError(), 'repository_not_ready'],
+    [new GitCommitMissingError(), 'commit_missing'],
     [new GitOperationError('unknown'), 'failed'],
   ] as const)('maps %s to %s', async (error, status) => {
     await connected();

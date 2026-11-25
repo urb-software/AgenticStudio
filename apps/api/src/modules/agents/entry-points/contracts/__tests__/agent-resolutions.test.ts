@@ -32,8 +32,14 @@ function resolutions(files: Record<string, string>, snapshot: DefinitionsSnapsho
         status: 'read',
         files: paths.map((path) =>
           path in files
-            ? { path, status: 'found' as const, text: files[path]! }
-            : { path, status: 'missing' as const },
+            ? {
+                path,
+                status: 'found' as const,
+                text: files[path]!,
+                size: files[path]!.length,
+                binary: false,
+              }
+            : { path, status: 'missing' as const, size: 0 as const },
         ),
       }),
     ),

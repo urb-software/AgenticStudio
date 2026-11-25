@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { DefinitionsFilesResult } from '../../../contracts/index.js';
+import type { DefinitionsFileRead, DefinitionsFilesResult } from '../../../contracts/index.js';
 import {
   PROJECT_REPOSITORY,
   type ProjectRepository,
@@ -10,6 +10,7 @@ import {
 } from '../../../domain/repositories/repository-connection-repository.js';
 import {
   GitCloneMissingError,
+  GitCommitMissingError,
   GitOperationError,
   GitRequestRejectedError,
   GitUnsupportedPlatformError,
@@ -52,15 +53,17 @@ export class ReadDefinitionsFilesHandler {
       );
       return {
         status: 'read',
-        files: reads.map(({ path, outcome }) =>
-          outcome.status === 'found'
-            ? { path, status: 'found', text: outcome.text }
-            : { path, status: outcome.status },
-        ),
+        files: reads.map(({ path, outcome, size, binary }): DefinitionsFileRead => {
+          if (outcome.status === 'found')
+            return { path, status: 'found', text: outcome.text, size, binary };
+          if (outcome.status === 'too_large') return { path, status: 'too_large', size };
+          return { path, status: 'missing', size: 0 };
+        }),
       };
     } catch (error) {
       if (error instanceof GitUnsupportedPlatformError) return { status: 'unsupported_platform' };
       if (error instanceof GitCloneMissingError) return { status: 'repository_not_ready' };
+      if (error instanceof GitCommitMissingError) return { status: 'commit_missing' };
       if (error instanceof GitOperationError || error instanceof GitRequestRejectedError) {
         return { status: 'failed' };
       }

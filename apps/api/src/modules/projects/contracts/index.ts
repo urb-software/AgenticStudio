@@ -275,7 +275,7 @@ export interface DefinitionsSnapshot {
   commit: string | null;
 }
 
-/** One tracked item below `agents/`; `size` is 0 for anything that is not a regular file. */
+/** One tracked item of the tree that was listed (below `agents/`, or anywhere); `size` is 0 for anything that is not a regular file. */
 export interface DefinitionsTreeEntry {
   path: string;
   kind: 'file' | 'symlink' | 'submodule' | 'other';
@@ -284,18 +284,25 @@ export interface DefinitionsTreeEntry {
 
 /**
  * Why a read could not happen: `repository_not_ready` (no definitions Repository, or its Clone is
- * gone), `unsupported_platform` (the API does not run on Linux), `failed` (anything else).
+ * gone), `unsupported_platform` (the API does not run on Linux), `commit_missing` (the Clone holds
+ * no such commit), `failed` (anything else).
  */
-export type DefinitionsUnavailable = 'repository_not_ready' | 'unsupported_platform' | 'failed';
+export type DefinitionsUnavailable =
+  'repository_not_ready' | 'unsupported_platform' | 'commit_missing' | 'failed';
 
 export type DefinitionsTreeResult =
   | { status: 'listed'; entries: DefinitionsTreeEntry[]; truncated: boolean }
   | { status: DefinitionsUnavailable };
 
-/** `missing`: no regular file at the path. `too_large`: over the `maxBytes` of the read. */
+/**
+ * `missing`: no regular file at the path. `too_large`: over the `maxBytes` of the read. `size` is
+ * the file's size in bytes (0 for `missing`). `binary`: a NUL byte, or bytes that are not UTF-8
+ * (the text then has replacement characters).
+ */
 export type DefinitionsFileRead =
-  | { path: string; status: 'found'; text: string }
-  | { path: string; status: 'missing' | 'too_large' };
+  | { path: string; status: 'found'; text: string; size: number; binary: boolean }
+  | { path: string; status: 'too_large'; size: number }
+  | { path: string; status: 'missing'; size: 0 };
 
 export type DefinitionsFilesResult =
   { status: 'read'; files: DefinitionsFileRead[] } | { status: DefinitionsUnavailable };
@@ -308,8 +315,11 @@ export interface DefinitionsFiles {
   /** The definitions Project's Repository state and last fetched commit, or `null` when none is connected. */
   snapshot(): Promise<DefinitionsSnapshot | null>;
 
-  /** Everything tracked under `agents/` at `commit`, at most {@link DEFINITIONS_TREE_MAX_ENTRIES}. */
-  listTree(commit: string): Promise<DefinitionsTreeResult>;
+  /**
+   * Everything tracked under `agents/` at `commit`, or with `whole` the whole tree, at most
+   * {@link DEFINITIONS_TREE_MAX_ENTRIES}.
+   */
+  listTree(commit: string, options?: { whole?: boolean }): Promise<DefinitionsTreeResult>;
 
   /** The text of each regular file, in the order of `paths`; no file is read past `maxBytes`. */
   readFiles(

@@ -105,6 +105,10 @@ export interface CommitTree {
 export interface CommitFileRead {
   path: string;
   outcome: CommitFileOutcome;
+  /** The blob's size in bytes; 0 when the path names no regular file. */
+  size: number;
+  /** A found blob holds a NUL byte or is not valid UTF-8; its `text` then has replacement characters. */
+  binary: boolean;
 }
 
 export type GitFailureReason = Exclude<RepositoryFailureCode, 'interrupted'>;
@@ -220,8 +224,8 @@ export interface RepositoryGit {
 
   /**
    * Everything tracked below the safe relative folder `directory` in `commit` (recursively, no
-   * working tree), at most `maxEntries` of them, in path order. Throws the errors of
-   * {@link RepositoryGit.readFileAtCommit}.
+   * working tree), at most `maxEntries` of them, in path order. An empty `directory` lists the
+   * whole tree. Throws the errors of {@link RepositoryGit.readFileAtCommit}.
    */
   listTreeAtCommit(
     projectId: string,
@@ -267,6 +271,14 @@ export class GitOperationError extends Error {
   ) {
     super(`Git operation failed: ${reason}`);
     this.name = 'GitOperationError';
+  }
+}
+
+/** The commit id is well formed, but the Clone holds no such commit. */
+export class GitCommitMissingError extends GitOperationError {
+  constructor() {
+    super('unknown');
+    this.name = 'GitCommitMissingError';
   }
 }
 
