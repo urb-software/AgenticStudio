@@ -26,6 +26,8 @@ const WORKER_TOKEN = randomBytes(32).toString('base64');
 const WORKER_TOKEN_DIGEST = createSecretKey(createHash('sha256').update(WORKER_TOKEN).digest());
 const linux = process.platform === 'linux';
 const SHA = /^[0-9a-f]{40}$/;
+// Over 255 characters in all, made of segments Linux accepts.
+const LONG_PATH = `docs/${'a'.repeat(100)}/${'b'.repeat(100)}/${'c'.repeat(100)}.md`;
 
 const agentFile = (name: string, extra = '', instructions = `Work as ${name}.\n`) =>
   `---\nname: ${name}\ndescription: Does the ${name} work\nprovider: codex\n${extra}---\n${instructions}`;
@@ -477,12 +479,14 @@ describe('agents API (PostgreSQL + Redis via Testcontainers)', () => {
           kind: 'file',
           size: 9,
           agent: null,
+          openable: true,
         });
         expect(byPath.get('agents/reviewer/notes/style.md')).toEqual({
           path: 'agents/reviewer/notes/style.md',
           kind: 'file',
           size: 8,
           agent: 'reviewer',
+          openable: true,
         });
         expect(byPath.get('agents/broken/AGENT.md')?.agent).toBe('broken');
         expect(byPath.get('skills/helper/SKILL.md')?.agent).toBeNull();
@@ -576,7 +580,7 @@ describe('agents API (PostgreSQL + Redis via Testcontainers)', () => {
           'real.txt': 'real\n',
           'link.txt': { symlink: 'real.txt' },
           'vendor/lib': { gitlink: 'c'.repeat(40) },
-          ['docs/' + 'a'.repeat(300) + '.md']: 'long\n',
+          [LONG_PATH]: 'long\n',
         });
 
         const tree = await files();
@@ -589,7 +593,7 @@ describe('agents API (PostgreSQL + Redis via Testcontainers)', () => {
         expect(byPath.get('real.txt')).toMatchObject({ kind: 'file', openable: true });
         expect(byPath.get('link.txt')).toMatchObject({ kind: 'symlink', size: 0, openable: false });
         expect(byPath.get('vendor/lib')).toMatchObject({ kind: 'submodule', openable: false });
-        expect(byPath.get('docs/' + 'a'.repeat(300) + '.md')?.openable).toBe(false);
+        expect(byPath.get(LONG_PATH)?.openable).toBe(false);
         for (const path of ['link.txt', 'vendor/lib', 'vendor']) {
           const response = await content({ path });
           expect(response.status).toBe(404);
