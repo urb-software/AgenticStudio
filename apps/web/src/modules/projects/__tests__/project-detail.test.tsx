@@ -1227,3 +1227,34 @@ describe('SSH repositories with a Deploy key (Story #62)', () => {
     expect(alert.textContent).not.toMatch(/HTTPS/);
   });
 });
+
+describe('project screen of the definitions Repository', () => {
+  const DEFINITIONS: ProjectOutput = { ...PROJECT, name: 'Agent definitions', kind: 'definitions' };
+
+  it('shows the Repository, and no Runs, Preview or Environment file', async () => {
+    fakeProjectApi(DEFINITIONS);
+    const { container } = renderDetail();
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Agent definitions' }),
+    ).toBeTruthy();
+    expect(await screen.findByRole('region', { name: 'Repository' })).toBeTruthy();
+    expect(screen.getByText('Definitions Repository')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Preview' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Environment file' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Runs' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Merge method' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'New run' })).toBeNull();
+    await expect(container).toHaveNoAxeViolations();
+  });
+
+  it('keeps all three for an ordinary project', async () => {
+    fakeProjectApi(PROJECT);
+    renderDetail();
+
+    expect(await screen.findByRole('link', { name: 'Preview' })).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Environment file' })).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Runs' })).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Merge method' })).toBeTruthy();
+  });
+});
