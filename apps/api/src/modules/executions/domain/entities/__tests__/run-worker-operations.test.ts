@@ -5,6 +5,7 @@ import {
   StepOutOfOrderError,
 } from '../../errors/run-errors.js';
 import { Run } from '../run.js';
+import { defaultAgentOf } from '../../repositories/__tests__/in-memory-run-repository.js';
 import { RunPullRequestStatus } from '../../value-objects/run-pull-request-status.js';
 import { RunCancellation } from '../../value-objects/run-cancellation.js';
 import { type RestoreData } from '../../../../../__tests__/restore-data.js';
@@ -31,6 +32,7 @@ function data(overrides: Partial<RestoreData<typeof Run>> = {}): RestoreData<typ
     id: RUN_ID,
     projectId: PROJECT_ID,
     provider: 'claude_code',
+    agent: defaultAgentOf(overrides.provider ?? 'claude_code'),
     task: 'Add a health check',
     state: 'queued',
     startCommit: 'a'.repeat(40),

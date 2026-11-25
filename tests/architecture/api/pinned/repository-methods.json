@@ -183,7 +183,8 @@
       "findById": { "kind": "load" },
       "findDefinitions": { "kind": "query" },
       "findByIds": { "kind": "query" },
-      "saveMergeMethod": { "kind": "save" }
+      "saveMergeMethod": { "kind": "save" },
+      "saveDefaultAgent": { "kind": "save" }
     },
     "projects/RepositoryConnectionRepository": {
       "find": { "kind": "load" },

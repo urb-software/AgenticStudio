@@ -1,15 +1,5 @@
-import {
-  BASE_RULES,
-  type BaseRules,
-  runCheckSchema,
-  runQuestionSchema,
-} from '@agentic-studio/contracts';
+import { runCheckSchema, runQuestionSchema } from '@agentic-studio/contracts';
 import { z } from 'zod';
-
-/** What the runners give an agent besides the Task: the base rules, which the contracts own. */
-export type AgentDefinition = BaseRules;
-
-export const AGENT_DEFINITION: AgentDefinition = BASE_RULES;
 
 /**
  * The structured result the agent ends a step with: the protocol's Run step result without the

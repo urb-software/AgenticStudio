@@ -9,5 +9,7 @@ export interface ProjectData {
   readonly mergeMethod: MergeMethod;
   /** Fixed when the Project is created. */
   readonly kind: ProjectKind;
+  /** The agent a Run of the Project offers first; `null` when none is named. */
+  readonly defaultAgent: string | null;
   readonly createdAt: Date;
 }

@@ -1,4 +1,3 @@
-import { AGENT_DEFINITION } from '../agent-definition/index.js';
 import type { RunPayload } from '@agentic-studio/contracts';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -27,6 +26,7 @@ import { drainRunStep } from '../runner.js';
 import { UnsafeIdentifierError } from '../run-layout.js';
 import { PreparationFailedError, STUDIO_EXCLUDE_SECTION, WorkingCopies } from '../working-copy.js';
 import { createRemote, type FixtureRemote, git, isolatedGitEnv } from './fixtures/git-fixture.js';
+import { agentFields } from './agent-fixtures.js';
 
 // A Run's Working copy on the agent side, against fixture repositories.
 
@@ -74,6 +74,7 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
       runId: randomUUID(),
       projectId: '3a5c7e9b-2d4f-4a6c-8e0b-1d3f5a7c9e2b',
       provider: 'claude_code',
+      ...agentFields('claude_code'),
       task: 'Add pagination',
       startCommit: first,
       repository: { remoteUrl: remote.url },
@@ -593,7 +594,6 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
           workspace: { repoDir: prepared.repoDir, runDir: prepared.runDir, env: prepared.env },
           signal: signal(),
           processes: { register: () => undefined },
-          agentDefinition: AGENT_DEFINITION,
         }),
         () => undefined,
       );
@@ -656,7 +656,6 @@ describe.skipIf(process.platform !== 'linux')('WorkingCopies', () => {
           workspace: { repoDir: prepared.repoDir, runDir: prepared.runDir, env: prepared.env },
           signal: signal(),
           processes: { register: () => undefined },
-          agentDefinition: AGENT_DEFINITION,
         }),
         () => undefined,
       );

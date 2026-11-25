@@ -8,6 +8,7 @@ import type {
   ProblemDetails,
   ProjectOutput,
   ProviderAvailabilityOutput,
+  RunAgentListOutput,
   RunDiffFileOutput,
   RunDiffOutput,
   RunEventOutput,
@@ -26,6 +27,7 @@ type Route =
   | 'retryDelivery'
   | 'resume'
   | 'providers'
+  | 'runAgents'
   | 'agentWorker'
   | 'events'
   | 'steps'
@@ -63,6 +65,7 @@ const ROUTES: readonly [RegExp, (method: string) => Route][] = [
   [/^\/api\/runs\/([^/]+)\/retry-delivery$/, () => 'retryDelivery'],
   [/^\/api\/runs\/([^/]+)\/resume$/, () => 'resume'],
   [/^\/api\/providers()$/, () => 'providers'],
+  [/^\/api\/projects\/([^/]+)\/run-agents$/, () => 'runAgents'],
   [/^\/api\/agent-worker()$/, () => 'agentWorker'],
   [/^\/api\/runs\/([^/]+)\/cancel$/, () => 'cancel'],
   [/^\/api\/runs\/([^/]+)\/answer$/, () => 'answer'],
@@ -119,6 +122,7 @@ export const PROJECT: ProjectOutput = {
   name: 'Acme Shop',
   mergeMethod: 'squash',
   kind: 'code',
+  defaultAgent: null,
   createdAt: '2026-11-12T09:00:00.000Z',
 };
 
@@ -129,6 +133,28 @@ export const BOTH_AVAILABLE: ProviderAvailabilityOutput[] = [
   { id: 'claude_code', name: 'Claude Code', available: true },
   { id: 'codex', name: 'Codex', available: true },
 ];
+
+/** What `GET /api/projects/:id/run-agents` answers unless a test scripts it: the two Defaults. */
+export const DEFAULT_RUN_AGENTS: RunAgentListOutput = {
+  agents: [
+    {
+      name: 'default-claude-code',
+      description: null,
+      provider: 'claude_code',
+      model: 'default',
+      source: 'built_in',
+    },
+    {
+      name: 'default-codex',
+      description: null,
+      provider: 'codex',
+      model: 'default',
+      source: 'built_in',
+    },
+  ],
+  preselected: 'default-claude-code',
+  preselectedReason: null,
+};
 
 let nextRun = 1;
 
@@ -141,6 +167,14 @@ export function aRun(overrides: Partial<RunOutput> = {}): RunOutput {
     id: `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`,
     projectId: PROJECT.id,
     provider: 'claude_code',
+    agent: {
+      name: 'default-claude-code',
+      source: 'built_in',
+      commit: null,
+      provider: 'claude_code',
+      model: 'default',
+      instructions: '',
+    },
     task,
     state: 'queued',
     startCommit: SHA,
@@ -172,6 +206,7 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     retryDelivery: [],
     resume: [],
     providers: [],
+    runAgents: [],
     agentWorker: [],
     cancel: [],
     answer: [],
@@ -301,6 +336,8 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
         });
       case 'providers':
         return json(200, BOTH_AVAILABLE);
+      case 'runAgents':
+        return json(200, DEFAULT_RUN_AGENTS);
       case 'agentWorker':
         return json(200, agentWorker);
       case 'run': {

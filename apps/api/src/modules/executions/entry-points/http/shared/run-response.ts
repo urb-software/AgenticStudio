@@ -100,11 +100,34 @@ export const runMessageResponseSchema = z
   })
   .meta({ id: 'RunMessage' });
 
+/** The agent a Run started with, as recorded: it never changes afterwards. */
+export const runAgentResponseSchema = z
+  .object({
+    name: z.string(),
+    source: z.enum(['built_in', 'definitions']).describe('A built-in Default agent, or a folder.'),
+    commit: z
+      .string()
+      .nullable()
+      .describe(
+        'The definitions Repository commit the agent was read at; null for a built-in one.',
+      ),
+    provider: runProviderSchema,
+    model: z.string().describe('The model the definition named; `default` is the CLI own.'),
+    instructions: z
+      .string()
+      .optional()
+      .describe(
+        'A copy of the definition instructions, plain text. Single-Run answers only; lists leave it out.',
+      ),
+  })
+  .meta({ id: 'RunAgent' });
+
 export const runResponseSchema = z
   .object({
     id: z.uuid(),
     projectId: z.uuid(),
     provider: runProviderSchema,
+    agent: runAgentResponseSchema,
     task: z.string(),
     state: runStateSchema,
     startCommit: z.string(),
@@ -223,6 +246,14 @@ export function toRunResponse(
     id: string;
     projectId: string;
     provider: z.infer<typeof runProviderSchema>;
+    agent: {
+      name: string;
+      source: 'built_in' | 'definitions';
+      commit: string | null;
+      provider: z.infer<typeof runProviderSchema>;
+      model: string;
+      instructions: string;
+    };
     task: string;
     state: z.infer<typeof runStateSchema>;
     startCommit: string;
@@ -317,6 +348,14 @@ export function toRunResponse(
     id: run.id,
     projectId: run.projectId,
     provider: run.provider,
+    agent: {
+      name: run.agent.name,
+      source: run.agent.source,
+      commit: run.agent.commit,
+      provider: run.agent.provider,
+      model: run.agent.model,
+      instructions: run.agent.instructions,
+    },
     task: run.task,
     state: run.state,
     startCommit: run.startCommit,
@@ -525,5 +564,7 @@ export function toRunListItem(run: Parameters<typeof toRunResponse>[0]): RunResp
   const { messages: _messages, question: _question, ...item } = toRunResponse(run);
   void _messages;
   void _question;
-  return item;
+  const { instructions: _instructions, ...agent } = item.agent;
+  void _instructions;
+  return { ...item, agent };
 }

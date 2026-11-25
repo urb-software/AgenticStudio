@@ -12,6 +12,7 @@ export class InMemoryProjectRepository implements ProjectRepository {
       name,
       mergeMethod: 'squash',
       kind,
+      defaultAgent: null,
       createdAt: new Date('2026-11-13T10:00:00.000Z'),
     });
     this.projects.set(id, project);
@@ -48,6 +49,12 @@ export class InMemoryProjectRepository implements ProjectRepository {
   }
 
   saveMergeMethod(project: Project): Promise<boolean> {
+    if (!this.projects.has(project.id)) return Promise.resolve(false);
+    this.projects.set(project.id, project);
+    return Promise.resolve(true);
+  }
+
+  saveDefaultAgent(project: Project): Promise<boolean> {
     if (!this.projects.has(project.id)) return Promise.resolve(false);
     this.projects.set(project.id, project);
     return Promise.resolve(true);

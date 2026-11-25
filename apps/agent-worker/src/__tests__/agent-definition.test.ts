@@ -1,13 +1,18 @@
-import { QUESTION_OPTIONS_MAX } from '@agentic-studio/contracts';
+import {
+  AGENT_INSTRUCTIONS_MAX_BYTES,
+  BASE_RULES,
+  QUESTION_OPTIONS_MAX,
+  runPayloadSchema,
+} from '@agentic-studio/contracts';
 import { describe, expect, it } from 'vitest';
-import { AGENT_DEFINITION } from '../agent-definition/index.js';
+import { agentFields } from './agent-fixtures.js';
 
 // The built-in agent definition's rules for when the agent stops to ask the operator.
 describe('built-in agent definition', () => {
-  const text = AGENT_DEFINITION.text;
+  const text = BASE_RULES.text;
 
   it('is versioned', () => {
-    expect(AGENT_DEFINITION.version).toMatch(/^\d{4}-\d{2}-\d{2}\.\d+$/);
+    expect(BASE_RULES.version).toMatch(/^\d{4}-\d{2}-\d{2}\.\d+$/);
   });
 
   it('states the structured result contract: done, or needs_input with a question', () => {
@@ -41,5 +46,34 @@ describe('built-in agent definition', () => {
   it('asks through the result only: no interactive ask tool, and the step ends after asking', () => {
     expect(text).toMatch(/do not use any interactive tool that asks the user/i);
     expect(text).toMatch(/end the step/i);
+  });
+});
+
+// The worker validates every claim, so it refuses instructions over the byte bound itself.
+describe('a claim with instructions over the bound', () => {
+  const claim = (instructions: string) => {
+    const fields = agentFields();
+    return {
+      ...fields,
+      agent: { ...fields.agent, instructions },
+      runId: '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b',
+      projectId: '3a5c7e9b-2d4f-4a6c-8e0b-1d3f5a7c9e2b',
+      provider: 'claude_code',
+      task: 'x',
+      startCommit: 'a'.repeat(40),
+      repository: { remoteUrl: 'https://git.example.test/a.git' },
+      integrationBranch: 'dev',
+      kind: 'start',
+      studioPaths: [],
+      limits: { stepMinutes: 60, maxSteps: 10 },
+      completedSteps: 0,
+    };
+  };
+
+  it('is refused, counting bytes and not characters', () => {
+    const bytes = AGENT_INSTRUCTIONS_MAX_BYTES;
+
+    expect(runPayloadSchema.safeParse(claim('é'.repeat(bytes / 2))).success).toBe(true);
+    expect(runPayloadSchema.safeParse(claim('é'.repeat(bytes / 2 + 1))).success).toBe(false);
   });
 });

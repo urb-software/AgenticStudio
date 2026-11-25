@@ -1,4 +1,5 @@
 import {
+  BASE_RULES,
   jsonByteLength,
   RUN_STEP_RESULT_MAX_BYTES,
   WORKING_COPY_REPORT_MAX_BYTES,
@@ -190,6 +191,15 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         id: created.body.id,
         projectId: project.id,
         provider: 'codex',
+        // The built-in Default agent of the Provider, recorded at start.
+        agent: {
+          name: 'default-codex',
+          source: 'built_in',
+          commit: null,
+          provider: 'codex',
+          model: 'default',
+          instructions: '',
+        },
         task: 'Fix the login bug',
         state: 'queued',
         startCommit: project.head,
@@ -233,8 +243,12 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       void _followUp;
       void _merge;
       void _integrationBranch;
-      expect(projectRuns.body).toEqual([listed]);
-      expect((await http().get('/api/runs').set('Cookie', cookie)).body).toEqual([listed]);
+      // ... and the instructions of the agent, which only the single-Run answer carries.
+      const { instructions: _instructions, ...agent } = read.agent;
+      void _instructions;
+      const listedRun = { ...listed, agent };
+      expect(projectRuns.body).toEqual([listedRun]);
+      expect((await http().get('/api/runs').set('Cookie', cookie)).body).toEqual([listedRun]);
     });
 
     it('lists Runs newest first, all projects or one', async () => {
@@ -560,6 +574,16 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         runId: run.id,
         projectId: project.id,
         provider: 'claude_code',
+        // Studio's base rules and the Run's recorded agent: the worker has no copy of its own.
+        baseRules: { version: BASE_RULES.version, text: BASE_RULES.text },
+        agent: {
+          name: 'default-claude-code',
+          source: 'built_in',
+          commit: null,
+          provider: 'claude_code',
+          model: 'default',
+          instructions: '',
+        },
         task: 'Add a health check',
         startCommit: project.head,
         // The remote as connected; nothing else about the Repository.

@@ -1,4 +1,4 @@
-import { type RunPayload, runPayloadSchema } from '@agentic-studio/contracts';
+import { BASE_RULES, type RunPayload, runPayloadSchema } from '@agentic-studio/contracts';
 import { Body, HttpCode, HttpStatus, Post, Res } from '@nestjs/common';
 import { WorkerController } from '../../../../../../platform/auth/worker-route.js';
 import {
@@ -26,6 +26,9 @@ export class ClaimRunEndpoint {
       runId: run.id,
       projectId: run.projectId,
       provider: run.provider,
+      // Studio's current base rules and the Run's recorded agent: never resolved again.
+      baseRules: { version: BASE_RULES.version, text: BASE_RULES.text },
+      agent: run.agent,
       task: run.task,
       startCommit: run.startCommit,
       repository: { remoteUrl: run.remoteUrl },

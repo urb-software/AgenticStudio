@@ -926,6 +926,78 @@
         ]
       }
     },
+    "/api/projects/{id}/default-agent": {
+      "put": {
+        "description": "Names the agent a Run of the project offers first, or `null` for none. Only the name is checked: whether the agent is usable is judged when the project's run agents are listed, and then the built-in Default agent is preselected instead.",
+        "operationId": "setDefaultAgent",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetDefaultAgentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project_Output"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown project (urn:agentic-studio:problem:project-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: default_agent)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
     "/api/agents/definitions-repository": {
       "get": {
         "description": "The definitions Repository: its Project id with the state of its Repository connection, the Integration branch and the last fetched commit, or `project: null` when none is connected. The connection steps and Fetch use the projects routes with that id.",
@@ -1162,6 +1234,68 @@
         ]
       }
     },
+    "/api/projects/{id}/run-agents": {
+      "get": {
+        "description": "The agents a Run of the project can start with, at the definitions Repository last fetched commit: only usable ones. The project's default agent is preselected when it is usable; otherwise the Default agent of Claude Code is, with the reason. Computed on each request.",
+        "operationId": "listRunAgents",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunAgentList_Output"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown project (urn:agentic-studio:problem:project-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: run)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
     "/api/projects/{id}/runs": {
       "post": {
         "operationId": "startRun",
@@ -1207,7 +1341,7 @@
             }
           },
           "409": {
-            "description": "The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: run), or the project's repository is missing or not ready (urn:agentic-studio:problem:repository-not-ready), or the provider is switched off on the agent worker or no agent worker is connected (urn:agentic-studio:problem:provider-unavailable)",
+            "description": "The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: run), or the project's repository is missing or not ready (urn:agentic-studio:problem:repository-not-ready), or the provider is switched off on the agent worker or no agent worker is connected (urn:agentic-studio:problem:provider-unavailable; reason: provider_disabled), or no agent has the name (urn:agentic-studio:problem:agent-unknown; reason: agent_unknown), or its definition has problems (urn:agentic-studio:problem:agent-not-usable; reason: agent_not_usable)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1217,7 +1351,7 @@
             }
           },
           "422": {
-            "description": "Invalid request body (field errors)",
+            "description": "Invalid request body (field errors), also for a request naming neither an agent nor a provider, or an agent of another provider than the one named",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3559,6 +3693,13 @@
             ],
             "description": "`code` for an ordinary Project; `definitions` for the Repository that holds agent definitions."
           },
+          "defaultAgent": {
+            "description": "The agent a Run offers first, by name; null when none is named. Whether it is usable is judged where agents are read.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
@@ -3570,6 +3711,7 @@
           "name",
           "mergeMethod",
           "kind",
+          "defaultAgent",
           "createdAt"
         ],
         "additionalProperties": false
@@ -3649,6 +3791,13 @@
             ],
             "description": "`code` for an ordinary Project; `definitions` for the Repository that holds agent definitions."
           },
+          "defaultAgent": {
+            "description": "The agent a Run offers first, by name; null when none is named. Whether it is usable is judged where agents are read.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
@@ -3670,6 +3819,7 @@
           "name",
           "mergeMethod",
           "kind",
+          "defaultAgent",
           "createdAt",
           "repository"
         ],
@@ -3842,6 +3992,27 @@
         },
         "required": [
           "mergeMethod"
+        ],
+        "additionalProperties": false
+      },
+      "SetDefaultAgentRequest": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The agent a Run offers first, by name; null names none."
+          }
+        },
+        "required": [
+          "agent"
         ],
         "additionalProperties": false
       },
@@ -4448,6 +4619,76 @@
         ],
         "additionalProperties": false
       },
+      "RunAgentOption_Output": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "claude_code",
+              "codex"
+            ],
+            "description": "The Provider follows from the agent."
+          },
+          "model": {
+            "type": "string",
+            "description": "The model the agent names; `default` is the CLI own."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "built_in",
+              "definitions"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "provider",
+          "model",
+          "source"
+        ],
+        "additionalProperties": false
+      },
+      "RunAgentList_Output": {
+        "type": "object",
+        "properties": {
+          "agents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RunAgentOption_Output"
+            },
+            "description": "The usable agents: the built-in Default agents, then the definitions agents."
+          },
+          "preselected": {
+            "type": "string",
+            "description": "The name of the agent to offer first, always one of `agents`."
+          },
+          "preselectedReason": {
+            "description": "Why the default agent of the project is not the preselected one; null when it is, or none is named.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "agents",
+          "preselected",
+          "preselectedReason"
+        ],
+        "additionalProperties": false
+      },
       "StartRunRequest": {
         "type": "object",
         "properties": {
@@ -4456,7 +4697,14 @@
             "minLength": 1,
             "maxLength": 20000
           },
+          "agent": {
+            "description": "The agent to start with, by name. Absent: the Default agent of `provider`.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
           "provider": {
+            "description": "Alone, it means the Default agent of this Provider. With an `agent`, it must be the agent's Provider.",
             "type": "string",
             "enum": [
               "claude_code",
@@ -4465,8 +4713,7 @@
           }
         },
         "required": [
-          "task",
-          "provider"
+          "task"
         ],
         "additionalProperties": false
       },
@@ -4503,6 +4750,9 @@
               "claude_code",
               "codex"
             ]
+          },
+          "agent": {
+            "$ref": "#/components/schemas/RunAgent_Output"
           },
           "task": {
             "type": "string"
@@ -4685,6 +4935,7 @@
           "id",
           "projectId",
           "provider",
+          "agent",
           "task",
           "state",
           "startCommit",
@@ -4693,6 +4944,52 @@
           "limits",
           "steps",
           "followUps"
+        ],
+        "additionalProperties": false
+      },
+      "RunAgent_Output": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "built_in",
+              "definitions"
+            ],
+            "description": "A built-in Default agent, or a folder."
+          },
+          "commit": {
+            "description": "The definitions Repository commit the agent was read at; null for a built-in one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "claude_code",
+              "codex"
+            ]
+          },
+          "model": {
+            "type": "string",
+            "description": "The model the definition named; `default` is the CLI own."
+          },
+          "instructions": {
+            "description": "A copy of the definition instructions, plain text. Single-Run answers only; lists leave it out.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "source",
+          "commit",
+          "provider",
+          "model"
         ],
         "additionalProperties": false
       },

@@ -12,7 +12,6 @@ import {
 } from '@agentic-studio/contracts';
 import { posix } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { AGENT_DEFINITION } from './agent-definition/index.js';
 import { bringUpToDateInstruction } from './agent-definition/bring-up-to-date.js';
 import {
   type BranchUpdatePort,
@@ -726,13 +725,7 @@ export class AgentWorker {
     // (never a prompt, an argument or the process environment).
     const { environmentFile, ...forRunner } = run;
     void environmentFile;
-    const input = {
-      run: forRunner,
-      workspace,
-      signal,
-      processes,
-      agentDefinition: AGENT_DEFINITION,
-    };
+    const input = { run: forRunner, workspace, signal, processes };
     log.push(stepIndex, 'step_started', `Run step ${stepIndex} started`);
     const runnerStep =
       run.kind === 'resume' && run.sessionRef !== undefined && run.answer !== undefined

@@ -174,3 +174,38 @@ export class CloseInProgressError extends Error {
     this.name = 'CloseInProgressError';
   }
 }
+
+/** A start request names neither an agent nor a provider. */
+export class AgentNotChosenError extends Error {
+  constructor() {
+    super('Name an agent or a provider.');
+    this.name = 'AgentNotChosenError';
+  }
+}
+
+/** No agent has the requested name. */
+export class AgentUnknownError extends Error {
+  constructor(readonly agent: string) {
+    super('No agent has this name.');
+    this.name = 'AgentUnknownError';
+  }
+}
+
+/** The agent exists but its definition has problems. */
+export class AgentNotUsableError extends Error {
+  constructor(readonly agent: string) {
+    super('The agent cannot be used: its definition has problems.');
+    this.name = 'AgentNotUsableError';
+  }
+}
+
+/** The request names both an agent and a provider, and the agent belongs to another provider. */
+export class AgentProviderMismatchError extends Error {
+  constructor(
+    readonly agentProvider: Provider,
+    readonly requestedProvider: Provider,
+  ) {
+    super('The agent belongs to another provider than the one requested.');
+    this.name = 'AgentProviderMismatchError';
+  }
+}

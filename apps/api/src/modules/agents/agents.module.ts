@@ -4,14 +4,17 @@ import { ListAgentFilesHandler } from './application/features/list-agent-files/h
 import { ReadAgentFileHandler } from './application/features/read-agent-file/handler.js';
 import { ReadAgentsHandler } from './application/features/read-agents/handler.js';
 import { GetAgentFileEndpoint } from './entry-points/http/operator/get-agent-file/endpoint.js';
+import { ReadAgentsAgentResolutions } from './entry-points/contracts/agent-resolutions.js';
+import { ListRunAgentsEndpoint } from './entry-points/http/operator/list-run-agents/endpoint.js';
+import { AGENT_RESOLUTION } from './contracts/index.js';
 import { GetAgentEndpoint } from './entry-points/http/operator/get-agent/endpoint.js';
 import { GetDefinitionsRepositoryEndpoint } from './entry-points/http/operator/get-definitions-repository/endpoint.js';
 import { ListAgentFilesEndpoint } from './entry-points/http/operator/list-agent-files/endpoint.js';
 import { ListAgentsEndpoint } from './entry-points/http/operator/list-agents/endpoint.js';
 
 /**
- * `agents` business module: the definitions Repository's connection and the agents found in it,
- * as the Agents page shows them. It reaches the Repository only through the `projects` module's
+ * `agents` business module: the agents found in the definitions Repository and the agents a Run
+ * can start with. It reaches the Repository and the Projects only through the `projects` module's
  * public contract, which the composition root passes in.
  */
 @Module({})
@@ -27,13 +30,16 @@ export class AgentsModule {
         GetAgentFileEndpoint,
         ListAgentsEndpoint,
         GetAgentEndpoint,
+        ListRunAgentsEndpoint,
       ],
       providers: [
         GetDefinitionsRepositoryHandler,
         ReadAgentsHandler,
         ListAgentFilesHandler,
         ReadAgentFileHandler,
+        { provide: AGENT_RESOLUTION, useClass: ReadAgentsAgentResolutions },
       ],
+      exports: [AGENT_RESOLUTION],
     };
   }
 }

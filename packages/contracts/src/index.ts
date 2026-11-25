@@ -6,4 +6,4 @@ export * from './merge-method.js';
 export * from './preview.js';
 export * from './controller-protocol.js';
 export * from './base-rules.js';
-export { MODEL_DEFAULT, PROVIDER_MODELS } from './providers.js';
+export { AGENT_INSTRUCTIONS_MAX_BYTES, MODEL_DEFAULT, PROVIDER_MODELS } from './providers.js';

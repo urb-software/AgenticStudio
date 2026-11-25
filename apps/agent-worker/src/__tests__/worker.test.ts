@@ -33,12 +33,14 @@ import {
   type WorkerApi,
 } from '../worker.js';
 import { PreparationFailedError, type PreparedRun, type WorkingCopyPort } from '../working-copy.js';
+import { agentFields } from './agent-fixtures.js';
 
 // The worker loop against a recording fake of the worker routes.
 const payload = (task: string, n = 1): RunPayload => ({
   runId: `0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1${n}`,
   projectId: '3a5c7e9b-2d4f-4a6c-8e0b-1d3f5a7c9e2b',
   provider: 'codex',
+  ...agentFields('codex'),
   task,
   startCommit: 'a'.repeat(40),
   repository: { remoteUrl: 'https://git.example.test/acme/shop.git' },
@@ -1581,7 +1583,7 @@ describe('AgentWorker', () => {
         answer: 'Option A',
         reason: 'answer',
         workspace: { repoDir: `/data/runs/${run.runId}/repo` },
-        agentDefinition: { version: expect.any(String) },
+        run: { baseRules: { version: expect.any(String) } },
       });
       expect(api.reports()).toEqual([
         ['state', run.runId, { state: 'running' }],

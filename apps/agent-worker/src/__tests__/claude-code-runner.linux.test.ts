@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { AGENT_DEFINITION, AGENT_RESULT_JSON_SCHEMA } from '../agent-definition/index.js';
+import { AGENT_RESULT_JSON_SCHEMA } from '../agent-definition/index.js';
 import { readGuardrailSettings } from '../claude-code/guardrails.js';
 import { ClaudeCodeRunner, probeClaudeCode } from '../claude-code/runner.js';
 import { ManagedGuardrails } from '../managed-guardrails.js';
@@ -23,6 +23,7 @@ import { AgentFailedError, drainRunStep, type RunStep, UsageLimitError } from '.
 import { installManagedGuardrails } from './fixtures/managed-guardrails.js';
 import { StepProcesses } from '../step-processes.js';
 import { git, isolatedGitEnv } from './fixtures/git-fixture.js';
+import { agentFields } from './agent-fixtures.js';
 
 // The Claude Code runner with a real process: a stub executable replays recorded streams, and a
 // hostile repository proves its agent configuration never reaches the CLI.
@@ -79,6 +80,7 @@ describe.skipIf(process.platform !== 'linux')('ClaudeCodeRunner with the stub CL
     runId: '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b',
     projectId: '3a5c7e9b-2d4f-4a6c-8e0b-1d3f5a7c9e2b',
     provider: 'claude_code',
+    ...agentFields('claude_code'),
     task,
     startCommit,
     repository: { remoteUrl: 'https://git.example.test/acme/shop.git' },
@@ -93,7 +95,6 @@ describe.skipIf(process.platform !== 'linux')('ClaudeCodeRunner with the stub CL
     workspace: { repoDir, runDir, env: { COMPOSE_PROJECT_NAME: 'studio-run-0b8e5c2d1f3a' } },
     signal,
     processes,
-    agentDefinition: AGENT_DEFINITION,
   });
   const calls = () =>
     readFileSync(join(runDir, 'claude-stub-calls.ndjson'), 'utf8')

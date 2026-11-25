@@ -1,4 +1,5 @@
 import { type RestoreData } from '../../../../../__tests__/restore-data.js';
+import { defaultAgentOf } from '../../repositories/__tests__/in-memory-run-repository.js';
 import type { Run } from '../run.js';
 import { RunPullRequestStatus } from '../../value-objects/run-pull-request-status.js';
 
@@ -11,6 +12,7 @@ export function runData(overrides: Partial<RestoreData<typeof Run>> = {}): Resto
     id: RUN_ID,
     projectId: PROJECT_ID,
     provider: 'codex',
+    agent: defaultAgentOf(overrides.provider ?? 'codex'),
     task: 'x',
     state: 'waiting_for_operator',
     startCommit: 'a',

@@ -46,6 +46,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { REVIEWER_FILE, runAgentPhase } from './agent-phase.mjs';
 import { COMPOSE, runControllerPhase } from './controller-phase.mjs';
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
@@ -170,6 +171,43 @@ async function createControllerFixture(root) {
   fixtureGit(root, ['clone', '--quiet', '--bare', '--template=', work, bare]);
   fixtureGit(bare, ['symbolic-ref', 'HEAD', 'refs/heads/main']);
   return { url: pathToFileURL(bare).href, commit, bare };
+}
+
+/**
+ * Two bare Repositories for the agent phase: a code Repository with a `dev` branch, and a
+ * definitions Repository whose `dev` holds one agent (`agents/reviewer/AGENT.md`). Returns their
+ * URLs and the commit of the definitions' `dev`.
+ */
+async function createAgentFixtures(root) {
+  const make = async (name, files) => {
+    const work = join(root, `${name}-work`);
+    await mkdir(work, { recursive: true });
+    fixtureGit(work, ['init', '--quiet', '--template=', '--initial-branch=main']);
+    await writeFile(join(work, 'README.md'), `# Smoke fixture (${name})\n`);
+    fixtureGit(work, ['add', '--all']);
+    fixtureGit(work, ['commit', '--quiet', '-m', 'initial']);
+    fixtureGit(work, ['checkout', '--quiet', '-b', 'dev']);
+    for (const [path, content] of Object.entries(files)) {
+      await mkdir(join(work, path, '..'), { recursive: true });
+      await writeFile(join(work, path), content);
+    }
+    fixtureGit(work, ['add', '--all']);
+    fixtureGit(work, ['commit', '--quiet', '-m', 'on dev']);
+    const commit = fixtureGit(work, ['rev-parse', 'HEAD']);
+    const bare = join(root, `${name}.git`);
+    fixtureGit(root, ['clone', '--quiet', '--bare', '--template=', work, bare]);
+    fixtureGit(bare, ['symbolic-ref', 'HEAD', 'refs/heads/main']);
+    return { url: pathToFileURL(bare).href, commit };
+  };
+  const code = await make('agent-code', { 'dev.txt': 'dev\n' });
+  const definitions = await make('agent-definitions', {
+    'agents/reviewer/AGENT.md': REVIEWER_FILE,
+  });
+  return {
+    codeUrl: code.url,
+    definitionsUrl: definitions.url,
+    definitionsCommit: definitions.commit,
+  };
 }
 
 /** Runs the system `git` for a fixture, isolated from the host's Git configuration. */
@@ -303,9 +341,11 @@ async function main() {
   cleanups.push(() => rm(scratch, { recursive: true, force: true }));
   let fixtureBase = '';
   let controllerFixture;
+  let agentFixtures;
   if (LINUX) {
     fixtureBase = await createFixtureRepositories(join(scratch, 'fixtures'));
     controllerFixture = await createControllerFixture(join(scratch, 'fixtures'));
+    agentFixtures = await createAgentFixtures(join(scratch, 'fixtures'));
     console.log(`[e2e] fixture repositories under ${fixtureBase}`);
   } else {
     console.log(
@@ -455,6 +495,14 @@ async function main() {
   );
   if (LINUX) await assertLinuxTestsRan(reportPath);
   if (LINUX) {
+    await runAgentPhase({
+      apiOrigin: API_ORIGIN,
+      studioOrigin: STUDIO_ORIGIN,
+      operatorPassword,
+      codeRepositoryUrl: agentFixtures.codeUrl,
+      definitionsUrl: agentFixtures.definitionsUrl,
+      definitionsCommit: agentFixtures.definitionsCommit,
+    });
     await runControllerPhase({
       apiOrigin: API_ORIGIN,
       studioOrigin: STUDIO_ORIGIN,

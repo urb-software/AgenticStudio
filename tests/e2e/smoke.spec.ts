@@ -573,13 +573,11 @@ test(RUN_TEST, async ({ page }, testInfo) => {
   await expectInBothThemes(page, envCard.getByText('An environment file is set.'));
   expect(await page.content()).not.toContain(envValue);
 
-  // Start a Run: the dialog opens with Claude Code chosen; submitting opens the Run page.
+  // Start a Run: the dialog opens with the Default agent of Claude Code chosen; submitting opens
+  // the Run page.
   await runs.getByRole('button', { name: 'New run' }).click();
   const dialog = page.getByRole('dialog', { name: 'New run' });
-  await expect(dialog.getByRole('button', { name: 'Claude Code' })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  );
+  await expect(dialog.getByLabel('Agent')).toHaveValue('default-claude-code');
   await dialog.getByLabel('Task').fill('Add a smoke note to the README');
   await dialog.getByRole('button', { name: 'Start run' }).click();
   await expect(page).toHaveURL(/\/executions\/[0-9a-f-]{36}$/);

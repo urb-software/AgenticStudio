@@ -12,6 +12,8 @@ export const EXECUTIONS_PROBLEM_TYPES = {
   runNotFound: 'urn:agentic-studio:problem:run-not-found',
   repositoryNotReady: 'urn:agentic-studio:problem:repository-not-ready',
   providerUnavailable: 'urn:agentic-studio:problem:provider-unavailable',
+  agentUnknown: 'urn:agentic-studio:problem:agent-unknown',
+  agentNotUsable: 'urn:agentic-studio:problem:agent-not-usable',
   runNotHeld: 'urn:agentic-studio:problem:run-not-held',
   tooManyLogStreams: 'urn:agentic-studio:problem:too-many-log-streams',
   illegalRunTransition: 'urn:agentic-studio:problem:illegal-run-transition',
@@ -363,11 +365,35 @@ export function repositoryNotReady(detail: string): ProblemException {
   });
 }
 
-export function providerUnavailable(detail: string): ProblemException {
+export function providerUnavailable(
+  detail: string,
+  reason?: 'provider_disabled',
+): ProblemException {
   return new ProblemException(HttpStatus.CONFLICT, {
     type: EXECUTIONS_PROBLEM_TYPES.providerUnavailable,
     title: 'Provider unavailable',
     detail,
+    ...(reason === undefined ? {} : { extensions: { reason } }),
+  });
+}
+
+/** 409 for a Run start naming an agent that no agent has. */
+export function agentUnknown(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: EXECUTIONS_PROBLEM_TYPES.agentUnknown,
+    title: 'Agent unknown',
+    detail: 'No agent has this name. Pick one of the agents offered for the project.',
+    extensions: { reason: 'agent_unknown' },
+  });
+}
+
+/** 409 for a Run start naming an agent whose definition has problems. */
+export function agentNotUsable(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: EXECUTIONS_PROBLEM_TYPES.agentNotUsable,
+    title: 'Agent not usable',
+    detail: 'The agent cannot be used: its definition has problems. See the Agents page.',
+    extensions: { reason: 'agent_not_usable' },
   });
 }
 

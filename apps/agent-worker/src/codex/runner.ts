@@ -5,7 +5,11 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { createInterface } from 'node:readline';
-import { buildInstructions, type RepositoryFiles } from '../claude-code/instructions.js';
+import {
+  agentNotice,
+  buildInstructions,
+  type RepositoryFiles,
+} from '../claude-code/instructions.js';
 import { errorReason } from '../cli-output.js';
 import { GIT_TIMEOUTS, GitCommandError, type GitRunner } from '../git.js';
 import {
@@ -110,7 +114,7 @@ export class CodexRunner implements Runner {
     input: StartRunStepInput,
     resumed?: { answer: string; sessionRef: string; reason: ResumeReason },
   ): RunStep {
-    const { run, workspace, signal, processes, agentDefinition } = input;
+    const { run, workspace, signal, processes } = input;
     // The dispatcher checked already; nothing is written for a provider that is off.
     this.options.cli.gate.assertEnabled(PROVIDER);
     signal.throwIfAborted();
@@ -152,12 +156,13 @@ export class CodexRunner implements Runner {
       // its text (read at the start commit).
       const marker = this.options.marker?.() ?? randomBytes(6).toString('hex');
       const instructions = await buildInstructions(
-        agentDefinition,
+        run,
         this.repositoryFiles(workspace, run.startCommit, signal),
         marker,
         CODEX_PROJECT_INSTRUCTION_FILES,
       );
       for (const notice of instructions.notices) yield { type: 'notice', text: notice };
+      yield { type: 'notice', text: agentNotice(run) };
       await writeFile(files.promptFile, codexPrompt(instructions.text, run.task), {
         mode: 0o600,
       });

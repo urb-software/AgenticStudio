@@ -70,6 +70,11 @@ describe('the log store follows the rule of the domain (PostgreSQL + Redis via T
           data: {
             projectId: project!.id,
             provider: 'codex',
+            agentName: 'default-codex',
+            agentSource: 'built_in',
+            agentProvider: 'codex',
+            agentModel: 'default',
+            agentInstructions: '',
             task: 'Add a health check',
             startCommit: 'a'.repeat(40),
             remoteUrl: 'https://git.example.test/acme/shop.git',

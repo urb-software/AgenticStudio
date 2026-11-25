@@ -14,6 +14,7 @@ import { RUN_ENVIRONMENT_FILE_SECRET_OWNER } from '../../ports/environment-file-
 import { IllegalRunTransitionError, RunNotHeldError } from '../../../domain/errors/run-errors.js';
 import type { Run } from '../../../domain/entities/run.js';
 import type { Provider } from '../../../domain/value-objects/provider.js';
+import type { RunAgentData } from '../../../domain/value-objects/run-agent.js';
 import type { RunHandOut } from '../../../domain/value-objects/run-hand-out.js';
 import type { RunState } from '../../../domain/value-objects/run-state.js';
 import { RunFailure } from '../../../domain/value-objects/run-failure.js';
@@ -49,6 +50,8 @@ export interface ClaimedRun {
   id: string;
   projectId: string;
   provider: Provider;
+  /** The agent the Run recorded at start; every claim hands it out unchanged. */
+  agent: RunAgentData;
   task: string;
   startCommit: string;
   remoteUrl: string;
@@ -86,6 +89,7 @@ const claimedRun = (run: Run, handOut: ClaimedRun['handOut'], extras: ClaimExtra
   id: run.id,
   projectId: run.projectId,
   provider: run.provider,
+  agent: run.agent.toData(),
   task: run.task,
   startCommit: run.startCommit,
   remoteUrl: run.remoteUrl,

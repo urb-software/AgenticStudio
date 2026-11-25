@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
+import { AGENT_RESOLUTION, type AgentResolutions } from '../../../../agents/contracts/index.js';
 import {
   PROJECT_KINDS,
   type ProjectKinds,
@@ -8,12 +9,15 @@ import {
 } from '../../../../projects/contracts/index.js';
 import { type Provider } from '../../../domain/value-objects/provider.js';
 import {
+  AgentNotUsableError,
+  AgentUnknownError,
   DefinitionsProjectRunError,
   RepositoryNotReadyError,
   RunProjectNotFoundError,
   ProviderUnavailableError,
 } from '../../../domain/errors/run-errors.js';
 import { Run } from '../../../domain/entities/run.js';
+import { RunAgentChoice } from '../../../domain/value-objects/run-agent-choice.js';
 import { Task } from '../../../domain/value-objects/task.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import { PROVIDER_UNAVAILABLE_REASONS } from '../../../domain/value-objects/provider-unavailable-reason.js';
@@ -26,7 +30,10 @@ import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-
 
 export interface StartRunInput {
   projectId: string;
-  provider: Provider;
+  /** The agent by name; absent, the Default agent of `provider`. */
+  agent?: string;
+  /** With an `agent`, the Provider the agent must belong to. */
+  provider?: Provider;
   task: string;
 }
 
@@ -35,9 +42,9 @@ export interface StartRunResult {
 }
 
 /**
- * Refuses a provider known to be unavailable from the latest worker status; the worker's own check
- * stays authoritative. Throws {@link RunProjectNotFoundError}, {@link DefinitionsProjectRunError},
- * {@link RepositoryNotReadyError}, {@link ProviderUnavailableError} or `InvalidTaskError`.
+ * Copies the agent as it stands now onto the Run. A provider known to be unavailable from the
+ * latest worker status is refused; the worker's own check stays authoritative. Throws the Run and
+ * agent refusals of `run-errors.ts`, {@link RunProjectNotFoundError} and `InvalidTaskError`.
  */
 @Injectable()
 export class StartRunHandler {
@@ -45,6 +52,7 @@ export class StartRunHandler {
     @Inject(PROJECT_KINDS) private readonly kinds: ProjectKinds,
     @Inject(RUN_REPOSITORY) private readonly runs: RunRepository,
     @Inject(RUN_START_POINTS) private readonly startPoints: RunStartPoints,
+    @Inject(AGENT_RESOLUTION) private readonly agents: AgentResolutions,
     @Inject(WORKER_STATUS_STORE) private readonly statuses: WorkerStatusStore,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(WORKER_LEASE) private readonly lease: WorkerLease,
@@ -52,6 +60,7 @@ export class StartRunHandler {
   ) {}
 
   async execute(input: StartRunInput): Promise<StartRunResult> {
+    const choice = RunAgentChoice.of(input);
     if ((await this.kinds.kindOf(input.projectId)) === 'definitions') {
       throw new DefinitionsProjectRunError();
     }
@@ -63,15 +72,24 @@ export class StartRunHandler {
         throw new RepositoryNotReadyError('no_repository');
       case 'repository_not_ready':
         throw new RepositoryNotReadyError('not_ready');
-      case 'ready':
-        this.assertAvailable(input.provider);
+      case 'ready': {
+        const resolution = await this.agents.resolveForRun(choice.name);
+        if (resolution.status !== 'resolved') {
+          throw resolution.status === 'unknown'
+            ? new AgentUnknownError(choice.name)
+            : new AgentNotUsableError(choice.name);
+        }
+        const { agent } = resolution;
+        choice.assertProvider(agent.provider);
+        this.assertAvailable(agent.provider);
         return {
           id: (
             await this.runs.add(
               Run.start({
                 id: randomUUID(),
                 projectId: input.projectId,
-                provider: input.provider,
+                provider: agent.provider,
+                agent,
                 task: Task.of(input.task),
                 startCommit: startPoint.startCommit,
                 remoteUrl: startPoint.remoteUrl,
@@ -82,6 +100,7 @@ export class StartRunHandler {
             )
           ).id,
         };
+      }
     }
   }
 

@@ -98,7 +98,7 @@ describe('OpenAPI document', () => {
         kind: { type: 'string', enum: ['code', 'definitions'] },
         createdAt: { type: 'string', format: 'date-time' },
       },
-      required: ['id', 'name', 'mergeMethod', 'kind', 'createdAt'],
+      required: ['id', 'name', 'mergeMethod', 'kind', 'defaultAgent', 'createdAt'],
     });
 
     const list = document.paths['/api/projects']?.get;
@@ -190,7 +190,7 @@ describe('OpenAPI document', () => {
           anyOf: [{ $ref: '#/components/schemas/RepositorySummary_Output' }, { type: 'null' }],
         },
       },
-      required: ['id', 'name', 'mergeMethod', 'kind', 'createdAt', 'repository'],
+      required: ['id', 'name', 'mergeMethod', 'kind', 'defaultAgent', 'createdAt', 'repository'],
     });
 
     const read = document.paths['/api/projects/{id}/repository']?.get;
@@ -363,9 +363,10 @@ describe('OpenAPI document', () => {
     expect(document.components?.schemas?.StartRunRequest).toMatchObject({
       properties: {
         task: { type: 'string', minLength: 1, maxLength: 20_000 },
+        agent: { type: 'string', minLength: 1, maxLength: 64 },
         provider: { type: 'string', enum: ['claude_code', 'codex'] },
       },
-      required: ['task', 'provider'],
+      required: ['task'],
       additionalProperties: false,
     });
     expect(document.paths['/api/projects/{id}/runs']?.get?.operationId).toBe('listProjectRuns');
@@ -376,6 +377,7 @@ describe('OpenAPI document', () => {
         'id',
         'projectId',
         'provider',
+        'agent',
         'task',
         'state',
         'startCommit',

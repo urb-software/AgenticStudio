@@ -3,7 +3,7 @@ import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ProjectRuns } from '..';
-import { aRun, fakeRunsApi, problem, PROJECT } from './fake-runs-api';
+import { aRun, DEFAULT_RUN_AGENTS, fakeRunsApi, problem, PROJECT } from './fake-runs-api';
 
 const SWITCHED_OFF = 'Switched off on the agent worker';
 const NO_WORKER = 'No agent worker is connected';
@@ -26,7 +26,10 @@ const section = () => screen.getByRole('region', { name: 'Runs' });
 const newRunButton = () => within(section()).getByRole('button', { name: 'New run' });
 const dialog = () => screen.getByRole('dialog', { name: 'New run' });
 const taskInput = () => within(dialog()).getByLabelText<HTMLTextAreaElement>('Task');
-const providerButton = (name: string) => within(dialog()).getByRole('button', { name });
+const agentSelect = () => within(dialog()).getByLabelText<HTMLSelectElement>('Agent');
+const selectedAgent = () => agentSelect().value;
+const optionOf = (name: string) =>
+  within(agentSelect()).getByRole<HTMLOptionElement>('option', { name: new RegExp(name) });
 const startButton = () => within(dialog()).getByRole('button', { name: 'Start run' });
 
 async function rows() {
@@ -37,9 +40,7 @@ async function rows() {
 /** Opens New run and waits until this opening's provider availability has arrived. */
 async function openDialog() {
   await userEvent.click(newRunButton());
-  await vi.waitFor(() =>
-    expect(within(dialog()).queryByText('Checking which providers are available…')).toBeNull(),
-  );
+  await vi.waitFor(() => expect(within(dialog()).queryByText('Checking the agents…')).toBeNull());
   return dialog();
 }
 
@@ -185,16 +186,39 @@ describe('Runs section: New run availability', () => {
   );
 });
 
+const DEFINITIONS_AGENT = {
+  name: 'reviewer',
+  description: 'Reviews code',
+  provider: 'codex',
+  model: 'gpt-5',
+  source: 'definitions',
+} as const;
+
+const AGENTS_WITH_DEFINITIONS = {
+  ...DEFAULT_RUN_AGENTS,
+  agents: [...DEFAULT_RUN_AGENTS.agents, DEFINITIONS_AGENT],
+};
+
+const refusal = (type: string, title: string, detail: string) => ({
+  ...problem(409, title, detail),
+  type: `urn:agentic-studio:problem:${type}`,
+});
+
 describe('New run dialog', () => {
-  it('opens with the Task focused, Claude Code preselected and no axe violations', async () => {
+  it('opens with the Task focused, the preselected agent chosen, its Provider shown and no axe violations', async () => {
     fakeRunsApi([]);
     renderRuns();
 
     await openDialog();
 
     expect(document.activeElement).toBe(taskInput());
-    expect(providerButton('Claude Code').getAttribute('aria-pressed')).toBe('true');
-    expect(providerButton('Codex').getAttribute('aria-pressed')).toBe('false');
+    expect(selectedAgent()).toBe('default-claude-code');
+    expect(within(dialog()).getByText('Provider')).toBeTruthy();
+    expect(within(dialog()).getByTestId('agent-provider').textContent).toBe(
+      'Claude Code · model default',
+    );
+    // The Provider is no longer chosen separately.
+    expect(within(dialog()).queryByRole('button', { name: 'Codex' })).toBeNull();
     await expect(document.body).toHaveNoAxeViolations();
   });
 
@@ -225,22 +249,80 @@ describe('New run dialog', () => {
     expect(api.calls('start')).toHaveLength(0);
   });
 
-  it('starts the Run with the chosen Provider and opens its page', async () => {
+  it('starts the Run with the preselected agent and opens its page', async () => {
     const api = fakeRunsApi([]);
     renderRuns();
     await openDialog();
 
     await userEvent.type(taskInput(), 'Add pagination to products API');
-    await userEvent.click(providerButton('Codex'));
     await userEvent.click(startButton());
 
     await vi.waitFor(() => expect(push).toHaveBeenCalledTimes(1));
     expect(api.calls('start')[0]!.body).toEqual({
       task: 'Add pagination to products API',
-      provider: 'codex',
+      agent: 'default-claude-code',
     });
     expect(push).toHaveBeenCalledWith(`/executions/${api.runs()[0]!.id}`);
     await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('offers the usable agents, shows the Provider and model that follow from the chosen one, and starts with it', async () => {
+    const api = fakeRunsApi([]);
+    api.respondNext('runAgents', 200, AGENTS_WITH_DEFINITIONS);
+    renderRuns();
+    await openDialog();
+
+    expect(within(agentSelect()).getAllByRole('option')).toHaveLength(3);
+    expect(optionOf('reviewer').textContent).toContain('Codex');
+    await userEvent.selectOptions(agentSelect(), 'reviewer');
+
+    expect(within(dialog()).getByTestId('agent-provider').textContent).toBe('Codex · model gpt-5');
+    expect(within(dialog()).getByText('Reviews code')).toBeTruthy();
+    await userEvent.type(taskInput(), 'Review the change');
+    await userEvent.click(startButton());
+    await vi.waitFor(() => expect(push).toHaveBeenCalledTimes(1));
+    expect(api.calls('start')[0]!.body).toEqual({ task: 'Review the change', agent: 'reviewer' });
+    await expect(document.body).toHaveNoAxeViolations();
+  });
+
+  it("preselects the Project's default agent", async () => {
+    const api = fakeRunsApi([]);
+    api.respondNext('runAgents', 200, { ...AGENTS_WITH_DEFINITIONS, preselected: 'reviewer' });
+    renderRuns();
+    await openDialog();
+
+    expect(selectedAgent()).toBe('reviewer');
+    expect(within(dialog()).queryByTestId('preselected-reason')).toBeNull();
+  });
+
+  it('says why the default agent is not the one preselected', async () => {
+    const api = fakeRunsApi([]);
+    const reason =
+      'The default agent "reviewer" is not usable: its definition has problems. The built-in Default agent is offered.';
+    api.respondNext('runAgents', 200, { ...DEFAULT_RUN_AGENTS, preselectedReason: reason });
+    renderRuns();
+    await openDialog();
+
+    const note = within(dialog()).getByTestId('preselected-reason');
+    expect(note.textContent).toBe(reason);
+    expect(agentSelect().getAttribute('aria-describedby')).toContain(note.id);
+    expect(selectedAgent()).toBe('default-claude-code');
+    await expect(document.body).toHaveNoAxeViolations();
+  });
+
+  it('shows the reason as plain text, never as markup', async () => {
+    const api = fakeRunsApi([]);
+    api.respondNext('runAgents', 200, {
+      ...DEFAULT_RUN_AGENTS,
+      preselectedReason: '<a href="https://evil.example">x</a>',
+    });
+    renderRuns();
+    await openDialog();
+
+    expect(within(dialog()).queryByRole('link')).toBeNull();
+    expect(within(dialog()).getByTestId('preselected-reason').textContent).toBe(
+      '<a href="https://evil.example">x</a>',
+    );
   });
 
   it("shows the server's field error at the Task", async () => {
@@ -297,8 +379,82 @@ describe('New run dialog', () => {
   });
 });
 
+describe('New run dialog: refused agents', () => {
+  it.each([
+    [
+      'agent-unknown',
+      'Agent unknown',
+      'No agent has this name. Pick one of the agents offered for the project.',
+      'This agent no longer exists.',
+    ],
+    [
+      'agent-not-usable',
+      'Agent not usable',
+      'The agent cannot be used: its definition has problems. See the Agents page.',
+      "This agent's definition has problems",
+    ],
+    [
+      'provider-unavailable',
+      'Provider unavailable',
+      SWITCHED_OFF,
+      "This agent's Provider is switched off",
+    ],
+  ])(
+    'gives the %s refusal its own message and keeps the dialog open',
+    async (type, title, detail, message) => {
+      const api = fakeRunsApi([]);
+      api.respondNext('start', 409, refusal(type, title, detail));
+      renderRuns();
+      await openDialog();
+
+      await userEvent.type(taskInput(), 'Add pagination');
+      await userEvent.click(startButton());
+
+      const alert = await within(dialog()).findByRole('alert');
+      expect(alert.textContent).toContain(title);
+      expect(alert.textContent).toContain(message);
+      expect(push).not.toHaveBeenCalled();
+      await expect(document.body).toHaveNoAxeViolations();
+    },
+  );
+
+  it('reads the agents again after an unknown or unusable refusal, so the list is current', async () => {
+    const api = fakeRunsApi([]);
+    api.respondNext('runAgents', 200, AGENTS_WITH_DEFINITIONS);
+    api.respondNext('start', 409, refusal('agent-unknown', 'Agent unknown', 'No agent.'));
+    renderRuns();
+    await openDialog();
+    await userEvent.selectOptions(agentSelect(), 'reviewer');
+
+    await userEvent.type(taskInput(), 'Add pagination');
+    await userEvent.click(startButton());
+
+    await vi.waitFor(() => expect(api.calls('runAgents')).toHaveLength(2));
+    await vi.waitFor(() => expect(within(agentSelect()).getAllByRole('option')).toHaveLength(2));
+    expect(selectedAgent()).toBe('default-claude-code');
+  });
+});
+
+describe('New run dialog: agents that cannot be read', () => {
+  it('says so, offers Try again, and offers no start until the agents are known', async () => {
+    const api = fakeRunsApi([]);
+    api.respondNext('runAgents', 503, problem(503, 'Service Unavailable'));
+    renderRuns();
+    await userEvent.click(newRunButton());
+
+    expect(await within(dialog()).findByText("Couldn't load the agents.")).toBeTruthy();
+    expect(startButton()).toHaveProperty('disabled', true);
+    await expect(document.body).toHaveNoAxeViolations();
+
+    await userEvent.click(within(dialog()).getByRole('button', { name: 'Try again' }));
+    await vi.waitFor(() => expect(selectedAgent()).toBe('default-claude-code'));
+    expect(api.calls('runAgents')).toHaveLength(2);
+    expect(startButton()).toHaveProperty('disabled', false);
+  });
+});
+
 describe('New run dialog: provider availability (Issue #101)', () => {
-  it('shows a provider switched off on the worker as unavailable with the reason', async () => {
+  it('shows an agent whose Provider is switched off as unavailable, with the reason, and never selects it', async () => {
     const api = fakeRunsApi([]);
     api.respondNext('providers', 200, [
       { id: 'claude_code', name: 'Claude Code', available: true },
@@ -307,15 +463,14 @@ describe('New run dialog: provider availability (Issue #101)', () => {
     renderRuns();
     await openDialog();
 
-    const reason = await within(dialog()).findByText(`Codex: ${SWITCHED_OFF}`);
-    expect(providerButton('Codex').getAttribute('aria-disabled')).toBe('true');
-    expect(providerButton('Codex').getAttribute('aria-describedby')).toBe(reason.id);
-    expect(providerButton('Claude Code').getAttribute('aria-pressed')).toBe('true');
-    expect(providerButton('Claude Code').getAttribute('aria-disabled')).toBeNull();
+    expect(optionOf('default-codex').disabled).toBe(true);
+    expect(optionOf('default-codex').textContent).toContain(SWITCHED_OFF);
+    expect(optionOf('default-claude-code').disabled).toBe(false);
+    expect(selectedAgent()).toBe('default-claude-code');
     await expect(document.body).toHaveNoAxeViolations();
   });
 
-  it('preselects the first available provider when Claude Code is switched off', async () => {
+  it('moves the preselection to the first agent with an available Provider', async () => {
     const api = fakeRunsApi([]);
     api.respondNext('providers', 200, [
       { id: 'claude_code', name: 'Claude Code', available: false, reason: SWITCHED_OFF },
@@ -324,18 +479,15 @@ describe('New run dialog: provider availability (Issue #101)', () => {
     renderRuns();
     await openDialog();
 
-    await vi.waitFor(() =>
-      expect(providerButton('Codex').getAttribute('aria-pressed')).toBe('true'),
-    );
-    expect(providerButton('Claude Code').getAttribute('aria-disabled')).toBe('true');
+    await vi.waitFor(() => expect(selectedAgent()).toBe('default-codex'));
     await userEvent.type(taskInput(), 'Add pagination');
     await userEvent.click(startButton());
 
     await vi.waitFor(() => expect(push).toHaveBeenCalledTimes(1));
-    expect(api.calls('start')[0]!.body).toEqual({ task: 'Add pagination', provider: 'codex' });
+    expect(api.calls('start')[0]!.body).toEqual({ task: 'Add pagination', agent: 'default-codex' });
   });
 
-  it('offers no provider and no start when no agent worker is connected', async () => {
+  it('offers no start when no agent worker is connected', async () => {
     const api = fakeRunsApi([]);
     api.respondNext('providers', 200, [
       { id: 'claude_code', name: 'Claude Code', available: false, reason: NO_WORKER },
@@ -344,16 +496,15 @@ describe('New run dialog: provider availability (Issue #101)', () => {
     renderRuns();
     await openDialog();
 
-    expect(await within(dialog()).findByText(`Claude Code: ${NO_WORKER}`)).toBeTruthy();
-    expect(within(dialog()).getByText(`Codex: ${NO_WORKER}`)).toBeTruthy();
-    expect(providerButton('Claude Code').getAttribute('aria-disabled')).toBe('true');
-    expect(providerButton('Codex').getAttribute('aria-disabled')).toBe('true');
+    expect(optionOf('default-claude-code').disabled).toBe(true);
+    expect(optionOf('default-codex').disabled).toBe(true);
     expect(startButton()).toHaveProperty('disabled', true);
+    expect(within(dialog()).getByText(/No agent can start a run now/)).toBeTruthy();
     await expect(document.body).toHaveNoAxeViolations();
     expect(api.calls('start')).toHaveLength(0);
   });
 
-  it('reads the availability again each time the dialog opens', async () => {
+  it('reads the agents and the availability again each time the dialog opens', async () => {
     const api = fakeRunsApi([]);
     renderRuns();
     await openDialog();
@@ -366,11 +517,12 @@ describe('New run dialog: provider availability (Issue #101)', () => {
 
     await openDialog();
 
-    expect(await within(dialog()).findByText(`Codex: ${SWITCHED_OFF}`)).toBeTruthy();
+    expect(optionOf('default-codex').disabled).toBe(true);
     expect(api.calls('providers')).toHaveLength(2);
+    expect(api.calls('runAgents')).toHaveLength(2);
   });
 
-  it('offers both providers when the availability cannot be read (the server decides)', async () => {
+  it('offers every agent when the availability cannot be read (the server decides)', async () => {
     const api = fakeRunsApi([]);
     api.respondNext('providers', 503, problem(503, 'Service Unavailable'));
     renderRuns();
@@ -379,55 +531,11 @@ describe('New run dialog: provider availability (Issue #101)', () => {
     expect(
       await within(dialog()).findByText("Couldn't check which providers are available."),
     ).toBeTruthy();
-    expect(providerButton('Claude Code').getAttribute('aria-disabled')).toBeNull();
-    expect(providerButton('Codex').getAttribute('aria-disabled')).toBeNull();
+    expect(optionOf('default-claude-code').disabled).toBe(false);
+    expect(optionOf('default-codex').disabled).toBe(false);
   });
 
-  it("shows the server's message when it refuses an unavailable provider", async () => {
-    const api = fakeRunsApi([]);
-    api.respondNext('start', 409, problem(409, 'Provider unavailable', SWITCHED_OFF));
-    renderRuns();
-    await openDialog();
-
-    await userEvent.type(taskInput(), 'Add pagination');
-    await userEvent.click(startButton());
-
-    const alert = await within(dialog()).findByRole('alert');
-    expect(alert.textContent).toContain('Provider unavailable');
-    expect(alert.textContent).toContain(SWITCHED_OFF);
-    expect(push).not.toHaveBeenCalled();
-  });
-
-  it('re-applies the selection on every opening, also with the same answer (review r1 of #120)', async () => {
-    const api = fakeRunsApi([]);
-    const claudeOff = [
-      { id: 'claude_code', name: 'Claude Code', available: false, reason: SWITCHED_OFF },
-      { id: 'codex', name: 'Codex', available: true },
-    ];
-    api.respondNext('providers', 200, claudeOff);
-    api.respondNext('providers', 200, claudeOff);
-    renderRuns();
-
-    await openDialog();
-    // The selection is applied in an effect after the answer renders: wait for it.
-    await vi.waitFor(() =>
-      expect(providerButton('Codex').getAttribute('aria-pressed')).toBe('true'),
-    );
-    await userEvent.click(within(dialog()).getByRole('button', { name: 'Cancel' }));
-    await openDialog();
-
-    expect(api.calls('providers')).toHaveLength(2);
-    await vi.waitFor(() =>
-      expect(providerButton('Codex').getAttribute('aria-pressed')).toBe('true'),
-    );
-    expect(providerButton('Claude Code').getAttribute('aria-pressed')).toBe('false');
-    await userEvent.type(taskInput(), 'Add pagination');
-    await userEvent.click(startButton());
-    await vi.waitFor(() => expect(push).toHaveBeenCalledTimes(1));
-    expect(api.calls('start')[0]!.body).toEqual({ task: 'Add pagination', provider: 'codex' });
-  });
-
-  it("never shows an earlier opening's answer: no provider and no start until the new one", async () => {
+  it("never shows an earlier opening's answer: no start until the new one", async () => {
     const api = fakeRunsApi([]);
     api.respondNext('providers', 200, [
       { id: 'claude_code', name: 'Claude Code', available: true },
@@ -443,50 +551,98 @@ describe('New run dialog: provider availability (Issue #101)', () => {
 
     await userEvent.click(newRunButton());
 
-    expect(within(dialog()).getByRole('status').textContent).toBe(
-      'Checking which providers are available…',
-    );
-    expect(within(dialog()).queryByText(`Codex: ${SWITCHED_OFF}`)).toBeNull();
-    expect(providerButton('Claude Code').getAttribute('aria-disabled')).toBe('true');
-    expect(providerButton('Codex').getAttribute('aria-disabled')).toBe('true');
+    expect(within(dialog()).getByRole('status').textContent).toBe('Checking the agents…');
+    expect(within(dialog()).queryByLabelText('Agent')).toBeNull();
     expect(startButton()).toHaveProperty('disabled', true);
-    // The checking state is accessible too.
     await expect(document.body).toHaveNoAxeViolations();
     answer(
-      new Response(
-        JSON.stringify([
-          { id: 'claude_code', name: 'Claude Code', available: true },
-          { id: 'codex', name: 'Codex', available: true },
-        ]),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      ),
+      new Response(JSON.stringify(DEFAULT_RUN_AGENTS), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
     );
-    await vi.waitFor(() =>
-      expect(providerButton('Codex').getAttribute('aria-disabled')).toBeNull(),
-    );
-    expect(startButton()).toHaveProperty('disabled', false);
+    await vi.waitFor(() => expect(startButton()).toHaveProperty('disabled', false));
+    expect(optionOf('default-codex').disabled).toBe(false);
   });
+});
 
-  it('keeps an unavailable provider reachable by keyboard, announces why, and never selects it', async () => {
+describe('New run dialog: review round 1', () => {
+  it('shows the server detail of a Provider refusal and reads the availability again, so the agent is disabled', async () => {
     const api = fakeRunsApi([]);
+    api.respondNext(
+      'start',
+      409,
+      refusal('provider-unavailable', 'Provider unavailable', SWITCHED_OFF),
+    );
+    renderRuns();
+    await openDialog();
     api.respondNext('providers', 200, [
       { id: 'claude_code', name: 'Claude Code', available: true },
       { id: 'codex', name: 'Codex', available: false, reason: SWITCHED_OFF },
     ]);
+    await userEvent.selectOptions(agentSelect(), 'default-codex');
+
+    await userEvent.type(taskInput(), 'Add pagination');
+    await userEvent.click(startButton());
+
+    const alert = await within(dialog()).findByRole('alert');
+    expect(alert.textContent).toContain(SWITCHED_OFF);
+    await vi.waitFor(() => expect(optionOf('default-codex').disabled).toBe(true));
+    expect(api.calls('providers')).toHaveLength(2);
+    expect(selectedAgent()).toBe('default-claude-code');
+    await expect(document.body).toHaveNoAxeViolations();
+  });
+
+  it('shows the preselection reason only while the preselected agent is the chosen one', async () => {
+    const api = fakeRunsApi([]);
+    const reason =
+      'The default agent "reviewer" is not usable. The built-in Default agent is offered.';
+    api.respondNext('runAgents', 200, { ...DEFAULT_RUN_AGENTS, preselectedReason: reason });
+    api.respondNext('providers', 200, [
+      { id: 'claude_code', name: 'Claude Code', available: false, reason: SWITCHED_OFF },
+      { id: 'codex', name: 'Codex', available: true },
+    ]);
     renderRuns();
     await openDialog();
-    const codex = providerButton('Codex');
 
-    codex.focus();
-    await userEvent.keyboard('{Enter}');
-    await userEvent.keyboard(' ');
+    await vi.waitFor(() => expect(selectedAgent()).toBe('default-codex'));
+    expect(within(dialog()).queryByTestId('preselected-reason')).toBeNull();
+    const note = within(dialog()).getByTestId('agent-fallback-note');
+    expect(note.textContent).toContain('default-claude-code');
+    expect(note.textContent).toContain('default-codex');
+    expect(note.textContent).toContain(SWITCHED_OFF);
+    await expect(document.body).toHaveNoAxeViolations();
+  });
 
-    expect(document.activeElement).toBe(codex);
-    expect(codex.getAttribute('aria-pressed')).toBe('false');
-    expect(document.getElementById(codex.getAttribute('aria-describedby')!)?.textContent).toBe(
-      `Codex: ${SWITCHED_OFF}`,
+  it('says nothing about a fallback once the operator picks an agent', async () => {
+    const api = fakeRunsApi([]);
+    api.respondNext('runAgents', 200, { ...AGENTS_WITH_DEFINITIONS, preselected: 'reviewer' });
+    renderRuns();
+    await openDialog();
+
+    await userEvent.selectOptions(agentSelect(), 'default-codex');
+
+    expect(within(dialog()).queryByTestId('agent-fallback-note')).toBeNull();
+  });
+
+  it('moves focus to the agent select on a server field error for it', async () => {
+    const api = fakeRunsApi([]);
+    api.respondNext(
+      'start',
+      422,
+      problem(422, 'Invalid request', 'The request body is invalid.', [
+        { path: 'agent', message: 'Unknown agent.' },
+      ]),
     );
-    expect(providerButton('Claude Code').getAttribute('aria-pressed')).toBe('true');
+    renderRuns();
+    await openDialog();
+
+    await userEvent.type(taskInput(), 'Add pagination');
+    await userEvent.click(startButton());
+
+    expect(await within(dialog()).findByText('Unknown agent.')).toBeTruthy();
+    expect(document.activeElement).toBe(agentSelect());
+    expect(agentSelect().getAttribute('aria-invalid')).toBe('true');
     await expect(document.body).toHaveNoAxeViolations();
   });
 });

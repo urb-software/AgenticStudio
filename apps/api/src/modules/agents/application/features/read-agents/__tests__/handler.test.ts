@@ -1,6 +1,8 @@
 import { MAX_FILE_BYTES, RESERVED_AGENT_NAMES } from '@agentic-studio/agent-definitions';
 import { describe, expect, it, vi } from 'vitest';
 import type {
+  ProjectDefaultAgent,
+  ProjectDefaultAgents,
   DefinitionsFiles,
   DefinitionsFilesResult,
   DefinitionsSnapshot,
@@ -19,6 +21,7 @@ interface Scripted {
   tree?: DefinitionsTreeResult;
   files?: Record<string, string>;
   readFiles?: DefinitionsFilesResult;
+  project?: ProjectDefaultAgent;
 }
 
 /** A scripted `DefinitionsFiles`: the tree and the text of the files it holds. */
@@ -54,7 +57,11 @@ function scripted(script: Scripted) {
       ),
     ),
   } satisfies DefinitionsFiles;
-  return { fake, handler: new ReadAgentsHandler(fake) };
+  const defaults: ProjectDefaultAgents = {
+    forProject: () =>
+      Promise.resolve(script.project ?? { status: 'found', kind: 'code', agent: null }),
+  };
+  return { fake, handler: new ReadAgentsHandler(fake, defaults) };
 }
 
 const file = (path: string, size = 10): DefinitionsTreeEntry => ({ path, kind: 'file', size });
@@ -439,6 +446,67 @@ describe('ReadAgentsHandler', () => {
       await handler.execute();
 
       expect(fake.listTree).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('the agents a Run of a Project offers', () => {
+    const REVIEWER = 'agents/reviewer/AGENT.md';
+    const BROKEN = 'agents/broken/AGENT.md';
+    const repository = {
+      tree: listed(file(REVIEWER), file(BROKEN)),
+      files: { [REVIEWER]: VALID('reviewer'), [BROKEN]: '---\nname: broken\n---\nNo provider.\n' },
+    };
+    const offered = async (project: ProjectDefaultAgent) => {
+      const { handler } = scripted({ ...repository, project });
+      return (await handler.execute({ projectId: 'p' })).forRun;
+    };
+
+    it('are the usable agents only, built-in first, with the Default agent of Claude Code preselected', async () => {
+      const result = await offered({ status: 'found', kind: 'code', agent: null });
+
+      expect(result).toMatchObject({
+        status: 'offered',
+        preselected: 'default-claude-code',
+        reason: null,
+      });
+      expect(result?.status === 'offered' && result.agents.map((agent) => agent.name)).toEqual([
+        'default-claude-code',
+        'default-codex',
+        'reviewer',
+      ]);
+    });
+
+    it('preselect the default of the Project when it is usable', async () => {
+      await expect(
+        offered({ status: 'found', kind: 'code', agent: 'reviewer' }),
+      ).resolves.toMatchObject({
+        preselected: 'reviewer',
+        reason: null,
+      });
+    });
+
+    it('judge the default where it is read: one with problems, or gone, gives the Default agent and a reason', async () => {
+      for (const agent of ['broken', 'removed']) {
+        const result = await offered({ status: 'found', kind: 'code', agent });
+
+        expect(result).toMatchObject({ status: 'offered', preselected: 'default-claude-code' });
+        expect(result).toEqual(expect.objectContaining({ reason: expect.stringContaining(agent) }));
+      }
+    });
+
+    it('answer for no Project and for the definitions Project, which accepts no Run', async () => {
+      await expect(offered({ status: 'project_not_found' })).resolves.toEqual({
+        status: 'project_not_found',
+      });
+      await expect(offered({ status: 'found', kind: 'definitions', agent: null })).resolves.toEqual(
+        { status: 'definitions_project' },
+      );
+    });
+
+    it('are left out when no Project is asked about', async () => {
+      const { handler } = scripted(repository);
+
+      expect(await handler.execute()).not.toHaveProperty('forRun');
     });
   });
 });
