@@ -337,8 +337,10 @@ describe('definitions Project API (PostgreSQL + Redis via Testcontainers)', () =
       const id = created.body.id as string;
       const url = 'https://git.example.test/acme/agents.git';
       await db().$executeRaw`
-        INSERT INTO repositories (project_id, url, url_normalized, integration_branch, state)
-        VALUES (${id}::uuid, ${url}, ${url.slice(8, -4)}, 'main', 'awaiting_key')`;
+        INSERT INTO repositories
+          (project_id, url, url_normalized, integration_branch, state, deploy_key_secret_id, public_key)
+        VALUES (${id}::uuid, ${url}, ${url.slice(8, -4)}, 'main', 'awaiting_key',
+                gen_random_uuid(), 'placeholder public key')`;
 
       const response = await asOperator(http().delete(`/api/projects/${id}/repository`));
 
@@ -370,7 +372,7 @@ describe('definitions Project API (PostgreSQL + Redis via Testcontainers)', () =
       await setKind(project, 'code');
       const control = await asWorker('runs/claim', { workerId: WORKER });
       expect(control.status).toBe(200);
-      expect(control.body.id).toBe(runId);
+      expect(control.body.runId).toBe(runId);
     });
 
     it('skips the lookups of a hand-inserted Run of the definitions Project', async () => {
@@ -399,10 +401,10 @@ describe('definitions Project API (PostgreSQL + Redis via Testcontainers)', () =
 
       const claim = await asWorker('lookups/claim', { workerId: WORKER });
 
-      expect(claim.status).toBe(200);
-      expect(claim.body).toEqual([]);
+      expect(claim.status).toBe(204);
       await setKind(project, 'code');
       const control = await asWorker('lookups/claim', { workerId: WORKER });
+      expect(control.status).toBe(200);
       expect(control.body).toHaveLength(1);
       expect(control.body[0]).toMatchObject({ runId });
     });
