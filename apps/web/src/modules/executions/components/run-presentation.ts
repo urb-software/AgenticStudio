@@ -153,6 +153,8 @@ export const FAILURE_MESSAGE: Record<FailureCode, string> = {
   agent_folder_unavailable:
     "The agent's files are no longer available in the definitions Repository.",
   agent_folder_invalid: "The agent's files in the definitions Repository are not valid.",
+  model_not_allowed: "The agent's model is not one the provider allows.",
+  model_refused: "The provider refused the agent's model.",
   unknown: 'The run failed for an unknown reason.',
 };
 

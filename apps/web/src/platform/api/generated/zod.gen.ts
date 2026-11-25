@@ -551,6 +551,8 @@ export const zRunPartEndOutput = z.object({
         'step_limit',
         'agent_folder_unavailable',
         'agent_folder_invalid',
+        'model_not_allowed',
+        'model_refused',
         'unknown'
     ]).optional(),
     delivery: z.enum([
@@ -619,6 +621,8 @@ export const zRunOutput = z.object({
             'step_limit',
             'agent_folder_unavailable',
             'agent_folder_invalid',
+            'model_not_allowed',
+            'model_refused',
             'unknown'
         ]),
         detail: z.string()
@@ -932,7 +936,8 @@ export const zProviderAvailabilityOutput = z.object({
     id: z.enum(['claude_code', 'codex']),
     name: z.string(),
     available: z.boolean(),
-    reason: z.string().optional()
+    reason: z.string().optional(),
+    models: z.array(z.string())
 });
 
 export const zProviderListOutput = z.array(zProviderAvailabilityOutput);

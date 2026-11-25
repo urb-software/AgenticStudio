@@ -10,6 +10,7 @@ import { CODEX_RESULT_JSON_SCHEMA } from '../codex/result-schema.js';
 import { CodexRunner } from '../codex/runner.js';
 import { DEFAULT_PROVIDER_BINARIES } from '../config.js';
 import { GitCommandError } from '../git.js';
+import { ModelNotAllowedError, ModelRefusedError } from '../model-option.js';
 import { ProviderDisabledError, ProviderGate } from '../provider-gate.js';
 import { AgentFailedError, drainRunStep, type RunStep, UsageLimitError } from '../runner.js';
 import { agentFields } from './agent-fixtures.js';
@@ -502,6 +503,142 @@ describe('CodexRunner at the spawn boundary', () => {
       type: 'notice',
       text: "Codex's error output: Error: unexpected argument found",
     });
+  });
+
+  const withModel = (task: string, model: string) => {
+    const base = input(task);
+    return { ...base, run: { ...base.run, agent: { ...base.run.agent, model } } };
+  };
+
+  it('starts a step with --model of the Run after the approval policy, nothing else changed', async () => {
+    replaying('success');
+    await drain(runner().start(input('x')));
+    const plain = spawn.mock.calls[0]![1] as string[];
+    spawn.mockClear();
+    replaying('success');
+
+    await drain(runner().start(withModel('x', 'gpt-6.2-sol')));
+
+    const at = plain.indexOf('--output-schema');
+    expect(spawn.mock.calls[0]![1]).toEqual([
+      ...plain.slice(0, at),
+      '--model',
+      'gpt-6.2-sol',
+      ...plain.slice(at),
+    ]);
+    expect(plain).not.toContain('--model');
+  });
+
+  it('resumes a step with --model of the Run before resume, as the record shows', async () => {
+    replaying('resume');
+
+    await drain(
+      runner().resume({
+        ...withModel('x', 'gpt-6-luna'),
+        answer: 'PostgreSQL',
+        reason: 'follow_up',
+        sessionRef: THREAD,
+      }),
+    );
+
+    const args = spawn.mock.calls[0]![1] as string[];
+    expect(args.slice(args.indexOf('--model'))).toEqual([
+      '--model',
+      'gpt-6-luna',
+      'resume',
+      THREAD,
+      '-',
+    ]);
+  });
+
+  it('refuses a model outside the list before anything starts or is written', async () => {
+    const step = drain(runner().start(withModel('x', 'opus')));
+
+    await expect(step).rejects.toBeInstanceOf(ModelNotAllowedError);
+    expect(spawn).not.toHaveBeenCalled();
+    expect(existsSync(join(runDir, 'codex', 'prompt.md'))).toBe(false);
+  });
+
+  it("ends with ModelRefusedError, the CLI's reason in the detail, when the CLI refuses the model", async () => {
+    const failed = JSON.stringify({
+      type: 'turn.failed',
+      error: {
+        message: "The 'gpt-6-luna' model is not supported when using Codex with a ChatGPT account.",
+      },
+    });
+    spawn.mockImplementation(() =>
+      fakeChild(
+        `${failed}
+`,
+        1,
+      ),
+    );
+
+    const step = drain(runner().start(withModel('x', 'gpt-6-luna')));
+
+    await expect(step).rejects.toBeInstanceOf(ModelRefusedError);
+    await expect(step).rejects.toThrow(
+      /^The provider refused the model "gpt-6-luna"\. Codex ended with an error: The 'gpt-6-luna' model is not supported/,
+    );
+    spawn.mockImplementation(() =>
+      fakeChild(
+        `${failed}
+`,
+        1,
+      ),
+    );
+    await expect(drain(runner().start(input('x')))).rejects.not.toBeInstanceOf(ModelRefusedError);
+  });
+
+  it('keeps a usage limit resumable when its stderr also carries a model warning', async () => {
+    spawn.mockImplementation(() => {
+      const child = fakeChild(recording('usage-limit'), 1);
+      child.stderr.write('Model metadata for gpt-6-luna not found; using fallback metadata\n');
+      return child;
+    });
+
+    const step = drain(runner().start(withModel('x', 'gpt-6-luna')));
+
+    await expect(step).rejects.toBeInstanceOf(UsageLimitError);
+    await expect(step).rejects.toMatchObject({ sessionRef: THREAD });
+  });
+
+  it('keeps an invalid result an agent failure when stderr ends with a model warning', async () => {
+    spawn.mockImplementation(() => {
+      const child = fakeChild(recording('success'));
+      child.stderr.write('Model metadata for gpt-6-luna not found; using fallback metadata');
+      return child;
+    });
+
+    const step = drain(runner().start(withModel('x', 'gpt-6-luna')));
+
+    await expect(step).rejects.not.toBeInstanceOf(ModelRefusedError);
+    await expect(step).rejects.toThrow('Codex ended without a valid structured result.');
+  });
+
+  it('keeps an unrelated failed turn an agent failure when stderr ends with a model warning', async () => {
+    spawn.mockImplementation(() => {
+      const child = fakeChild(recording('turn-failed'), 1);
+      child.stderr.write('Model metadata for gpt-6-luna not found; using fallback metadata');
+      return child;
+    });
+
+    const step = drain(runner().start(withModel('x', 'gpt-6-luna')));
+
+    await expect(step).rejects.toBeInstanceOf(AgentFailedError);
+    await expect(step).rejects.not.toBeInstanceOf(ModelRefusedError);
+  });
+
+  it('does not call an overloaded model a refusal', async () => {
+    spawn.mockImplementation(() => {
+      const child = fakeChild('', 1);
+      child.stderr.write('The model is overloaded and not available right now.\n');
+      return child;
+    });
+
+    await expect(drain(runner().start(withModel('x', 'gpt-6-luna')))).rejects.not.toBeInstanceOf(
+      ModelRefusedError,
+    );
   });
 
   it("logs the CLI's expected untrusted-project warning as a notice, never as the failure reason", async () => {

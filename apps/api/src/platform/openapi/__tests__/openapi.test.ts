@@ -570,8 +570,9 @@ describe('OpenAPI document', () => {
         name: { type: 'string' },
         available: { type: 'boolean' },
         reason: { type: 'string' },
+        models: { type: 'array', items: { type: 'string' } },
       },
-      required: ['id', 'name', 'available'],
+      required: ['id', 'name', 'available', 'models'],
     });
   });
 

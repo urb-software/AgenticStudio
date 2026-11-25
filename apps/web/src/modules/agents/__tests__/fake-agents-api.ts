@@ -6,9 +6,27 @@ import type {
   AgentListOutput,
   AgentSummaryOutput,
   ProblemDetails,
+  ProviderAvailabilityOutput,
   ProjectOutput,
   RepositoryOutput,
 } from '../../../platform/api';
+
+/** What `GET /api/providers` answers: each Provider with the models an agent may name. */
+export const PROVIDERS: ProviderAvailabilityOutput[] = [
+  {
+    id: 'claude_code',
+    name: 'Claude Code',
+    available: true,
+    models: ['default', 'opus', 'sonnet', 'haiku'],
+  },
+  {
+    id: 'codex',
+    name: 'Codex',
+    available: false,
+    reason: 'Switched off on the agent worker.',
+    models: ['default', 'gpt-6.2-astra', 'gpt-6.2-sol', 'gpt-6.1-sol', 'gpt-6-luna'],
+  },
+];
 
 export const BASE_RULES = { version: '2026-11-1', text: 'Base rules, line one.\nLine two.' };
 
@@ -93,6 +111,7 @@ export function fakeAgentsApi(
   const scripted: { status: number; body: unknown }[] = [];
   const listFailures: { status: number; body: unknown }[] = [];
   const detailFailures: { status: number; body: unknown }[] = [];
+  const providerFailures: { status: number; body: unknown }[] = [];
   const gates: { list?: Promise<void>; detail?: Promise<void> } = {};
 
   const fetch = vi.fn(async (request: Request): Promise<Response> => {
@@ -101,6 +120,10 @@ export function fakeAgentsApi(
     const text = request.method === 'POST' || request.method === 'PUT' ? await request.text() : '';
     const body: unknown = text ? JSON.parse(text) : undefined;
     calls.push({ method: request.method, path: pathname, search, body });
+    if (pathname === '/api/providers' && request.method === 'GET') {
+      const failure = providerFailures.shift();
+      return failure ? json(failure.status, failure.body) : json(200, PROVIDERS);
+    }
     const response = request.method === 'GET' ? scripted.shift() : undefined;
     if (response) return json(response.status, response.body);
 
@@ -204,6 +227,10 @@ export function fakeAgentsApi(
     /** The files the next reads answer, as after a fetch brought new commits. */
     setFiles(next: { tree: AgentFilesOutput; contents?: Record<string, AgentFileOutput> }) {
       files = next;
+    },
+    /** The next read of the Providers fails with this response. */
+    failNextProviders(status: number, body: unknown) {
+      providerFailures.push({ status, body });
     },
     /** The next read of the agent list fails with this response. */
     failNextList(status: number, body: unknown) {

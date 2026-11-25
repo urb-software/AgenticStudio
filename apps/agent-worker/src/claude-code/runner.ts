@@ -20,6 +20,7 @@ import {
   type ManagedGuardrailsCheck,
   managedGuardrailsFailure,
 } from '../managed-guardrails.js';
+import { classifyModelFailure, modelOption } from '../model-option.js';
 import { ProviderDisabledError } from '../provider-gate.js';
 import {
   type ProcessGroupRegistry,
@@ -93,6 +94,8 @@ export class ClaudeCodeRunner implements Runner {
     const { run, workspace, signal, processes } = input;
     // The dispatcher checked already; nothing is written for a provider that is off.
     this.options.cli.gate.assertEnabled(PROVIDER);
+    // A model outside the Provider's list never reaches the CLI, whatever the API sent.
+    modelOption(PROVIDER, run.agent.model);
     signal.throwIfAborted();
     // The agent user's own settings still load; refuse what they must not hold.
     const userSettings = await userSettingsProblem(this.options.env.HOME);
@@ -126,6 +129,7 @@ export class ClaudeCodeRunner implements Runner {
       instructionsFile: files.instructionsFile,
       maxTurns: this.options.maxTurns,
       jsonSchema: AGENT_RESULT_JSON_SCHEMA,
+      model: run.agent.model,
       ...(plugin.dir === null ? {} : { pluginDir: plugin.dir }),
       ...(sessionRef === undefined ? {} : { sessionRef }),
     });
@@ -134,7 +138,7 @@ export class ClaudeCodeRunner implements Runner {
       tmpDir: files.tmpDir,
       composeProjectName: workspace.env.COMPOSE_PROJECT_NAME,
     });
-    return yield* this.execute(args, env, workspace.repoDir, processes, signal);
+    return yield* this.execute(args, env, workspace.repoDir, processes, signal, run.agent.model);
   }
 
   private async *execute(
@@ -143,6 +147,7 @@ export class ClaudeCodeRunner implements Runner {
     cwd: string,
     processes: ProcessGroupRegistry,
     signal: AbortSignal,
+    model: string,
   ): RunStep {
     const child = spawnProviderCli(
       this.options.cli,
@@ -173,14 +178,21 @@ export class ClaudeCodeRunner implements Runner {
     for (const event of outcome.events) yield event;
     if ('result' in outcome) return outcome.result;
     const errorOutput = stderr.trim();
-    if (errorOutput === '') throw outcome.error;
+    // A model the CLI refuses ends the Run as such, with the CLI's own line as the reason.
+    const fail = (error: Error, detail?: string) =>
+      classifyModelFailure(error, model, {
+        streamReason: stream.errorText,
+        lastErrorLine: errorOutput.split('\n').at(-1),
+        detail,
+      });
+    if (errorOutput === '') throw fail(outcome.error);
     yield { type: 'notice', text: `Claude Code's error output: ${errorOutput}` };
     // The CLI's own reason goes into the failure detail too, so the operator sees it on the Run
     // without opening the log; Studio redacts the detail.
     if (outcome.error instanceof AgentFailedError) {
-      throw new AgentFailedError(`${outcome.error.message} ${errorReason(errorOutput)}`);
+      throw fail(outcome.error, `${outcome.error.message} ${errorReason(errorOutput)}`);
     }
-    throw outcome.error;
+    throw fail(outcome.error);
   }
 
   /** The repository's skill and agent folders at the start commit, read from the object store. */

@@ -72,6 +72,11 @@ export function RunRows({ runs, now, label, projectNames }: RunRowsProps) {
             </Link>
             <span className="col-span-2 row-start-3 flex min-w-0 flex-wrap gap-x-3 text-small text-text-muted md:col-span-1 md:col-start-3 md:row-start-1 md:flex-nowrap">
               <span>{PROVIDER_LABEL[run.provider]}</span>
+              {/* The model the agent named when the Run started; `default` is the CLI's own. */}
+              <span>
+                <span>Model </span>
+                <span className="font-mono text-code">{run.agent.model}</span>
+              </span>
               {run.pullRequest ? (
                 // A marker, not a link: the row is one link to the Run page.
                 <span className="inline-flex items-center gap-1 font-mono text-code">

@@ -8,6 +8,9 @@ export const providerAvailabilitySchema = z
     name: z.string(),
     available: z.boolean(),
     reason: z.string().optional(),
+    models: z
+      .array(z.string())
+      .describe('The models an agent may name for this provider; `default` is the CLI own.'),
   })
   .meta({ id: 'ProviderAvailability' });
 
