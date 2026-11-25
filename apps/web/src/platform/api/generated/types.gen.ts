@@ -1772,6 +1772,10 @@ export type DiscardAgentDraftData = {
 
 export type DiscardAgentDraftErrors = {
     /**
+     * Other writes kept changing the Draft (urn:agentic-studio:problem:agent-draft-conflict)
+     */
+    409: ProblemDetails;
+    /**
      * Error (RFC 9457 problem details)
      */
     default: ProblemDetails;

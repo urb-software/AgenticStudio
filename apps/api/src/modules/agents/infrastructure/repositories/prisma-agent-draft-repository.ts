@@ -33,7 +33,8 @@ export class PrismaAgentDraftRepository implements AgentDraftRepository {
         orderBy: { path: 'asc' },
       }),
     ]);
-    if (!head) return AgentDraft.empty(new Date());
+    // The migration seeds this row; without it every save would match nothing.
+    if (!head) throw new Error('The agent Draft row is missing: the migration seeds it.');
     return AgentDraft.restore({
       baseCommit: head.baseCommit,
       version: head.version,

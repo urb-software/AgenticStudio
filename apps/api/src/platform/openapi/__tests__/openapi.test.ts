@@ -198,6 +198,7 @@ describe('OpenAPI document', () => {
     for (const status of ['400', '404', '409', '422', '503']) {
       expect(document.paths[`${base}/files/move`]?.post?.responses[status]).toMatchObject(problem);
     }
+    expect(document.paths[base]?.delete?.responses['409']).toMatchObject(problem);
     for (const status of ['400', '409', '413', '422', '503']) {
       expect(document.paths[`${base}/files`]?.put?.responses[status]).toMatchObject(problem);
     }

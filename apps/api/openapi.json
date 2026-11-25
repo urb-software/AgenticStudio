@@ -1196,6 +1196,16 @@
               }
             }
           },
+          "409": {
+            "description": "Other writes kept changing the Draft (urn:agentic-studio:problem:agent-draft-conflict)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "default": {
             "description": "Error (RFC 9457 problem details)",
             "content": {
