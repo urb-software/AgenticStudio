@@ -6,6 +6,7 @@ import { Skeleton } from '@/shared/ui/skeleton';
 import type { AgentFileEntryOutput, AgentFileOutput } from '../../../../platform/api';
 import { formatSize } from '../../components/format-size';
 import { languageOf } from './editor-model';
+import type { MonacoMarker } from './monaco-view';
 
 // Monaco is the heavy part of the app: it is fetched here, on the editor route only, and never
 // rendered on the server. The import stays in this one place.
@@ -24,7 +25,17 @@ export type PaneState =
   | { kind: 'refused'; entry: AgentFileEntryOutput }
   | { kind: 'loading'; path: string }
   | { kind: 'error'; path: string }
-  | { kind: 'file'; file: AgentFileOutput; revealLine?: number; revealToken?: number };
+  | { kind: 'deleted'; path: string }
+  | {
+      kind: 'file';
+      file: AgentFileOutput;
+      /** The text to show: the unsaved edit when there is one, else the file's own. */
+      value?: string;
+      editable?: boolean;
+      markers?: readonly MonacoMarker[];
+      revealLine?: number;
+      revealToken?: number;
+    };
 
 /** Why the entry cannot be opened, in words for the pane. */
 function refusalOf(entry: AgentFileEntryOutput): string {
@@ -33,19 +44,31 @@ function refusalOf(entry: AgentFileEntryOutput): string {
   return 'It is larger than the size the editor reads, or its path is not one it accepts.';
 }
 
+interface EditorPaneProps {
+  state: PaneState;
+  onChange?: (text: string) => void;
+}
+
 /** The right-hand side: one file at the commit the editor reads, or why there is none. */
-export function EditorPane({ state }: { state: PaneState }) {
+export function EditorPane({ state, onChange }: EditorPaneProps) {
   switch (state.kind) {
     case 'none':
       return (
         <p className="m-0 p-4 text-small text-text-muted">
-          Choose a file to read it. The editor is read-only.
+          Choose a file to read it, or switch on Edit to change it.
         </p>
       );
     case 'missing':
       return (
         <Banner tone="warning" className="m-4">
           <span className="font-mono text-code break-all">{state.path}</span> is not in this commit.
+        </Banner>
+      );
+    case 'deleted':
+      return (
+        <Banner tone="warning" className="m-4">
+          <span className="font-mono text-code break-all">{state.path}</span> is deleted in the
+          Draft. Revert it to bring it back.
         </Banner>
       );
     case 'refused':
@@ -93,9 +116,12 @@ export function EditorPane({ state }: { state: PaneState }) {
       }
       return (
         <MonacoView
-          value={file.content}
+          value={state.value ?? file.content}
           language={languageOf(file.path)}
           path={file.path}
+          readOnly={!state.editable}
+          onChange={onChange}
+          markers={state.markers}
           revealLine={state.revealLine}
           revealToken={state.revealToken}
         />
