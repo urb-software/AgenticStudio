@@ -267,6 +267,12 @@ function parseTreeEntries(output: string): TreeEntry[] {
 const UTF8 = new TextDecoder('utf-8', { fatal: true });
 
 /** A NUL byte, or bytes that are not UTF-8. */
+/** The stored bytes of a found blob; a read that kept none is an error, never an empty file. */
+export function blobBytes(raw: Buffer | undefined): Uint8Array {
+  if (raw === undefined) throw new GitOperationError('unknown', 'The blob bytes were not kept.');
+  return Uint8Array.from(raw);
+}
+
 function isBinary(bytes: Buffer | undefined): boolean {
   if (!bytes) return false;
   if (bytes.includes(0)) return true;
@@ -1064,10 +1070,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     const reads = await this.readRaw(projectId, commit, paths, maxBytes, options);
     return reads.map(({ path, outcome, raw }) => ({
       path,
-      outcome:
-        outcome.status === 'found'
-          ? { status: 'found', bytes: Uint8Array.from(raw ?? Buffer.alloc(0)) }
-          : outcome,
+      outcome: outcome.status === 'found' ? { status: 'found', bytes: blobBytes(raw) } : outcome,
     }));
   }
 

@@ -98,9 +98,9 @@ export interface DeliveriesOptions {
    * path in the folder. A commit that holds one of them is never pushed. Asked only for a
    * definitions agent; a failure fails the delivery before the push.
    */
+  agentFolderBlobs?: (run: RunPayload, signal: AbortSignal) => Promise<ReadonlyMap<string, string>>;
   /** Test seam: most bytes of the added-objects list read for that check (default 8 MiB). */
   agentFilesScanMaxBytes?: number;
-  agentFolderBlobs?: (run: RunPayload, signal: AbortSignal) => Promise<ReadonlyMap<string, string>>;
   /** Builds the pull request client (default: {@link GitHubPullRequests}). */
   pullRequests?: (github: { token: string; apiUrl: string }) => PullRequestClient;
   logger: { error(message: string): void };

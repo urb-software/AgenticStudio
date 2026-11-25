@@ -5,6 +5,7 @@ import {
 } from '@agentic-studio/contracts';
 import { AGENT_ENTRY_FILE, validateAgentFiles } from '@agentic-studio/agent-definitions';
 import { createHash } from 'node:crypto';
+import { z } from 'zod';
 import { chmod, mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { isTransient, StudioApiError } from './studio-api.js';
@@ -133,6 +134,10 @@ export class AgentFolders {
             "The definitions Repository has too many files to read this agent's folder safely.",
           );
         }
+      }
+      // An answer that fails the protocol's schema is a bad hand-over, not an outage.
+      if (error instanceof z.ZodError) {
+        throw new AgentFolderInvalidError("Studio's hand-over of the agent's files is malformed.");
       }
       if (isTransient(error)) throw new AgentFolderTransientError();
       throw error;

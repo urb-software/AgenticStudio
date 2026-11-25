@@ -2544,11 +2544,29 @@ describe('the processes of a step with agent files', () => {
         timeoutMs: 10_000,
       });
       expect(spawned).toHaveBeenCalledTimes(1);
+      spawned.mockClear();
       const api = new RecordingApi([run]);
-      startWorker(api, new FakeRunner({ slowMs: 10 }), new TmpCopies(), { agentFolders: folders });
+      const fake = new FakeRunner({ slowMs: 10 });
+      // A step that starts one process of its own, as a CLI runner does, then plays the fake step.
+      const starting: Runner = {
+        async *start(input): RunStep {
+          await runProcess({
+            binary: process.execPath,
+            args: ['-e', '0'],
+            cwd: input.workspace.repoDir,
+            env: {},
+            timeoutMs: 10_000,
+          });
+          return yield* fake.start(input);
+        },
+        resume: (input) => fake.resume(input),
+      };
+      startWorker(api, starting, new TmpCopies(), { agentFolders: folders });
 
       await until(() => api.reports().length === 3);
 
+      // The step's own processes went through the spy, so the check below is not vacuous.
+      expect(spawned.mock.calls.length).toBeGreaterThan(0);
       const agentDir = join(runDir, 'agent');
       expect(readdirSync(agentDir).sort()).toEqual(['run.sh', 'tool.py']);
       expect(existsSync(marker)).toBe(false);

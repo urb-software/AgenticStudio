@@ -1,5 +1,5 @@
 import type { AgentFolderResponse, RunPayload } from '@agentic-studio/contracts';
-import { WORKER_PROBLEM_TYPES } from '@agentic-studio/contracts';
+import { agentFolderResponseSchema, WORKER_PROBLEM_TYPES } from '@agentic-studio/contracts';
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync } from 'node:fs';
 import {
@@ -265,6 +265,17 @@ describe('AgentFolders', () => {
       expect(error).toBeInstanceOf(AgentFolderTransientError);
       expect((error as Error).message).toMatch(/try again/i);
     }
+  });
+
+  it('fails a malformed hand-over as invalid, not as an outage', async () => {
+    const failure = await agentFolderResponseSchema
+      .parseAsync({ commit: 'main', files: [] })
+      .catch((error: unknown) => error);
+    answer = failure as Error;
+
+    const error = await place().catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(AgentFolderInvalidError);
   });
 
   it('keeps the reason of a stop: an aborted call is not a transient failure', async () => {
