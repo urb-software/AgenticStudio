@@ -5,6 +5,7 @@ import {
   buildInstructions,
   importsOf,
   INSTRUCTIONS_MAX_BYTES,
+  INSTRUCTIONS_TOTAL_MAX_BYTES,
   type RepositoryFiles,
 } from '../claude-code/instructions.js';
 import { agentFields } from './agent-fixtures.js';
@@ -256,7 +257,7 @@ describe('the instructions of the Run agent', () => {
 
   it('share one total bound with the repository text: the repository text is cut first', async () => {
     const full = { ...REVIEWER.agent, instructions: 'x'.repeat(64 * 1024) };
-    const repositoryText = 'y'.repeat(INSTRUCTIONS_MAX_BYTES);
+    const repositoryText = 'y'.repeat(INSTRUCTIONS_TOTAL_MAX_BYTES);
 
     const built = await buildInstructions(
       { ...REVIEWER, agent: full },
@@ -264,7 +265,9 @@ describe('the instructions of the Run agent', () => {
       MARKER,
     );
 
-    expect(new TextEncoder().encode(built.text).length).toBeLessThanOrEqual(INSTRUCTIONS_MAX_BYTES);
+    expect(new TextEncoder().encode(built.text).length).toBeLessThanOrEqual(
+      INSTRUCTIONS_TOTAL_MAX_BYTES,
+    );
     expect(built.text.startsWith(BASE_RULES.text.trimEnd() + '\n')).toBe(true);
     expect(built.text).toContain(full.instructions);
     expect(built.text).not.toContain(repositoryText);
@@ -273,8 +276,22 @@ describe('the instructions of the Run agent', () => {
     ]);
   });
 
+  it('state the repository budget actually used when the agent section is small', async () => {
+    const small = { ...REVIEWER.agent, instructions: 'x'.repeat(1024) };
+
+    const built = await buildInstructions(
+      { ...REVIEWER, agent: small },
+      repository({ 'CLAUDE.md': 'y'.repeat(INSTRUCTIONS_MAX_BYTES) }),
+      MARKER,
+    );
+
+    expect(built.notices).toEqual([
+      "The repository's instruction text was cut at 65 KiB in total (in CLAUDE.md); the rest was not given to the agent.",
+    ]);
+  });
+
   it('are cut only after the repository text is gone, never the base rules, with a notice', async () => {
-    const huge = { ...REVIEWER.agent, instructions: 'z'.repeat(INSTRUCTIONS_MAX_BYTES * 2) };
+    const huge = { ...REVIEWER.agent, instructions: 'z'.repeat(INSTRUCTIONS_TOTAL_MAX_BYTES * 2) };
 
     const built = await buildInstructions(
       { ...REVIEWER, agent: huge },
@@ -282,7 +299,9 @@ describe('the instructions of the Run agent', () => {
       MARKER,
     );
 
-    expect(new TextEncoder().encode(built.text).length).toBeLessThanOrEqual(INSTRUCTIONS_MAX_BYTES);
+    expect(new TextEncoder().encode(built.text).length).toBeLessThanOrEqual(
+      INSTRUCTIONS_TOTAL_MAX_BYTES,
+    );
     expect(built.text.startsWith(BASE_RULES.text.trimEnd() + '\n')).toBe(true);
     expect(built.text).toContain(`===== END ${MARKER} agent instructions =====`);
     expect(built.text).not.toContain('Use pnpm.');
