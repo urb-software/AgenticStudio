@@ -33,6 +33,12 @@
     },
     "environments/application/preview-build-requests.ts": {
       "reason": "Steps 1 to 5 tried: it reads the Repository's source port, the settings, the controller presence and the Compose judge, so it cannot live in the domain, which holds the refusals and the limit in PreviewState and PreviewStartLimit (1); it is a sequence of several ports, not one infrastructure capability (2); the build route and Reset both prepare and request a build, and handlers never call each other, so no one use case holds it (3); the operator waits for the refusals, so it is no job or event (4); copying its steps into both would let the order of the checks drift (5)."
+    },
+    "agents/application/agent-draft-base.ts": {
+      "reason": "Steps 1 to 5 tried: it reads the Repository through the projects contract, so it cannot live in the domain, which takes the tree as facts (1); it is a sequence of the snapshot and the whole-tree listing and their refusals, not one infrastructure capability, which already sits behind the projects contract (2); the save, move and delete of a Draft file all judge a change against the same base tree, and handlers never call each other, so no one use case holds it (3); the operator waits for the answer, so it is no job or event (4); copying the reads and the refusals into three handlers would let them drift (5)."
+    },
+    "agents/application/agent-draft-reader.ts": {
+      "reason": "Steps 1 to 5 tried: it reads the Clone and the stored contents and runs the shared validation, so it cannot live in the domain (1); it is a sequence of several reads and a judgement, not one infrastructure capability (2); the get, save, move, delete and discard of the Draft all answer the Draft whole, and handlers never call each other, so no one use case holds it (3); the operator waits for the answer, so it is no job or event (4); copying the overlay of the Draft on the base tree, the validation of each touched folder and the blob comparison into five handlers would let them drift (5)."
     }
   }
 }

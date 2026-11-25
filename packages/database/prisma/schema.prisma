@@ -710,3 +710,36 @@ model PreviewOperationLine {
   @@id([operationId, seq])
   @@map("preview_operation_lines")
 }
+
+/// The one Draft of the definitions Repository: unpublished changes to agent definition files,
+/// which reach no agent. A single row (`id` is always 1) holds its base commit and its version.
+/// The migration adds a CHECK constraint (`agent_drafts_single_check`: id = 1), which Prisma does
+/// not model.
+model AgentDraft {
+  id         Int      @id @default(1)
+  /// The commit the changes were made against; null exactly while the Draft changes no file.
+  baseCommit String?  @map("base_commit") @db.VarChar(64)
+  /// Raised on every write.
+  version    Int      @default(0)
+  updatedAt  DateTime @map("updated_at") @db.Timestamptz(6)
+
+  @@map("agent_drafts")
+}
+
+/// A file the Draft adds, changes or deletes, by its path in the Repository. The migration adds
+/// CHECK constraints (`agent_draft_files_change_check`, `agent_draft_files_content_check`: a
+/// deleted file has no content and any other has some, `agent_draft_files_moved_from_check`: a
+/// deleted file has no origin), which Prisma does not model.
+model AgentDraftFile {
+  path      String   @id @db.VarChar(255)
+  /// added | modified | deleted.
+  change    String   @db.VarChar(16)
+  /// The bytes; null exactly for a deleted file.
+  content   Bytes?
+  size      Int
+  /// For display: the path a moved file came from.
+  movedFrom String?  @map("moved_from") @db.VarChar(255)
+  updatedAt DateTime @map("updated_at") @db.Timestamptz(6)
+
+  @@map("agent_draft_files")
+}

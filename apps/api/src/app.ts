@@ -1,4 +1,5 @@
 import type { DynamicModule, INestApplication, NestApplicationOptions, Type } from '@nestjs/common';
+import { MAX_FILE_BYTES } from '@agentic-studio/agent-definitions';
 import {
   PREVIEW_LOG_REQUEST_MAX_BYTES,
   RUN_DIFF_REQUEST_MAX_BYTES,
@@ -16,6 +17,13 @@ const LARGE_BODY_ROUTE =
   /^\/api\/(?:worker\/runs\/[^/]+\/(?:steps|state)|projects\/[^/]+\/environment-file)$/;
 const RUN_DIFF_ROUTE = /^\/api\/worker\/runs\/[^/]+\/diff$/;
 const PREVIEW_LOG_ROUTE = /^\/api\/controller\/operations\/[^/]+\/log$/;
+/**
+ * The Draft's save: a file of up to MAX_FILE_BYTES as text (JSON escaping can grow it) or as
+ * base64 (a third larger). Two file limits hold both; a body over it is 413 and a text file whose
+ * escaped form is longer is sent as base64.
+ */
+const AGENT_DRAFT_REQUEST_MAX_BYTES = 2 * MAX_FILE_BYTES;
+const AGENT_DRAFT_ROUTE = /^\/api\/agents\/definitions-repository\/draft\/files$/;
 const JSON_CONTENT_TYPE = /^application\/(?:[\w.+-]+\+)?json\s*(?:;|$)/i;
 
 export async function createApp(
@@ -65,6 +73,14 @@ export async function buildApp(
       PREVIEW_LOG_ROUTE.test(request.url?.split('?')[0] ?? '') &&
       JSON_CONTENT_TYPE.test(request.headers['content-type'] ?? '') &&
       verifyBearerToken(controllerToken, request.headers.authorization),
+  });
+  // A Draft save is a mutation of the operator's session; the parser is sized before the guards run.
+  app.useBodyParser('json', {
+    limit: AGENT_DRAFT_REQUEST_MAX_BYTES,
+    type: (request: IncomingMessage) =>
+      request.method === 'PUT' &&
+      AGENT_DRAFT_ROUTE.test(request.url?.split('?')[0] ?? '') &&
+      JSON_CONTENT_TYPE.test(request.headers['content-type'] ?? ''),
   });
   app.useBodyParser('json', { limit: '100kb' });
   app.disable('x-powered-by');

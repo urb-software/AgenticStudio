@@ -43,6 +43,7 @@ function resolutions(files: Record<string, string>, snapshot: DefinitionsSnapsho
         ),
       }),
     ),
+    blobIds: vi.fn(() => Promise.reject(new Error('not used'))),
   } satisfies DefinitionsFiles;
   const defaults: ProjectDefaultAgents = {
     forProject: () => Promise.resolve({ status: 'project_not_found' }),

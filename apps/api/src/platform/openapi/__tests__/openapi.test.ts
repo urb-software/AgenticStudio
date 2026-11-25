@@ -169,6 +169,59 @@ describe('OpenAPI document', () => {
     }
   });
 
+  it('documents the Draft routes, which all answer the Draft, with their refusals', () => {
+    const document = createOpenApiDocument(app);
+    const problem = {
+      content: {
+        'application/problem+json': { schema: { $ref: '#/components/schemas/ProblemDetails' } },
+      },
+    };
+    const draft = {
+      content: {
+        'application/json': { schema: { $ref: '#/components/schemas/AgentDraft_Output' } },
+      },
+    };
+    const base = '/api/agents/definitions-repository/draft';
+
+    for (const [path, method, operationId] of [
+      [base, 'get', 'getAgentDraft'],
+      [base, 'delete', 'discardAgentDraft'],
+      [`${base}/files`, 'put', 'saveAgentDraftFile'],
+      [`${base}/files`, 'delete', 'deleteAgentDraftFile'],
+      [`${base}/files/move`, 'post', 'moveAgentDraftFile'],
+    ] as const) {
+      const operation = document.paths[path]?.[method];
+      expect(operation?.operationId).toBe(operationId);
+      expect(operation?.responses['200']).toMatchObject(draft);
+    }
+    for (const status of ['400', '404', '409', '422', '503']) {
+      expect(document.paths[`${base}/files/move`]?.post?.responses[status]).toMatchObject(problem);
+    }
+    for (const status of ['400', '409', '413', '422', '503']) {
+      expect(document.paths[`${base}/files`]?.put?.responses[status]).toMatchObject(problem);
+    }
+    const content = document.paths[`${base}/files/content`]?.get;
+    expect(content?.operationId).toBe('getAgentDraftFile');
+    expect(content?.responses['200']).toMatchObject({
+      content: {
+        'application/json': { schema: { $ref: '#/components/schemas/AgentFile_Output' } },
+      },
+    });
+    for (const status of ['400', '404', '503']) {
+      expect(content?.responses[status]).toMatchObject(problem);
+    }
+    expect(document.components?.schemas?.AgentDraft_Output).toMatchObject({
+      required: expect.arrayContaining([
+        'baseCommit',
+        'currentCommit',
+        'version',
+        'files',
+        'problems',
+        'movedUpstream',
+      ]),
+    });
+  });
+
   it('documents the project detail and repository endpoints', () => {
     const document = createOpenApiDocument(app);
     const ref = (name: string) => ({
