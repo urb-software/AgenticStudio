@@ -55,6 +55,8 @@ export interface PreparedPreviewBuild {
   service: PreviewService;
   port: PreviewPort;
   limits: PreviewLimits;
+  /** The Run whose merge through Studio asks for the build; absent for the operator's own. */
+  startedByRunId?: string | undefined;
 }
 
 /**

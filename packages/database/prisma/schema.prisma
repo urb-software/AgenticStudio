@@ -14,25 +14,26 @@ datasource db {
 
 /// A project the operator manages (`projects` business module, Story #16).
 model Project {
-  id                String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id                  String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   /// Display name: trimmed, internal whitespace collapsed, case preserved (1–100 characters).
-  name              String             @db.VarChar(100)
+  name                String               @db.VarChar(100)
   /// `name` lower-cased; unique, so names clash case-insensitively (Epic #8 decision 2).
   /// Unbounded: lower-casing can lengthen a string (e.g. "İ" becomes two code points).
-  nameNormalized    String             @unique(map: "projects_name_normalized_key") @map("name_normalized")
+  nameNormalized      String               @unique(map: "projects_name_normalized_key") @map("name_normalized")
   /// Set by PostgreSQL (microsecond precision), not by the client, so ordering uses one clock.
-  createdAt         DateTime           @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz(6)
+  createdAt           DateTime             @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz(6)
   /// How Studio merges this project's Runs: squash | merge_commit (a CHECK constraint holds the list).
-  mergeMethod       String             @default("squash") @map("merge_method") @db.VarChar(16)
+  mergeMethod         String               @default("squash") @map("merge_method") @db.VarChar(16)
   /// The connected Repository (Story #60): at most one per project.
-  repository        Repository?
+  repository          Repository?
   /// The project's Runs (`executions` module, Issue #96).
-  runs              Run[]
+  runs                Run[]
   /// The project's Environment file setting (Issue #104), independent of the Repository.
-  environmentFile   EnvironmentFile?
+  environmentFile     EnvironmentFile?
   /// The project's Preview settings (`environments` module, Issue #276).
-  previewSettings   PreviewSettings?
-  previewOperations PreviewOperation[]
+  previewSettings     PreviewSettings?
+  previewOperations   PreviewOperation[]
+  previewMergeRebuild PreviewMergeRebuild?
 
   /// Serves the newest-first list (created_at DESC, id DESC as the tie-breaker).
   @@index([createdAt(sort: Desc), id(sort: Desc)], map: "projects_created_at_id_idx")
@@ -650,11 +651,32 @@ model PreviewOperation {
   /// True only for a failed build whose rollback removed the Project's running Preview, or a
   /// succeeded state check that found nothing running.
   previewRemoved          Boolean                @default(false) @map("preview_removed")
+  /// Build only: the Run whose merge through Studio started it; null for a build the operator asked for.
+  startedByRunId          String?                @map("started_by_run_id") @db.Uuid
   lines                   PreviewOperationLine[]
 
   @@index([status, requestedAt])
   @@index([projectId, kind, finishedAt], map: "preview_operations_project_kind_finished_at_idx")
   @@map("preview_operations")
+}
+
+/// The rebuild a merge through Studio asked for and the Preview has not carried out yet: at most
+/// one per Project, replaced by a newer merge. The migration adds a CHECK constraint (failure and
+/// failed_at are set together), which Prisma does not model.
+model PreviewMergeRebuild {
+  projectId      String    @id @map("project_id") @db.Uuid
+  project        Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// The merged Run; no foreign key into `executions`.
+  runId          String    @map("run_id") @db.Uuid
+  mergedCommit   String    @map("merged_commit") @db.VarChar(64)
+  mergedAt       DateTime  @map("merged_at") @db.Timestamptz(6)
+  fetchStartedAt DateTime  @map("fetch_started_at") @db.Timestamptz(6)
+  recordedAt     DateTime  @map("recorded_at") @db.Timestamptz(6)
+  /// Why the rebuild was given up or refused; set together with failed_at.
+  failure        String?   @db.VarChar(2000)
+  failedAt       DateTime? @map("failed_at") @db.Timestamptz(6)
+
+  @@map("preview_merge_rebuilds")
 }
 
 /// A stored, redacted line of a Preview operation's log; a re-sent seq is ignored.

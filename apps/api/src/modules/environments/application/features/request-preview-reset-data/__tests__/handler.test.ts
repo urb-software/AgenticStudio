@@ -55,6 +55,7 @@ describe('RequestPreviewResetDataHandler', () => {
       service: 'web',
       port: 8080,
       limits: BUILD_LIMITS,
+      startedByRunId: null,
     });
     expect(rebuild!.requestedAt.getTime()).toBeGreaterThan(removal!.requestedAt.getTime());
   });
@@ -116,7 +117,7 @@ describe('RequestPreviewResetDataHandler', () => {
       ProjectNotFoundError,
     );
 
-    sources.statusAnswer = { status: 'ready', commit: COMMIT };
+    sources.statusAnswer = { status: 'ready', commit: COMMIT, fetchedAt: null };
     kit.presence.seen = null;
     await expect(handler.execute({ projectId: PROJECT })).rejects.toBeInstanceOf(
       PreviewControllerUnavailableError,

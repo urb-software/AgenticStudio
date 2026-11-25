@@ -38,6 +38,7 @@ describe('RequestPreviewBuildEndpoint', () => {
         build: {
           id: ID,
           commit: 'a'.repeat(40),
+          startedBy: { kind: 'operator' as const },
           status: 'queued' as const,
           requestedAt: new Date('2026-11-24T10:00:00.000Z'),
           startedAt: null,

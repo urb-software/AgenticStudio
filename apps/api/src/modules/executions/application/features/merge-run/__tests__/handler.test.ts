@@ -18,6 +18,7 @@ import type {
   RunMergeMethods,
 } from '../../../../../projects/contracts/index.js';
 import type { MergeMethod } from '../../../../domain/value-objects/merge-method.js';
+import { FakeMergedRunPreviews } from '../../../ports/__tests__/fake-merged-run-previews.js';
 import { InMemoryMergeHost, MERGED_COMMIT } from '../../../ports/__tests__/in-memory-merge-host.js';
 import type { MergeSettings } from '../../../ports/merge-settings.js';
 import { MergeRunHandler } from '../handler.js';
@@ -57,6 +58,7 @@ describe('MergeRunHandler', () => {
   let fetchAnswer: 'started' | 'not_started' | 'throws';
   let mergeMethod: MergeMethod;
   let methodReads: string[];
+  let previews: FakeMergedRunPreviews;
   let handler: MergeRunHandler;
 
   const fetches: RunIntegrationFetches = {
@@ -85,6 +87,7 @@ describe('MergeRunHandler', () => {
     fetchAnswer = 'started';
     mergeMethod = 'squash';
     methodReads = [];
+    previews = new FakeMergedRunPreviews();
     handler = new MergeRunHandler(
       runs,
       approvals,
@@ -94,6 +97,7 @@ describe('MergeRunHandler', () => {
       { now: () => now },
       fetches,
       mergeMethods,
+      previews,
     );
     await deliveredRun(runs, { id: RUN_ID });
     reviews.reviews.set(RUN_ID, readyReview(RUN_ID));
@@ -495,6 +499,60 @@ describe('MergeRunHandler', () => {
         expect(approvals.approvals[0]!.cloneFetchStartedAt).toEqual(NOW);
       },
     );
+
+    describe('telling the Preview', () => {
+      it('tells it after the approval and the fetch start are stored, with the merge and the fetch', async () => {
+        await handler.execute({ runId: RUN_ID, commit: COMMIT });
+
+        expect(previews.merges).toEqual([
+          {
+            projectId: PROJECT,
+            runId: RUN_ID,
+            mergedCommit: MERGED_COMMIT,
+            mergedAt: NOW,
+            fetchStartedAt: NOW,
+          },
+        ]);
+        expect(approvals.approvals[0]).toMatchObject({
+          result: 'carried_out',
+          cloneFetchStartedAt: NOW,
+        });
+      });
+
+      it('keeps the merge as it is when the Preview call fails', async () => {
+        previews.mode = 'throws';
+
+        const result = await handler.execute({ runId: RUN_ID, commit: COMMIT });
+
+        expect(result.approval).toMatchObject({ result: 'carried_out', cloneFetchStartedAt: NOW });
+        expect(approvals.approvals[0]).toMatchObject({ result: 'carried_out' });
+        expect((await stored()).retentionFacts()).toMatchObject({ pullRequestState: 'merged' });
+      });
+
+      it.each(['not_started', 'throws'] as const)(
+        'does not call it while the fetch is %s, and calls it once when the repeat starts it',
+        async (answer) => {
+          fetchAnswer = answer;
+
+          await handler.execute({ runId: RUN_ID, commit: COMMIT });
+          expect(previews.merges).toEqual([]);
+          fetchAnswer = 'started';
+
+          await handler.execute({ runId: RUN_ID, commit: COMMIT });
+          await handler.execute({ runId: RUN_ID, commit: COMMIT });
+
+          expect(previews.merges).toHaveLength(1);
+        },
+      );
+
+      it('does not call it when the merge is refused', async () => {
+        host.refuse('merge', { code: 'refused', message: 'No.' });
+
+        await refused('host_refused');
+
+        expect(previews.merges).toEqual([]);
+      });
+    });
 
     it('changes nothing when repeated once everything is done, and calls no host', async () => {
       await handler.execute({ runId: RUN_ID, commit: COMMIT });

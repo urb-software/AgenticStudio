@@ -36,8 +36,21 @@
         "reason": "One UPDATE over every requested operation older than the unclaimed limit; the cut-off and the failure are the domain UnclaimedOperationRule's."
       },
       "findPreviewFacts": { "kind": "query" },
+      "findMergeBuild": { "kind": "query" },
+      "hasBuildSince": { "kind": "query" },
       "findEnvironmentFileSecret": { "kind": "query" },
       "listEnvironmentFileSecrets": { "kind": "query" }
+    },
+    "environments/PreviewMergeRebuildRepository": {
+      "find": { "kind": "load" },
+      "list": { "kind": "query" },
+      "save": { "kind": "save" },
+      "saveFailure": {
+        "kind": "atomic",
+        "reason": "One UPDATE that stores the failure only while the row is still the rebuild that was read, so a newer merge that replaced it is never overwritten with the older one's failure."
+      },
+      "delete": { "kind": "save" },
+      "deleteForProject": { "kind": "save" }
     },
     "environments/PreviewSettingsRepository": {
       "find": { "kind": "load" },

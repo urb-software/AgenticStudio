@@ -44,12 +44,14 @@ describe('GetPreviewSourceStatusHandler', () => {
     await expect(handler.execute({ projectId: PROJECT })).resolves.toEqual({
       status: 'repository_not_ready',
     });
+    const fetchedAt = new Date('2026-11-24T10:00:00.000Z');
     await connections.change(PROJECT, (r) => {
-      r.completeClone({ headSha: 'c'.repeat(40), fetchedAt: new Date() });
+      r.completeClone({ headSha: 'c'.repeat(40), fetchedAt });
     });
     await expect(handler.execute({ projectId: PROJECT })).resolves.toEqual({
       status: 'ready',
       commit: 'c'.repeat(40),
+      fetchedAt,
     });
   });
 

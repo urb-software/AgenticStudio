@@ -32,6 +32,9 @@
 // (`PUT .../pulls/<n>/merge`, which honours `sha` and answers 409 when the head moved). Like the
 // two writes above, they accept only the Merge credential.
 //
+// A pull request's merge commit (`mergeCommit` on the control endpoint) is what its merge answers
+// with instead of the default, so a smoke can point it at a commit its fixture remote holds.
+//
 // A repository can disallow a merge method (`POST /__control/repos/<owner>/<repo>` with
 // `{ "disallowedMergeMethods": ["merge"] }`): its merge route then answers 405.
 //
@@ -140,6 +143,7 @@ const server = createServer((request, response) => {
       }
       if (typeof body.draft === 'boolean') pr.draft = body.draft;
       if (typeof body.headSha === 'string') pr.headSha = body.headSha;
+      if (typeof body.mergeCommit === 'string') pr.mergeCommit = body.mergeCommit;
       if (Array.isArray(body.checkRuns)) checkRuns = body.checkRuns;
       if (Array.isArray(body.statuses)) statuses = body.statuses;
       if (body.jobLogs && typeof body.jobLogs === 'object') jobLogs = body.jobLogs;
@@ -270,7 +274,11 @@ const server = createServer((request, response) => {
         title: body.commit_title,
       });
       console.log(`[stub-github] merged pull request #${pr.number} in ${pr.repo}`);
-      send(200, { sha: MERGE_COMMIT, merged: true, message: 'Pull Request successfully merged' });
+      send(200, {
+        sha: pr.mergeCommit ?? MERGE_COMMIT,
+        merged: true,
+        message: 'Pull Request successfully merged',
+      });
     });
   }
   if (reviewsRoute && request.method === 'POST') {

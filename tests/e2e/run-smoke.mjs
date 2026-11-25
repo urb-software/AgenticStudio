@@ -30,7 +30,8 @@
 //    default 4502; STUDIO_AGENT_GITHUB_API_URL), with a throwaway token; nothing reaches GitHub.
 //    On Linux it also starts the environment controller with the fake runtime and a throwaway
 //    token; after Playwright, tests/e2e/controller-phase.mjs requests a build through the
-//    operator route and reads it back, then runs a SQL-inserted stop.
+//    operator route and reads it back, then stop, a second build, reset, and a Run merged through
+//    Studio, which rebuilds the running Preview (the merge step is API-driven, in that phase).
 //    Repository features
 //    are Linux only: on other platforms the Git steps skip with a reason, and the smoke
 //    checks the "unsupported platform" answer instead.
@@ -168,7 +169,7 @@ async function createControllerFixture(root) {
   const bare = join(root, 'controller.git');
   fixtureGit(root, ['clone', '--quiet', '--bare', '--template=', work, bare]);
   fixtureGit(bare, ['symbolic-ref', 'HEAD', 'refs/heads/main']);
-  return { url: pathToFileURL(bare).href, commit };
+  return { url: pathToFileURL(bare).href, commit, bare };
 }
 
 /** Runs the system `git` for a fixture, isolated from the host's Git configuration. */
@@ -460,6 +461,11 @@ async function main() {
       operatorPassword,
       repositoryUrl: controllerFixture.url,
       commit: controllerFixture.commit,
+      // The stub's merge does not touch the fixture remote: the smoke moves `dev` itself, as a
+      // merge on the Git host would, so the Clone fetch after the merge finds the commit.
+      githubStubOrigin: `http://127.0.0.1:${GITHUB_STUB_PORT}`,
+      advanceIntegrationBranch: (merged) =>
+        fixtureGit(controllerFixture.bare, ['update-ref', 'refs/heads/dev', merged]),
       db,
     });
   }

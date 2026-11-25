@@ -61,6 +61,8 @@ describe('SavePreviewSettingsHandler', () => {
       latestBuild: null,
       latestChange: null,
       controller: { connected: false },
+      behind: false,
+      mergeRebuild: null,
       removedPorts: [{ service: 'web', place: 'services.web.ports[0]' }],
     });
     expect(settings.settings.get(PROJECT)).toMatchObject({ composeFile: 'compose.yaml', port: 80 });
@@ -151,7 +153,7 @@ describe('SavePreviewSettingsHandler', () => {
     await expect(handler.execute({ ...INPUT, composeFile: '../x' })).rejects.toBeInstanceOf(
       ProjectNotFoundError,
     );
-    sources.statusAnswer = { status: 'ready', commit: COMMIT };
+    sources.statusAnswer = { status: 'ready', commit: COMMIT, fetchedAt: null };
     sources.fileAnswer = { status: 'project_not_found' };
     await expect(handler.execute(INPUT)).rejects.toBeInstanceOf(ProjectNotFoundError);
   });

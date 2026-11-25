@@ -83,7 +83,16 @@ describe('RequestPreviewBuildHandler', () => {
       service: 'web',
       port: 8080,
       limits: BUILD_LIMITS,
+      startedByRunId: null,
     });
+  });
+
+  it('says the operator started the build', async () => {
+    await saveSettings();
+
+    const { build } = await handler.execute({ projectId: PROJECT });
+
+    expect(build.startedBy).toEqual({ kind: 'operator' });
   });
 
   it('refuses an unknown Project', async () => {
@@ -133,7 +142,7 @@ describe('RequestPreviewBuildHandler', () => {
 
   it('builds the commit that was read for the judgement, not the one status reported', async () => {
     await saveSettings();
-    sources.statusAnswer = { status: 'ready', commit: 'd'.repeat(40) };
+    sources.statusAnswer = { status: 'ready', commit: 'd'.repeat(40), fetchedAt: null };
     sources.fileAnswer = { status: 'found', text: COMPOSE_TEXT, commit: 'e'.repeat(40) };
 
     const { operationId } = await handler.execute({ projectId: PROJECT });
@@ -154,7 +163,7 @@ describe('RequestPreviewBuildHandler', () => {
       PreviewRepositoryNotReadyError,
     );
 
-    sources.statusAnswer = { status: 'ready', commit: COMMIT };
+    sources.statusAnswer = { status: 'ready', commit: COMMIT, fetchedAt: null };
     await expect(handler.execute({ projectId: PROJECT })).rejects.toBeInstanceOf(
       PreviewControllerUnavailableError,
     );

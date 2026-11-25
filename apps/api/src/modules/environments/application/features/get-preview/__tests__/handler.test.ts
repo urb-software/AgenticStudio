@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { PreviewMergeRebuild } from '../../../../domain/entities/preview-merge-rebuild.js';
 import { PreviewOperation } from '../../../../domain/entities/preview-operation.js';
 import { PreviewSettings } from '../../../../domain/entities/preview-settings.js';
 import { ProjectNotFoundError } from '../../../../domain/errors/preview-settings-errors.js';
@@ -90,6 +91,8 @@ describe('GetPreviewHandler', () => {
       latestBuild: null,
       latestChange: null,
       controller: { connected: false },
+      behind: false,
+      mergeRebuild: null,
     });
   });
 
@@ -327,5 +330,122 @@ describe('GetPreviewHandler', () => {
 
     expect(view.state).toBe('failed');
     expect(view.running).toBeNull();
+  });
+
+  describe('behind and the rebuild after a merge', () => {
+    const RUN = '3c1d8f2a-0b2f-4d6e-8a44-6b3c1d8f2a10';
+
+    async function runningAt(commit: string) {
+      await saveSettings();
+      await operations.add(
+        PreviewOperation.requestBuild({
+          id: FIRST,
+          projectId: PROJECT,
+          commit: PreviewCommit.of(commit),
+          composeFile: PreviewComposeFile.of('compose.yaml'),
+          service: PreviewService.of('web'),
+          port: PreviewPort.of(3000),
+          limits: PreviewLimits.of({
+            memoryMiB: 1024,
+            cpuPercent: 100,
+            tasksMax: 512,
+            buildMinutes: 20,
+          }),
+          now: minutes(-10),
+        }),
+      );
+      await finish(FIRST, 'succeeded', -5);
+    }
+
+    const recorded = (mergedCommit: string, fetchedAfter: boolean) =>
+      kit.rebuilds.save(
+        PreviewMergeRebuild.record({
+          projectId: PROJECT,
+          runId: RUN,
+          mergedCommit,
+          mergedAt: minutes(-2),
+          fetchStartedAt: fetchedAfter ? minutes(-3) : minutes(3),
+          now: minutes(-2),
+        }),
+      );
+
+    it('is not behind while the running commit is the Clone commit', async () => {
+      await runningAt(COMMIT);
+
+      expect((await handler.execute({ projectId: PROJECT })).behind).toBe(false);
+    });
+
+    it('is behind when the Clone holds another commit than the one that runs', async () => {
+      await runningAt('b'.repeat(40));
+
+      expect((await handler.execute({ projectId: PROJECT })).behind).toBe(true);
+    });
+
+    it('is behind for a stopped Preview, against its latest build', async () => {
+      await saveSettings();
+      await build(FIRST, -10);
+      await finish(FIRST, 'failed', -5);
+
+      expect((await handler.execute({ projectId: PROJECT })).behind).toBe(true);
+    });
+
+    it('is not behind without a build, or while the Repository is not ready', async () => {
+      await saveSettings();
+      expect((await handler.execute({ projectId: PROJECT })).behind).toBe(false);
+
+      await runningAt('b'.repeat(40));
+      sources.statusAnswer = { status: 'repository_not_ready' };
+      expect((await handler.execute({ projectId: PROJECT })).behind).toBe(false);
+    });
+
+    it('shows a waiting rebuild, and what it waits for', async () => {
+      await runningAt('b'.repeat(40));
+      sources.statusAnswer = { status: 'ready', commit: 'b'.repeat(40), fetchedAt: minutes(-9) };
+      await recorded('e'.repeat(40), false);
+
+      expect((await handler.execute({ projectId: PROJECT })).mergeRebuild).toEqual({
+        runId: RUN,
+        status: 'waiting',
+        reason: 'the Clone fetch',
+        since: minutes(-2),
+      });
+    });
+
+    it('says it waits for a controller when the build is due and none is connected', async () => {
+      await runningAt('b'.repeat(40));
+      sources.statusAnswer = { status: 'ready', commit: 'e'.repeat(40), fetchedAt: minutes(-1) };
+      await recorded('e'.repeat(40), true);
+
+      kit.presence.seen = null;
+      expect((await handler.execute({ projectId: PROJECT })).mergeRebuild?.reason).toBe(
+        'an environment controller',
+      );
+
+      kit.presence.seen = KIT_NOW;
+      expect((await handler.execute({ projectId: PROJECT })).mergeRebuild?.reason).toBe(
+        'the next check',
+      );
+    });
+
+    it('shows a failed rebuild with its reason', async () => {
+      await runningAt('b'.repeat(40));
+      await recorded('e'.repeat(40), false);
+      const stored = await kit.rebuilds.find(PROJECT);
+      stored!.fail('The Compose file was refused.', minutes(-1));
+      await kit.rebuilds.saveFailure(stored!);
+
+      expect((await handler.execute({ projectId: PROJECT })).mergeRebuild).toEqual({
+        runId: RUN,
+        status: 'failed',
+        reason: 'The Compose file was refused.',
+        since: minutes(-1),
+      });
+    });
+
+    it('shows none when no merge asked for a rebuild', async () => {
+      await runningAt('b'.repeat(40));
+
+      expect((await handler.execute({ projectId: PROJECT })).mergeRebuild).toBeNull();
+    });
   });
 });

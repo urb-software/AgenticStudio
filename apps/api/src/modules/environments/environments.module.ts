@@ -7,6 +7,18 @@ import { ClaimPreviewOperationHandler } from './application/features/claim-previ
 import { GetPreviewOperationSourceHandler } from './application/features/get-preview-operation-source/handler.js';
 import { GetPreviewBuildEventsHandler } from './application/features/get-preview-build-events/handler.js';
 import { SweepPreviewOperationsHandler } from './application/features/sweep-preview-operations/handler.js';
+import { GetPreviewOfMergeHandler } from './application/features/get-preview-of-merge/handler.js';
+import { RecordMergeRebuildHandler } from './application/features/record-merge-rebuild/handler.js';
+import { ReleaseMergeRebuildsHandler } from './application/features/release-merge-rebuilds/handler.js';
+import { MERGED_RUN_PREVIEWS } from './contracts/index.js';
+import { EnvironmentsMergedRunPreviews } from './entry-points/contracts/merged-run-previews.js';
+import {
+  PREVIEW_MERGE_REBUILDS_SETTINGS,
+  PreviewMergeRebuildsScheduler,
+  type PreviewMergeRebuildsSettings,
+} from './entry-points/schedulers/preview-merge-rebuilds.js';
+import { PREVIEW_MERGE_REBUILD_REPOSITORY } from './domain/repositories/preview-merge-rebuild-repository.js';
+import { PrismaPreviewMergeRebuildRepository } from './infrastructure/repositories/prisma-preview-merge-rebuild-repository.js';
 import { PreviewComposeJudge } from './application/preview-compose-judge.js';
 import { PreviewStateReader } from './application/preview-state-reader.js';
 import { CONTROLLER_PRESENCE } from './application/ports/controller-presence.js';
@@ -72,7 +84,12 @@ import { PrismaPreviewSettingsRepository } from './infrastructure/repositories/p
 export interface EnvironmentsModuleOptions {
   /** `false` leaves the periodic Preview sweep off. */
   sweeps?: boolean;
+  /** `enabled: false` leaves the periodic release of rebuilds after a merge off. */
+  mergeRebuilds?: { enabled?: boolean; intervalMs?: number };
 }
+
+/** How often the rebuilds merges recorded are carried out. */
+const MERGE_REBUILDS_INTERVAL_MS = 5_000;
 
 /**
  * `environments` business module: a Project's Preview settings, and the work the environment
@@ -85,6 +102,7 @@ export class EnvironmentsModule {
     return {
       module: EnvironmentsModule,
       imports: [DatabaseModule, SecretsModule, projects],
+      exports: [MERGED_RUN_PREVIEWS],
       controllers: [
         GetPreviewEndpoint,
         SavePreviewSettingsEndpoint,
@@ -110,6 +128,22 @@ export class EnvironmentsModule {
         },
         { provide: PREVIEW_OPERATION_REPOSITORY, useClass: PrismaPreviewOperationRepository },
         { provide: PREVIEW_OPERATION_LOG, useClass: PrismaPreviewOperationLog },
+        {
+          provide: PREVIEW_MERGE_REBUILD_REPOSITORY,
+          useClass: PrismaPreviewMergeRebuildRepository,
+        },
+        { provide: MERGED_RUN_PREVIEWS, useClass: EnvironmentsMergedRunPreviews },
+        RecordMergeRebuildHandler,
+        GetPreviewOfMergeHandler,
+        ReleaseMergeRebuildsHandler,
+        {
+          provide: PREVIEW_MERGE_REBUILDS_SETTINGS,
+          useValue: {
+            enabled: options.mergeRebuilds?.enabled !== false,
+            intervalMs: options.mergeRebuilds?.intervalMs ?? MERGE_REBUILDS_INTERVAL_MS,
+          } satisfies PreviewMergeRebuildsSettings,
+        },
+        PreviewMergeRebuildsScheduler,
         { provide: PREVIEW_SECRET_VALUES, useClass: EnvironmentFileSecretValues },
         { provide: CLOCK, useValue: { now: () => new Date() } satisfies Clock },
         {

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { FakeMergedRunPreviews } from '../../../ports/__tests__/fake-merged-run-previews.js';
 import {
   deliveredRun,
   T0,
@@ -68,6 +69,7 @@ describe('preparing a Follow-up from failing checks', () => {
       }),
       { configured: false, allowFileRemotes: false },
       new InMemoryMergeApprovalRepository(),
+      new FakeMergedRunPreviews(),
     );
   });
 

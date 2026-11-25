@@ -150,6 +150,7 @@ export type RunOutput = {
     merge?: RunMergeAvailabilityOutput;
     integrationBranch?: string;
     latestMergeApproval?: MergeApprovalOutput;
+    previewAfterMerge?: RunPreviewAfterMergeOutput;
     cancelRequestedAt?: string;
     cancellation?: {
         by: 'operator' | 'system';
@@ -210,6 +211,11 @@ export type MergeApprovalOutput = {
     completedAt?: string;
     mergeOutcomeUnknown?: true;
     cloneFetchStartedAt?: string;
+};
+
+export type RunPreviewAfterMergeOutput = {
+    projectId: string;
+    state: 'not_configured' | 'not_started' | 'waiting' | 'building' | 'running' | 'failed' | 'replaced';
 };
 
 export type RunPullRequestOutput = {
@@ -511,6 +517,12 @@ export type PreviewOutput = {
     latestBuild: {
         id: string;
         commit: string;
+        startedBy: {
+            kind: 'operator';
+        } | {
+            kind: 'merge';
+            runId: string;
+        };
         status: 'queued' | 'building' | 'succeeded' | 'failed';
         requestedAt: string;
         startedAt: string | null;
@@ -544,6 +556,13 @@ export type PreviewOutput = {
     controller: {
         connected: boolean;
     };
+    behind: boolean;
+    mergeRebuild: {
+        runId: string;
+        status: 'waiting' | 'failed';
+        reason: string;
+        since: string;
+    } | null;
 };
 
 export type PreviewRefusedProblem = {
@@ -598,6 +617,12 @@ export type SavePreviewSettingsResponseOutput = {
     latestBuild: {
         id: string;
         commit: string;
+        startedBy: {
+            kind: 'operator';
+        } | {
+            kind: 'merge';
+            runId: string;
+        };
         status: 'queued' | 'building' | 'succeeded' | 'failed';
         requestedAt: string;
         startedAt: string | null;
@@ -631,6 +656,13 @@ export type SavePreviewSettingsResponseOutput = {
     controller: {
         connected: boolean;
     };
+    behind: boolean;
+    mergeRebuild: {
+        runId: string;
+        status: 'waiting' | 'failed';
+        reason: string;
+        since: string;
+    } | null;
     removedPorts?: Array<{
         service: string;
         place: string;
@@ -653,6 +685,12 @@ export type PreviewLimitReachedProblem = {
 export type PreviewBuildOutput = {
     id: string;
     commit: string;
+    startedBy: {
+        kind: 'operator';
+    } | {
+        kind: 'merge';
+        runId: string;
+    };
     status: 'queued' | 'building' | 'succeeded' | 'failed';
     requestedAt: string;
     startedAt: string | null;

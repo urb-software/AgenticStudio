@@ -43,6 +43,10 @@ export class GetPreviewHandler {
         projectId,
         configured: settings !== null,
         domain: this.domain.domain,
+        source:
+          source.status === 'ready'
+            ? { ready: true, commit: source.commit, fetchedAt: source.fetchedAt }
+            : { ready: false },
       }),
     });
   }

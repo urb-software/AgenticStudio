@@ -1,3 +1,8 @@
+import type { PreviewMergeRebuild } from '../domain/entities/preview-merge-rebuild.js';
+import type {
+  MergeRebuildRuleDecision,
+  MergeRebuildWaitReason,
+} from '../domain/value-objects/merge-rebuild-rule.js';
 import type { PreviewRepositoryReason } from '../domain/errors/preview-settings-errors.js';
 import type { PreviewSettings } from '../domain/entities/preview-settings.js';
 import { PreviewHostname } from '../domain/value-objects/preview-hostname.js';
@@ -8,10 +13,14 @@ import type { PreviewStateName } from '../domain/value-objects/preview-state.js'
 
 export type PreviewBuildStatusView = 'queued' | 'building' | 'succeeded' | 'failed';
 
+/** What started a build: the operator, or the merge of a Run through Studio. */
+export type PreviewBuildStartedByView = { kind: 'operator' } | { kind: 'merge'; runId: string };
+
 /** What the operator sees of one build. */
 export interface PreviewBuildView {
   id: string;
   commit: string;
+  startedBy: PreviewBuildStartedByView;
   status: PreviewBuildStatusView;
   requestedAt: Date;
   startedAt: Date | null;
@@ -38,6 +47,17 @@ export interface PreviewChangeView {
   failure: { code: PreviewFailureCode; detail: string } | null;
 }
 
+export type PreviewMergeRebuildStatusView = 'waiting' | 'failed';
+
+/** What the operator sees of the rebuild a merge asked for that has not started. */
+export interface PreviewMergeRebuildView {
+  runId: string;
+  status: PreviewMergeRebuildStatusView;
+  /** Finishes "waiting for ..." while waiting; why it failed otherwise. */
+  reason: string;
+  since: Date;
+}
+
 /** What the operator sees of a Preview's state. */
 export interface PreviewStateView {
   state: PreviewStateName;
@@ -47,6 +67,9 @@ export interface PreviewStateView {
   controller: { connected: boolean };
   /** A build is requested or claimed. */
   buildActive: boolean;
+  /** The Clone is ready and holds another commit than the one that runs, or ran last. */
+  behind: boolean;
+  mergeRebuild: PreviewMergeRebuildView | null;
 }
 
 const BUILD_STATUS: Record<PreviewOperationStatus, PreviewBuildStatusView> = {
@@ -86,6 +109,10 @@ export function previewBuildView(operation: PreviewOperation): PreviewBuildView 
   return {
     id: operation.id,
     commit: build.commit,
+    startedBy:
+      build.startedByRunId === null
+        ? { kind: 'operator' }
+        : { kind: 'merge', runId: build.startedByRunId },
     status: BUILD_STATUS[operation.status],
     requestedAt: operation.requestedAt,
     startedAt: operation.claimedAt,
@@ -125,6 +152,8 @@ export interface PreviewView {
   latestBuild: PreviewStateView['latestBuild'];
   latestChange: PreviewStateView['latestChange'];
   controller: PreviewStateView['controller'];
+  behind: PreviewStateView['behind'];
+  mergeRebuild: PreviewStateView['mergeRebuild'];
 }
 
 export function previewView(input: {
@@ -159,5 +188,38 @@ export function previewView(input: {
     latestBuild: stateView.latestBuild,
     latestChange: stateView.latestChange,
     controller: stateView.controller,
+    behind: stateView.behind,
+    mergeRebuild: stateView.mergeRebuild,
+  };
+}
+
+const WAITING_FOR: Record<MergeRebuildWaitReason, string> = {
+  clone_not_ready: 'the Repository',
+  clone_fetch: 'the Clone fetch',
+  build_active: 'the current build',
+  change_active: 'the current stop or data removal',
+  controller: 'an environment controller',
+  free_place: 'a free place of the running Previews limit',
+  error: 'a problem on the Studio side',
+};
+
+/** The rebuild as the operator sees it; `decision` is the rule's answer for it now. */
+export function previewMergeRebuildView(
+  rebuild: PreviewMergeRebuild,
+  decision: MergeRebuildRuleDecision,
+): PreviewMergeRebuildView {
+  if (rebuild.isFailed) {
+    return {
+      runId: rebuild.runId,
+      status: 'failed',
+      reason: rebuild.failure ?? '',
+      since: rebuild.failedAt ?? rebuild.recordedAt,
+    };
+  }
+  return {
+    runId: rebuild.runId,
+    status: 'waiting',
+    reason: decision.action === 'wait' ? WAITING_FOR[decision.reason] : 'the next check',
+    since: rebuild.recordedAt,
   };
 }

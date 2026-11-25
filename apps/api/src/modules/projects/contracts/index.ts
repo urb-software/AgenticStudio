@@ -122,8 +122,11 @@ export const INTEGRATION_FILE_MAX_BYTES = 256 * 1024;
  * (`unsupported_platform`: the API does not run on Linux).
  */
 export type PreviewSourceStatus =
-  /** `commit` is the Integration branch's commit the Clone holds. */
-  | { status: 'ready'; commit: string }
+  /**
+   * `commit` is the Integration branch's commit the Clone holds; `fetchedAt` is when the Clone
+   * last finished a fetch, or `null` when it did not.
+   */
+  | { status: 'ready'; commit: string; fetchedAt: Date | null }
   | {
       status:
         'project_not_found' | 'no_repository' | 'repository_not_ready' | 'unsupported_platform';

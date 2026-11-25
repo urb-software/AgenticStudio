@@ -175,6 +175,34 @@ export class InMemoryPreviewOperationRepository implements PreviewOperationRepos
     });
   }
 
+  findMergeBuild(
+    projectId: string,
+    runId: string,
+    commit: string,
+  ): Promise<PreviewOperation | null> {
+    const newest = [...this.operations.values()]
+      .filter(
+        (op) =>
+          op.projectId === projectId &&
+          op.build !== null &&
+          (op.build.startedByRunId === runId || op.build.commit === commit),
+      )
+      .sort(
+        (a, b) =>
+          b.requestedAt.getTime() - a.requestedAt.getTime() ||
+          (a.id < b.id ? 1 : a.id > b.id ? -1 : 0),
+      )[0];
+    return Promise.resolve(newest ? PreviewOperation.restore(newest.toData()) : null);
+  }
+
+  hasBuildSince(projectId: string, since: Date): Promise<boolean> {
+    return Promise.resolve(
+      [...this.operations.values()].some(
+        (op) => op.projectId === projectId && op.kind === 'build' && op.requestedAt >= since,
+      ),
+    );
+  }
+
   find(id: string): Promise<PreviewOperation | null> {
     const found = this.operations.get(id);
     return Promise.resolve(found ? PreviewOperation.restore(found.toData()) : null);

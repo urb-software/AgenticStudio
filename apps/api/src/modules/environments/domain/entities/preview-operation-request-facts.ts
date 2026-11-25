@@ -14,6 +14,8 @@ export interface PreviewBuildRequestFacts {
   service: PreviewService;
   port: PreviewPort;
   limits: PreviewLimits;
+  /** The Run whose merge through Studio started the build; absent when the operator did. */
+  startedByRunId?: string | undefined;
   now: Date;
 }
 

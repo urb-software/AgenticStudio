@@ -28,6 +28,8 @@ const VIEW = {
     failure: null,
   },
   controller: { connected: true },
+  behind: false,
+  mergeRebuild: null,
 };
 
 function endpoint(reset: () => Promise<unknown>) {

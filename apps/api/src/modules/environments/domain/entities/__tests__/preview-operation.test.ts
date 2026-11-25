@@ -62,6 +62,7 @@ describe('PreviewOperation', () => {
       service: 'web',
       port: 3000,
       limits: { memoryMiB: 1024, cpuPercent: 100, tasksMax: 512, buildMinutes: 20 },
+      startedByRunId: null,
     });
   });
 

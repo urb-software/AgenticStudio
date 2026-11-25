@@ -189,6 +189,8 @@ export function useSavePreviewSettings(projectId: string) {
         latestBuild: saved.latestBuild,
         latestChange: saved.latestChange,
         controller: saved.controller,
+        behind: saved.behind,
+        mergeRebuild: saved.mergeRebuild,
       };
       queryClient.setQueryData<PreviewOutput>(previewKey(projectId), preview);
     },
