@@ -429,6 +429,7 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
         {
           'a.txt': 'alpha\n',
           'copy.txt': 'alpha\n',
+          'run.sh': { executable: 'alpha\n' },
           'other.txt': 'beta\n',
           'dir/inner.txt': 'x',
           'link.md': { symlink: 'a.txt' },
@@ -446,6 +447,7 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
       const blobs = await git.blobIdsAtCommit(PROJECT_ID, commit, [
         'a.txt',
         'copy.txt',
+        'run.sh',
         'other.txt',
         'dir/inner.txt',
         'dir',
@@ -455,14 +457,16 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
       ]);
 
       expect(blobs).toEqual([
-        { path: 'a.txt', blob: blobOf('alpha\n') },
-        { path: 'copy.txt', blob: blobOf('alpha\n') },
-        { path: 'other.txt', blob: blobOf('beta\n') },
-        { path: 'dir/inner.txt', blob: blobOf('x') },
-        { path: 'dir', blob: null },
-        { path: 'link.md', blob: null },
-        { path: 'missing.txt', blob: null },
-        { path: '../escape', blob: null },
+        { path: 'a.txt', blob: blobOf('alpha\n'), executable: false },
+        { path: 'copy.txt', blob: blobOf('alpha\n'), executable: false },
+        // The same content with the executable bit has the same blob and its own mode.
+        { path: 'run.sh', blob: blobOf('alpha\n'), executable: true },
+        { path: 'other.txt', blob: blobOf('beta\n'), executable: false },
+        { path: 'dir/inner.txt', blob: blobOf('x'), executable: false },
+        { path: 'dir', blob: null, executable: false },
+        { path: 'link.md', blob: null, executable: false },
+        { path: 'missing.txt', blob: null, executable: false },
+        { path: '../escape', blob: null, executable: false },
       ]);
     });
 

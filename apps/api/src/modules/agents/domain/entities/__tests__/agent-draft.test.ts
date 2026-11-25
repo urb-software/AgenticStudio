@@ -221,7 +221,7 @@ describe('AgentDraft', () => {
       expect(draft.files[0]).toMatchObject({ path: 'README.md', change: 'deleted', size: 0 });
     });
 
-    it('drops an added file, and the Draft is empty again with no base', () => {
+    it('lets an added file simply disappear, and the Draft is empty again with no base', () => {
       const draft = empty();
       draft.put({ ...facts(), path: 'docs/new.md', size: 5 });
 
@@ -232,25 +232,25 @@ describe('AgentDraft', () => {
       expect(draft.version).toBe(2);
     });
 
-    it('drops a modified file, which reverts it to the base', () => {
+    it('deletes a modified file in one step, dropping its content change', () => {
       const draft = empty();
       draft.put({ ...facts(), path: 'README.md', size: 5 });
       draft.put({ ...facts(), path: 'docs/new.md', size: 5 });
 
       draft.delete({ ...facts(), path: 'README.md' });
 
-      expect(paths(draft)).toEqual([['docs/new.md', 'added']]);
-      expect(draft.baseCommit).toBe(BASE);
+      expect(draft.files.find((file) => file.path === 'README.md')).toMatchObject({
+        change: 'deleted',
+        size: 0,
+      });
+      expect(draft.version).toBe(3);
     });
 
-    it('brings back a file the Draft deleted', () => {
+    it('refuses to delete a file the Draft already deletes', () => {
       const draft = empty();
       draft.delete({ ...facts(), path: 'README.md' });
 
-      draft.delete({ ...facts(), path: 'README.md' });
-
-      expect(draft.files).toEqual([]);
-      expect(draft.baseCommit).toBeNull();
+      expect(() => draft.delete({ ...facts(), path: 'README.md' })).toThrow(DraftFileNotFoundError);
     });
 
     it('refuses a path that is nowhere, and a link or a submodule at the base', () => {
@@ -435,6 +435,62 @@ describe('AgentDraft', () => {
     });
   });
 
+  describe('revert', () => {
+    it('drops an added file and a modified one, which is as the base has it again', () => {
+      const draft = empty();
+      draft.put({ ...facts(), path: 'README.md', size: 5 });
+      draft.put({ ...facts(), path: 'docs/new.md', size: 5 });
+
+      draft.revert({ path: 'README.md', now: T1 });
+      expect(paths(draft)).toEqual([['docs/new.md', 'added']]);
+      expect(draft.baseCommit).toBe(BASE);
+      draft.revert({ path: 'docs/new.md', now: T1 });
+
+      expect(draft.files).toEqual([]);
+      expect(draft.baseCommit).toBeNull();
+      expect(draft.version).toBe(4);
+      expect(draft.updatedAt).toEqual(T1);
+    });
+
+    it('brings back a file the Draft deleted', () => {
+      const draft = empty();
+      draft.delete({ ...facts(), path: 'README.md' });
+
+      draft.revert({ path: 'README.md', now: T1 });
+
+      expect(draft.files).toEqual([]);
+      expect(draft.baseCommit).toBeNull();
+    });
+
+    it('removes the new path of a moved file and restores the original', () => {
+      const draft = empty();
+      draft.move({ ...facts(), from: 'README.md', to: 'docs/README.md', size: 4 });
+      draft.put({ ...facts(), path: 'other.md', size: 1 });
+
+      draft.revert({ path: 'docs/README.md', now: T1 });
+
+      expect(paths(draft)).toEqual([['other.md', 'added']]);
+    });
+
+    it('restores the base path a move replaced, as the base has it, and the original with it', () => {
+      const draft = empty();
+      draft.delete({ ...facts(), path: 'agents/reviewer/notes.txt' });
+      draft.move({ ...facts(), from: 'README.md', to: 'agents/reviewer/notes.txt', size: 3 });
+
+      draft.revert({ path: 'agents/reviewer/notes.txt', now: T1 });
+
+      expect(draft.files).toEqual([]);
+    });
+
+    it('refuses a path the Draft does not change, and a bad path', () => {
+      const draft = empty();
+
+      expect(() => draft.revert({ path: 'README.md', now: T1 })).toThrow(DraftFileNotFoundError);
+      expect(() => draft.revert({ path: '../x', now: T1 })).toThrow(InvalidAgentDraftPathError);
+      expect(draft.version).toBe(0);
+    });
+  });
+
   describe('discard', () => {
     it('empties the Draft, drops the base and still raises the version', () => {
       const draft = empty();
@@ -461,6 +517,21 @@ describe('AgentDraft', () => {
       expect(restored.baseCommit).toBe(BASE);
       expect(restored.fileAt('docs/README.md')).toMatchObject({ change: 'added' });
       expect(restored.fileAt('nowhere')).toBeNull();
+    });
+
+    it('remembers the version it was restored at, while its own version rises', () => {
+      const restored = AgentDraft.restore({
+        baseCommit: null,
+        version: 7,
+        updatedAt: T0,
+        files: [],
+      });
+
+      restored.put({ ...facts(), path: 'a.txt', size: 1 });
+
+      expect(restored.loadedVersion).toBe(7);
+      expect(restored.version).toBe(8);
+      expect(empty().loadedVersion).toBe(0);
     });
 
     it('does not let the caller change the Draft through the data it gave', () => {

@@ -3,6 +3,8 @@ import { DatabaseModule } from '../../platform/database/database.module.js';
 import { AgentDraftBaseReader } from './application/agent-draft-base.js';
 import { AgentDraftReader } from './application/agent-draft-reader.js';
 import { DeleteAgentDraftFileHandler } from './application/features/delete-agent-draft-file/handler.js';
+import { DiscardAgentDraftForDisconnectHandler } from './application/features/discard-agent-draft-for-disconnect/handler.js';
+import { RevertAgentDraftFileHandler } from './application/features/revert-agent-draft-file/handler.js';
 import { DiscardAgentDraftHandler } from './application/features/discard-agent-draft/handler.js';
 import { GetAgentDraftHandler } from './application/features/get-agent-draft/handler.js';
 import { GetDefinitionsRepositoryHandler } from './application/features/get-definitions-repository/handler.js';
@@ -18,6 +20,8 @@ import { GetAgentFileEndpoint } from './entry-points/http/operator/get-agent-fil
 import { ReadAgentsAgentResolutions } from './entry-points/contracts/agent-resolutions.js';
 import { ListRunAgentsEndpoint } from './entry-points/http/operator/list-run-agents/endpoint.js';
 import { AGENT_FOLDERS, AGENT_RESOLUTION } from './contracts/index.js';
+import { AgentDraftDisconnectStep } from './entry-points/disconnect/agent-draft-disconnect-step.js';
+import { RevertAgentDraftFileEndpoint } from './entry-points/http/operator/revert-agent-draft-file/endpoint.js';
 import { DeleteAgentDraftFileEndpoint } from './entry-points/http/operator/delete-agent-draft-file/endpoint.js';
 import { DiscardAgentDraftEndpoint } from './entry-points/http/operator/discard-agent-draft/endpoint.js';
 import { GetAgentDraftEndpoint } from './entry-points/http/operator/get-agent-draft/endpoint.js';
@@ -52,6 +56,7 @@ export class AgentsModule {
         SaveAgentDraftFileEndpoint,
         MoveAgentDraftFileEndpoint,
         DeleteAgentDraftFileEndpoint,
+        RevertAgentDraftFileEndpoint,
         DiscardAgentDraftEndpoint,
         ListAgentsEndpoint,
         GetAgentEndpoint,
@@ -70,6 +75,9 @@ export class AgentsModule {
         SaveAgentDraftFileHandler,
         MoveAgentDraftFileHandler,
         DeleteAgentDraftFileHandler,
+        RevertAgentDraftFileHandler,
+        DiscardAgentDraftForDisconnectHandler,
+        AgentDraftDisconnectStep,
         DiscardAgentDraftHandler,
         { provide: AGENT_DRAFT_REPOSITORY, useClass: PrismaAgentDraftRepository },
         { provide: AGENT_RESOLUTION, useClass: ReadAgentsAgentResolutions },

@@ -4,6 +4,7 @@ import {
   type DatabaseClient,
 } from '../../../../platform/database/database.module.js';
 import { AgentDraft } from '../../domain/entities/agent-draft.js';
+import { DraftChangedConcurrentlyError } from '../../domain/errors/agent-draft-errors.js';
 import type { AgentDraftRepository } from '../../domain/repositories/agent-draft-repository.js';
 import {
   AGENT_DRAFT_CHANGES,
@@ -55,11 +56,13 @@ export class PrismaAgentDraftRepository implements AgentDraftRepository {
         version: data.version,
         updatedAt: data.updatedAt,
       };
-      await tx.agentDraft.upsert({
-        where: { id: DRAFT_ID },
-        create: { id: DRAFT_ID, ...head },
-        update: head,
+      // Only while the stored version is the one this Draft was loaded at: the update takes the
+      // row lock, so a write racing this one waits and then finds the version moved on.
+      const updated = await tx.agentDraft.updateMany({
+        where: { id: DRAFT_ID, version: draft.loadedVersion },
+        data: head,
       });
+      if (updated.count === 0) throw new DraftChangedConcurrentlyError();
       await tx.agentDraftFile.deleteMany({
         where: { path: { notIn: data.files.map((file) => file.path) } },
       });

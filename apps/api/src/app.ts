@@ -10,6 +10,7 @@ import type { IncomingMessage } from 'node:http';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module.js';
 import { verifyBearerToken } from './platform/auth/bearer-token.js';
+import { SessionCookie } from './platform/auth/session-cookie.js';
 import { APP_CONFIG, type AppConfig } from './platform/config/config.js';
 
 /** Routes whose JSON bodies may exceed 100 KiB: worker step/state reports, Environment file. */
@@ -24,6 +25,26 @@ const PREVIEW_LOG_ROUTE = /^\/api\/controller\/operations\/[^/]+\/log$/;
  */
 const AGENT_DRAFT_REQUEST_MAX_BYTES = 2 * MAX_FILE_BYTES;
 const AGENT_DRAFT_ROUTE = /^\/api\/agents\/definitions-repository\/draft\/files$/;
+/** A JSON save of a Draft file, from the Studio origin and with a session cookie (not yet checked). */
+export function isDraftSave(
+  request: IncomingMessage,
+  config: Pick<AppConfig, 'studioOrigin'>,
+  cookie: Pick<SessionCookie, 'read'>,
+): boolean {
+  const { origin } = request.headers;
+  const sameOrigin =
+    origin === undefined
+      ? request.headers['sec-fetch-site'] === 'same-origin'
+      : origin === config.studioOrigin;
+  return (
+    request.method === 'PUT' &&
+    AGENT_DRAFT_ROUTE.test(request.url?.split('?')[0] ?? '') &&
+    JSON_CONTENT_TYPE.test(request.headers['content-type'] ?? '') &&
+    sameOrigin &&
+    cookie.read(request) !== undefined
+  );
+}
+
 const JSON_CONTENT_TYPE = /^application\/(?:[\w.+-]+\+)?json\s*(?:;|$)/i;
 
 export async function createApp(
@@ -74,13 +95,13 @@ export async function buildApp(
       JSON_CONTENT_TYPE.test(request.headers['content-type'] ?? '') &&
       verifyBearerToken(controllerToken, request.headers.authorization),
   });
-  // A Draft save is a mutation of the operator's session; the parser is sized before the guards run.
+  // The guards run after the body is parsed, so the large Draft parser first checks what it can
+  // without a lookup: the Studio origin and a session cookie. Anything else gets the 100 KiB one.
+  const appConfig = app.get<AppConfig>(APP_CONFIG);
+  const sessionCookie = new SessionCookie(appConfig);
   app.useBodyParser('json', {
     limit: AGENT_DRAFT_REQUEST_MAX_BYTES,
-    type: (request: IncomingMessage) =>
-      request.method === 'PUT' &&
-      AGENT_DRAFT_ROUTE.test(request.url?.split('?')[0] ?? '') &&
-      JSON_CONTENT_TYPE.test(request.headers['content-type'] ?? ''),
+    type: (request: IncomingMessage) => isDraftSave(request, appConfig, sessionCookie),
   });
   app.useBodyParser('json', { limit: '100kb' });
   app.disable('x-powered-by');

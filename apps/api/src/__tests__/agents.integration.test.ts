@@ -119,7 +119,9 @@ describe('agents API (PostgreSQL + Redis via Testcontainers)', () => {
   beforeEach(async () => {
     // Test isolation only; the Repository goes with its Project.
     await db().$executeRaw`TRUNCATE TABLE projects CASCADE`;
-    await db().$executeRaw`TRUNCATE TABLE agent_draft_files, agent_drafts`;
+    // The migration seeds the one Draft row: it goes back to its start.
+    await db().$executeRaw`DELETE FROM agent_draft_files`;
+    await db().$executeRaw`UPDATE agent_drafts SET base_commit = NULL, version = 0`;
   });
 
   describe('without a definitions Repository', () => {
@@ -646,6 +648,7 @@ describe('agents API (PostgreSQL + Redis via Testcontainers)', () => {
       asOperator(http().put(`${BASE}/files`)).send(body);
     const move = (from: string, to: string) =>
       asOperator(http().post(`${BASE}/files/move`)).send({ from, to });
+    const revert = (path: string) => asOperator(http().post(`${BASE}/files/revert`)).send({ path });
     const remove = (path: string) => asOperator(http().delete(`${BASE}/files`).query({ path }));
     const discard = () => asOperator(http().delete(BASE));
     const draftContent = (path: string) =>
@@ -736,6 +739,28 @@ describe('agents API (PostgreSQL + Redis via Testcontainers)', () => {
         const huge = await put({ path: 'a.md', text: 'a'.repeat(2 * 1024 * 1024 + 1024) });
         expect(huge.status).toBe(413);
         expect(problemDetailsSchema.safeParse(huge.body).success).toBe(true);
+      });
+
+      it('gives the large body limit only to a request with the Studio origin and a session cookie', async () => {
+        const body = { path: 'a.md', text: 'a'.repeat(150_000) };
+
+        const noCookie = await http()
+          .put(`${BASE}/files`)
+          .set({ Origin: STUDIO_ORIGIN })
+          .send(body);
+        const noOrigin = await http().put(`${BASE}/files`).set('Cookie', cookie).send(body);
+        const signedIn = await put(body);
+
+        expect(noCookie.status).toBe(413);
+        expect(noOrigin.status).toBe(413);
+        expect(signedIn.status).toBe(409);
+      });
+
+      it('answers a revert like the other writes', async () => {
+        expect((await revert('a.md')).status).toBe(404);
+        expect((await revert('../x')).status).toBe(400);
+        expect((await asOperator(http().post(`${BASE}/files/revert`)).send({})).status).toBe(400);
+        expect((await http().post(`${BASE}/files/revert`).send({ path: 'a.md' })).status).toBe(403);
       });
     });
 
@@ -860,15 +885,87 @@ describe('agents API (PostgreSQL + Redis via Testcontainers)', () => {
         expect((await draftContent('docs/handbook.md')).body.content).toBe('guide\n');
         expect((await draftContent('docs/guide.md')).status).toBe(404);
 
-        const back = await remove('docs/handbook.md');
-        expect(draftFiles(back.body)).toEqual([['docs/guide.md', 'deleted']]);
-        const restored = await remove('docs/guide.md');
+        // Reverting the new path of a moved file removes it and restores the original.
+        const restored = await revert('docs/handbook.md');
+        expect(restored.status).toBe(200);
         expect(restored.body).toMatchObject({ files: [], baseCommit: null });
 
         await remove('README.md');
         const discarded = await discard();
         expect(discarded.body).toMatchObject({ files: [], baseCommit: null });
         expect(discarded.body.version).toBeGreaterThan(restored.body.version);
+      });
+
+      it('deletes in one call and reverts a change, each answering the new Draft', async () => {
+        await connectedWith('draft-delete-revert', DRAFT_FILES);
+        await put({ path: 'README.md', text: 'edited' });
+        await put({ path: 'docs/new.md', text: 'new' });
+
+        const deleted = await remove('README.md');
+        expect(draftFiles(deleted.body)).toEqual([
+          ['README.md', 'deleted'],
+          ['docs/new.md', 'added'],
+        ]);
+        expect((await draftContent('README.md')).status).toBe(404);
+        const gone = await remove('docs/new.md');
+        expect(draftFiles(gone.body)).toEqual([['README.md', 'deleted']]);
+        expect((await remove('README.md')).status).toBe(404);
+
+        const back = await revert('README.md');
+        expect(back.body).toMatchObject({ files: [], baseCommit: null });
+        expect((await draftContent('README.md')).body).toMatchObject({ content: '# Agents\n' });
+        expect(back.body.version).toBe(5);
+      });
+
+      it('keeps both files when two writes to different paths race, and the version rises by two', async () => {
+        await connectedWith('draft-race', DRAFT_FILES);
+        const before = (await put({ path: 'docs/start.md', text: 'start' })).body.version;
+
+        const [first, second] = await Promise.all([
+          put({ path: 'docs/one.md', text: 'one' }),
+          put({ path: 'docs/two.md', text: 'two' }),
+        ]);
+
+        expect([first.status, second.status]).toEqual([200, 200]);
+        expect(first.body.version).not.toBe(second.body.version);
+        const view = await getDraft();
+        expect(draftFiles(view.body)).toEqual([
+          ['docs/one.md', 'added'],
+          ['docs/start.md', 'added'],
+          ['docs/two.md', 'added'],
+        ]);
+        expect(view.body.version).toBe(before + 2);
+        expect((await draftContent('docs/one.md')).body.content).toBe('one');
+        expect((await draftContent('docs/two.md')).body.content).toBe('two');
+      });
+
+      it('says so when the commit the Draft began from is gone', async () => {
+        await connectedWith('draft-base-gone', DRAFT_FILES);
+        await put({ path: 'docs/new.md', text: 'new' });
+        await db().$executeRaw`UPDATE agent_drafts SET base_commit = ${'f'.repeat(40)}`;
+
+        const refused = await put({ path: 'docs/other.md', text: 'x' });
+
+        expect(refused.status).toBe(409);
+        expect(refused.body.type).toBe('urn:agentic-studio:problem:agent-draft-base-missing');
+        expect(problemDetailsSchema.safeParse(refused.body).success).toBe(true);
+        expect((await getDraft()).status).toBe(200);
+        const discarded = await discard();
+        expect(discarded.body).toMatchObject({ files: [], baseCommit: null });
+      });
+
+      it('discards the Draft when the definitions Repository is disconnected', async () => {
+        const { projectId } = await connectedWith('draft-disconnect', DRAFT_FILES);
+        await put({ path: 'docs/new.md', text: 'new' });
+
+        const disconnected = await asOperator(
+          http().delete(`/api/projects/${projectId}/repository`),
+        );
+
+        expect(disconnected.status).toBeLessThan(300);
+        const view = await getDraft();
+        expect(view.body).toMatchObject({ files: [], baseCommit: null });
+        expect(view.body.version).toBeGreaterThan(1);
       });
 
       it('refuses what the rules forbid, each with its own problem', async () => {

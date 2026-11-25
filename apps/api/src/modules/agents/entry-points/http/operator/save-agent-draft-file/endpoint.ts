@@ -29,7 +29,10 @@ export class SaveAgentDraftFileEndpoint {
   @ZodResponse({ status: 200, type: AgentDraftResponseDto })
   @ApiProblemResponses({
     400: 'Invalid path or body',
-    409: `The Repository has no fetched commit to base the Draft on (${AGENTS_PROBLEM_TYPES.draftNoBase})`,
+    409:
+      `The Repository has no fetched commit to base the Draft on (${AGENTS_PROBLEM_TYPES.draftNoBase}), ` +
+      `the commit the Draft began from is gone (${AGENTS_PROBLEM_TYPES.draftBaseMissing}) or other writes ` +
+      `kept changing the Draft (${AGENTS_PROBLEM_TYPES.draftConflict})`,
     413: 'The request body is over the size the route accepts',
     422:
       `The file is over 1 MiB (${AGENTS_PROBLEM_TYPES.draftFileTooLarge}), the Draft over 10 MiB ` +

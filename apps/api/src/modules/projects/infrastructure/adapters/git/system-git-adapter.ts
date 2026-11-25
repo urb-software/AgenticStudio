@@ -1184,7 +1184,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
         const safe = [
           ...new Set(paths.filter((path) => environmentFilePathProblem(path) === null)),
         ];
-        const blobs = new Map<string, string>();
+        const blobs = new Map<string, { object: string; executable: boolean }>();
         for (let from = 0; from < safe.length; from += READ_BATCH_PATHS) {
           const listed = await this.git(
             context,
@@ -1205,10 +1205,16 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
             throw new GitOperationError('unknown', redactGitOutput(listed.stderr));
           }
           for (const entry of parseTreeEntries(listed.stdout)) {
-            if (entry.regular) blobs.set(entry.path, entry.object);
+            if (entry.regular) {
+              blobs.set(entry.path, { object: entry.object, executable: entry.mode === '100755' });
+            }
           }
         }
-        return paths.map((path) => ({ path, blob: blobs.get(path) ?? null }));
+        return paths.map((path) => ({
+          path,
+          blob: blobs.get(path)?.object ?? null,
+          executable: blobs.get(path)?.executable ?? false,
+        }));
       });
     });
   }

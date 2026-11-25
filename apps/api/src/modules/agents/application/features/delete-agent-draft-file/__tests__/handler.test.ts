@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  DraftBaseMissingError,
   DraftBaseUnreadableError,
   DraftFileNotFoundError,
   DraftPathNotWritableError,
@@ -62,12 +63,48 @@ describe('DeleteAgentDraftFileHandler', () => {
     expect(repository.contents.has('docs/new.md')).toBe(false);
   });
 
-  it('brings back a deleted file by dropping the Draft change', async () => {
-    await handler.execute({ path: 'README.md' });
+  it('deletes a modified file in one call, dropping its content change', async () => {
+    const draft = await repository.find();
+    draft.put({
+      currentCommit: BASE_COMMIT,
+      baseEntries: [{ path: 'README.md', kind: 'file' }],
+      now: NOW,
+      path: 'README.md',
+      size: 1,
+    });
+    await repository.save(draft, new Map([['README.md', new Uint8Array([120])]]));
 
     const view = await handler.execute({ path: 'README.md' });
 
-    expect(view).toMatchObject({ files: [], baseCommit: null, version: 2 });
+    expect(view.files).toEqual([
+      { path: 'README.md', change: 'deleted', size: 0, movedFrom: null },
+    ]);
+    expect(view.version).toBe(2);
+    expect(repository.contents.has('README.md')).toBe(false);
+  });
+
+  it('refuses a file the Draft already deletes', async () => {
+    await handler.execute({ path: 'README.md' });
+
+    await expect(handler.execute({ path: 'README.md' })).rejects.toThrow(DraftFileNotFoundError);
+  });
+
+  it('tries again when another write got in first, and gives up after three attempts', async () => {
+    repository.conflicts = 2;
+    await expect(handler.execute({ path: 'README.md' })).resolves.toMatchObject({
+      files: [{ path: 'README.md', change: 'deleted' }],
+    });
+
+    repository.conflicts = 3;
+    await expect(handler.execute({ path: 'link.md' })).rejects.toThrow(DraftPathNotWritableError);
+    await expect(handler.execute({ path: 'docs.md' })).rejects.toThrow(DraftFileNotFoundError);
+  });
+
+  it('says so when the commit the Draft began from is gone', async () => {
+    await handler.execute({ path: 'README.md' });
+    definitions.commits.delete(BASE_COMMIT);
+
+    await expect(handler.execute({ path: 'README.md' })).rejects.toThrow(DraftBaseMissingError);
   });
 
   it('refuses a path nowhere and a link, and saves nothing', async () => {

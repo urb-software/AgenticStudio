@@ -317,10 +317,14 @@ export type DefinitionsBlobRead =
   | { path: string; status: 'found'; bytes: Uint8Array }
   | { path: string; status: 'missing' | 'too_large' };
 
-/** `blob` is Git's object name of the regular file at `path`; `null` when the path names none. */
+/**
+ * `blob` is Git's object name of the regular file at `path`, and `executable` its mode `100755`;
+ * `null` and `false` when the path names none.
+ */
 export interface DefinitionsBlobId {
   path: string;
   blob: string | null;
+  executable: boolean;
 }
 
 export type DefinitionsBlobIdsResult =

@@ -1,7 +1,9 @@
 import { HttpStatus } from '@nestjs/common';
 import { FieldProblemException } from '../../../../../platform/http/problem-details.js';
 import {
+  DraftBaseMissingError,
   DraftBaseUnreadableError,
+  DraftChangedConcurrentlyError,
   DraftFileNotFoundError,
   DraftMoveUnsupportedError,
   DraftNoBaseError,
@@ -16,6 +18,8 @@ import { InvalidAgentDraftPathError } from '../../../domain/value-objects/agent-
 import {
   agentFileNotFound,
   agentFilesUnreadable,
+  draftBaseMissing,
+  draftConflict,
   draftFileTooLarge,
   draftMoveUnsupported,
   draftNoBase,
@@ -30,10 +34,10 @@ import {
  * The HTTP error for what a change to the Draft refuses; anything else is returned as it is. A bad
  * path is a field error on `field`; `to` and `from` name their own field when a move refuses one.
  */
-export function toDraftHttpError(error: unknown, field: string = 'path'): unknown {
+export function toDraftHttpError(error: unknown): unknown {
   if (error instanceof InvalidAgentDraftPathError) {
     return new FieldProblemException(HttpStatus.BAD_REQUEST, 'The request is invalid.', [
-      { path: field, message: error.message },
+      { path: 'path', message: error.message },
     ]);
   }
   if (error instanceof DraftFileTooLargeError) return draftFileTooLarge(error.size, error.limit);
@@ -46,5 +50,7 @@ export function toDraftHttpError(error: unknown, field: string = 'path'): unknow
   if (error instanceof DraftFileNotFoundError) return agentFileNotFound();
   if (error instanceof DraftNoBaseError) return draftNoBase();
   if (error instanceof DraftBaseUnreadableError) return agentFilesUnreadable();
+  if (error instanceof DraftBaseMissingError) return draftBaseMissing();
+  if (error instanceof DraftChangedConcurrentlyError) return draftConflict();
   return error;
 }

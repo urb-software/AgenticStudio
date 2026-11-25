@@ -40,15 +40,15 @@ describe('ReadDefinitionsBlobIdsHandler', () => {
   it('answers the blob id of each path of the definitions Clone at the commit, null for none', async () => {
     await connected();
     git.blobIdsAtCommit.mockResolvedValueOnce([
-      { path: PATHS[0]!, blob: 'd'.repeat(40) },
-      { path: PATHS[1]!, blob: null },
+      { path: PATHS[0]!, blob: 'd'.repeat(40), executable: true },
+      { path: PATHS[1]!, blob: null, executable: false },
     ]);
 
     await expect(handler.execute({ commit: HEAD, paths: PATHS })).resolves.toEqual({
       status: 'read',
       blobs: [
-        { path: PATHS[0], blob: 'd'.repeat(40) },
-        { path: PATHS[1], blob: null },
+        { path: PATHS[0], blob: 'd'.repeat(40), executable: true },
+        { path: PATHS[1], blob: null, executable: false },
       ],
     });
     expect(git.blobIdsAtCommit).toHaveBeenCalledWith(DEFINITIONS, HEAD, PATHS);

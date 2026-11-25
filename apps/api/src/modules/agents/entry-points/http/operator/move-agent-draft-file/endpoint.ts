@@ -28,7 +28,10 @@ export class MoveAgentDraftFileEndpoint {
   @ApiProblemResponses({
     400: 'Invalid path or body',
     404: `No file at the old path (${AGENTS_PROBLEM_TYPES.agentFileNotFound})`,
-    409: `The Repository has no fetched commit to base the Draft on (${AGENTS_PROBLEM_TYPES.draftNoBase})`,
+    409:
+      `The Repository has no fetched commit to base the Draft on (${AGENTS_PROBLEM_TYPES.draftNoBase}), ` +
+      `the commit the Draft began from is gone (${AGENTS_PROBLEM_TYPES.draftBaseMissing}) or other writes ` +
+      `kept changing the Draft (${AGENTS_PROBLEM_TYPES.draftConflict})`,
     422:
       `A file is at the new path (${AGENTS_PROBLEM_TYPES.draftPathTaken}), a path is a link or a ` +
       `submodule (${AGENTS_PROBLEM_TYPES.draftPathNotWritable}) or would be a file and a folder ` +

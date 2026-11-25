@@ -13,6 +13,7 @@ import type { AgentDraftData } from './agent-draft-data.js';
 import type { AgentDraftBaseEntry } from './agent-draft-facts.js';
 import type { AgentDraftDeleteFacts } from './agent-draft-delete-facts.js';
 import type { AgentDraftMoveFacts } from './agent-draft-move-facts.js';
+import type { AgentDraftRevertFacts } from './agent-draft-revert-facts.js';
 import type { AgentDraftWriteFacts } from './agent-draft-write-facts.js';
 
 type BaseKinds = ReadonlyMap<string, AgentDraftBaseEntry['kind']>;
@@ -25,6 +26,7 @@ type BaseKinds = ReadonlyMap<string, AgentDraftBaseEntry['kind']>;
 export class AgentDraft {
   private baseCommitValue: string | null;
   private versionValue: number;
+  private readonly loadedVersionValue: number;
   private updatedAtValue: Date;
   private readonly changed: Map<string, AgentDraftFile>;
   private readonly limits = AgentDraftLimits.create();
@@ -32,6 +34,7 @@ export class AgentDraft {
   private constructor(data: AgentDraftData) {
     this.baseCommitValue = data.baseCommit;
     this.versionValue = data.version;
+    this.loadedVersionValue = data.version;
     this.updatedAtValue = new Date(data.updatedAt);
     this.changed = new Map(
       data.files.map((file) => [file.path, AgentDraftFile.restore(file)] as const),
@@ -53,6 +56,11 @@ export class AgentDraft {
 
   get version(): number {
     return this.versionValue;
+  }
+
+  /** The version this Draft was restored at: the store saves it only while that is still the stored one. */
+  get loadedVersion(): number {
+    return this.loadedVersionValue;
   }
 
   get updatedAt(): Date {
@@ -96,14 +104,18 @@ export class AgentDraft {
   }
 
   /**
-   * Drops the Draft's change at the path (an added file goes, a modified one reverts, a deleted one
-   * comes back), or else marks the base file deleted. Throws {@link DraftFileNotFoundError},
-   * {@link DraftPathNotWritableError}, {@link DraftNoBaseError} and `DraftTooManyFilesError`.
+   * Marks the path deleted in one step: an added file simply goes, a modified one becomes deleted,
+   * a base file is marked deleted. Throws {@link DraftFileNotFoundError} (also for a file the
+   * Draft already deletes), {@link DraftPathNotWritableError} and the base and limit errors.
    */
   delete(facts: AgentDraftDeleteFacts): void {
     const path = AgentDraftPath.of(facts.path);
     const next = new Map(this.changed);
-    if (next.delete(path.value)) {
+    const earlier = next.get(path.value);
+    if (earlier) {
+      if (earlier.isDeleted) throw new DraftFileNotFoundError(path.value);
+      if (earlier.change === 'added') next.delete(path.value);
+      else next.set(path.value, AgentDraftFile.removed({ path, now: facts.now }));
       this.commit(next, facts);
       return;
     }
@@ -149,6 +161,23 @@ export class AgentDraft {
       now: facts.now,
     });
     this.commit(this.with(next, [file]), facts);
+  }
+
+  /**
+   * Drops the Draft's change at the path, so the file is as the base commit has it: an added file
+   * goes, a modified one reverts, a deleted one comes back. A moved file's new path goes and its
+   * original, when the Draft deletes it, comes back. Throws {@link DraftFileNotFoundError}.
+   */
+  revert(facts: AgentDraftRevertFacts): void {
+    const path = AgentDraftPath.of(facts.path);
+    const earlier = this.changed.get(path.value);
+    if (!earlier) throw new DraftFileNotFoundError(path.value);
+    const next = new Map(this.changed);
+    next.delete(path.value);
+    if (earlier.movedFrom !== null && next.get(earlier.movedFrom)?.isDeleted) {
+      next.delete(earlier.movedFrom);
+    }
+    this.commit(next, { currentCommit: null, now: facts.now });
   }
 
   /** Drops every change and the base. */

@@ -72,3 +72,19 @@ export class DraftMoveUnsupportedError extends Error {
     this.name = 'DraftMoveUnsupportedError';
   }
 }
+
+/** Another write changed the Draft between this one's read and its save. */
+export class DraftChangedConcurrentlyError extends Error {
+  constructor() {
+    super('The Draft changed while this change was being made.');
+    this.name = 'DraftChangedConcurrentlyError';
+  }
+}
+
+/** The commit the Draft began from is no longer in the Clone: the Draft can only be discarded. */
+export class DraftBaseMissingError extends Error {
+  constructor() {
+    super('The commit the Draft began from is gone from the Clone.');
+    this.name = 'DraftBaseMissingError';
+  }
+}

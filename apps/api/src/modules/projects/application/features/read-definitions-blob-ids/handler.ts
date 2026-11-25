@@ -45,7 +45,10 @@ export class ReadDefinitionsBlobIdsHandler {
     }
     try {
       const blobs = await this.git.blobIdsAtCommit(project.id, input.commit, input.paths);
-      return { status: 'read', blobs: blobs.map(({ path, blob }) => ({ path, blob })) };
+      return {
+        status: 'read',
+        blobs: blobs.map(({ path, blob, executable }) => ({ path, blob, executable })),
+      };
     } catch (error) {
       if (error instanceof GitUnsupportedPlatformError) return { status: 'unsupported_platform' };
       if (error instanceof GitCloneMissingError) return { status: 'repository_not_ready' };

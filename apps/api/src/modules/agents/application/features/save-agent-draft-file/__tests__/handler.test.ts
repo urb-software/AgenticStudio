@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  DraftBaseMissingError,
   DraftBaseUnreadableError,
+  DraftChangedConcurrentlyError,
   DraftNoBaseError,
   DraftPathNotWritableError,
 } from '../../../../domain/errors/agent-draft-errors.js';
@@ -76,6 +78,35 @@ describe('SaveAgentDraftFileHandler', () => {
     ]);
     expect(repository.contents.get('docs/new.md')).toEqual(bytes('second!'));
     expect(view.version).toBe(2);
+  });
+
+  it('tries again when another write got in first, and the change still lands', async () => {
+    repository.conflicts = 2;
+
+    const view = await handler.execute({ path: 'docs/new.md', content: bytes('hello') });
+
+    expect(view.files.map((file) => file.path)).toEqual(['docs/new.md']);
+    expect(repository.saves).toBe(1);
+    // Two other writes came in first, so this one is the third: the version only rises.
+    expect(view.version).toBe(3);
+  });
+
+  it('gives up with a conflict after three attempts', async () => {
+    repository.conflicts = 3;
+
+    await expect(handler.execute({ path: 'docs/new.md', content: bytes('x') })).rejects.toThrow(
+      DraftChangedConcurrentlyError,
+    );
+    expect(repository.saves).toBe(0);
+  });
+
+  it('says so when the commit the Draft began from is gone, and the Draft can be discarded', async () => {
+    await handler.execute({ path: 'README.md', content: bytes('edited') });
+    definitions.commits.delete(BASE_COMMIT);
+
+    await expect(handler.execute({ path: 'a.md', content: bytes('x') })).rejects.toThrow(
+      DraftBaseMissingError,
+    );
   });
 
   it('stores nothing when the entity refuses', async () => {

@@ -4,7 +4,9 @@ import {
   ProblemException,
 } from '../../../../../../platform/http/problem-details.js';
 import {
+  DraftBaseMissingError,
   DraftBaseUnreadableError,
+  DraftChangedConcurrentlyError,
   DraftFileNotFoundError,
   DraftMoveUnsupportedError,
   DraftNoBaseError,
@@ -36,6 +38,8 @@ describe('toDraftHttpError', () => {
     [new DraftMoveUnsupportedError(), 422, AGENTS_PROBLEM_TYPES.draftMoveUnsupported],
     [new DraftFileNotFoundError('a'), 404, AGENTS_PROBLEM_TYPES.agentFileNotFound],
     [new DraftNoBaseError(), 409, AGENTS_PROBLEM_TYPES.draftNoBase],
+    [new DraftChangedConcurrentlyError(), 409, AGENTS_PROBLEM_TYPES.draftConflict],
+    [new DraftBaseMissingError(), 409, AGENTS_PROBLEM_TYPES.draftBaseMissing],
     [new DraftBaseUnreadableError(), 503, AGENTS_PROBLEM_TYPES.agentFilesUnreadable],
   ])('maps %s to %i %s, each refusal with its own reason', (error, status, type) => {
     expect(problemOf(toDraftHttpError(error))).toMatchObject({ status, type });
@@ -55,13 +59,13 @@ describe('toDraftHttpError', () => {
     });
   });
 
-  it('answers a bad path as a field error on the field asked for', () => {
-    const error = toDraftHttpError(new InvalidAgentDraftPathError('Enter a path.'), 'to');
+  it('answers a bad path as a field error on the path', () => {
+    const error = toDraftHttpError(new InvalidAgentDraftPathError('Enter a path.'));
 
     expect(error).toBeInstanceOf(FieldProblemException);
     expect(problemOf(error)).toMatchObject({
       status: 400,
-      errors: [{ path: 'to', message: 'Enter a path.' }],
+      errors: [{ path: 'path', message: 'Enter a path.' }],
     });
   });
 

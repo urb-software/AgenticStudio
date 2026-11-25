@@ -328,6 +328,13 @@ export type MoveAgentDraftFileRequest = {
     to: string;
 };
 
+export type RevertAgentDraftFileRequest = {
+    /**
+     * Relative to the Repository root, with `/` separators.
+     */
+    path: string;
+};
+
 export type AgentSummaryOutput = {
     /**
      * Unique together with `source`: a built-in and a refused folder can share a name.
@@ -1857,11 +1864,11 @@ export type DeleteAgentDraftFileErrors = {
      */
     400: ProblemDetails;
     /**
-     * No file at the path in the Draft or at the base commit (urn:agentic-studio:problem:agent-file-not-found)
+     * No file at the path, or the Draft already deletes it (urn:agentic-studio:problem:agent-file-not-found)
      */
     404: ProblemDetails;
     /**
-     * The Repository has no fetched commit to base the Draft on (urn:agentic-studio:problem:agent-draft-no-base)
+     * The Repository has no fetched commit to base the Draft on (urn:agentic-studio:problem:agent-draft-no-base), the commit the Draft began from is gone (urn:agentic-studio:problem:agent-draft-base-missing) or other writes kept changing the Draft (urn:agentic-studio:problem:agent-draft-conflict)
      */
     409: ProblemDetails;
     /**
@@ -1899,7 +1906,7 @@ export type SaveAgentDraftFileErrors = {
      */
     400: ProblemDetails;
     /**
-     * The Repository has no fetched commit to base the Draft on (urn:agentic-studio:problem:agent-draft-no-base)
+     * The Repository has no fetched commit to base the Draft on (urn:agentic-studio:problem:agent-draft-no-base), the commit the Draft began from is gone (urn:agentic-studio:problem:agent-draft-base-missing) or other writes kept changing the Draft (urn:agentic-studio:problem:agent-draft-conflict)
      */
     409: ProblemDetails;
     /**
@@ -1945,7 +1952,7 @@ export type MoveAgentDraftFileErrors = {
      */
     404: ProblemDetails;
     /**
-     * The Repository has no fetched commit to base the Draft on (urn:agentic-studio:problem:agent-draft-no-base)
+     * The Repository has no fetched commit to base the Draft on (urn:agentic-studio:problem:agent-draft-no-base), the commit the Draft began from is gone (urn:agentic-studio:problem:agent-draft-base-missing) or other writes kept changing the Draft (urn:agentic-studio:problem:agent-draft-conflict)
      */
     409: ProblemDetails;
     /**
@@ -1969,6 +1976,40 @@ export type MoveAgentDraftFileResponses = {
 };
 
 export type MoveAgentDraftFileResponse = MoveAgentDraftFileResponses[keyof MoveAgentDraftFileResponses];
+
+export type RevertAgentDraftFileData = {
+    body: RevertAgentDraftFileRequest;
+    path?: never;
+    query?: never;
+    url: '/api/agents/definitions-repository/draft/files/revert';
+};
+
+export type RevertAgentDraftFileErrors = {
+    /**
+     * Invalid path or body
+     */
+    400: ProblemDetails;
+    /**
+     * The Draft does not change the path (urn:agentic-studio:problem:agent-file-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * Other writes kept changing the Draft (urn:agentic-studio:problem:agent-draft-conflict)
+     */
+    409: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type RevertAgentDraftFileError = RevertAgentDraftFileErrors[keyof RevertAgentDraftFileErrors];
+
+export type RevertAgentDraftFileResponses = {
+    200: AgentDraftOutput;
+};
+
+export type RevertAgentDraftFileResponse = RevertAgentDraftFileResponses[keyof RevertAgentDraftFileResponses];
 
 export type ListAgentsData = {
     body?: never;

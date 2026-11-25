@@ -1325,7 +1325,7 @@
             }
           },
           "409": {
-            "description": "The Repository has no fetched commit to base the Draft on (urn:agentic-studio:problem:agent-draft-no-base)",
+            "description": "The Repository has no fetched commit to base the Draft on (urn:agentic-studio:problem:agent-draft-no-base), the commit the Draft began from is gone (urn:agentic-studio:problem:agent-draft-base-missing) or other writes kept changing the Draft (urn:agentic-studio:problem:agent-draft-conflict)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1381,7 +1381,7 @@
         ]
       },
       "delete": {
-        "description": "Drops the Draft change at the path (an added file goes, a modified file reverts to the base, a deleted file comes back), or, where the Draft has no change there, marks the file of the base commit deleted. Dropping the last change empties the Draft. A symbolic link or a submodule at the base cannot be deleted. The answer is the new Draft.",
+        "description": "Marks the path deleted in one call: a file the base commit holds is marked deleted (a content change the Draft holds for it is dropped), and a file only the Draft holds simply disappears. A symbolic link or a submodule at the base cannot be deleted. To return a file to what the base commit has, use the revert route. The answer is the new Draft.",
         "operationId": "deleteAgentDraftFile",
         "parameters": [
           {
@@ -1418,7 +1418,7 @@
             }
           },
           "404": {
-            "description": "No file at the path in the Draft or at the base commit (urn:agentic-studio:problem:agent-file-not-found)",
+            "description": "No file at the path, or the Draft already deletes it (urn:agentic-studio:problem:agent-file-not-found)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1428,7 +1428,7 @@
             }
           },
           "409": {
-            "description": "The Repository has no fetched commit to base the Draft on (urn:agentic-studio:problem:agent-draft-no-base)",
+            "description": "The Repository has no fetched commit to base the Draft on (urn:agentic-studio:problem:agent-draft-no-base), the commit the Draft began from is gone (urn:agentic-studio:problem:agent-draft-base-missing) or other writes kept changing the Draft (urn:agentic-studio:problem:agent-draft-conflict)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1521,7 +1521,7 @@
             }
           },
           "409": {
-            "description": "The Repository has no fetched commit to base the Draft on (urn:agentic-studio:problem:agent-draft-no-base)",
+            "description": "The Repository has no fetched commit to base the Draft on (urn:agentic-studio:problem:agent-draft-no-base), the commit the Draft began from is gone (urn:agentic-studio:problem:agent-draft-base-missing) or other writes kept changing the Draft (urn:agentic-studio:problem:agent-draft-conflict)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1542,6 +1542,79 @@
           },
           "503": {
             "description": "The Clone cannot be read now (urn:agentic-studio:problem:agent-files-unreadable)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/api/agents/definitions-repository/draft/files/revert": {
+      "post": {
+        "description": "Drops the Draft change at the path, so the file is as the base commit has it: an added file goes, a modified file reverts, a deleted file comes back. For a moved file the new path is removed and the original is restored. Dropping the last change empties the Draft. Nothing is read from the Repository. The answer is the new Draft.",
+        "operationId": "revertAgentDraftFile",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevertAgentDraftFileRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentDraft_Output"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path or body",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The Draft does not change the path (urn:agentic-studio:problem:agent-file-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Other writes kept changing the Draft (urn:agentic-studio:problem:agent-draft-conflict)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4925,6 +4998,21 @@
         "required": [
           "from",
           "to"
+        ],
+        "additionalProperties": false
+      },
+      "RevertAgentDraftFileRequest": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
+            "description": "Relative to the Repository root, with `/` separators."
+          }
+        },
+        "required": [
+          "path"
         ],
         "additionalProperties": false
       },

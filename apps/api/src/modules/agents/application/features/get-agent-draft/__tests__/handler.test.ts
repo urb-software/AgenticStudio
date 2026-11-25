@@ -264,6 +264,18 @@ describe('GetAgentDraftHandler', () => {
       expect(view.movedUpstream).toEqual(['README.md', 'docs/new.md']);
     });
 
+    it('lists a path whose only upstream change is the executable bit', async () => {
+      definitions.commit(NEXT_COMMIT, { ...BASE_FILES, 'docs/a.md': { executable: 'a\n' } });
+      await draftWith(
+        (draft, facts) => {
+          draft.put({ ...facts, path: 'docs/a.md', size: 1 });
+        },
+        { 'docs/a.md': 'x' },
+      );
+
+      await expect(handler.execute()).resolves.toMatchObject({ movedUpstream: ['docs/a.md'] });
+    });
+
     it('lists a path the Draft deletes when it was removed upstream', async () => {
       definitions.commit(NEXT_COMMIT, { 'README.md': 'top\n' });
       await draftWith((draft, facts) => {

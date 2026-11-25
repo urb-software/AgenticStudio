@@ -2,7 +2,12 @@ import { MAX_FILE_BYTES } from '@agentic-studio/agent-definitions';
 import { Inject, Injectable } from '@nestjs/common';
 import { DEFINITIONS_FILES, type DefinitionsFiles } from '../../../../projects/contracts/index.js';
 import { AgentDraftBaseReader } from '../../agent-draft-base.js';
-import { AgentDraftReader, type AgentDraftView } from '../../agent-draft-reader.js';
+import {
+  AgentDraftReader,
+  DRAFT_WRITE_ATTEMPTS,
+  type AgentDraftView,
+} from '../../agent-draft-reader.js';
+import { DraftChangedConcurrentlyError } from '../../../domain/errors/agent-draft-errors.js';
 import {
   DraftBaseUnreadableError,
   DraftFileNotFoundError,
@@ -34,25 +39,33 @@ export class MoveAgentDraftFileHandler {
   ) {}
 
   /**
-   * Throws what {@link SaveAgentDraftFileHandler} and {@link DeleteAgentDraftFileHandler} throw
-   * for the two paths, `DraftPathTakenError` and `DraftMoveUnsupportedError`.
+   * Throws what saving to the new path and deleting the old one throw, `DraftPathTakenError`,
+   * `DraftMoveUnsupportedError` and `DraftChangedConcurrentlyError`.
    */
   async execute(input: MoveAgentDraftFileInput): Promise<MoveAgentDraftFileResult> {
-    const draft = await this.drafts.find();
-    const base = await this.base.read(draft.baseCommit);
-    const content = await this.contentOf(input.from, base.commit);
-    draft.move({
-      from: input.from,
-      to: input.to,
-      // A missing source has no content: the entity says why it cannot move.
-      size: content?.byteLength ?? 0,
-      currentCommit: base.currentCommit,
-      baseEntries: base.entries,
-      now: new Date(),
-    });
-    if (!content) throw new DraftFileNotFoundError(input.from);
-    await this.drafts.save(draft, new Map([[input.to, content]]));
-    return this.reader.read(draft);
+    for (let attempt = 1; ; attempt += 1) {
+      const draft = await this.drafts.find();
+      const base = await this.base.read(draft.baseCommit);
+      const content = await this.contentOf(input.from, base.commit);
+      draft.move({
+        from: input.from,
+        to: input.to,
+        // A missing source has no content: the entity says why it cannot move.
+        size: content?.byteLength ?? 0,
+        currentCommit: base.currentCommit,
+        baseEntries: base.entries,
+        now: new Date(),
+      });
+      if (!content) throw new DraftFileNotFoundError(input.from);
+      try {
+        await this.drafts.save(draft, new Map([[input.to, content]]));
+      } catch (error) {
+        if (error instanceof DraftChangedConcurrentlyError && attempt < DRAFT_WRITE_ATTEMPTS)
+          continue;
+        throw error;
+      }
+      return this.reader.read(draft);
+    }
   }
 
   private async contentOf(path: string, baseCommit: string): Promise<Uint8Array | null> {

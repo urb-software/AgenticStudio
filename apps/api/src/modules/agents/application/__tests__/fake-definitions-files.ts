@@ -16,14 +16,24 @@ import type {
 export const BASE_COMMIT = 'a'.repeat(40);
 export const NEXT_COMMIT = 'b'.repeat(40);
 
-/** What a fixture commit holds: a file's bytes (or text), or a link, or a submodule. */
-export type FakeCommitFile = string | Buffer | { symlink: string } | { submodule: true };
+/** What a fixture commit holds: a file's bytes (or text), an executable file, a link or a submodule. */
+export type FakeCommitFile =
+  string | Buffer | { executable: string } | { symlink: string } | { submodule: true };
 
 const blobOf = (bytes: Buffer) =>
   createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
 
 const bytesOf = (file: FakeCommitFile): Buffer | null =>
-  typeof file === 'string' ? Buffer.from(file) : Buffer.isBuffer(file) ? file : null;
+  typeof file === 'string'
+    ? Buffer.from(file)
+    : Buffer.isBuffer(file)
+      ? file
+      : 'executable' in file
+        ? Buffer.from(file.executable)
+        : null;
+
+const isExecutable = (file: FakeCommitFile | undefined): boolean =>
+  typeof file === 'object' && !Buffer.isBuffer(file) && 'executable' in file;
 
 /** A scripted {@link DefinitionsFiles}: commits built from plain files, no Git. */
 export class FakeDefinitionsFiles implements DefinitionsFiles {
@@ -55,10 +65,15 @@ export class FakeDefinitionsFiles implements DefinitionsFiles {
     if (!files) return Promise.resolve({ status: 'commit_missing' });
     const entries = [...files]
       .map(([path, file]): DefinitionsTreeEntry => {
-        if (typeof file === 'object' && !Buffer.isBuffer(file)) {
-          return { path, kind: 'symlink' in file ? 'symlink' : 'submodule', size: 0 };
+        const bytes = bytesOf(file);
+        if (!bytes) {
+          return {
+            path,
+            kind: typeof file === 'object' && 'symlink' in file ? 'symlink' : 'submodule',
+            size: 0,
+          };
         }
-        return { path, kind: 'file', size: bytesOf(file)!.length };
+        return { path, kind: 'file', size: bytes.length, executable: isExecutable(file) };
       })
       .sort((a, b) => (a.path < b.path ? -1 : 1));
     return Promise.resolve({ status: 'listed', entries, truncated: this.truncated });
@@ -117,7 +132,11 @@ export class FakeDefinitionsFiles implements DefinitionsFiles {
       status: 'read',
       blobs: paths.map((path) => {
         const bytes = bytesOf(files.get(path) ?? { submodule: true });
-        return { path, blob: bytes ? blobOf(bytes) : null };
+        return {
+          path,
+          blob: bytes ? blobOf(bytes) : null,
+          executable: isExecutable(files.get(path)),
+        };
       }),
     });
   }

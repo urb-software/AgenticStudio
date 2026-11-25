@@ -269,6 +269,10 @@ export const zMoveAgentDraftFileRequest = z.object({
     to: z.string().min(1).max(255)
 });
 
+export const zRevertAgentDraftFileRequest = z.object({
+    path: z.string().min(1).max(255)
+});
+
 export const zAgentProblemOutput = z.object({
     code: z.enum([
         'entry_missing',
@@ -1615,6 +1619,10 @@ export const zSaveAgentDraftFileResponse = zAgentDraftOutput;
 export const zMoveAgentDraftFileBody = zMoveAgentDraftFileRequest;
 
 export const zMoveAgentDraftFileResponse = zAgentDraftOutput;
+
+export const zRevertAgentDraftFileBody = zRevertAgentDraftFileRequest;
+
+export const zRevertAgentDraftFileResponse = zAgentDraftOutput;
 
 export const zListAgentsResponse = zAgentListOutput;
 

@@ -121,10 +121,14 @@ export interface CommitBlobRead {
   outcome: CommitBlobOutcome;
 }
 
-/** The Git object name of the regular file at a path of a commit; `null` when it names none. */
+/**
+ * The Git object name of the regular file at a path of a commit, and whether its mode is
+ * executable; `null` and `false` when the path names none.
+ */
 export interface CommitBlobId {
   path: string;
   blob: string | null;
+  executable: boolean;
 }
 
 export type GitFailureReason = Exclude<RepositoryFailureCode, 'interrupted'>;

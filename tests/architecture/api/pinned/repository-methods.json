@@ -3,7 +3,10 @@
   "repositories": {
     "agents/AgentDraftRepository": {
       "find": { "kind": "load" },
-      "save": { "kind": "save" },
+      "save": {
+        "kind": "atomic",
+        "reason": "A version-conditional write: one transaction updates the head row only where the stored version is the one the entity was loaded at, which also takes the row lock, then replaces the files, so two writes never both succeed from the same version."
+      },
       "findContent": { "kind": "query" },
       "findContents": { "kind": "query" }
     },

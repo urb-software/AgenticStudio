@@ -38,6 +38,9 @@ export interface AgentDraftView {
   movedUpstream: string[];
 }
 
+/** How often a write retries its whole load, change and save when another write got in first. */
+export const DRAFT_WRITE_ATTEMPTS = 3;
+
 // A BOM is kept, as Git's own text read keeps it.
 const LENIENT_UTF8 = new TextDecoder('utf-8', { ignoreBOM: true });
 
@@ -161,9 +164,15 @@ export class AgentDraftReader {
       this.definitions.blobIds(currentCommit, paths),
     ]);
     if (atBase.status !== 'read' || atCurrent.status !== 'read') return [];
-    const current = new Map(atCurrent.blobs.map((entry) => [entry.path, entry.blob]));
+    // Equal content with another Git mode (the executable bit) is a change too.
+    const current = new Map(atCurrent.blobs.map((entry) => [entry.path, entry]));
     return atBase.blobs
-      .filter((entry) => (current.get(entry.path) ?? null) !== entry.blob)
+      .filter((entry) => {
+        const now = current.get(entry.path);
+        return (
+          (now?.blob ?? null) !== entry.blob || (now?.executable ?? false) !== entry.executable
+        );
+      })
       .map((entry) => entry.path)
       .sort();
   }

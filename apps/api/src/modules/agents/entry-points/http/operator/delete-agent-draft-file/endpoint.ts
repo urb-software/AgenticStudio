@@ -19,16 +19,20 @@ export class DeleteAgentDraftFileEndpoint {
   @ApiOperation({
     operationId: 'deleteAgentDraftFile',
     description:
-      'Drops the Draft change at the path (an added file goes, a modified file reverts to the ' +
-      'base, a deleted file comes back), or, where the Draft has no change there, marks the file ' +
-      'of the base commit deleted. Dropping the last change empties the Draft. A symbolic link ' +
-      'or a submodule at the base cannot be deleted. The answer is the new Draft.',
+      'Marks the path deleted in one call: a file the base commit holds is marked deleted ' +
+      '(a content change the Draft holds for it is dropped), and a file only the Draft holds ' +
+      'simply disappears. A symbolic link or a submodule at the base cannot be deleted. To ' +
+      'return a file to what the base commit has, use the revert route. The answer is the new ' +
+      'Draft.',
   })
   @ZodResponse({ status: 200, type: AgentDraftResponseDto })
   @ApiProblemResponses({
     400: 'Invalid path',
-    404: `No file at the path in the Draft or at the base commit (${AGENTS_PROBLEM_TYPES.agentFileNotFound})`,
-    409: `The Repository has no fetched commit to base the Draft on (${AGENTS_PROBLEM_TYPES.draftNoBase})`,
+    404: `No file at the path, or the Draft already deletes it (${AGENTS_PROBLEM_TYPES.agentFileNotFound})`,
+    409:
+      `The Repository has no fetched commit to base the Draft on (${AGENTS_PROBLEM_TYPES.draftNoBase}), ` +
+      `the commit the Draft began from is gone (${AGENTS_PROBLEM_TYPES.draftBaseMissing}) or other writes ` +
+      `kept changing the Draft (${AGENTS_PROBLEM_TYPES.draftConflict})`,
     422:
       `The path is a link or a submodule (${AGENTS_PROBLEM_TYPES.draftPathNotWritable}) or the ` +
       `Draft would change more than 200 files (${AGENTS_PROBLEM_TYPES.draftTooManyFiles})`,

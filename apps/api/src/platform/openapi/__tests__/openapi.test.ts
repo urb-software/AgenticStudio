@@ -189,6 +189,7 @@ describe('OpenAPI document', () => {
       [`${base}/files`, 'put', 'saveAgentDraftFile'],
       [`${base}/files`, 'delete', 'deleteAgentDraftFile'],
       [`${base}/files/move`, 'post', 'moveAgentDraftFile'],
+      [`${base}/files/revert`, 'post', 'revertAgentDraftFile'],
     ] as const) {
       const operation = document.paths[path]?.[method];
       expect(operation?.operationId).toBe(operationId);

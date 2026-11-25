@@ -17,6 +17,8 @@ export const AGENTS_PROBLEM_TYPES = {
   draftPathConflict: 'urn:agentic-studio:problem:agent-draft-path-conflict',
   draftMoveUnsupported: 'urn:agentic-studio:problem:agent-draft-move-unsupported',
   draftNoBase: 'urn:agentic-studio:problem:agent-draft-no-base',
+  draftConflict: 'urn:agentic-studio:problem:agent-draft-conflict',
+  draftBaseMissing: 'urn:agentic-studio:problem:agent-draft-base-missing',
 } as const;
 
 /** 404 for a project id that names no project (also one that is not a UUID). */
@@ -146,5 +148,24 @@ export function draftNoBase(): ProblemException {
     type: AGENTS_PROBLEM_TYPES.draftNoBase,
     title: 'No commit to base a Draft on',
     detail: 'The definitions Repository has no fetched commit yet.',
+  });
+}
+
+/** 409 when other writes kept changing the Draft and every attempt of this one lost the race. */
+export function draftConflict(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: AGENTS_PROBLEM_TYPES.draftConflict,
+    title: 'Draft changed',
+    detail: 'The Draft was changed by another write while this change was being made. Try again.',
+  });
+}
+
+/** 409 when the commit the Draft began from is gone from the Clone: the Draft can only be discarded. */
+export function draftBaseMissing(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: AGENTS_PROBLEM_TYPES.draftBaseMissing,
+    title: 'Draft base is gone',
+    detail:
+      'The commit the Draft began from is gone from the Clone. Discard the Draft or apply its changes again.',
   });
 }

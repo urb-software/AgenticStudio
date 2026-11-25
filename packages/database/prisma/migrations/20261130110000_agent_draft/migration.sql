@@ -36,3 +36,6 @@ ALTER TABLE "agent_draft_files" ADD CONSTRAINT "agent_draft_files_content_check"
 
 ALTER TABLE "agent_draft_files" ADD CONSTRAINT "agent_draft_files_moved_from_check"
     CHECK ("moved_from" IS NULL OR "change" <> 'deleted');
+
+-- The one Draft always has its row, so a write can be conditional on its version.
+INSERT INTO "agent_drafts" ("id", "version", "updated_at") VALUES (1, 0, now());

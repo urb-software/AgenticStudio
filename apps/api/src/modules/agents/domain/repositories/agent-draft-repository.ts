@@ -7,9 +7,9 @@ export interface AgentDraftRepository {
   find(): Promise<AgentDraft>;
 
   /**
-   * Stores the Draft as the entity holds it. `contents` has the bytes of every file this change
-   * added or modified, by path; a file of the Draft that is not in it keeps the bytes it has.
-   * Files the entity no longer holds are removed.
+   * Stores the Draft as the entity holds it, only while the stored version is the one it was
+   * loaded at (else `DraftChangedConcurrentlyError`). `contents` has the bytes of every file this
+   * change added or modified; other files keep theirs, and files the entity dropped are removed.
    */
   save(draft: AgentDraft, contents: ReadonlyMap<string, Uint8Array>): Promise<void>;
 
