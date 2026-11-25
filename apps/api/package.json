@@ -15,6 +15,7 @@
     "auth:hash-password": "nest build && node dist/platform/auth/hash-password.js"
   },
   "dependencies": {
+    "@agentic-studio/agent-definitions": "workspace:*",
     "@agentic-studio/compose-validation": "workspace:*",
     "@agentic-studio/contracts": "workspace:*",
     "@agentic-studio/database": "workspace:*",

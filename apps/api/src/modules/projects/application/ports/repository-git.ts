@@ -86,6 +86,27 @@ export type CommitArchiveOutcome =
   | { status: 'commit_missing' }
   | { status: 'too_large' };
 
+/**
+ * One tracked item below a folder of a commit. `kind` is `file` (regular, also executable),
+ * `symlink`, `submodule` or `other`; `size` is the blob's size in bytes, 0 for a non-blob.
+ */
+export interface CommitTreeEntry {
+  path: string;
+  kind: 'file' | 'symlink' | 'submodule' | 'other';
+  size: number;
+}
+
+/** `truncated`: more than the limit of entries (or of output) existed; only the first are listed. */
+export interface CommitTree {
+  entries: CommitTreeEntry[];
+  truncated: boolean;
+}
+
+export interface CommitFileRead {
+  path: string;
+  outcome: CommitFileOutcome;
+}
+
 export type GitFailureReason = Exclude<RepositoryFailureCode, 'interrupted'>;
 
 export const GIT_FAILURE_REASONS: readonly GitFailureReason[] = REPOSITORY_FAILURE_CODES.filter(
@@ -196,6 +217,32 @@ export interface RepositoryGit {
     maxBytes: number,
     options?: GitOperationOptions,
   ): Promise<CommitFileOutcome>;
+
+  /**
+   * Everything tracked below the safe relative folder `directory` in `commit` (recursively, no
+   * working tree), at most `maxEntries` of them, in path order. Throws the errors of
+   * {@link RepositoryGit.readFileAtCommit}.
+   */
+  listTreeAtCommit(
+    projectId: string,
+    commit: string,
+    directory: string,
+    maxEntries: number,
+    options?: GitOperationOptions,
+  ): Promise<CommitTree>;
+
+  /**
+   * {@link RepositoryGit.readFileAtCommit} for several paths in one operation, answering in the
+   * order given. A path that is unsafe, or names no regular file, is `missing` rather than an
+   * error. Throws the errors of {@link RepositoryGit.readFileAtCommit} for the commit and Clone.
+   */
+  readFilesAtCommit(
+    projectId: string,
+    commit: string,
+    paths: readonly string[],
+    maxBytes: number,
+    options?: GitOperationOptions,
+  ): Promise<CommitFileRead[]>;
 
   /**
    * The tracked tree of `commit` as a tar archive of at most `maxBytes`, built from the Clone's

@@ -13,6 +13,7 @@ export const PROBLEM_CODES = [
   'model_unknown',
   'name_invalid',
   'name_mismatch',
+  'name_reserved',
   'unknown_key',
   'forbidden_key',
   'instructions_too_large',
@@ -63,6 +64,7 @@ const MESSAGES: Record<ProblemCode, (place: string) => string> = {
   name_invalid: () =>
     'The name must be 1 to 64 characters: lower-case letters, digits and "-", starting with a ' +
     'letter or digit.',
+  name_reserved: () => 'The name is reserved by Studio.',
   name_mismatch: () => "The name differs from the agent folder's name.",
   unknown_key: (key) => `The key ${key} is not known.`,
   forbidden_key: (key) =>

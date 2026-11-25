@@ -3,6 +3,7 @@ import { APP_CONFIG, type AppConfig } from '../../platform/config/config.js';
 import { DatabaseModule } from '../../platform/database/database.module.js';
 import { SecretsModule } from '../../platform/secrets/secrets.module.js';
 import {
+  DEFINITIONS_FILES,
   DEFINITIONS_REPOSITORIES,
   PROJECT_KINDS,
   RUN_BRANCH_REVIEWS,
@@ -14,6 +15,9 @@ import {
   RUN_START_POINTS,
 } from './contracts/index.js';
 import { GetDefinitionsRepositoryStateHandler } from './application/features/get-definitions-repository-state/handler.js';
+import { ListDefinitionsTreeHandler } from './application/features/list-definitions-tree/handler.js';
+import { ReadDefinitionsFilesHandler } from './application/features/read-definitions-files/handler.js';
+import { ProjectDefinitionsFiles } from './entry-points/contracts/definitions-files.js';
 import { ProjectDefinitionsRepositories } from './entry-points/contracts/definitions-repositories.js';
 import { GetDefinitionsProjectIdHandler } from './application/features/get-definitions-project-id/handler.js';
 import { GetProjectKindHandler } from './application/features/get-project-kind/handler.js';
@@ -257,12 +261,16 @@ export class ProjectsModule {
         GetDefinitionsProjectIdHandler,
         GetDefinitionsRepositoryStateHandler,
         { provide: DEFINITIONS_REPOSITORIES, useClass: ProjectDefinitionsRepositories },
+        ListDefinitionsTreeHandler,
+        ReadDefinitionsFilesHandler,
+        { provide: DEFINITIONS_FILES, useClass: ProjectDefinitionsFiles },
         { provide: PROJECT_KINDS, useClass: ProjectProjectKinds },
         { provide: RUN_PREVIEW_SOURCES, useClass: ProjectRunPreviewSources },
       ],
       exports: [
         PROJECT_KINDS,
         DEFINITIONS_REPOSITORIES,
+        DEFINITIONS_FILES,
         RUN_START_POINTS,
         RUN_ENVIRONMENT_FILES,
         RUN_BRANCH_REVIEWS,
