@@ -14,6 +14,7 @@ import { useAgents } from '../../api/agents-queries';
 import { Problems } from '../../components/problems';
 import { AgentDetail } from '../agent-detail/agent-detail';
 import { BaseRules } from '../base-rules/base-rules';
+import { ProviderModels } from '../provider-models/provider-models';
 
 const READ_REQUEST = 'GET /api/agents';
 const TITLE_ID = 'agents-title';
@@ -200,6 +201,7 @@ export function AgentList() {
           </ul>
         </CardContent>
       </Card>
+      <ProviderModels />
       <BaseRules version={data.baseRules.version} text={data.baseRules.text} />
     </>
   );

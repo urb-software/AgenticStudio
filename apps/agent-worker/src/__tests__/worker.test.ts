@@ -28,6 +28,7 @@ import {
   type StartRunStepInput,
   UsageLimitError,
 } from '../runner.js';
+import { ModelNotAllowedError, ModelRefusedError } from '../model-option.js';
 import { ProviderDisabledError } from '../provider-gate.js';
 import type { LookupService } from '../pull-request-lookups.js';
 import { type ComputedRunDiff, type RunDiffPort, RunDiffUnavailableError } from '../run-diff.js';
@@ -1087,6 +1088,32 @@ describe('AgentWorker', () => {
 
     expect(api.reports()[1]?.[2]).toMatchObject({ state: 'failed', failure: { code: 'unknown' } });
     expect(JSON.stringify(api.reports()[1])).not.toContain('crashed');
+  });
+
+  it.each([
+    [new ModelNotAllowedError('claude_code', 'gpt-6-luna'), 'model_not_allowed'],
+    [new ModelRefusedError('opus', 'Its error output: no access to it.'), 'model_refused'],
+  ])('reports %s as its own failure code', async (error, code) => {
+    const refused: Runner = {
+      async *start(): RunStep {
+        yield { type: 'notice', text: 'About to start.' };
+        throw error;
+      },
+      resume: () => {
+        throw new Error('not used');
+      },
+    };
+    const run = payload('x');
+    const api = new RecordingApi([run]);
+    startWorker(api, refused);
+
+    await until(() => api.reports().length === 2);
+
+    expect(api.reports()[1]).toEqual([
+      'state',
+      run.runId,
+      { state: 'failed', failure: { code, detail: error.message }, workingCopy: REPORT },
+    ]);
   });
 
   it('reports a usage limit as usage_limit, with the session to resume later', async () => {

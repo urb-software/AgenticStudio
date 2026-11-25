@@ -115,6 +115,21 @@ describe('Run response: conversation', () => {
     expect(item).toMatchObject({ id: run.id, state: 'waiting_for_operator' });
   });
 
+  it('shows the model of the Run on a list item too, without the instructions', () => {
+    const named = {
+      ...run,
+      agent: { ...run.agent, model: 'gpt-6.2-sol', instructions: 'Review.' },
+    };
+
+    expect(toRunResponse(named).agent).toMatchObject({
+      model: 'gpt-6.2-sol',
+      instructions: 'Review.',
+    });
+    const { agent } = toRunListItem(named);
+    expect(agent.model).toBe('gpt-6.2-sol');
+    expect(agent).not.toHaveProperty('instructions');
+  });
+
   it('shows the Task alone before any question', () => {
     expect(
       toRunResponse({ ...run, state: 'running', question: null, messages: [] }).messages,

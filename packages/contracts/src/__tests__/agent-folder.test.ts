@@ -72,4 +72,17 @@ describe('the agent folder hand-over', () => {
       'urn:agentic-studio:problem:agent-folder-invalid',
     );
   });
+
+  it('has two failure codes for the model, which the worker may report', () => {
+    for (const code of ['model_not_allowed', 'model_refused']) {
+      expect(RUN_FAILURE_CODES).toContain(code);
+      expect(
+        reportRunStateRequestSchema.safeParse({
+          workerId: WORKER,
+          state: 'failed',
+          failure: { code, detail: 'x' },
+        }).success,
+      ).toBe(true);
+    }
+  });
 });

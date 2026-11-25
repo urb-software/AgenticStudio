@@ -420,7 +420,7 @@ export type RunOutput = {
     startedAt?: string;
     finishedAt?: string;
     failure?: {
-        code: 'provider_disabled' | 'preparation_failed' | 'agent_failed' | 'usage_limit' | 'worker_lost' | 'delivery_failed' | 'step_limit' | 'agent_folder_unavailable' | 'agent_folder_invalid' | 'unknown';
+        code: 'provider_disabled' | 'preparation_failed' | 'agent_failed' | 'usage_limit' | 'worker_lost' | 'delivery_failed' | 'step_limit' | 'agent_folder_unavailable' | 'agent_folder_invalid' | 'model_not_allowed' | 'model_refused' | 'unknown';
         detail: string;
     };
     runBranch?: string;
@@ -582,7 +582,7 @@ export type RunMessageOutput = {
 
 export type RunPartEndOutput = {
     state: 'succeeded' | 'failed' | 'cancelled' | 'timed_out';
-    failureCode?: 'provider_disabled' | 'preparation_failed' | 'agent_failed' | 'usage_limit' | 'worker_lost' | 'delivery_failed' | 'step_limit' | 'agent_folder_unavailable' | 'agent_folder_invalid' | 'unknown';
+    failureCode?: 'provider_disabled' | 'preparation_failed' | 'agent_failed' | 'usage_limit' | 'worker_lost' | 'delivery_failed' | 'step_limit' | 'agent_folder_unavailable' | 'agent_folder_invalid' | 'model_not_allowed' | 'model_refused' | 'unknown';
     delivery?: 'none' | 'delivered' | 'failed';
 };
 
@@ -782,6 +782,10 @@ export type ProviderAvailabilityOutput = {
     name: string;
     available: boolean;
     reason?: string;
+    /**
+     * The models an agent may name for this provider; `default` is the CLI own.
+     */
+    models: Array<string>;
 };
 
 export type ProviderListOutput = Array<ProviderAvailabilityOutput>;

@@ -4803,6 +4803,8 @@
                   "step_limit",
                   "agent_folder_unavailable",
                   "agent_folder_invalid",
+                  "model_not_allowed",
+                  "model_refused",
                   "unknown"
                 ]
               },
@@ -5535,6 +5537,8 @@
               "step_limit",
               "agent_folder_unavailable",
               "agent_folder_invalid",
+              "model_not_allowed",
+              "model_refused",
               "unknown"
             ]
           },
@@ -6406,12 +6410,20 @@
           },
           "reason": {
             "type": "string"
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The models an agent may name for this provider; `default` is the CLI own."
           }
         },
         "required": [
           "id",
           "name",
-          "available"
+          "available",
+          "models"
         ],
         "additionalProperties": false
       },

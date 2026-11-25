@@ -33,6 +33,7 @@ import {
   AgentFolderUnavailableError,
   type PlacedAgentFolder,
 } from './agent-folder.js';
+import { ModelNotAllowedError, ModelRefusedError } from './model-option.js';
 import { AgentFailedError, drainRunStep, type Runner, UsageLimitError } from './runner.js';
 import { StepProcesses } from './step-processes.js';
 import { isRunLost, type StudioApi } from './studio-api.js';
@@ -990,6 +991,8 @@ function failureOf(error: unknown): RunFailure {
   if (error instanceof AgentFolderTransientError) {
     return failure('preparation_failed', error.message);
   }
+  if (error instanceof ModelNotAllowedError) return failure('model_not_allowed', error.message);
+  if (error instanceof ModelRefusedError) return failure('model_refused', error.message);
   if (error instanceof AgentFailedError) return failure('agent_failed', error.message);
   // The agent ended without resolving the conflicts; the merge was aborted.
   if (error instanceof MergeIncompleteError) return failure('agent_failed', error.message);

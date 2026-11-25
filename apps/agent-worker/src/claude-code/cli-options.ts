@@ -1,5 +1,6 @@
 import type { ResumeReason } from '@agentic-studio/contracts';
 import { posix } from 'node:path';
+import { modelOption } from '../model-option.js';
 import {
   PROVIDER_PASSED_VARIABLES,
   type ProviderEnvironmentInput,
@@ -100,6 +101,8 @@ export interface ClaudeArgumentsInput {
   sessionRef?: string;
   /** The sanitized plugin of the repository's skills and subagents; absent when it is empty. */
   pluginDir?: string;
+  /** The Run's recorded model: a value of the Provider's list; `default` adds no option. */
+  model?: string;
 }
 
 /**
@@ -133,6 +136,7 @@ export function claudeArguments(input: ClaudeArgumentsInput): string[] {
     '--json-schema',
     input.jsonSchema,
     ...(input.pluginDir === undefined ? [] : ['--plugin-dir', input.pluginDir]),
+    ...modelOption('claude_code', input.model),
   ];
 }
 

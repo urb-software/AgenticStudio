@@ -1,6 +1,7 @@
 import {
   BASE_RULES,
   jsonByteLength,
+  PROVIDER_MODELS,
   RUN_STEP_RESULT_MAX_BYTES,
   WORKING_COPY_REPORT_MAX_BYTES,
 } from '@agentic-studio/contracts';
@@ -383,8 +384,13 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
 
       expect(response.status).toBe(200);
       expect(response.body).toEqual([
-        { id: 'claude_code', name: 'Claude Code', available: true },
-        { id: 'codex', name: 'Codex', available: true },
+        {
+          id: 'claude_code',
+          name: 'Claude Code',
+          available: true,
+          models: [...PROVIDER_MODELS.claude_code],
+        },
+        { id: 'codex', name: 'Codex', available: true, models: [...PROVIDER_MODELS.codex] },
       ]);
     });
 
@@ -393,8 +399,19 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       expect((await workerStatus({ claude_code: true, codex: false })).status).toBe(204);
 
       expect((await providers()).body).toEqual([
-        { id: 'claude_code', name: 'Claude Code', available: true },
-        { id: 'codex', name: 'Codex', available: false, reason: SWITCHED_OFF },
+        {
+          id: 'claude_code',
+          name: 'Claude Code',
+          available: true,
+          models: [...PROVIDER_MODELS.claude_code],
+        },
+        {
+          id: 'codex',
+          name: 'Codex',
+          available: false,
+          reason: SWITCHED_OFF,
+          models: [...PROVIDER_MODELS.codex],
+        },
       ]);
       const refused = await startRun(project.id, { task: 'x', provider: 'codex' });
       expectProblem(refused, 409, PROBLEM.providerUnavailable);
@@ -428,8 +445,14 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       expect(call.status).toBe(204);
 
       expect((await providers()).body).toEqual([
-        { id: 'claude_code', name: 'Claude Code', available: false, reason },
-        { id: 'codex', name: 'Codex', available: true },
+        {
+          id: 'claude_code',
+          name: 'Claude Code',
+          available: false,
+          reason,
+          models: [...PROVIDER_MODELS.claude_code],
+        },
+        { id: 'codex', name: 'Codex', available: true, models: [...PROVIDER_MODELS.codex] },
       ]);
       const refused = await startRun(project.id, { task: 'x', provider: 'claude_code' });
       expectProblem(refused, 409, PROBLEM.providerUnavailable);
@@ -444,8 +467,20 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       advance(1);
 
       expect((await providers()).body).toEqual([
-        { id: 'claude_code', name: 'Claude Code', available: false, reason: NO_WORKER },
-        { id: 'codex', name: 'Codex', available: false, reason: NO_WORKER },
+        {
+          id: 'claude_code',
+          name: 'Claude Code',
+          available: false,
+          reason: NO_WORKER,
+          models: [...PROVIDER_MODELS.claude_code],
+        },
+        {
+          id: 'codex',
+          name: 'Codex',
+          available: false,
+          reason: NO_WORKER,
+          models: [...PROVIDER_MODELS.codex],
+        },
       ]);
       const refused = await startRun(project.id, { task: 'x', provider: 'claude_code' });
       expectProblem(refused, 409, PROBLEM.providerUnavailable);
@@ -462,8 +497,20 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
           .get('/api/providers')
           .set('Cookie', await signIn(fresh));
         expect(response.body).toEqual([
-          { id: 'claude_code', name: 'Claude Code', available: false, reason: NO_WORKER },
-          { id: 'codex', name: 'Codex', available: false, reason: NO_WORKER },
+          {
+            id: 'claude_code',
+            name: 'Claude Code',
+            available: false,
+            reason: NO_WORKER,
+            models: [...PROVIDER_MODELS.claude_code],
+          },
+          {
+            id: 'codex',
+            name: 'Codex',
+            available: false,
+            reason: NO_WORKER,
+            models: [...PROVIDER_MODELS.codex],
+          },
         ]);
       } finally {
         await fresh.close();

@@ -54,6 +54,8 @@ export const RUN_FAILURE_CODES = [
   'step_limit',
   'agent_folder_unavailable',
   'agent_folder_invalid',
+  'model_not_allowed',
+  'model_refused',
   'unknown',
 ] as const;
 export const runFailureCodeSchema = z.enum(RUN_FAILURE_CODES);
@@ -236,7 +238,7 @@ export const runAgentPayloadSchema = z
     /** The definitions Repository commit the agent was read at; null for a built-in agent. */
     commit: commitIdSchema.nullable(),
     provider: providerSchema,
-    /** Recorded and carried; the runners do not pass it to the CLI yet. */
+    /** One of the Provider's models (PROVIDER_MODELS); the runners pass it to the CLI, `default` as no option. */
     model: z.string().min(1).max(64),
     instructions: z.string().refine(withinBytes(AGENT_INSTRUCTIONS_MAX_BYTES), {
       message: 'The instructions are longer than the definitions limit in bytes.',

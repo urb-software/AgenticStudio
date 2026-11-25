@@ -1,5 +1,6 @@
 import type { ResumeReason } from '@agentic-studio/contracts';
 import { posix } from 'node:path';
+import { modelOption } from '../model-option.js';
 import {
   PROVIDER_PASSED_VARIABLES,
   type ProviderEnvironmentInput,
@@ -122,6 +123,8 @@ export interface CodexArgumentsInput {
   workingCopy: string;
   sandbox: CodexSandboxMode;
   files: ReturnType<typeof codexStepFiles>;
+  /** The Run's recorded model: a value of the Provider's list; `default` adds no option. */
+  model?: string;
 }
 
 /**
@@ -132,6 +135,7 @@ export interface CodexArgumentsInput {
 export function codexStartArguments(input: CodexArgumentsInput): string[] {
   return [
     ...common(input.workingCopy, input.sandbox),
+    ...modelOption('codex', input.model),
     '--output-schema',
     input.files.schemaFile,
     '--output-last-message',
@@ -147,7 +151,13 @@ export function codexStartArguments(input: CodexArgumentsInput): string[] {
 export function codexResumeArguments(
   input: CodexArgumentsInput & { sessionRef: string },
 ): string[] {
-  return [...common(input.workingCopy, input.sandbox), 'resume', input.sessionRef, '-'];
+  return [
+    ...common(input.workingCopy, input.sandbox),
+    ...modelOption('codex', input.model),
+    'resume',
+    input.sessionRef,
+    '-',
+  ];
 }
 
 /**

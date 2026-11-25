@@ -150,6 +150,19 @@ export async function runAgentPhase(options) {
     'the record on the Run changed while it ran',
   );
 
+  // The model of the Run: on the Runs list, and the Providers answer lists each Provider's models.
+  const runs = await call('/api/runs');
+  assert(runs.status === 200, `the Runs list answered ${runs.status}`);
+  const item = runs.body.find((run) => run.id === runId);
+  assert(item?.agent.model === 'opus', `the Runs list shows ${JSON.stringify(item?.agent)}`);
+  const providers = await call('/api/providers');
+  assert(providers.status === 200, `the Providers answered ${providers.status}`);
+  const claude = providers.body.find((provider) => provider.id === 'claude_code');
+  assert(
+    JSON.stringify(claude?.models) === JSON.stringify(['default', 'opus', 'sonnet', 'haiku']),
+    `the models of Claude Code are ${JSON.stringify(claude?.models)}`,
+  );
+
   // What the fake runner received, as it logged it: the agent, the commit, the version of the
   // base rules from the claim, and the size and digest of the instructions (never their text).
   const log = await call(`/api/runs/${runId}/events?limit=1000`);
