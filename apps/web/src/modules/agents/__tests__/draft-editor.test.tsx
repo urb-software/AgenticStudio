@@ -700,15 +700,36 @@ describe('Draft editing: unsaved edits are visible and discardable', () => {
     expect(clean.defaultPrevented).toBe(false);
   });
 
-  it('drops an unsaved edit of a file that no longer exists, so the leave guard clears', async () => {
+  it('keeps an unsaved edit of a file that no longer exists, with a note and a discard', async () => {
     window.sessionStorage.setItem('agent-editor:buffer:agents/gone/AGENT.md', 'orphan');
     setup({ path: AGENT_PATH });
     await screen.findByRole('navigation', { name: 'Files' });
 
-    await waitFor(() => expect(screen.queryByText('Unsaved edits')).toBeNull());
+    expect(await screen.findByText(/no longer exists in the Draft or the Repository/)).toBeTruthy();
     const event = new Event('beforeunload', { cancelable: true });
     window.dispatchEvent(event);
-    expect(event.defaultPrevented).toBe(false);
+    expect(event.defaultPrevented).toBe(true);
+
+    await userEvent
+      .setup()
+      .click(screen.getByRole('button', { name: 'Discard unsaved edit of agents/gone/AGENT.md' }));
+    await waitFor(() => expect(screen.queryByText('Unsaved edits')).toBeNull());
+  });
+
+  it('writes edits to storage on pagehide and beforeunload without waiting for the pause', async () => {
+    setup({ path: AGENT_PATH });
+    const user = userEvent.setup();
+    const editor = await startEditing(user);
+    fireEvent.change(editor, { target: { value: 'quick' } });
+    expect(window.sessionStorage.length).toBe(0);
+    window.dispatchEvent(new Event('pagehide'));
+    expect(window.sessionStorage.length).toBe(1);
+
+    fireEvent.change(screen.getByRole('textbox', { name: /^File / }), {
+      target: { value: 'again' },
+    });
+    window.dispatchEvent(new Event('beforeunload', { cancelable: true }));
+    expect(window.sessionStorage.getItem(`agent-editor:buffer:${AGENT_PATH}`)).toBe('again');
   });
 
   it('keeps edits out of storage until typing pauses, and says when storage refuses', async () => {

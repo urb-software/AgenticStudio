@@ -160,7 +160,16 @@ function EditorBody() {
     const timer = setTimeout(() => setStorageFailed(!syncBuffers(buffers)), TYPING_DELAY_MS);
     return () => clearTimeout(timer);
   }, [buffers]);
-  useEffect(() => () => void syncBuffers(buffersRef.current), []);
+  useEffect(() => {
+    const flush = () => void syncBuffers(buffersRef.current);
+    window.addEventListener('pagehide', flush);
+    window.addEventListener('beforeunload', flush);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      window.removeEventListener('beforeunload', flush);
+      flush();
+    };
+  }, []);
   const settled = useDebouncedValue(buffers, TYPING_DELAY_MS);
 
   // The first answer is what the view shows until it is reloaded or a write of this tab replaces
@@ -178,13 +187,9 @@ function EditorBody() {
     [files.data, draft?.files],
   );
 
-  // An unsaved edit of a file that is gone (reverted elsewhere, say) cannot be saved or shown.
-  if (files.data && !files.data.truncated && draftQuery.data) {
-    const known = new Set(entries.filter((item) => item.change !== 'deleted').map((i) => i.path));
-    if (Object.keys(buffers).some((buffered) => !known.has(buffered))) {
-      setBuffers(Object.fromEntries(Object.entries(buffers).filter(([name]) => known.has(name))));
-    }
-  }
+  // An unsaved edit of a file that is gone (reverted elsewhere, say) is real text: it stays listed.
+  const known = new Set(entries.filter((item) => item.change !== 'deleted').map((i) => i.path));
+  const listComplete = files.data !== undefined && !files.data.truncated && draftQuery.isSuccess;
   const nodes = useMemo(() => buildTree(entries), [entries]);
   const baseAgents = useMemo(
     () =>
@@ -631,6 +636,11 @@ function EditorBody() {
                       >
                         {buffered}
                       </button>
+                      {listComplete && !known.has(buffered) ? (
+                        <span className="text-text-muted">
+                          This file no longer exists in the Draft or the Repository.
+                        </span>
+                      ) : null}
                       <Button
                         size="sm"
                         variant="ghost"

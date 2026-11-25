@@ -1,8 +1,8 @@
 /* Agent Studio — shadcn/ui theme for Next.js (Tailwind v4).
    Drop in as app/globals.css. Dark is the default: <html class="dark">.
    Source of truth: tokens.json in the Agent Studio design system. */
-@import "tailwindcss";
-@import "tw-animate-css";
+@import 'tailwindcss';
+@import 'tw-animate-css';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -20,21 +20,29 @@
   --text-dim: #686872;
   --code-bg: #fbfbfc;
 
-  --brand: #6d28d9;              /* token: accent (text/icons) */
-  --brand-solid: #7c3aed;        /* token: accent-solid */
+  --brand: #6d28d9; /* token: accent (text/icons) */
+  --brand-solid: #7c3aed; /* token: accent-solid */
   --brand-solid-hover: #6d28d9;
   --on-brand: #ffffff;
   --brand-soft: rgba(124, 58, 237, 0.09);
   --brand-tint: #e9dffc;
 
-  --run-queued: #52525b;    --run-queued-soft: rgba(113, 113, 122, 0.11);
-  --run-running: #1d4ed8;   --run-running-soft: rgba(37, 99, 235, 0.09);
-  --run-awaiting: #92400e;  --run-awaiting-soft: rgba(217, 119, 6, 0.11);
-  --run-succeeded: #166534; --run-succeeded-soft: rgba(22, 163, 74, 0.1);
-  --run-failed: #b91c1c;    --run-failed-soft: rgba(220, 38, 38, 0.09);
+  --run-queued: #52525b;
+  --run-queued-soft: rgba(113, 113, 122, 0.11);
+  --run-running: #1d4ed8;
+  --run-running-soft: rgba(37, 99, 235, 0.09);
+  --run-awaiting: #92400e;
+  --run-awaiting-soft: rgba(217, 119, 6, 0.11);
+  --run-succeeded: #166534;
+  --run-succeeded-soft: rgba(22, 163, 74, 0.1);
+  --run-failed: #b91c1c;
+  --run-failed-soft: rgba(220, 38, 38, 0.09);
   --run-cancelled: #686872;
   --danger-solid: #dc2626;
-  --dot-green: #16a34a; --dot-blue: #2563eb; --dot-amber: #d97706; --dot-red: #dc2626;
+  --dot-green: #16a34a;
+  --dot-blue: #2563eb;
+  --dot-amber: #d97706;
+  --dot-red: #dc2626;
 
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.1);
   --shadow-float: 0 12px 40px rgba(0, 0, 0, 0.12);
@@ -95,14 +103,22 @@
   --brand-soft: rgba(139, 92, 246, 0.15);
   --brand-tint: #2a1f45;
 
-  --run-queued: #a1a1aa;    --run-queued-soft: rgba(161, 161, 170, 0.13);
-  --run-running: #7cb4fb;   --run-running-soft: rgba(96, 165, 250, 0.15);
-  --run-awaiting: #fbbf24;  --run-awaiting-soft: rgba(251, 191, 36, 0.13);
-  --run-succeeded: #5ee38f; --run-succeeded-soft: rgba(74, 222, 128, 0.12);
-  --run-failed: #fb8585;    --run-failed-soft: rgba(248, 113, 113, 0.13);
+  --run-queued: #a1a1aa;
+  --run-queued-soft: rgba(161, 161, 170, 0.13);
+  --run-running: #7cb4fb;
+  --run-running-soft: rgba(96, 165, 250, 0.15);
+  --run-awaiting: #fbbf24;
+  --run-awaiting-soft: rgba(251, 191, 36, 0.13);
+  --run-succeeded: #5ee38f;
+  --run-succeeded-soft: rgba(74, 222, 128, 0.12);
+  --run-failed: #fb8585;
+  --run-failed-soft: rgba(248, 113, 113, 0.13);
   --run-cancelled: #8b8b95;
   --danger-solid: #dc2626;
-  --dot-green: #22c55e; --dot-blue: #3b82f6; --dot-amber: #f59e0b; --dot-red: #ef4444;
+  --dot-green: #22c55e;
+  --dot-blue: #3b82f6;
+  --dot-amber: #f59e0b;
+  --dot-red: #ef4444;
 
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.25);
   --shadow-float: 0 12px 40px rgba(0, 0, 0, 0.5);
@@ -188,40 +204,97 @@
   --shadow-xs: var(--shadow-xs);
   --shadow-float: var(--shadow-float);
 
-  --text-page-title: 24px;   --text-page-title--line-height: 30px;
-  --text-section-title: 16px; --text-section-title--line-height: 22px;
-  --text-body: 14px;         --text-body--line-height: 20px;
-  --text-label: 13.5px;      --text-label--line-height: 20px;
-  --text-small: 13px;        --text-small--line-height: 18px;
-  --text-caption: 12px;      --text-caption--line-height: 16px;
-  --text-code: 12.5px;       --text-code--line-height: 20px;
+  --text-page-title: 24px;
+  --text-page-title--line-height: 30px;
+  --text-section-title: 16px;
+  --text-section-title--line-height: 22px;
+  --text-body: 14px;
+  --text-body--line-height: 20px;
+  --text-label: 13.5px;
+  --text-label--line-height: 20px;
+  --text-small: 13px;
+  --text-small--line-height: 18px;
+  --text-caption: 12px;
+  --text-caption--line-height: 16px;
+  --text-code: 12.5px;
+  --text-code--line-height: 20px;
 
   --animate-pulse-dot: pulse-dot 1.4s ease-in-out infinite;
-  @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+  @keyframes pulse-dot {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.35;
+    }
+  }
 }
 
 @layer base {
-  * { @apply border-border outline-ring/50; }
-  html { color-scheme: light; }
-  html.dark { color-scheme: dark; }
-  body { @apply bg-background text-foreground font-sans; font-size: 14px; line-height: 20px; }
-  :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
-  code, kbd, pre, samp { @apply font-mono; }
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-background font-sans text-foreground;
+    font-size: 14px;
+    line-height: 20px;
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  code,
+  kbd,
+  pre,
+  samp {
+    @apply font-mono;
+  }
 }
 
 /* Run-state pill recipe (use with shadcn Badge or a span) */
 @layer components {
-  .pill { @apply inline-flex h-[22px] items-center gap-1.5 rounded-full px-[9px] text-caption font-medium whitespace-nowrap; }
-  .pill::before { content: ""; @apply size-1.5 rounded-full bg-current; }
-  .pill-queued { @apply bg-run-queued-soft text-run-queued; }
-  .pill-running { @apply bg-run-running-soft text-run-running; }
-  .pill-running::before { @apply animate-pulse-dot; }
-  .pill-awaiting { @apply bg-run-awaiting-soft text-run-awaiting; }
-  .pill-succeeded { @apply bg-run-succeeded-soft text-run-succeeded; }
-  .pill-failed { @apply bg-run-failed-soft text-run-failed; }
-  .pill-cancelled { @apply border border-border-strong bg-transparent text-run-cancelled; }
+  .pill {
+    @apply inline-flex h-[22px] items-center gap-1.5 rounded-full px-[9px] text-caption font-medium whitespace-nowrap;
+  }
+  .pill::before {
+    content: '';
+    @apply size-1.5 rounded-full bg-current;
+  }
+  .pill-queued {
+    @apply bg-run-queued-soft text-run-queued;
+  }
+  .pill-running {
+    @apply bg-run-running-soft text-run-running;
+  }
+  .pill-running::before {
+    @apply animate-pulse-dot;
+  }
+  .pill-awaiting {
+    @apply bg-run-awaiting-soft text-run-awaiting;
+  }
+  .pill-succeeded {
+    @apply bg-run-succeeded-soft text-run-succeeded;
+  }
+  .pill-failed {
+    @apply bg-run-failed-soft text-run-failed;
+  }
+  .pill-cancelled {
+    @apply border border-border-strong bg-transparent text-run-cancelled;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation: none !important; transition: none !important; }
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
 }
