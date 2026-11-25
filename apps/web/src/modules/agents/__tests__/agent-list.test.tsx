@@ -107,6 +107,27 @@ describe('Agents page: the list', () => {
     await expect(container).toHaveNoAxeViolations();
   });
 
+  it('links each definitions agent to the editor on its AGENT.md, and no built-in agent', async () => {
+    fakeAgentsApi(
+      { repository: READY },
+      {
+        list: agentList({
+          commit: SHA,
+          repository: REPOSITORY,
+          agents: [...BUILT_INS, REVIEWER, BROKEN],
+        }),
+      },
+    );
+    renderAgents();
+
+    const card = await screen.findByRole('region', { name: 'Agents' });
+    const links = within(card).getAllByRole('link', { name: /^Open in editor/ });
+    expect(links.map((link) => link.getAttribute('href'))).toEqual([
+      '/agents/editor?path=agents%2Freviewer%2FAGENT.md',
+      '/agents/editor?path=agents%2Fbroken%2FAGENT.md',
+    ]);
+  });
+
   it('marks an invalid agent Not usable, with each problem and its place', async () => {
     fakeAgentsApi(
       { repository: READY },

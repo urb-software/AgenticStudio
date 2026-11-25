@@ -1405,3 +1405,153 @@ test(RUN_TEST, async ({ page }, testInfo) => {
   await expect(pullRequestCard).toContainText('The Run branch was deleted');
   await expect.poll(async () => (await readRun()).latestMergeApproval?.result).toBe('carried_out');
 });
+
+// The agent editor opens definitions files in a bundled, read-only Monaco (no request leaves
+// the origin) that follows the app's theme. The editor's three API reads are answered in the
+// browser, so the test needs no definitions Repository.
+test('the agent editor shows a definitions file in a bundled, read-only Monaco', async ({
+  page,
+}) => {
+  const sha = '0123456789abcdef0123456789abcdef01234567';
+  const repository = { state: 'ready', note: null };
+  const agentMd = ['---', 'name: reviewer', 'provider: nope', 'model: opus', '---', 'Review.'];
+  const entry = (path: string, agent: string | null) => ({
+    path,
+    kind: 'file',
+    size: 40,
+    openable: true,
+    agent,
+  });
+  const json = { contentType: 'application/json' };
+  await page.route('**/api/agents', (route) =>
+    route.fulfill({
+      ...json,
+      body: JSON.stringify({
+        commit: sha,
+        repository,
+        truncated: false,
+        baseRules: { version: 'e2e', text: 'Rules.' },
+        agents: [
+          {
+            name: 'reviewer',
+            description: null,
+            provider: null,
+            model: null,
+            source: 'definitions',
+            usable: false,
+            problems: [
+              {
+                code: 'provider_unknown',
+                path: 'AGENT.md',
+                key: 'provider',
+                message: 'The provider is not one Studio knows.',
+              },
+            ],
+          },
+        ],
+      }),
+    }),
+  );
+  await page.route('**/api/agents/definitions-repository/files', (route) =>
+    route.fulfill({
+      ...json,
+      body: JSON.stringify({
+        commit: sha,
+        repository,
+        truncated: false,
+        entries: [
+          entry('agents/reviewer/AGENT.md', 'reviewer'),
+          entry('README.md', null),
+          entry('config.json', null),
+        ],
+      }),
+    }),
+  );
+  await page.route(/\/api\/agents\/definitions-repository\/files\/content\?/, (route) => {
+    const path = new URL(route.request().url()).searchParams.get('path');
+    const contents: Record<string, string> = {
+      'README.md': '# Agents\n',
+      'config.json': '{"mode": 1}\n',
+    };
+    const content = contents[path ?? ''] ?? agentMd.join('\n');
+    return route.fulfill({
+      ...json,
+      body: JSON.stringify({ commit: sha, path, kind: 'text', content }),
+    });
+  });
+  const foreign: string[] = [];
+  const own = new URL(test.info().project.use.baseURL ?? 'http://localhost').origin;
+  page.on('request', (request) => {
+    const url = new URL(request.url());
+    if (url.protocol.startsWith('http') && url.origin !== own) foreign.push(request.url());
+  });
+
+  await signIn(page);
+  await page.goto('/agents/editor?path=agents%2Freviewer%2FAGENT.md');
+  const editor = page.locator('.monaco-editor');
+  await expect(editor).toBeVisible();
+  await expect(editor.locator('.view-lines')).toContainText('provider: nope');
+
+  // Read-only: typing changes nothing.
+  await editor.locator('.view-lines').click();
+  await expect(editor).toHaveClass(/focused/);
+  await page.keyboard.type('zzz');
+  await expect(editor.locator('.view-lines')).not.toContainText('zzz');
+
+  // A problem with a front matter key moves to that key's line.
+  await page.getByRole('button', { name: /provider/ }).click();
+  await expect(editor.locator('.line-numbers.active-line-number')).toHaveText('3');
+
+  // The file tree on a desktop, the chooser on a phone.
+  const phone = (page.viewportSize()?.width ?? 0) < 768;
+  const openFile = async (name: string) => {
+    if (phone) {
+      await page.getByRole('combobox', { name: 'File' }).selectOption(name);
+    } else {
+      await page
+        .getByRole('navigation', { name: 'Files' })
+        .getByRole('button', { name, exact: true })
+        .click();
+    }
+  };
+  await openFile('README.md');
+  await expect(editor.locator('.view-lines')).toContainText('# Agents');
+  // A JSON file starts the JSON service, whose worker is bundled too.
+  await openFile('config.json');
+  await expect(editor.locator('.view-lines')).toContainText('"mode"');
+  await expect(editor.locator('.view-line span span[class^="mtk"]').nth(1)).toBeVisible();
+
+  // The in-app theme toggle moves Monaco's colours with the app's, both ways.
+  const background = () =>
+    page.evaluate(() => {
+      const probe = document.createElement('div');
+      probe.style.background = 'var(--code-bg)';
+      document.body.append(probe);
+      const expected = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      const actual = getComputedStyle(
+        document.querySelector('.monaco-editor .monaco-editor-background')!,
+      ).backgroundColor;
+      return { expected, actual };
+    });
+  const toggleTheme = async (to: 'light' | 'dark') => {
+    const label = `Switch to ${to} theme`;
+    if (phone) {
+      await page.getByRole('button', { name: 'Operator menu' }).click();
+      await page.getByRole('menuitem', { name: label }).click();
+    } else {
+      await page
+        .locator('header[aria-label="Top bar"]')
+        .getByRole('button', { name: label })
+        .click();
+    }
+    await expect(page.locator('html')).toHaveClass(new RegExp(`(^|\\s)${to}(\\s|$)`));
+  };
+  for (const to of ['light', 'dark'] as const) {
+    await toggleTheme(to);
+    await expect.poll(async () => (await background()).actual).toBe((await background()).expected);
+  }
+
+  await expectInBothThemes(page, editor);
+  expect(foreign, 'a request left the Studio origin').toEqual([]);
+});

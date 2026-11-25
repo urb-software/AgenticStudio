@@ -81,3 +81,46 @@ export function useRefreshAgents() {
     [queryClient],
   );
 }
+
+/**
+ * What the editor reads. Not refetched on focus: the view shows one commit and switches only
+ * when the operator reloads (the editor compares `useAgents()`, which does refetch, to it).
+ */
+const FILES_KEY = ['agents', 'editor', 'files'] as const;
+const EDITOR_AGENTS_KEY = ['agents', 'editor', 'agents'] as const;
+const FILE_KEY = ['agents', 'editor', 'file'] as const;
+
+const SNAPSHOT = { staleTime: Infinity, refetchOnWindowFocus: false } as const;
+
+/** The whole definitions Repository's tree at its last fetched commit. */
+export function useAgentFiles() {
+  return useQuery({ queryKey: FILES_KEY, queryFn: api.listAgentFiles, ...SNAPSHOT });
+}
+
+/** The agents, with their problems, as of the editor's last (re)load: the tree's marks. */
+export function useEditorAgents() {
+  return useQuery({ queryKey: EDITOR_AGENTS_KEY, queryFn: api.listAgents, ...SNAPSHOT });
+}
+
+/** One file at `commit`, the commit the editor shows. */
+export function useAgentFile(path: string | undefined, commit: string | undefined) {
+  return useQuery({
+    queryKey: [...FILE_KEY, commit, path] as const,
+    queryFn: () => api.getAgentFile(path ?? '', commit),
+    enabled: path !== undefined && commit !== undefined,
+    ...SNAPSHOT,
+  });
+}
+
+/** Reads the tree and the marks again, which moves the editor to the newest commit. */
+export function useReloadEditor() {
+  const queryClient = useQueryClient();
+  return useCallback(
+    () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: FILES_KEY, exact: true }),
+        queryClient.invalidateQueries({ queryKey: EDITOR_AGENTS_KEY, exact: true }),
+      ]),
+    [queryClient],
+  );
+}
