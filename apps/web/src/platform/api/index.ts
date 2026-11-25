@@ -9,6 +9,7 @@ import type {
   ClosePullRequestResponseOutput,
   ConnectRepositoryRequest,
   CreateProjectRequest,
+  DefinitionsRepositoryOutput,
   EnvironmentFileInfoOutput,
   FollowUpRunRequest,
   ProblemDetails,
@@ -67,6 +68,7 @@ export type {
   ClosePullRequestResponseOutput,
   ConnectRepositoryRequest,
   CreateProjectRequest,
+  DefinitionsRepositoryOutput,
   EnvironmentFileInfoOutput,
   FollowUpRunRequest,
   HealthResponseOutput,
@@ -160,6 +162,22 @@ export function previewLimitOf(error: unknown): PreviewLimitReachedProblem | und
   return parsed.success ? parsed.data : undefined;
 }
 
+/** The problem type of a refusal because the Project is the definitions Repository. */
+const DEFINITIONS_PROJECT_PROBLEM = 'urn:agentic-studio:problem:definitions-project';
+
+/**
+ * Whether a 409 says that the Project is the definitions Repository (it accepts no Run, no
+ * Preview and no Environment file). The pages that offer those hide them for such a Project;
+ * this is for the one that could still be reached by an old link or another tab.
+ */
+export function isDefinitionsRefusal(error: unknown): boolean {
+  return (
+    error instanceof ApiError &&
+    error.status === 409 &&
+    error.problem?.type === DEFINITIONS_PROJECT_PROBLEM
+  );
+}
+
 /** Where the UI goes when the API answers 401. */
 export const LOGIN_PATH = '/login';
 
@@ -246,6 +264,8 @@ export const api = {
   listProjects: (): Promise<ProjectListOutput> => unwrap(sdk.listProjects()),
   createProject: (body: CreateProjectRequest): Promise<ProjectOutput> =>
     unwrap(sdk.createProject({ body })),
+  getDefinitionsRepository: (): Promise<DefinitionsRepositoryOutput> =>
+    unwrap(sdk.getDefinitionsRepository()),
   getProject: (id: string): Promise<ProjectDetailOutput> =>
     unwrap(sdk.getProject({ path: { id } })),
   getRepository: (projectId: string): Promise<RepositoryOutput> =>

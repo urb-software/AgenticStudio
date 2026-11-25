@@ -10,6 +10,7 @@ import {
 import Link from 'next/link';
 import { EmptyState } from '@/shared/components/empty-state';
 import { Button } from '@/shared/ui/button';
+import { StatusPill } from '@/shared/components/status-pill';
 import { Skeleton } from '@/shared/ui/skeleton';
 import { ProjectRuns, type RepositoryStatus } from '@/modules/executions';
 import { ApiError, type RepositorySummaryOutput } from '../../../../platform/api';
@@ -80,6 +81,8 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   }
 
   const createdAt = new Date(data.createdAt);
+  // The definitions Repository takes no Run, no Preview and no Environment file.
+  const definitions = data.kind === 'definitions';
   return (
     <>
       <header className="flex min-w-0 flex-col gap-1">
@@ -92,17 +95,25 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
             {formatTimeAgo(createdAt, dataUpdatedAt)}
           </time>
         </p>
-        <Button asChild icon={GlobeIcon} className="mt-2 self-start">
-          <Link href={`/projects/${projectId}/preview`}>Preview</Link>
-        </Button>
+        {definitions ? (
+          <div className="mt-1">
+            <StatusPill status="none">Definitions Repository</StatusPill>
+          </div>
+        ) : (
+          <Button asChild icon={GlobeIcon} className="mt-2 self-start">
+            <Link href={`/projects/${projectId}/preview`}>Preview</Link>
+          </Button>
+        )}
       </header>
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <RepositoryCard projectId={projectId} summary={data.repository} />
-        <EnvironmentFileCard projectId={projectId} />
+        {definitions ? null : <EnvironmentFileCard projectId={projectId} />}
         <MergeMethodCard projectId={projectId} mergeMethod={data.mergeMethod} />
       </div>
       {/* The executions module owns the Runs section; this screen only composes it. */}
-      <ProjectRuns projectId={projectId} repository={repositoryStatus(data.repository)} />
+      {definitions ? null : (
+        <ProjectRuns projectId={projectId} repository={repositoryStatus(data.repository)} />
+      )}
     </>
   );
 }

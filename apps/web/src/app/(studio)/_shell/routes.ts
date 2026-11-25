@@ -1,4 +1,4 @@
-import { Activity, Folder, type LucideIcon } from 'lucide-react';
+import { Activity, Bot, Folder, type LucideIcon } from 'lucide-react';
 
 export type StudioRoute = { href: string; label: string; icon: LucideIcon };
 
@@ -8,6 +8,7 @@ export type StudioRoute = { href: string; label: string; icon: LucideIcon };
  */
 export const STUDIO_ROUTES: readonly StudioRoute[] = [
   { href: '/projects', label: 'Projects', icon: Folder },
+  { href: '/agents', label: 'Agents', icon: Bot },
   { href: '/executions', label: 'Executions', icon: Activity },
 ];
 

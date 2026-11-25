@@ -516,3 +516,46 @@ describe('new project dialog', () => {
     );
   });
 });
+
+describe('the definitions Repository in the list', () => {
+  const DEFINITIONS: ProjectOutput = {
+    id: '00000000-0000-4000-8000-0000000000d1',
+    name: 'Agent definitions',
+    mergeMethod: 'squash',
+    kind: 'definitions',
+    createdAt: '2026-11-12T11:00:00.000Z',
+  };
+
+  it('marks it with a badge and lists it apart from ordinary projects', async () => {
+    fakeProjectsApi([DEFINITIONS, BETA, ALPHA]);
+    const { container } = renderProjects();
+
+    expect(await listedNames()).toEqual(['Beta', 'Alpha']);
+    const section = screen.getByRole('region', { name: 'Definitions Repository' });
+    const row = within(section).getByRole('listitem');
+    expect(within(row).getByRole('link', { name: 'Agent definitions' }).getAttribute('href')).toBe(
+      `/projects/${DEFINITIONS.id}`,
+    );
+    expect(within(row).getByText('Definitions Repository')).toBeTruthy();
+    // No ordinary project carries the badge.
+    expect(screen.getAllByText('Definitions Repository')).toHaveLength(2);
+    await expect(container).toHaveNoAxeViolations();
+  });
+
+  it('still invites the first ordinary project when it is the only one', async () => {
+    fakeProjectsApi([DEFINITIONS]);
+    renderProjects();
+
+    expect(await screen.findByRole('heading', { name: 'Create your first project' })).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Definitions Repository' })).toBeTruthy();
+    expect(screen.queryByRole('list', { name: 'Projects' })).toBeNull();
+  });
+
+  it('shows no section without a definitions Repository', async () => {
+    fakeProjectsApi([ALPHA]);
+    renderProjects();
+    await listedNames();
+
+    expect(screen.queryByRole('region', { name: 'Definitions Repository' })).toBeNull();
+  });
+});

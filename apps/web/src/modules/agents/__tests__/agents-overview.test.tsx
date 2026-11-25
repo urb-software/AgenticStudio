@@ -1,0 +1,150 @@
+import { focusManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { Toaster, toast } from '@/shared/ui/sonner';
+import { AgentsOverview } from '..';
+import type { RepositoryOutput } from '../../../platform/api';
+import { DEFINITIONS_PROJECT, fakeAgentsApi, problem } from './fake-agents-api';
+
+// The Repository card has no navigation of its own; the composed screens may.
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
+
+const URL = 'git@github.com:acme/agents.git';
+const SHA = '0123456789abcdef0123456789abcdef01234567';
+const READY: RepositoryOutput = {
+  state: 'ready',
+  url: 'https://github.com/acme/agents.git',
+  integrationBranch: 'main',
+  hasClone: true,
+  headSha: SHA,
+  lastFetchedAt: '2026-11-13T10:00:00.000Z',
+};
+
+function renderAgents() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={client}>
+      <AgentsOverview />
+      <Toaster />
+    </QueryClientProvider>,
+  );
+}
+
+const card = () => screen.getByRole('region', { name: 'Repository' });
+
+afterEach(() => {
+  act(() => {
+    focusManager.setFocused(undefined);
+    toast.dismiss();
+  });
+  vi.unstubAllGlobals();
+});
+
+describe('Agents page: nothing connected', () => {
+  it('offers to connect the definitions Repository and has no axe violations', async () => {
+    fakeAgentsApi(null);
+    const { container } = renderAgents();
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Agents' })).toBeTruthy();
+    expect(
+      await screen.findByRole('heading', { name: 'No definitions Repository connected' }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: 'Connect definitions Repository' }).dataset.variant,
+    ).toBe('primary');
+    await expect(container).toHaveNoAxeViolations();
+  });
+
+  it('creates the Project with kind definitions and continues into the connection steps', async () => {
+    const api = fakeAgentsApi(null);
+    renderAgents();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Connect definitions Repository' }),
+    );
+
+    expect(await screen.findByRole('region', { name: 'Repository' })).toBeTruthy();
+    expect(api.calls().find((call) => call.method === 'POST')?.body).toEqual({
+      name: DEFINITIONS_PROJECT.name,
+      kind: 'definitions',
+    });
+    // The existing connection steps: the card's own "Connect repository".
+    await userEvent.click(within(card()).getByRole('button', { name: 'Connect repository' }));
+    const dialog = screen.getByRole('dialog', { name: 'Connect repository' });
+    await userEvent.type(within(dialog).getByLabelText('Repository URL'), URL);
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Connect repository' }));
+    await waitFor(() => expect(api.repository?.state).toBe('awaiting_key'));
+    expect(await within(card()).findByText('Awaiting key')).toBeTruthy();
+  });
+
+  it('shows the API refusal when the Project cannot be created', async () => {
+    const api = fakeAgentsApi(null);
+    renderAgents();
+    await screen.findByRole('button', { name: 'Connect definitions Repository' });
+    api.respondNext(409, {
+      ...problem(409, 'Definitions Repository exists'),
+      type: 'urn:agentic-studio:problem:definitions-project-exists',
+      detail: 'A definitions Repository is already connected. Disconnect it to connect another.',
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Connect definitions Repository' }));
+
+    expect(await screen.findByText(/already connected/)).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toContain('Definitions Repository exists');
+  });
+
+  it('says so, with a Retry, when the page cannot be read', async () => {
+    const api = fakeAgentsApi(null);
+    api.respondNext(500, problem(500, 'Internal Server Error'));
+    const { container } = renderAgents();
+
+    expect(await screen.findByText(/GET \/api\/agents\/definitions-repository · 500/)).toBeTruthy();
+    await expect(container).toHaveNoAxeViolations();
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(
+      await screen.findByRole('button', { name: 'Connect definitions Repository' }),
+    ).toBeTruthy();
+  });
+});
+
+describe('Agents page: connected', () => {
+  it('shows the state, the Integration branch, the last fetched commit and Fetch', async () => {
+    fakeAgentsApi({ repository: READY });
+    const { container } = renderAgents();
+
+    await screen.findByRole('region', { name: 'Repository' });
+    expect(await within(card()).findByText('Connected')).toBeTruthy();
+    expect(within(card()).getByText('main')).toBeTruthy();
+    expect(within(card()).getByText('0123456')).toBeTruthy();
+    expect(within(card()).getByRole('button', { name: 'Fetch' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Connect definitions Repository' })).toBeNull();
+    await expect(container).toHaveNoAxeViolations();
+  });
+
+  it('fetches the Integration branch', async () => {
+    const api = fakeAgentsApi({ repository: READY });
+    renderAgents();
+
+    await userEvent.click(
+      await within(await screen.findByRole('region', { name: 'Repository' })).findByRole('button', {
+        name: 'Fetch',
+      }),
+    );
+
+    await waitFor(() => expect(api.repository?.state).toBe('fetching'));
+    expect(await within(card()).findByText('Fetching')).toBeTruthy();
+  });
+
+  it('continues the connection steps for a Project without a Repository yet', async () => {
+    fakeAgentsApi({ repository: null });
+    const { container } = renderAgents();
+
+    expect(
+      await within(await screen.findByRole('region', { name: 'Repository' })).findByRole('button', {
+        name: 'Connect repository',
+      }),
+    ).toBeTruthy();
+    await expect(container).toHaveNoAxeViolations();
+  });
+});

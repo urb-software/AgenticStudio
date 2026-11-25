@@ -18,7 +18,7 @@ import { Button } from '@/shared/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card';
 import { Skeleton } from '@/shared/ui/skeleton';
 import { toast } from '@/shared/ui/sonner';
-import { ApiError, type PreviewOutput } from '../../../../platform/api';
+import { ApiError, isDefinitionsRefusal, type PreviewOutput } from '../../../../platform/api';
 import { usePreview } from '../../api/preview-queries';
 import { BuildCard } from './build-card';
 import { PreviewSettingsForm } from './preview-settings-form';
@@ -127,6 +127,21 @@ export function PreviewPage({ projectId }: { projectId: string }) {
 
   if (isPending) return <LoadingPreview />;
   if (isError) {
+    if (isDefinitionsRefusal(error)) {
+      // An old link or another tab: the definitions Repository has no Preview.
+      return (
+        <EmptyState
+          icon={GlobeIcon}
+          title="The definitions Repository has no Preview"
+          description="It holds agent definitions only. A Preview belongs to your other projects."
+          action={
+            <Button asChild icon={ArrowLeftIcon}>
+              <Link href="/projects">Back to Projects</Link>
+            </Button>
+          }
+        />
+      );
+    }
     if (error instanceof ApiError && error.status === 404) {
       return (
         <EmptyState
