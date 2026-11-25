@@ -93,6 +93,7 @@ export function fakePreviewApi(
     stateOverride: initial.state ?? null,
     latestChange: initial.latestChange ?? null,
     projectName: initial.projectName ?? 'Acme Shop',
+    runReadable: true,
     runTask: 'Add the checkout page',
     behind: initial.behind ?? false,
     mergeRebuild: initial.mergeRebuild ?? null,
@@ -163,6 +164,7 @@ export function fakePreviewApi(
       return json(200, page);
     }
     const runRoute = /^\/api\/runs\/([^/]+)$/.exec(pathname);
+    if (runRoute && !state.runReadable) return json(404, problem(404, 'Run not found'));
     if (runRoute) return json(200, { id: runRoute[1], task: state.runTask });
     const project = /^\/api\/projects\/([^/]+)$/.exec(pathname);
     if (project) {

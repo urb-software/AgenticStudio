@@ -509,6 +509,20 @@ describe('Preview page: what started the build and the merge rebuild', () => {
     await expect(document.body).toHaveNoAxeViolations();
   });
 
+  it('names no Run twice while the Run cannot be read', async () => {
+    const api = fakePreviewApi({
+      settings: SETTINGS,
+      state: 'running',
+      latestBuild: { ...SUCCEEDED, startedBy: { kind: 'merge', runId: RUN_ID } },
+      running: RUNNING,
+    });
+    api.state.runReadable = false;
+    renderPage();
+
+    const link = await screen.findByRole('link', { name: '(title not loaded)' });
+    expect(link.closest('dd')?.textContent).toBe('The merge of Run (title not loaded)');
+  });
+
   it('tells the Preview is behind, with both commits and Rebuild offered', async () => {
     const head = 'd'.repeat(40);
     fakePreviewApi({

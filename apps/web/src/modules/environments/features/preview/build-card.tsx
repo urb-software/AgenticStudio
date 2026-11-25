@@ -64,11 +64,10 @@ function Time({ iso, now }: { iso: string; now: number }) {
   );
 }
 
-/** The Run's title, linked to its page. The title is read through the executions module's public face. */
 function RunLink({ runId }: { runId: string }) {
   return (
     <Link href={`/executions/${runId}`} className="text-brand underline">
-      <RunTitle runId={runId} />
+      <RunTitle runId={runId} fallback="(title not loaded)" />
     </Link>
   );
 }
