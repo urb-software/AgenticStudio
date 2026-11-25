@@ -29,7 +29,7 @@ describeGate('web', webGate, 'apps/web', [
   { fixture: 'unresolved-workspace-import', expected: ['web-local-imports-resolve'] },
   { fixture: 'platform-imports-module', expected: ['web-platform-no-business-modules'] },
   { fixture: 'imports-server-code', expected: ['web-no-server-code'] },
-  { fixture: 'imports-contracts-providers-subpath', expected: [] },
+  { fixture: 'imports-agent-definitions-package', expected: [] },
   { fixture: 'imports-node-only-module', expected: ['web-no-server-code'] },
   { fixture: 'modules-cycle-through-entrypoints', expected: ['web-no-module-cycle'] },
   { fixture: 'file-cycle', expected: ['web-no-circular'] },

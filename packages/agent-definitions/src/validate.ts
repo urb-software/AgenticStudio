@@ -61,19 +61,24 @@ const CONTROL = /[\u0000-\u001f\u007f]/;
 // Code points that some file systems ignore when they compare names (a zero-width joiner, a
 // bidirectional mark), so `.g<ZWNJ>it` is `.git` there.
 const IGNORED_IN_NAMES = /[\u200c-\u200f\u202a-\u202e\u206a-\u206f\ufeff]/g;
-const SHORT_NAME = /~\d/;
+const SHORT_NAME = /^[^.~]{1,6}~\d+(\.[^.]{0,3})?$/i;
 const CLI_FILES = new Set(CLI_DISCOVERED_FILES.map((name) => name.toLowerCase()));
 
-/** True for a segment that Git, or a file system on an operator's machine, reads as `.git`. */
-function isGitName(segment: string): boolean {
-  const plain = segment
+/** A name as another file system may compare it: no ignored characters or trailing dots. */
+function plainName(segment: string): string {
+  return segment
     .replace(IGNORED_IN_NAMES, '')
     .replace(/[. ]+$/, '')
     .toLowerCase();
+}
+
+/** True for a segment that Git, or a file system on an operator's machine, reads as `.git`. */
+function isGitName(segment: string): boolean {
+  const plain = plainName(segment);
   return plain === '.git' || /^git~\d+$/.test(plain);
 }
 
-type PathCode = 'path_outside_folder' | 'nested_git' | 'cli_config_path';
+type PathCode = 'path_outside_folder' | 'nested_git' | 'cli_config_path' | 'short_name';
 
 /** The first reason a path is refused, or undefined when it is a plain relative path. */
 function pathProblem(path: string): PathCode | undefined {
@@ -89,9 +94,11 @@ function pathProblem(path: string): PathCode | undefined {
   }
   if (segments.some(isGitName)) return 'nested_git';
   // An 8.3 short name (`PROGRA~1`) is another spelling of a longer name on some file systems.
-  if (segments.some((segment) => SHORT_NAME.test(segment))) return 'path_outside_folder';
-  const base = (segments[segments.length - 1] as string).toLowerCase();
-  if (segments.some((segment) => segment.startsWith('.')) || CLI_FILES.has(base)) {
+  if (segments.some((segment) => SHORT_NAME.test(segment))) return 'short_name';
+  const plain = segments.map(plainName);
+  const base = plain[plain.length - 1] as string;
+  const hidden = (segment: string) => segment.startsWith('.');
+  if (segments.some(hidden) || plain.some(hidden) || CLI_FILES.has(base)) {
     return 'cli_config_path';
   }
   return undefined;

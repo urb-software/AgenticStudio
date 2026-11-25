@@ -9,7 +9,7 @@ The format of an Agent definition and its validation. One pure package, shared b
 - Required keys: `name` (matches `AGENT_NAME_PATTERN` and equals the folder name), `description` (one line of 1 to 500 characters, no control character) and `provider` (one of `PROVIDERS`). Optional: `model`, default `default`, which must be in `PROVIDER_MODELS[provider]`.
 - Any other key is `unknown_key`. A key that asks for tools, permissions, hooks, MCP servers, memory or isolation is `forbidden_key` (`FORBIDDEN_KEYS`).
 - Limits (`limits.ts`): instructions 64 KiB, front matter 8 KiB, 100 files, 1 MiB per file, 5 MiB in total.
-- Refused paths: absolute, `..`, empty, backslash and 8.3 short-name segments, `.git` and its lookalikes, symbolic links and other non-file kinds, two paths that differ only in case.
+- Refused paths: absolute, `..`, empty and backslash segments, 8.3 short names (`short_name`, such as `PROGRA~1`), `.git` and its lookalikes, symbolic links and other non-file kinds, two paths that differ only in case.
 - No CLI settings in any form: a path segment that starts with `.`, or a file named `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `AGENTS.override.md` or `SKILL.md` (any case), is `cli_config_path`. Agent CLIs discover settings, hooks, MCP servers, skills and memory from these places, and a definition carries none.
 
 ## Use
@@ -20,5 +20,7 @@ const folders = findAgentFolders(repositoryEntries); // agents/<name>/ groups of
 ```
 
 `entries` is `{ path, kind, size, content? }[]`, with paths relative to the folder. A refusal always holds at least one problem `{ code, path, key?, message }`. A message quotes at most the offending key or path, never a value or file content.
+
+The package re-exports `PROVIDERS`, `PROVIDER_MODELS`, `MODEL_DEFAULT` and the `Provider` type, so the web app depends on this package only, never on the contracts.
 
 Consumers use the parsed fields, above all `definition.instructions`, and never hand the raw `AGENT.md` to a CLI: a CLI's own parser may cut the front matter at a different line than this one does.

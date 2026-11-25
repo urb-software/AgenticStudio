@@ -335,7 +335,13 @@ Object.assign(FAILING, {
   ),
   // 8.3 short names.
   ...Object.fromEntries(
-    ['PROGRA~1/x.sh', 'a/b~2.txt'].map((path) => reject('path_outside_folder', path)),
+    ['PROGRA~1/x.sh', 'a/b~2.txt', 'A~10'].map((path) => reject('short_name', path)),
+  ),
+  // Lookalikes of CLI settings names, normalised like the .git lookalikes.
+  ...Object.fromEntries(
+    ['‌.claude/settings.json', '﻿.mcp.json', 'CLAUDE.md.', 'CLAUDE‌.md', 'AGENTS.md '].map((path) =>
+      reject('cli_config_path', path),
+    ),
   ),
   'size_invalid (NaN)': badSize(Number.NaN),
   'size_invalid (missing)': badSize(undefined),
@@ -409,6 +415,22 @@ export const PASSING: Record<string, Passing> = {
       provider: 'codex',
       model: 'gpt-6-luna',
       instructions: 'Build it.\n',
+    },
+  },
+  'with names that only contain a tilde': {
+    folder: 'reviewer',
+    entries: [
+      entryFile(VALID_FRONT, 'Review the change.\n'),
+      file('backup-old~1.txt', 'x'),
+      file('release~notes.md', 'x'),
+      file('page~1.html', 'x'),
+    ],
+    definition: {
+      name: 'reviewer',
+      description: 'Reviews a change',
+      provider: 'claude_code',
+      model: 'default',
+      instructions: 'Review the change.\n',
     },
   },
 };

@@ -75,11 +75,6 @@ export const webGate: Gate = {
           '(^|/)packages/(database|testing)/',
           coreModules('child_process', 'cluster', 'dgram', 'net', 'tls', 'worker_threads'),
         ],
-        // The one contracts file a browser may take: the Provider ids and models.
-        pathNot: [
-          '(^|/)packages/contracts/src/providers\\.ts$',
-          '^@agentic-studio/contracts/providers$',
-        ],
       },
     },
     ...importsResolveRules('web', '^(\\.|@/|@agentic-studio/)'),

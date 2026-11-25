@@ -26,6 +26,7 @@ export const PROBLEM_CODES = [
   'duplicate_path',
   'size_invalid',
   'cli_config_path',
+  'short_name',
 ] as const;
 
 export type ProblemCode = (typeof PROBLEM_CODES)[number];
@@ -79,6 +80,9 @@ const MESSAGES: Record<ProblemCode, (place: string) => string> = {
   duplicate_path: (path) =>
     `The path ${path} appears more than once, or differs from another only in case.`,
   size_invalid: (path) => `The size of ${path} is not a whole number of bytes, zero or more.`,
+  short_name: (path) =>
+    `The path ${path} holds an 8.3 short name (such as PROGRA~1), which another file system ` +
+    'may read as a different name.',
   cli_config_path: (path) =>
     `The path ${path} is a hidden file or folder, or a file an agent CLI reads settings, ` +
     'skills or memory from, which a definition cannot carry.',
