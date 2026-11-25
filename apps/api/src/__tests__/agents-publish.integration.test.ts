@@ -253,7 +253,7 @@ describe.runIf(linux)('publishing the Draft (PostgreSQL + Redis via Testcontaine
       .get(`${BASE}/files/content`)
       .query({ path: 'agents/helper/AGENT.md' })
       .set('Cookie', cookie);
-    expect(kept.body.text).toBe(agentFile('helper'));
+    expect(kept.body.content).toBe(agentFile('helper'));
   });
 
   it('refuses while the Draft has a problem, listing it, and publishes nothing', async () => {

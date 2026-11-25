@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -106,7 +106,8 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter publishing a comm
 
   afterEach(async () => {
     expect(await readdir(tempRoot)).toEqual([]);
-    await chmod(remote.path, 0o755).catch(() => undefined);
+    // A test may have made the remote read-only, directories included.
+    spawnSync('chmod', ['-R', 'u+w', remote.path]);
     await rm(root, { recursive: true, force: true });
   });
 
