@@ -317,6 +317,19 @@ export type DefinitionsBlobRead =
   | { path: string; status: 'found'; bytes: Uint8Array }
   | { path: string; status: 'missing' | 'too_large' };
 
+/**
+ * `blob` is Git's object name of the regular file at `path`, and `executable` its mode `100755`;
+ * `null` and `false` when the path names none.
+ */
+export interface DefinitionsBlobId {
+  path: string;
+  blob: string | null;
+  executable: boolean;
+}
+
+export type DefinitionsBlobIdsResult =
+  { status: 'read'; blobs: DefinitionsBlobId[] } | { status: DefinitionsUnavailable };
+
 export type DefinitionsBlobsResult =
   { status: 'read'; files: DefinitionsBlobRead[] } | { status: DefinitionsUnavailable };
 
@@ -347,4 +360,10 @@ export interface DefinitionsFiles {
     paths: readonly string[],
     maxBytes: number,
   ): Promise<DefinitionsBlobsResult>;
+
+  /**
+   * The object name of each regular file at `commit`, in the order of `paths`, without reading
+   * any file: equal names mean equal content, so two commits are compared by them.
+   */
+  blobIds(commit: string, paths: readonly string[]): Promise<DefinitionsBlobIdsResult>;
 }

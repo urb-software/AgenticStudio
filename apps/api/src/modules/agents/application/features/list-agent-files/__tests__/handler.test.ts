@@ -23,6 +23,7 @@ function scripted(script: { snapshot?: DefinitionsSnapshot | null; tree?: Defini
     ),
     readFiles: vi.fn(() => Promise.reject(new Error('not used'))),
     readBlobs: vi.fn(() => Promise.reject(new Error('not used'))),
+    blobIds: vi.fn(() => Promise.reject(new Error('not used'))),
   } satisfies DefinitionsFiles;
   return { fake, handler: new ListAgentFilesHandler(fake) };
 }

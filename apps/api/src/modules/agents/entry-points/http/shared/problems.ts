@@ -9,6 +9,16 @@ export const AGENTS_PROBLEM_TYPES = {
   agentFilesUnreadable: 'urn:agentic-studio:problem:agent-files-unreadable',
   projectNotFound: 'urn:agentic-studio:problem:project-not-found',
   definitionsProject: 'urn:agentic-studio:problem:definitions-project',
+  draftFileTooLarge: 'urn:agentic-studio:problem:agent-draft-file-too-large',
+  draftTooLarge: 'urn:agentic-studio:problem:agent-draft-too-large',
+  draftTooManyFiles: 'urn:agentic-studio:problem:agent-draft-too-many-files',
+  draftPathNotWritable: 'urn:agentic-studio:problem:agent-draft-path-not-writable',
+  draftPathTaken: 'urn:agentic-studio:problem:agent-draft-path-taken',
+  draftPathConflict: 'urn:agentic-studio:problem:agent-draft-path-conflict',
+  draftMoveUnsupported: 'urn:agentic-studio:problem:agent-draft-move-unsupported',
+  draftNoBase: 'urn:agentic-studio:problem:agent-draft-no-base',
+  draftConflict: 'urn:agentic-studio:problem:agent-draft-conflict',
+  draftBaseMissing: 'urn:agentic-studio:problem:agent-draft-base-missing',
 } as const;
 
 /** 404 for a project id that names no project (also one that is not a UUID). */
@@ -63,5 +73,99 @@ export function agentFilesUnreadable(): ProblemException {
     type: AGENTS_PROBLEM_TYPES.agentFilesUnreadable,
     title: 'Files cannot be read',
     detail: 'The Clone of the definitions Repository cannot be read now.',
+  });
+}
+
+/** 422 for a file over the per-file limit; `size` and `limit` are bytes. */
+export function draftFileTooLarge(size: number, limit: number): ProblemException {
+  return new ProblemException(HttpStatus.UNPROCESSABLE_ENTITY, {
+    type: AGENTS_PROBLEM_TYPES.draftFileTooLarge,
+    title: 'File too large',
+    detail: `The file is ${size} bytes; a file of the Draft may be at most ${limit} bytes.`,
+    extensions: { size, limit },
+  });
+}
+
+/** 422 for a change that takes the whole Draft over its total size; `size` and `limit` are bytes. */
+export function draftTooLarge(size: number, limit: number): ProblemException {
+  return new ProblemException(HttpStatus.UNPROCESSABLE_ENTITY, {
+    type: AGENTS_PROBLEM_TYPES.draftTooLarge,
+    title: 'Draft too large',
+    detail: `The Draft would hold ${size} bytes; it may hold at most ${limit} bytes.`,
+    extensions: { size, limit },
+  });
+}
+
+/** 422 for a change that makes the Draft hold more changed files than the limit. */
+export function draftTooManyFiles(limit: number): ProblemException {
+  return new ProblemException(HttpStatus.UNPROCESSABLE_ENTITY, {
+    type: AGENTS_PROBLEM_TYPES.draftTooManyFiles,
+    title: 'Too many changed files',
+    detail: `The Draft may change at most ${limit} files.`,
+    extensions: { limit },
+  });
+}
+
+/** 422 for a path that is a symbolic link or a submodule at the base commit. */
+export function draftPathNotWritable(): ProblemException {
+  return new ProblemException(HttpStatus.UNPROCESSABLE_ENTITY, {
+    type: AGENTS_PROBLEM_TYPES.draftPathNotWritable,
+    title: 'Path cannot be changed',
+    detail: 'The path is a symbolic link or a submodule at the base commit.',
+  });
+}
+
+/** 422 for a move onto a path where a file already is. */
+export function draftPathTaken(): ProblemException {
+  return new ProblemException(HttpStatus.UNPROCESSABLE_ENTITY, {
+    type: AGENTS_PROBLEM_TYPES.draftPathTaken,
+    title: 'Path taken',
+    detail: 'A file already exists at the new path.',
+  });
+}
+
+/** 422 for a path that would be a file where a folder is, or a folder where a file is. */
+export function draftPathConflict(): ProblemException {
+  return new ProblemException(HttpStatus.UNPROCESSABLE_ENTITY, {
+    type: AGENTS_PROBLEM_TYPES.draftPathConflict,
+    title: 'Path conflict',
+    detail: 'The path would be both a file and a folder.',
+  });
+}
+
+/** 422 for a base file over the file limit, whose bytes Studio does not carry to a new path. */
+export function draftMoveUnsupported(): ProblemException {
+  return new ProblemException(HttpStatus.UNPROCESSABLE_ENTITY, {
+    type: AGENTS_PROBLEM_TYPES.draftMoveUnsupported,
+    title: 'File cannot be moved',
+    detail: 'A file over the file limit cannot be moved in the Draft.',
+  });
+}
+
+/** 409 when the Repository has no commit to start a Draft from. */
+export function draftNoBase(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: AGENTS_PROBLEM_TYPES.draftNoBase,
+    title: 'No commit to base a Draft on',
+    detail: 'The definitions Repository has no fetched commit yet.',
+  });
+}
+
+/** 409 when other writes kept changing the Draft and every attempt of this one lost the race. */
+export function draftConflict(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: AGENTS_PROBLEM_TYPES.draftConflict,
+    title: 'Draft changed',
+    detail: 'The Draft was changed by another write while this change was being made. Try again.',
+  });
+}
+
+/** 409 when the commit the Draft began from is gone from the Clone: the Draft can only be discarded. */
+export function draftBaseMissing(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: AGENTS_PROBLEM_TYPES.draftBaseMissing,
+    title: 'Draft base is gone',
+    detail:
+      'The commit the Draft began from is gone from the Clone. Discard the Draft or apply its changes again.',
   });
 }

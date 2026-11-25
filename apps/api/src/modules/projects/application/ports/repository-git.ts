@@ -121,6 +121,16 @@ export interface CommitBlobRead {
   outcome: CommitBlobOutcome;
 }
 
+/**
+ * The Git object name of the regular file at a path of a commit, and whether its mode is
+ * executable; `null` and `false` when the path names none.
+ */
+export interface CommitBlobId {
+  path: string;
+  blob: string | null;
+  executable: boolean;
+}
+
 export type GitFailureReason = Exclude<RepositoryFailureCode, 'interrupted'>;
 
 export const GIT_FAILURE_REASONS: readonly GitFailureReason[] = REPOSITORY_FAILURE_CODES.filter(
@@ -269,6 +279,18 @@ export interface RepositoryGit {
     maxBytes: number,
     options?: GitOperationOptions,
   ): Promise<CommitBlobRead[]>;
+
+  /**
+   * The object name of the regular file at each path in `commit`, in the order given, without
+   * reading any file: equal names mean equal content. A path that is unsafe, or names no regular
+   * file, has `null`. Throws the errors of {@link RepositoryGit.readFileAtCommit}.
+   */
+  blobIdsAtCommit(
+    projectId: string,
+    commit: string,
+    paths: readonly string[],
+    options?: GitOperationOptions,
+  ): Promise<CommitBlobId[]>;
 
   /**
    * The tracked tree of `commit` as a tar archive of at most `maxBytes`, built from the Clone's

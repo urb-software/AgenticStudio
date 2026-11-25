@@ -60,6 +60,7 @@ function scripted(script: Scripted) {
     readBlobs: vi.fn((): Promise<DefinitionsBlobsResult> =>
       Promise.resolve({ status: 'read', files: [] }),
     ),
+    blobIds: vi.fn(() => Promise.reject(new Error('not used'))),
   } satisfies DefinitionsFiles;
   const defaults: ProjectDefaultAgents = {
     forProject: () =>

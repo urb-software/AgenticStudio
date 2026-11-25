@@ -65,6 +65,7 @@ function folders(script: Script) {
         },
       ),
     ),
+    blobIds: vi.fn(() => Promise.reject(new Error('not used'))),
   } satisfies DefinitionsFiles;
   return { fake, handler: new ReadAgentFolderHandler(fake) };
 }

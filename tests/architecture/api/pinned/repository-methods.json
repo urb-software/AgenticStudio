@@ -1,6 +1,15 @@
 {
   "description": "Every method of every repository interface in domain/repositories/ (backend.md section 3 rule 6: business rules live on the domain object, never in the database adapter). Kinds: load (reads one aggregate), save (persists or removes one), query (reads plain data), atomic (one conditional, locked or index-decided step that load, call and save cannot express) and set-wide (one statement over many aggregates). Each atomic or set-wide method has a one-line reason. Compared with the source by tests/architecture/api/pinned.test.ts: a method added, renamed or removed fails it until this file is updated in the same pull request.",
   "repositories": {
+    "agents/AgentDraftRepository": {
+      "find": { "kind": "load" },
+      "save": {
+        "kind": "atomic",
+        "reason": "A version-conditional write: one transaction updates the head row only where the stored version is the one the entity was loaded at, which also takes the row lock, then replaces the files, so two writes never both succeed from the same version."
+      },
+      "findContent": { "kind": "query" },
+      "findContents": { "kind": "query" }
+    },
     "environments/PreviewOperationRepository": {
       "add": { "kind": "save" },
       "find": { "kind": "load" },

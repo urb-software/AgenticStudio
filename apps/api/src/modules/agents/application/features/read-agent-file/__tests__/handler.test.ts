@@ -33,6 +33,7 @@ function scripted(script: {
       const read = script.read ?? { path: paths[0]!, status: 'missing' as const, size: 0 };
       return Promise.resolve({ status: 'read', files: [{ ...read, path: paths[0]! }] });
     }),
+    blobIds: vi.fn(() => Promise.reject(new Error('not used'))),
   } satisfies DefinitionsFiles;
   return { fake, handler: new ReadAgentFileHandler(fake) };
 }

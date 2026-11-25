@@ -242,6 +242,99 @@ export type AgentFileTooLargeOutput = {
 
 export type AgentFileOutput = AgentFileTextOutput | AgentFileBinaryOutput | AgentFileTooLargeOutput;
 
+export type AgentDraftFileOutput = {
+    /**
+     * Relative to the Repository root, with `/` separators.
+     */
+    path: string;
+    change: 'added' | 'modified' | 'deleted';
+    /**
+     * Bytes; 0 for a deleted file.
+     */
+    size: number;
+    /**
+     * For display: the path this file was moved from; null for any other file.
+     */
+    movedFrom: string | null;
+};
+
+export type AgentDraftProblemOutput = {
+    /**
+     * The agent folder the problem is in.
+     */
+    agent: string;
+    code: 'entry_missing' | 'entry_unreadable' | 'front_matter_missing' | 'front_matter_malformed' | 'front_matter_too_large' | 'key_missing' | 'key_invalid' | 'provider_unknown' | 'model_unknown' | 'name_invalid' | 'name_mismatch' | 'name_reserved' | 'unknown_key' | 'forbidden_key' | 'instructions_too_large' | 'too_many_files' | 'file_too_large' | 'folder_too_large' | 'path_outside_folder' | 'nested_git' | 'symlink_refused' | 'kind_refused' | 'duplicate_path' | 'size_invalid' | 'cli_config_path' | 'short_name';
+    /**
+     * The file or folder the problem is about, relative to the Repository root.
+     */
+    path: string;
+    /**
+     * The front matter key, when the problem is about one.
+     */
+    key: string | null;
+    /**
+     * Fixed wording per code; never a value or file content.
+     */
+    message: string;
+};
+
+export type AgentDraftOutput = {
+    /**
+     * The commit the changes were made against; null while the Draft is empty.
+     */
+    baseCommit: string | null;
+    /**
+     * The commit the Repository holds now; null when none was fetched.
+     */
+    currentCommit: string | null;
+    /**
+     * Raised on every write: the web compares it to see that the Draft changed elsewhere.
+     */
+    version: number;
+    files: Array<AgentDraftFileOutput>;
+    /**
+     * What the shared validation finds in each agent folder the Draft touches, with the Draft laid over the base tree. Empty when the Clone cannot be read.
+     */
+    problems: Array<AgentDraftProblemOutput>;
+    /**
+     * Paths of the Draft whose blob differs between the base commit and the current commit.
+     */
+    movedUpstream: Array<string>;
+};
+
+export type SaveAgentDraftFileRequest = {
+    /**
+     * Relative to the Repository root, with `/` separators.
+     */
+    path: string;
+    /**
+     * The content, stored as UTF-8. Give this or `contentBase64`.
+     */
+    text?: string;
+    /**
+     * The content as standard base64, for a binary file. Give this or `text`.
+     */
+    contentBase64?: string;
+};
+
+export type MoveAgentDraftFileRequest = {
+    /**
+     * The file to move: a file of the Draft or of the base commit.
+     */
+    from: string;
+    /**
+     * The new path; no file may be there unless the Draft deletes it.
+     */
+    to: string;
+};
+
+export type RevertAgentDraftFileRequest = {
+    /**
+     * Relative to the Repository root, with `/` separators.
+     */
+    path: string;
+};
+
 export type AgentSummaryOutput = {
     /**
      * Unique together with `source`: a built-in and a refused folder can share a name.
@@ -1673,6 +1766,258 @@ export type GetAgentFileResponses = {
 };
 
 export type GetAgentFileResponse = GetAgentFileResponses[keyof GetAgentFileResponses];
+
+export type DiscardAgentDraftData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/agents/definitions-repository/draft';
+};
+
+export type DiscardAgentDraftErrors = {
+    /**
+     * Other writes kept changing the Draft (urn:agentic-studio:problem:agent-draft-conflict)
+     */
+    409: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type DiscardAgentDraftError = DiscardAgentDraftErrors[keyof DiscardAgentDraftErrors];
+
+export type DiscardAgentDraftResponses = {
+    200: AgentDraftOutput;
+};
+
+export type DiscardAgentDraftResponse = DiscardAgentDraftResponses[keyof DiscardAgentDraftResponses];
+
+export type GetAgentDraftData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/agents/definitions-repository/draft';
+};
+
+export type GetAgentDraftErrors = {
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type GetAgentDraftError = GetAgentDraftErrors[keyof GetAgentDraftErrors];
+
+export type GetAgentDraftResponses = {
+    200: AgentDraftOutput;
+};
+
+export type GetAgentDraftResponse = GetAgentDraftResponses[keyof GetAgentDraftResponses];
+
+export type GetAgentDraftFileData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Relative to the Repository root, with `/` separators.
+         */
+        path: string;
+    };
+    url: '/api/agents/definitions-repository/draft/files/content';
+};
+
+export type GetAgentDraftFileErrors = {
+    /**
+     * Invalid path
+     */
+    400: ProblemDetails;
+    /**
+     * No regular file at the path as the Draft sees it (urn:agentic-studio:problem:agent-file-not-found) or the Clone does not hold the base commit (urn:agentic-studio:problem:agent-commit-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * The Clone cannot be read now (urn:agentic-studio:problem:agent-files-unreadable)
+     */
+    503: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type GetAgentDraftFileError = GetAgentDraftFileErrors[keyof GetAgentDraftFileErrors];
+
+export type GetAgentDraftFileResponses = {
+    200: AgentFileOutput;
+};
+
+export type GetAgentDraftFileResponse = GetAgentDraftFileResponses[keyof GetAgentDraftFileResponses];
+
+export type DeleteAgentDraftFileData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Relative to the Repository root, with `/` separators.
+         */
+        path: string;
+    };
+    url: '/api/agents/definitions-repository/draft/files';
+};
+
+export type DeleteAgentDraftFileErrors = {
+    /**
+     * Invalid path
+     */
+    400: ProblemDetails;
+    /**
+     * No file at the path, or the Draft already deletes it (urn:agentic-studio:problem:agent-file-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * The Repository has no fetched commit to base the Draft on (urn:agentic-studio:problem:agent-draft-no-base), the commit the Draft began from is gone (urn:agentic-studio:problem:agent-draft-base-missing) or other writes kept changing the Draft (urn:agentic-studio:problem:agent-draft-conflict)
+     */
+    409: ProblemDetails;
+    /**
+     * The path is a link or a submodule (urn:agentic-studio:problem:agent-draft-path-not-writable) or the Draft would change more than 200 files (urn:agentic-studio:problem:agent-draft-too-many-files)
+     */
+    422: ProblemDetails;
+    /**
+     * The Clone cannot be read now (urn:agentic-studio:problem:agent-files-unreadable)
+     */
+    503: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type DeleteAgentDraftFileError = DeleteAgentDraftFileErrors[keyof DeleteAgentDraftFileErrors];
+
+export type DeleteAgentDraftFileResponses = {
+    200: AgentDraftOutput;
+};
+
+export type DeleteAgentDraftFileResponse = DeleteAgentDraftFileResponses[keyof DeleteAgentDraftFileResponses];
+
+export type SaveAgentDraftFileData = {
+    body: SaveAgentDraftFileRequest;
+    path?: never;
+    query?: never;
+    url: '/api/agents/definitions-repository/draft/files';
+};
+
+export type SaveAgentDraftFileErrors = {
+    /**
+     * Invalid path or body
+     */
+    400: ProblemDetails;
+    /**
+     * The Repository has no fetched commit to base the Draft on (urn:agentic-studio:problem:agent-draft-no-base), the commit the Draft began from is gone (urn:agentic-studio:problem:agent-draft-base-missing) or other writes kept changing the Draft (urn:agentic-studio:problem:agent-draft-conflict)
+     */
+    409: ProblemDetails;
+    /**
+     * The request body is over the size the route accepts
+     */
+    413: ProblemDetails;
+    /**
+     * The file is over 1 MiB (urn:agentic-studio:problem:agent-draft-file-too-large), the Draft over 10 MiB (urn:agentic-studio:problem:agent-draft-too-large) or over 200 files (urn:agentic-studio:problem:agent-draft-too-many-files), the path is a link or a submodule (urn:agentic-studio:problem:agent-draft-path-not-writable) or would be a file and a folder (urn:agentic-studio:problem:agent-draft-path-conflict)
+     */
+    422: ProblemDetails;
+    /**
+     * The Clone cannot be read now (urn:agentic-studio:problem:agent-files-unreadable)
+     */
+    503: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type SaveAgentDraftFileError = SaveAgentDraftFileErrors[keyof SaveAgentDraftFileErrors];
+
+export type SaveAgentDraftFileResponses = {
+    200: AgentDraftOutput;
+};
+
+export type SaveAgentDraftFileResponse = SaveAgentDraftFileResponses[keyof SaveAgentDraftFileResponses];
+
+export type MoveAgentDraftFileData = {
+    body: MoveAgentDraftFileRequest;
+    path?: never;
+    query?: never;
+    url: '/api/agents/definitions-repository/draft/files/move';
+};
+
+export type MoveAgentDraftFileErrors = {
+    /**
+     * Invalid path or body
+     */
+    400: ProblemDetails;
+    /**
+     * No file at the old path (urn:agentic-studio:problem:agent-file-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * The Repository has no fetched commit to base the Draft on (urn:agentic-studio:problem:agent-draft-no-base), the commit the Draft began from is gone (urn:agentic-studio:problem:agent-draft-base-missing) or other writes kept changing the Draft (urn:agentic-studio:problem:agent-draft-conflict)
+     */
+    409: ProblemDetails;
+    /**
+     * A file is at the new path (urn:agentic-studio:problem:agent-draft-path-taken), a path is a link or a submodule (urn:agentic-studio:problem:agent-draft-path-not-writable) or would be a file and a folder (urn:agentic-studio:problem:agent-draft-path-conflict), the file cannot be carried (urn:agentic-studio:problem:agent-draft-move-unsupported), or a Draft limit is passed (urn:agentic-studio:problem:agent-draft-file-too-large, urn:agentic-studio:problem:agent-draft-too-large, urn:agentic-studio:problem:agent-draft-too-many-files)
+     */
+    422: ProblemDetails;
+    /**
+     * The Clone cannot be read now (urn:agentic-studio:problem:agent-files-unreadable)
+     */
+    503: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type MoveAgentDraftFileError = MoveAgentDraftFileErrors[keyof MoveAgentDraftFileErrors];
+
+export type MoveAgentDraftFileResponses = {
+    200: AgentDraftOutput;
+};
+
+export type MoveAgentDraftFileResponse = MoveAgentDraftFileResponses[keyof MoveAgentDraftFileResponses];
+
+export type RevertAgentDraftFileData = {
+    body: RevertAgentDraftFileRequest;
+    path?: never;
+    query?: never;
+    url: '/api/agents/definitions-repository/draft/files/revert';
+};
+
+export type RevertAgentDraftFileErrors = {
+    /**
+     * Invalid path or body
+     */
+    400: ProblemDetails;
+    /**
+     * The Draft does not change the path (urn:agentic-studio:problem:agent-file-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * Other writes kept changing the Draft (urn:agentic-studio:problem:agent-draft-conflict)
+     */
+    409: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type RevertAgentDraftFileError = RevertAgentDraftFileErrors[keyof RevertAgentDraftFileErrors];
+
+export type RevertAgentDraftFileResponses = {
+    200: AgentDraftOutput;
+};
+
+export type RevertAgentDraftFileResponse = RevertAgentDraftFileResponses[keyof RevertAgentDraftFileResponses];
 
 export type ListAgentsData = {
     body?: never;

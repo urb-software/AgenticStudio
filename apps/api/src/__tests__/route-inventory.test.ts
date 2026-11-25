@@ -63,6 +63,8 @@ describe('route and guard inventory', () => {
     const controllers = modules.flatMap((entry) => entry.controllers ?? []);
     expect(routes(controllers as Controller[])).toMatchInlineSnapshot(`
       [
+        "DELETE /api/agents/definitions-repository/draft [session]",
+        "DELETE /api/agents/definitions-repository/draft/files [session]",
         "DELETE /api/projects/:id/environment-file [session]",
         "DELETE /api/projects/:id/preview/settings [session]",
         "DELETE /api/projects/:id/repository [session]",
@@ -71,6 +73,8 @@ describe('route and guard inventory', () => {
         "GET /api/agents [session]",
         "GET /api/agents/:name [session]",
         "GET /api/agents/definitions-repository [session]",
+        "GET /api/agents/definitions-repository/draft [session]",
+        "GET /api/agents/definitions-repository/draft/files/content [session]",
         "GET /api/agents/definitions-repository/files [session]",
         "GET /api/agents/definitions-repository/files/content [session]",
         "GET /api/controller/operations/:operationId/source [controller-token]",
@@ -97,6 +101,8 @@ describe('route and guard inventory', () => {
         "GET /api/runs/:runId/steps [session]",
         "GET /api/runs/summary [session]",
         "GET /api/worker/runs/:runId/agent-folder [worker-token]",
+        "POST /api/agents/definitions-repository/draft/files/move [session]",
+        "POST /api/agents/definitions-repository/draft/files/revert [session]",
         "POST /api/controller/operations/:operationId/log [controller-token]",
         "POST /api/controller/operations/:operationId/state [controller-token]",
         "POST /api/controller/operations/claim [controller-token]",
@@ -130,6 +136,7 @@ describe('route and guard inventory', () => {
         "POST /api/worker/runs/claim [worker-token]",
         "POST /api/worker/runs/states [worker-token]",
         "POST /api/worker/status [worker-token]",
+        "PUT /api/agents/definitions-repository/draft/files [session]",
         "PUT /api/projects/:id/default-agent [session]",
         "PUT /api/projects/:id/environment-file [session]",
         "PUT /api/projects/:id/merge-method [session]",

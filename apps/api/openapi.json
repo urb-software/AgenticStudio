@@ -1149,6 +1149,507 @@
         ]
       }
     },
+    "/api/agents/definitions-repository/draft": {
+      "get": {
+        "description": "The Draft of the definitions Repository: the files it adds, modifies or deletes, the commit it is based on and the commit the Repository holds now, a `version` raised on every write, the problems the shared validation finds in each agent folder the Draft touches (with the Draft laid over the base tree), and `movedUpstream`, the Draft paths whose content differs between the base and the current commit. A Draft reaches no agent: the agents, their resolution for a Run and their hand-over read only the Clone. When the Clone cannot be read, `problems` and `movedUpstream` are empty.",
+        "operationId": "getAgentDraft",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentDraft_Output"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "agents"
+        ]
+      },
+      "delete": {
+        "description": "Discards every change of the Draft and its base commit. The answer is the empty Draft with its raised `version`. It reads nothing from the Repository and changes no agent.",
+        "operationId": "discardAgentDraft",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentDraft_Output"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Other writes kept changing the Draft (urn:agentic-studio:problem:agent-draft-conflict)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/api/agents/definitions-repository/draft/files/content": {
+      "get": {
+        "description": "One file as the Draft sees it: its own content when the Draft adds or modifies the file, and the content at the Draft base commit (the last fetched commit while the Draft is empty) otherwise. The answer is the same union as the Repository file route: text, or only the kind and size when the content is binary (a NUL byte, or not valid UTF-8) or over the 1 MiB limit; `commit` is the base commit. A file the Draft deletes is 404. The content is plain text to display, never to render, run or follow.",
+        "operationId": "getAgentDraftFile",
+        "parameters": [
+          {
+            "name": "path",
+            "required": true,
+            "in": "query",
+            "description": "Relative to the Repository root, with `/` separators.",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 255,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentFile_Output"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No regular file at the path as the Draft sees it (urn:agentic-studio:problem:agent-file-not-found) or the Clone does not hold the base commit (urn:agentic-studio:problem:agent-commit-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Clone cannot be read now (urn:agentic-studio:problem:agent-files-unreadable)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/api/agents/definitions-repository/draft/files": {
+      "put": {
+        "description": "Stores one file in the Draft, from `text` (UTF-8) or `contentBase64`. A file the base commit holds becomes modified, any other path added. The first change sets the base commit to the last fetched one. The last save wins; the answer is the new Draft with its raised `version`. A file with a forbidden key is saved and flagged in `problems`. At most 1 MiB per file, 10 MiB for the Draft and 200 changed files, each refusal a 422 of its own. A symbolic link or a submodule at the base cannot be written. A Draft reaches no agent.",
+        "operationId": "saveAgentDraftFile",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveAgentDraftFileRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentDraft_Output"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path or body",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The Repository has no fetched commit to base the Draft on (urn:agentic-studio:problem:agent-draft-no-base), the commit the Draft began from is gone (urn:agentic-studio:problem:agent-draft-base-missing) or other writes kept changing the Draft (urn:agentic-studio:problem:agent-draft-conflict)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is over the size the route accepts",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The file is over 1 MiB (urn:agentic-studio:problem:agent-draft-file-too-large), the Draft over 10 MiB (urn:agentic-studio:problem:agent-draft-too-large) or over 200 files (urn:agentic-studio:problem:agent-draft-too-many-files), the path is a link or a submodule (urn:agentic-studio:problem:agent-draft-path-not-writable) or would be a file and a folder (urn:agentic-studio:problem:agent-draft-path-conflict)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Clone cannot be read now (urn:agentic-studio:problem:agent-files-unreadable)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "agents"
+        ]
+      },
+      "delete": {
+        "description": "Marks the path deleted in one call: a file the base commit holds is marked deleted (a content change the Draft holds for it is dropped), and a file only the Draft holds simply disappears. A symbolic link or a submodule at the base cannot be deleted. To return a file to what the base commit has, use the revert route. The answer is the new Draft.",
+        "operationId": "deleteAgentDraftFile",
+        "parameters": [
+          {
+            "name": "path",
+            "required": true,
+            "in": "query",
+            "description": "Relative to the Repository root, with `/` separators.",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 255,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentDraft_Output"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No file at the path, or the Draft already deletes it (urn:agentic-studio:problem:agent-file-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The Repository has no fetched commit to base the Draft on (urn:agentic-studio:problem:agent-draft-no-base), the commit the Draft began from is gone (urn:agentic-studio:problem:agent-draft-base-missing) or other writes kept changing the Draft (urn:agentic-studio:problem:agent-draft-conflict)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The path is a link or a submodule (urn:agentic-studio:problem:agent-draft-path-not-writable) or the Draft would change more than 200 files (urn:agentic-studio:problem:agent-draft-too-many-files)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Clone cannot be read now (urn:agentic-studio:problem:agent-files-unreadable)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/api/agents/definitions-repository/draft/files/move": {
+      "post": {
+        "description": "Moves a file inside the Draft: a delete of the old path (or dropping it, when only the Draft holds it) plus an add of the new one, linked by `movedFrom`. Moving onto an existing path is refused unless the Draft deletes that path. A file of the base commit over 1 MiB cannot be moved. The answer is the new Draft.",
+        "operationId": "moveAgentDraftFile",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveAgentDraftFileRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentDraft_Output"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path or body",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No file at the old path (urn:agentic-studio:problem:agent-file-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The Repository has no fetched commit to base the Draft on (urn:agentic-studio:problem:agent-draft-no-base), the commit the Draft began from is gone (urn:agentic-studio:problem:agent-draft-base-missing) or other writes kept changing the Draft (urn:agentic-studio:problem:agent-draft-conflict)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A file is at the new path (urn:agentic-studio:problem:agent-draft-path-taken), a path is a link or a submodule (urn:agentic-studio:problem:agent-draft-path-not-writable) or would be a file and a folder (urn:agentic-studio:problem:agent-draft-path-conflict), the file cannot be carried (urn:agentic-studio:problem:agent-draft-move-unsupported), or a Draft limit is passed (urn:agentic-studio:problem:agent-draft-file-too-large, urn:agentic-studio:problem:agent-draft-too-large, urn:agentic-studio:problem:agent-draft-too-many-files)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Clone cannot be read now (urn:agentic-studio:problem:agent-files-unreadable)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/api/agents/definitions-repository/draft/files/revert": {
+      "post": {
+        "description": "Drops the Draft change at the path, so the file is as the base commit has it: an added file goes, a modified file reverts, a deleted file comes back. For a moved file the new path is removed and the original is restored. Dropping the last change empties the Draft. Nothing is read from the Repository. The answer is the new Draft.",
+        "operationId": "revertAgentDraftFile",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevertAgentDraftFileRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentDraft_Output"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path or body",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The Draft does not change the path (urn:agentic-studio:problem:agent-file-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Other writes kept changing the Draft (urn:agentic-studio:problem:agent-draft-conflict)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
     "/api/agents": {
       "get": {
         "description": "The agents Studio knows: a built-in Default agent per Provider, then the folders of the definitions Repository at its last fetched commit, each with its problems and whether it is usable. Computed on each request. Also the base rules every Run starts with. Rows are unique by `source` and `name`, not by `name` alone: a folder named like a built-in agent is listed as refused beside it.",
@@ -4309,6 +4810,221 @@
             "$ref": "#/components/schemas/AgentFileTooLarge_Output"
           }
         ]
+      },
+      "AgentDraftFile_Output": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Relative to the Repository root, with `/` separators."
+          },
+          "change": {
+            "type": "string",
+            "enum": [
+              "added",
+              "modified",
+              "deleted"
+            ]
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Bytes; 0 for a deleted file."
+          },
+          "movedFrom": {
+            "description": "For display: the path this file was moved from; null for any other file.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "path",
+          "change",
+          "size",
+          "movedFrom"
+        ],
+        "additionalProperties": false
+      },
+      "AgentDraftProblem_Output": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "string",
+            "description": "The agent folder the problem is in."
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "entry_missing",
+              "entry_unreadable",
+              "front_matter_missing",
+              "front_matter_malformed",
+              "front_matter_too_large",
+              "key_missing",
+              "key_invalid",
+              "provider_unknown",
+              "model_unknown",
+              "name_invalid",
+              "name_mismatch",
+              "name_reserved",
+              "unknown_key",
+              "forbidden_key",
+              "instructions_too_large",
+              "too_many_files",
+              "file_too_large",
+              "folder_too_large",
+              "path_outside_folder",
+              "nested_git",
+              "symlink_refused",
+              "kind_refused",
+              "duplicate_path",
+              "size_invalid",
+              "cli_config_path",
+              "short_name"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "description": "The file or folder the problem is about, relative to the Repository root."
+          },
+          "key": {
+            "description": "The front matter key, when the problem is about one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "Fixed wording per code; never a value or file content."
+          }
+        },
+        "required": [
+          "agent",
+          "code",
+          "path",
+          "key",
+          "message"
+        ],
+        "additionalProperties": false
+      },
+      "AgentDraft_Output": {
+        "type": "object",
+        "properties": {
+          "baseCommit": {
+            "description": "The commit the changes were made against; null while the Draft is empty.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "currentCommit": {
+            "description": "The commit the Repository holds now; null when none was fetched.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Raised on every write: the web compares it to see that the Draft changed elsewhere."
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentDraftFile_Output"
+            }
+          },
+          "problems": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentDraftProblem_Output"
+            },
+            "description": "What the shared validation finds in each agent folder the Draft touches, with the Draft laid over the base tree. Empty when the Clone cannot be read."
+          },
+          "movedUpstream": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Paths of the Draft whose blob differs between the base commit and the current commit."
+          }
+        },
+        "required": [
+          "baseCommit",
+          "currentCommit",
+          "version",
+          "files",
+          "problems",
+          "movedUpstream"
+        ],
+        "additionalProperties": false
+      },
+      "SaveAgentDraftFileRequest": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
+            "description": "Relative to the Repository root, with `/` separators."
+          },
+          "text": {
+            "description": "The content, stored as UTF-8. Give this or `contentBase64`.",
+            "type": "string"
+          },
+          "contentBase64": {
+            "description": "The content as standard base64, for a binary file. Give this or `text`.",
+            "type": "string",
+            "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "MoveAgentDraftFileRequest": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
+            "description": "The file to move: a file of the Draft or of the base commit."
+          },
+          "to": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
+            "description": "The new path; no file may be there unless the Draft deletes it."
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "additionalProperties": false
+      },
+      "RevertAgentDraftFileRequest": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
+            "description": "Relative to the Repository root, with `/` separators."
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
       },
       "AgentSummary_Output": {
         "type": "object",

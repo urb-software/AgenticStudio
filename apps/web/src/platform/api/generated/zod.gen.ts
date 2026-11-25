@@ -203,6 +203,76 @@ export const zAgentFileOutput = z.union([
     zAgentFileTooLargeOutput
 ]);
 
+export const zAgentDraftFileOutput = z.object({
+    path: z.string(),
+    change: z.enum([
+        'added',
+        'modified',
+        'deleted'
+    ]),
+    size: z.int().gte(0).lte(9007199254740991),
+    movedFrom: z.string().nullable()
+});
+
+export const zAgentDraftProblemOutput = z.object({
+    agent: z.string(),
+    code: z.enum([
+        'entry_missing',
+        'entry_unreadable',
+        'front_matter_missing',
+        'front_matter_malformed',
+        'front_matter_too_large',
+        'key_missing',
+        'key_invalid',
+        'provider_unknown',
+        'model_unknown',
+        'name_invalid',
+        'name_mismatch',
+        'name_reserved',
+        'unknown_key',
+        'forbidden_key',
+        'instructions_too_large',
+        'too_many_files',
+        'file_too_large',
+        'folder_too_large',
+        'path_outside_folder',
+        'nested_git',
+        'symlink_refused',
+        'kind_refused',
+        'duplicate_path',
+        'size_invalid',
+        'cli_config_path',
+        'short_name'
+    ]),
+    path: z.string(),
+    key: z.string().nullable(),
+    message: z.string()
+});
+
+export const zAgentDraftOutput = z.object({
+    baseCommit: z.string().nullable(),
+    currentCommit: z.string().nullable(),
+    version: z.int().gte(0).lte(9007199254740991),
+    files: z.array(zAgentDraftFileOutput),
+    problems: z.array(zAgentDraftProblemOutput),
+    movedUpstream: z.array(z.string())
+});
+
+export const zSaveAgentDraftFileRequest = z.object({
+    path: z.string().min(1).max(255),
+    text: z.string().optional(),
+    contentBase64: z.string().regex(/^(?:[A-Za-z0-9+\/]{4})*(?:[A-Za-z0-9+\/]{2}==|[A-Za-z0-9+\/]{3}=)?$/).optional()
+});
+
+export const zMoveAgentDraftFileRequest = z.object({
+    from: z.string().min(1).max(255),
+    to: z.string().min(1).max(255)
+});
+
+export const zRevertAgentDraftFileRequest = z.object({
+    path: z.string().min(1).max(255)
+});
+
 export const zAgentProblemOutput = z.object({
     code: z.enum([
         'entry_missing',
@@ -1530,6 +1600,34 @@ export const zGetAgentFileQuery = z.object({
 });
 
 export const zGetAgentFileResponse = zAgentFileOutput;
+
+export const zDiscardAgentDraftResponse = zAgentDraftOutput;
+
+export const zGetAgentDraftResponse = zAgentDraftOutput;
+
+export const zGetAgentDraftFileQuery = z.object({
+    path: z.string().min(1).max(255)
+});
+
+export const zGetAgentDraftFileResponse = zAgentFileOutput;
+
+export const zDeleteAgentDraftFileQuery = z.object({
+    path: z.string().min(1).max(255)
+});
+
+export const zDeleteAgentDraftFileResponse = zAgentDraftOutput;
+
+export const zSaveAgentDraftFileBody = zSaveAgentDraftFileRequest;
+
+export const zSaveAgentDraftFileResponse = zAgentDraftOutput;
+
+export const zMoveAgentDraftFileBody = zMoveAgentDraftFileRequest;
+
+export const zMoveAgentDraftFileResponse = zAgentDraftOutput;
+
+export const zRevertAgentDraftFileBody = zRevertAgentDraftFileRequest;
+
+export const zRevertAgentDraftFileResponse = zAgentDraftOutput;
 
 export const zListAgentsResponse = zAgentListOutput;
 
