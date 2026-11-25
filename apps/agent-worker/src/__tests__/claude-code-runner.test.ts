@@ -23,7 +23,7 @@ import { GitCommandError } from '../git.js';
 import { ProviderDisabledError, ProviderGate } from '../provider-gate.js';
 import { drainRunStep, type RunStep, UsageLimitError } from '../runner.js';
 import { agentFields } from './agent-fixtures.js';
-import { golden, GOLDEN_REPOSITORY } from './golden-files.js';
+import { golden, GOLDEN_BIG_REPOSITORY, GOLDEN_REPOSITORY, goldenNotices } from './golden-files.js';
 
 // The Claude Code runner at the mocked process-spawn boundary; the real process is in
 // claude-code-runner.linux.test.ts.
@@ -362,6 +362,20 @@ describe('ClaudeCodeRunner at the spawn boundary', () => {
       expect(readFileSync(join(runDir, 'instructions.md'), 'utf8')).toBe(
         golden('claude-instructions'),
       );
+    });
+
+    it('cuts a big repository text exactly as before for the built-in Default agent', async () => {
+      Object.assign(repoFiles, GOLDEN_BIG_REPOSITORY);
+      spawn.mockImplementation(() => fakeChild(recording('success')));
+
+      const { events } = await drain(runner().start(input('x')));
+
+      expect(readFileSync(join(runDir, 'instructions.md'), 'utf8')).toBe(
+        golden('claude-instructions-big'),
+      );
+      for (const notice of goldenNotices('claude')) {
+        expect(events).toContainEqual({ type: 'notice', text: notice });
+      }
     });
 
     it('leaves the file as it always was for the built-in Default agent', async () => {

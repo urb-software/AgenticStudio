@@ -13,7 +13,7 @@ import { GitCommandError } from '../git.js';
 import { ProviderDisabledError, ProviderGate } from '../provider-gate.js';
 import { AgentFailedError, drainRunStep, type RunStep, UsageLimitError } from '../runner.js';
 import { agentFields } from './agent-fixtures.js';
-import { golden, GOLDEN_REPOSITORY } from './golden-files.js';
+import { golden, GOLDEN_BIG_REPOSITORY, GOLDEN_REPOSITORY, goldenNotices } from './golden-files.js';
 
 // The Codex runner at the mocked process-spawn boundary; the real process is in
 // codex-runner.linux.test.ts.
@@ -296,6 +296,20 @@ describe('CodexRunner at the spawn boundary', () => {
       await drain(runner().start(input('Add a health check')));
 
       expect(readFileSync(join(runDir, 'codex', 'prompt.md'), 'utf8')).toBe(golden('codex-prompt'));
+    });
+
+    it('cuts a big repository text exactly as before for the built-in Default agent', async () => {
+      Object.assign(repoFiles, GOLDEN_BIG_REPOSITORY);
+      replaying('success');
+
+      const { events } = await drain(runner().start(input('Add a health check')));
+
+      expect(readFileSync(join(runDir, 'codex', 'prompt.md'), 'utf8')).toBe(
+        golden('codex-prompt-big'),
+      );
+      for (const notice of goldenNotices('codex')) {
+        expect(events).toContainEqual({ type: 'notice', text: notice });
+      }
     });
 
     it('leaves the prompt as it always was for the built-in Default agent', async () => {

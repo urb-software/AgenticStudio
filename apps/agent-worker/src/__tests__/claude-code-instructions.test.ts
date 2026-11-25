@@ -8,7 +8,14 @@ import {
   type RepositoryFiles,
 } from '../claude-code/instructions.js';
 import { agentFields } from './agent-fixtures.js';
-import { golden, GOLDEN_MARKER, GOLDEN_REPOSITORY } from './golden-files.js';
+import {
+  golden,
+  GOLDEN_BIG_REPOSITORY,
+  GOLDEN_MARKER,
+  GOLDEN_REPOSITORY,
+  goldenNotices,
+} from './golden-files.js';
+import { codexPrompt } from '../codex/cli-options.js';
 
 // The instructions file of a Claude Code step: the agent definition, then the repository's
 // CLAUDE.md and AGENTS.md at the start commit, delimited as untrusted conventions.
@@ -101,20 +108,36 @@ describe('the instructions file', () => {
   it(`cuts the text at ${INSTRUCTIONS_MAX_BYTES / 1024} KiB with a notice`, async () => {
     const built = await buildInstructions(
       agentFields(),
-      repository({
-        'CLAUDE.md': 'é'.repeat(INSTRUCTIONS_MAX_BYTES),
-        'AGENTS.md': 'never reached',
-      }),
+      repository({ 'CLAUDE.md': 'é'.repeat(40_000), 'AGENTS.md': 'never reached' }),
       MARKER,
     );
 
     expect(new TextEncoder().encode(built.text).length).toBeLessThanOrEqual(INSTRUCTIONS_MAX_BYTES);
-    expect(built.text).toContain("[... cut: the instructions reached Studio's limit of 128 KiB]");
+    expect(built.text).toContain("[... cut: the instructions reached Studio's limit of 64 KiB]");
     expect(built.text).toContain('===== END c0ffee12 project conventions: CLAUDE.md =====');
     expect(built.text).not.toContain('never reached');
     expect(built.notices).toEqual([
-      "The repository's instruction text was cut at 128 KiB in total (in CLAUDE.md); the rest was not given to the agent.",
+      "The repository's instruction text was cut at 64 KiB (in CLAUDE.md); the rest was not given to the agent.",
     ]);
+  });
+
+  it('cuts a big repository text exactly as before for the built-in Default agent, in both builders', async () => {
+    const claude = await buildInstructions(
+      agentFields(),
+      repository(GOLDEN_BIG_REPOSITORY),
+      GOLDEN_MARKER,
+    );
+    const codex = await buildInstructions(
+      agentFields(),
+      repository(GOLDEN_BIG_REPOSITORY),
+      GOLDEN_MARKER,
+      ['AGENTS.md'],
+    );
+
+    expect(claude.text).toBe(golden('claude-instructions-big'));
+    expect(claude.notices).toEqual(goldenNotices('claude'));
+    expect(codexPrompt(codex.text, 'Add a health check')).toBe(golden('codex-prompt-big'));
+    expect(codex.notices).toEqual(goldenNotices('codex'));
   });
 
   it('lets no repository text fake the end of its block: only the per-step code delimits', async () => {

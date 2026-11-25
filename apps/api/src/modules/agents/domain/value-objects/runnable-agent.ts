@@ -9,10 +9,18 @@ interface AgentFacts {
   instructions: string;
 }
 
-/**
- * An agent a Run can start with: usable, with its Provider and model known. The one rule for what a
- * Run offers and what a start accepts.
- */
+type RunnableFacts = AgentFacts & {
+  usable: true;
+  provider: 'claude_code' | 'codex';
+  model: string;
+};
+
+/** The one rule for what a Run offers and what a start accepts: usable, Provider and model known. */
+export function isRunnable<T extends AgentFacts>(agent: T): agent is T & RunnableFacts {
+  return agent.usable && agent.provider !== null && agent.model !== null;
+}
+
+/** An agent a Run can start with. */
 export class RunnableAgent {
   private constructor(
     readonly name: string,
@@ -23,9 +31,7 @@ export class RunnableAgent {
     readonly instructions: string,
   ) {}
 
-  /** `null` for an agent that cannot start a Run. */
-  static from(agent: AgentFacts): RunnableAgent | null {
-    if (!agent.usable || agent.provider === null || agent.model === null) return null;
+  static of(agent: RunnableFacts): RunnableAgent {
     return new RunnableAgent(
       agent.name,
       agent.description ?? '',

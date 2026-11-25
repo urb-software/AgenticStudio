@@ -15,7 +15,7 @@ import {
   type ProjectDefaultAgents,
 } from '../../../../projects/contracts/index.js';
 import { RunAgentPreselection } from '../../../domain/value-objects/run-agent-preselection.js';
-import { RunnableAgent } from '../../../domain/value-objects/runnable-agent.js';
+import { isRunnable, RunnableAgent } from '../../../domain/value-objects/runnable-agent.js';
 import {
   DEFINITIONS_FILES,
   type DefinitionsFileRead,
@@ -138,22 +138,21 @@ export class ReadAgentsHandler {
     const stored = await this.defaults.forProject(projectId);
     if (stored.status === 'project_not_found') return stored;
     if (stored.kind === 'definitions') return { status: 'definitions_project' };
-    const chosen = RunAgentPreselection.of(agents, stored.agent);
+    const chosen = RunAgentPreselection.of(
+      agents.map((agent) => ({ name: agent.name, usable: isRunnable(agent) })),
+      stored.agent,
+    );
     return {
       status: 'offered',
-      agents: agents.flatMap((agent) => {
-        const runnable = RunnableAgent.from(agent);
-        return runnable === null
-          ? []
-          : [
-              {
-                name: runnable.name,
-                description: runnable.description,
-                provider: runnable.provider,
-                model: runnable.model,
-                source: runnable.source,
-              },
-            ];
+      agents: agents.filter(isRunnable).map((agent) => {
+        const runnable = RunnableAgent.of(agent);
+        return {
+          name: runnable.name,
+          description: runnable.description,
+          provider: runnable.provider,
+          model: runnable.model,
+          source: runnable.source,
+        };
       }),
       preselected: chosen.agent,
       reason: chosen.reason,

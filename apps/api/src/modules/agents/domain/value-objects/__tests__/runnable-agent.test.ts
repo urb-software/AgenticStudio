@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RunnableAgent } from '../runnable-agent.js';
+import { isRunnable, RunnableAgent } from '../runnable-agent.js';
 
 const USABLE = {
   name: 'reviewer',
@@ -16,14 +16,15 @@ describe('RunnableAgent', () => {
     const { usable: _usable, ...shown } = USABLE;
     void _usable;
 
-    expect(RunnableAgent.from(USABLE)).toMatchObject(shown);
+    expect(isRunnable(USABLE)).toBe(true);
+    expect(isRunnable(USABLE) && RunnableAgent.of(USABLE)).toMatchObject(shown);
   });
 
   it.each([
     ['is not usable', { usable: false }],
     ['has no Provider', { provider: null }],
     ['has no model', { model: null }],
-  ])('is nothing for an agent that %s', (_case, patch) => {
-    expect(RunnableAgent.from({ ...USABLE, ...patch })).toBeNull();
+  ])('is not runnable when the agent %s', (_case, patch) => {
+    expect(isRunnable({ ...USABLE, ...patch })).toBe(false);
   });
 });
