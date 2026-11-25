@@ -20,7 +20,7 @@ import {
  * in SERVER_PACKAGES.
  */
 export const WEB_PACKAGE_CLASSIFICATION: { allowed: string[]; forbidden: string[] } = {
-  allowed: [],
+  allowed: ['@agentic-studio/agent-definitions'],
   forbidden: [
     '@agentic-studio/compose-validation',
     '@agentic-studio/contracts',
@@ -77,6 +77,32 @@ export const CONTROLLER_ALLOWED_IMPORTS = [
   npmPackages('zod', 'yaml'),
 ];
 
+/** The Agent definition validation's production code: its src/ outside tests. */
+const AGENT_DEFINITIONS_PRODUCTION = {
+  path: '^packages/agent-definitions/src/',
+  pathNot: '(^|/)__tests__/',
+};
+
+/**
+ * The one file of the contracts the Agent definition validation may import: the Provider ids and
+ * models, a leaf with no import of its own (subpath `contracts/providers`). The web app takes
+ * them from the validation package, which re-exports them.
+ */
+const CONTRACTS_PROVIDERS = [
+  '^packages/contracts/src/providers\\.ts$',
+  '^@agentic-studio/contracts/providers$',
+];
+
+/**
+ * What the Agent definition validation imports: its own files, the contracts providers subpath
+ * and yaml. Node core modules are not listed, so none may be used: it runs in a browser too.
+ */
+export const AGENT_DEFINITIONS_ALLOWED_IMPORTS = [
+  '^packages/agent-definitions/src/',
+  ...CONTRACTS_PROVIDERS,
+  npmPackages('yaml'),
+];
+
 export const monorepoGate: Gate = {
   entries: ['apps', 'packages'],
   exclude: '^(apps|packages)/[^/]+/(node_modules|dist|\\.next|out|coverage)/',
@@ -126,6 +152,35 @@ export const monorepoGate: Gate = {
           npmPackages(...SERVER_PACKAGES),
         ],
       },
+    },
+    {
+      name: 'mono-agent-definitions-allowed-imports-only',
+      comment:
+        "Deny by default: the Agent definition validation's production code imports only its " +
+        'own files, the contracts providers subpath and yaml, so it stays a ' +
+        'pure function that runs in a browser (no Node core module, no zod, no other package).',
+      severity: 'error',
+      from: AGENT_DEFINITIONS_PRODUCTION,
+      to: { pathNot: AGENT_DEFINITIONS_ALLOWED_IMPORTS },
+    },
+    {
+      name: 'mono-agent-definitions-production-no-test-code',
+      comment:
+        "The validation's production code never imports its test code: tests use Node modules, " +
+        'so importing a test file would bring them into the browser unseen.',
+      severity: 'error',
+      from: AGENT_DEFINITIONS_PRODUCTION,
+      to: { path: '^packages/agent-definitions/src/.*__tests__/' },
+    },
+    {
+      name: 'mono-contracts-providers-leaf',
+      comment:
+        'The contracts providers file imports nothing (no file, package or Node module): it ' +
+        'reaches the browser through the Agent definition validation, so a later import would ' +
+        'bring zod or the worker protocol along unseen.',
+      severity: 'error',
+      from: { path: '^packages/contracts/src/providers\\.ts$' },
+      to: { path: '.' },
     },
     {
       name: 'mono-agent-worker-no-studio-infrastructure',

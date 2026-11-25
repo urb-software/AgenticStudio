@@ -5,6 +5,28 @@ import { monorepoGate, WEB_PACKAGE_CLASSIFICATION } from './gate';
 
 describeGate('monorepo', monorepoGate, '.', [
   { fixture: 'apps-use-packages', expected: [] },
+  {
+    fixture: 'web-imports-contracts-providers-subpath',
+    expected: ['mono-web-no-server-implementations'],
+  },
+  { fixture: 'web-imports-agent-definitions-package', expected: [] },
+  {
+    fixture: 'contracts-providers-imports-a-file',
+    expected: ['mono-contracts-providers-leaf'],
+  },
+  {
+    fixture: 'agent-definitions-imports-its-tests',
+    expected: ['mono-agent-definitions-production-no-test-code'],
+  },
+  { fixture: 'agent-definitions-uses-providers-and-yaml', expected: [] },
+  {
+    fixture: 'agent-definitions-imports-contracts-root',
+    expected: ['mono-agent-definitions-allowed-imports-only'],
+  },
+  {
+    fixture: 'agent-definitions-imports-node-core',
+    expected: ['mono-agent-definitions-allowed-imports-only'],
+  },
   { fixture: 'web-imports-api-implementation', expected: ['mono-no-cross-app-imports'] },
   { fixture: 'web-imports-database-package', expected: ['mono-web-no-server-implementations'] },
   { fixture: 'web-imports-contracts-package', expected: ['mono-web-no-server-implementations'] },
