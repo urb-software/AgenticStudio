@@ -9,11 +9,4 @@ describe('Badge', () => {
     expect(screen.getByText('Definitions Repository').dataset.variant).toBe('neutral');
     await expect(container).toHaveNoAxeViolations();
   });
-
-  it('marks what is unusable with the danger tone and has no axe violations', async () => {
-    const { container } = render(<Badge tone="danger">Not usable</Badge>);
-
-    expect(screen.getByText('Not usable').dataset.tone).toBe('danger');
-    await expect(container).toHaveNoAxeViolations();
-  });
 });

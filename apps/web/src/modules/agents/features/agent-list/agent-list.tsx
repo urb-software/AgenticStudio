@@ -60,7 +60,11 @@ function AgentRow({
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-mono text-code font-semibold break-all">{agent.name}</span>
         {agent.source === 'built_in' ? <Badge>Built in</Badge> : null}
-        {agent.usable ? null : <Badge tone="danger">Not usable</Badge>}
+        {agent.usable ? null : (
+          <span className="text-caption font-medium whitespace-nowrap text-run-failed">
+            Not usable
+          </span>
+        )}
         {/* A reserved name is judged here only: the API answers another route for it. */}
         {openable ? (
           <Button
