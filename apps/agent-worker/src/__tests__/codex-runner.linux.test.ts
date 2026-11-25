@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { AGENT_DEFINITION } from '../agent-definition/index.js';
+import { BASE_RULES } from '@agentic-studio/contracts';
 import { CodexRunner, probeCodex } from '../codex/runner.js';
 import { ManagedGuardrails } from '../managed-guardrails.js';
 import { installManagedGuardrails } from './fixtures/managed-guardrails.js';
@@ -24,6 +24,7 @@ import { ProviderGate } from '../provider-gate.js';
 import { AgentFailedError, drainRunStep, type RunStep, UsageLimitError } from '../runner.js';
 import { StepProcesses } from '../step-processes.js';
 import { git, isolatedGitEnv } from './fixtures/git-fixture.js';
+import { agentFields } from './agent-fixtures.js';
 
 // The Codex runner with a real process: a stub executable replays recorded streams, and a hostile
 // repository proves its configuration never reaches the CLI (what the real CLI loads: smoke-codex).
@@ -105,6 +106,7 @@ describe.skipIf(process.platform !== 'linux')('CodexRunner with the stub CLI (Li
     runId: '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b',
     projectId: '3a5c7e9b-2d4f-4a6c-8e0b-1d3f5a7c9e2b',
     provider: 'codex',
+    ...agentFields('codex'),
     task,
     startCommit,
     repository: { remoteUrl: 'https://git.example.test/acme/shop.git' },
@@ -119,7 +121,6 @@ describe.skipIf(process.platform !== 'linux')('CodexRunner with the stub CLI (Li
     workspace: { repoDir, runDir, env: { COMPOSE_PROJECT_NAME: 'studio-run-0b8e5c2d1f3a' } },
     signal,
     processes,
-    agentDefinition: AGENT_DEFINITION,
   });
   const calls = () =>
     readFileSync(join(runDir, 'codex-stub-calls.ndjson'), 'utf8')
@@ -192,7 +193,7 @@ describe.skipIf(process.platform !== 'linux')('CodexRunner with the stub CLI (Li
     expect(call!.cwd).toBe(repoDir);
     // Standard input is the prompt file: read to its end, never an open pipe.
     expect(call!.stdin).toBe('file');
-    expect(call!.stdinText.startsWith(AGENT_DEFINITION.text.trimEnd())).toBe(true);
+    expect(call!.stdinText.startsWith(BASE_RULES.text.trimEnd())).toBe(true);
     expect(call!.stdinText).toContain("# The operator's Task\n\nAdd a health check");
   });
 

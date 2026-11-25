@@ -202,6 +202,44 @@ export const runDiffStateSchema = z.strictObject({
 });
 export type RunDiffState = z.infer<typeof runDiffStateSchema>;
 
+/** A usable agent name: lower-case letters, digits and `-`, up to 64 characters. */
+export const RUN_AGENT_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
+/** Longest instructions of an agent, in characters: the definitions' own limit in bytes, 64 KiB. */
+export const AGENT_INSTRUCTIONS_MAX_LENGTH = 64 * 1024;
+
+/**
+ * Studio's base rules as a claim carries them: the version for the Run's log and the text every
+ * real runner gives its agent first. The worker has no copy of its own.
+ */
+export const baseRulesPayloadSchema = z.strictObject({
+  version: z.string().min(1).max(64),
+  text: z.string().min(1).max(AGENT_INSTRUCTIONS_MAX_LENGTH),
+});
+export type BaseRulesPayload = z.infer<typeof baseRulesPayloadSchema>;
+
+/**
+ * The agent a Run recorded at start, handed back with every claim of the Run: Studio never
+ * resolves the agent again, so a definition that changed or was removed since changes nothing.
+ * The instructions are untrusted text, like the Task.
+ */
+export const runAgentPayloadSchema = z
+  .strictObject({
+    name: z.string().regex(RUN_AGENT_NAME_PATTERN),
+    source: z.enum(['built_in', 'definitions']),
+    /** The definitions Repository commit the agent was read at; null for a built-in agent. */
+    commit: commitIdSchema.nullable(),
+    provider: providerSchema,
+    /** Recorded and carried; the runners do not pass it to the CLI yet. */
+    model: z.string().min(1).max(64),
+    instructions: z.string().max(AGENT_INSTRUCTIONS_MAX_LENGTH),
+  })
+  .refine((agent) => (agent.source === 'definitions') === (agent.commit !== null), {
+    path: ['commit'],
+    message: 'A definitions agent carries its commit, a built-in agent none.',
+  });
+export type RunAgentPayload = z.infer<typeof runAgentPayloadSchema>;
+
 /** An opaque reference to the agent's session, as the runner reported it. */
 const sessionRefSchema = z.string().min(1).max(SESSION_REF_MAX_LENGTH);
 
@@ -214,6 +252,9 @@ export const runPayloadSchema = z
     runId: z.uuid(),
     projectId: z.uuid(),
     provider: providerSchema,
+    /** Every claim of the Run carries the base rules and the Run's recorded agent. */
+    baseRules: baseRulesPayloadSchema,
+    agent: runAgentPayloadSchema,
     task: z.string().min(1).max(TASK_MAX_LENGTH),
     /** The commit of the integration branch the Run starts from. */
     startCommit: z.string().min(1).max(64),
@@ -312,6 +353,10 @@ export const runPayloadSchema = z
      * `limits.maxSteps`.
      */
     completedSteps: z.int().min(0),
+  })
+  .refine((payload) => payload.agent.provider === payload.provider, {
+    path: ['agent'],
+    message: 'The provider of a Run is the provider of its agent.',
   })
   .refine((payload) => (payload.kind !== 'start') === (payload.runBranch !== undefined), {
     path: ['runBranch'],

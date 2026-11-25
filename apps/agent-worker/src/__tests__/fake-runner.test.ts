@@ -4,15 +4,17 @@ import {
   type RunnerEvent,
   type RunPayload,
 } from '@agentic-studio/contracts';
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { AGENT_DEFINITION } from '../agent-definition/index.js';
-import { FakeRunner, fakeScenarioOf, fakeSessionRef } from '../fake-runner.js';
+import { FakeRunner, fakeAgentLine, fakeScenarioOf, fakeSessionRef } from '../fake-runner.js';
 import { AgentFailedError, drainRunStep } from '../runner.js';
+import { agentFields } from './agent-fixtures.js';
 
 const run = (task: string): RunPayload => ({
   runId: '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b',
   projectId: '3a5c7e9b-2d4f-4a6c-8e0b-1d3f5a7c9e2b',
   provider: 'claude_code',
+  ...agentFields('claude_code'),
   task,
   startCommit: 'a'.repeat(40),
   repository: { remoteUrl: 'https://git.example.test/acme/shop.git' },
@@ -34,7 +36,6 @@ async function start(task: string, signal = new AbortController().signal, slowMs
       workspace,
       signal,
       processes,
-      agentDefinition: AGENT_DEFINITION,
     }),
     (event) => events.push(event),
   );
@@ -153,7 +154,6 @@ describe('FakeRunner', () => {
           sessionRef,
           signal: new AbortController().signal,
           processes,
-          agentDefinition: AGENT_DEFINITION,
         }),
         (event) => events.push(event),
       ).then((result) => ({ result, events }));
@@ -238,5 +238,58 @@ describe('FakeRunner', () => {
       expect(refused).toBeInstanceOf(AgentFailedError);
       expect((refused as Error).message).toMatch(/session/);
     });
+  });
+});
+
+describe('the agent the fake runner records', () => {
+  const INSTRUCTIONS = 'Review every change twice.\n';
+  const fields = agentFields('claude_code');
+  const reviewer = (task: string): RunPayload => ({
+    ...run(task),
+    agent: {
+      ...fields.agent,
+      name: 'reviewer',
+      source: 'definitions',
+      commit: 'c'.repeat(40),
+      model: 'opus',
+      instructions: INSTRUCTIONS,
+    },
+  });
+  const startWith = async (payload: RunPayload) => {
+    const events: RunnerEvent[] = [];
+    await drainRunStep(
+      new FakeRunner().start({
+        run: payload,
+        workspace,
+        signal: new AbortController().signal,
+        processes,
+      }),
+      (event) => events.push(event),
+    );
+    return events.map((event) => event.text);
+  };
+
+  it('logs the commit, the base rules version and the size and digest of the instructions, never their text', () => {
+    const line = fakeAgentLine(reviewer('x'));
+
+    expect(line).toBe(
+      `fake runner: agent reviewer at ${'c'.repeat(40)}, model opus; ` +
+        `base rules ${fields.baseRules.version}; instructions ${INSTRUCTIONS.length} bytes, ` +
+        `sha256 ${createHash('sha256').update(INSTRUCTIONS).digest('hex')}`,
+    );
+    expect(line).not.toContain('Review every');
+  });
+
+  it('puts that line right after the scenario line of a start, and nothing else changes', async () => {
+    const texts = await startWith(reviewer('Add a feature'));
+
+    expect(texts[0]).toBe('fake runner: success');
+    expect(texts[1]).toBe(fakeAgentLine(reviewer('x')));
+    expect(texts.slice(2)).toEqual((await startWith(run('Add a feature'))).slice(1));
+  });
+
+  it('logs nothing for the built-in Default agent, so its Runs log what they always did', async () => {
+    expect(fakeAgentLine(run('x'))).toBeNull();
+    expect((await startWith(run('x'))).filter((text) => text.includes('agent'))).toEqual([]);
   });
 });

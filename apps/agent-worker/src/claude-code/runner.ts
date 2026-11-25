@@ -37,7 +37,7 @@ import {
   type VersionCheck,
 } from './cli-options.js';
 import { prepareRunSettings } from './guardrails.js';
-import { buildInstructions, type RepositoryFiles } from './instructions.js';
+import { agentNotice, buildInstructions, type RepositoryFiles } from './instructions.js';
 import {
   parseTreeListing,
   prepareRepoPlugin,
@@ -90,7 +90,7 @@ export class ClaudeCodeRunner implements Runner {
   }
 
   private async *step(input: StartRunStepInput, prompt: string, sessionRef?: string): RunStep {
-    const { run, workspace, signal, processes, agentDefinition } = input;
+    const { run, workspace, signal, processes } = input;
     // The dispatcher checked already; nothing is written for a provider that is off.
     this.options.cli.gate.assertEnabled(PROVIDER);
     signal.throwIfAborted();
@@ -105,7 +105,7 @@ export class ClaudeCodeRunner implements Runner {
     await mkdir(files.tmpDir, { recursive: true, mode: 0o700 });
     const marker = this.options.marker?.() ?? randomBytes(6).toString('hex');
     const instructions = await buildInstructions(
-      agentDefinition,
+      run,
       this.repositoryFiles(workspace, run.startCommit, signal),
       marker,
     );
@@ -116,6 +116,7 @@ export class ClaudeCodeRunner implements Runner {
       this.repositoryTree(workspace, run.startCommit, signal),
     );
     for (const notice of plugin.notices) yield { type: 'notice', text: notice };
+    yield { type: 'notice', text: agentNotice(run) };
     const guardrails = await prepareRunSettings(files.settingsFile, this.options.guardrails?.dir);
     signal.throwIfAborted();
     const args = claudeArguments({

@@ -1,13 +1,13 @@
 import { QUESTION_OPTIONS_MAX } from '@agentic-studio/contracts';
 import { describe, expect, it } from 'vitest';
-import { AGENT_DEFINITION } from '../agent-definition/index.js';
+import { BASE_RULES } from '@agentic-studio/contracts';
 
 // The built-in agent definition's rules for when the agent stops to ask the operator.
 describe('built-in agent definition', () => {
-  const text = AGENT_DEFINITION.text;
+  const text = BASE_RULES.text;
 
   it('is versioned', () => {
-    expect(AGENT_DEFINITION.version).toMatch(/^\d{4}-\d{2}-\d{2}\.\d+$/);
+    expect(BASE_RULES.version).toMatch(/^\d{4}-\d{2}-\d{2}\.\d+$/);
   });
 
   it('states the structured result contract: done, or needs_input with a question', () => {

@@ -9,6 +9,7 @@ import { GitRunner } from '../git.js';
 import { RunDiffs, RunDiffUnavailableError } from '../run-diff.js';
 import { type PreparedRun, WorkingCopies } from '../working-copy.js';
 import { createRemote, type FixtureRemote, git, isolatedGitEnv } from './fixtures/git-fixture.js';
+import { agentFields } from './agent-fixtures.js';
 
 // A Run's diffs computed from a real Working copy on fixture repositories.
 
@@ -55,6 +56,7 @@ describe.skipIf(process.platform !== 'linux')('RunDiffs', () => {
       runId: randomUUID(),
       projectId: '3a5c7e9b-2d4f-4a6c-8e0b-1d3f5a7c9e2b',
       provider: 'claude_code',
+      ...agentFields('claude_code'),
       task: 'Add pagination',
       startCommit: first,
       repository: { remoteUrl: remote.url },
