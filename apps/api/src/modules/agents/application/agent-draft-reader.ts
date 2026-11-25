@@ -77,15 +77,27 @@ export class AgentDraftReader {
     };
     if (baseCommit === null || files.length === 0) return view;
     const [problems, movedUpstream] = await Promise.all([
-      this.problemsOf(draft, baseCommit),
+      this.problemsOf(draft, baseCommit).then((judged) => judged ?? []),
       this.movedUpstream(draft, baseCommit, currentCommit),
     ]);
     return { ...view, problems, movedUpstream };
   }
 
-  private async problemsOf(draft: AgentDraft, baseCommit: string): Promise<AgentDraftProblem[]> {
+  /**
+   * The problems of the Draft's agent folders, or `null` when the Clone could not be read, so
+   * that nothing was judged. A publish must refuse `null`: it never means "no problem".
+   */
+  judge(draft: AgentDraft): Promise<AgentDraftProblem[] | null> {
+    if (draft.baseCommit === null) return Promise.resolve(null);
+    return this.problemsOf(draft, draft.baseCommit);
+  }
+
+  private async problemsOf(
+    draft: AgentDraft,
+    baseCommit: string,
+  ): Promise<AgentDraftProblem[] | null> {
     const tree = await this.definitions.listTree(baseCommit, { whole: true });
-    if (tree.status !== 'listed' || tree.truncated) return [];
+    if (tree.status !== 'listed' || tree.truncated) return null;
 
     const changed = new Map(draft.files.map((file) => [file.path, file]));
     const entries: AgentEntry[] = [
@@ -122,7 +134,7 @@ export class AgentDraftReader {
         unchanged.map((folder) => entryPathOf(folder.name)),
         MAX_FILE_BYTES,
       );
-      if (read.status !== 'read') return [];
+      if (read.status !== 'read') return null;
       for (const file of read.files) {
         if (file.status === 'found' && !file.binary) texts.set(file.path, file.text);
       }

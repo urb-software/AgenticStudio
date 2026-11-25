@@ -8,6 +8,7 @@ import {
   NothingToPublishError,
   PublishFailedError,
   PublishNotConfiguredError,
+  PublishPathOutsideAgentsError,
   PublishProblemsError,
   PublishRunningError,
   RepositoryMovedError,
@@ -30,6 +31,11 @@ describe('toPublishHttpError', () => {
     [new NothingToPublishError(), 409, AGENTS_PROBLEM_TYPES.nothingToPublish],
     [new RepositoryMovedError(), 409, AGENTS_PROBLEM_TYPES.repositoryMoved],
     [new WriteRefusedError(), 409, AGENTS_PROBLEM_TYPES.writeRefused],
+    [
+      new PublishPathOutsideAgentsError(['.github/ci.yml']),
+      422,
+      AGENTS_PROBLEM_TYPES.publishPathOutsideAgents,
+    ],
     [new PublishFailedError('failed'), 502, AGENTS_PROBLEM_TYPES.publishFailed],
     [
       new PublishFailedError('repository_not_ready'),
@@ -51,6 +57,14 @@ describe('toPublishHttpError', () => {
 
     expect(detail).toMatch(/Deploy key/);
     expect(detail).toMatch(/write access/i);
+  });
+
+  it('lists the paths outside agents/ in the answer', () => {
+    const problem = problemOf(
+      toPublishHttpError(new PublishPathOutsideAgentsError(['.github/ci.yml', 'README.md'])),
+    );
+
+    expect(problem.extensions).toEqual({ paths: ['.github/ci.yml', 'README.md'] });
   });
 
   it('lists every problem of the Draft in a 422', () => {

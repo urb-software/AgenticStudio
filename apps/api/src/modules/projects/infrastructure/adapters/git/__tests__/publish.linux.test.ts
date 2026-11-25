@@ -52,6 +52,7 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter publishing a comm
       log: (message) => logs.push(message),
       allowPrivateRemotes: true,
       definitionsProjectId: () => Promise.resolve(PROJECT_ID),
+      definitionsRemoteUrl: () => Promise.resolve(remote.url),
       ...overrides,
     });
   }
@@ -230,6 +231,21 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter publishing a comm
         adapter({ definitionsProjectId }).publishCommit(PROJECT_ID, remote.url, request(base)),
       ).rejects.toBeInstanceOf(GitProjectNotWritableError);
     }
+    // A remote that is not the definitions Repository's own is refused, whoever asks.
+    await expect(
+      adapter({ definitionsRemoteUrl: () => Promise.resolve(`${remote.url}-other`) }).publishCommit(
+        PROJECT_ID,
+        remote.url,
+        request(base),
+      ),
+    ).rejects.toBeInstanceOf(GitProjectNotWritableError);
+    await expect(
+      adapter({ definitionsRemoteUrl: undefined }).publishCommit(
+        PROJECT_ID,
+        remote.url,
+        request(base),
+      ),
+    ).rejects.toBeInstanceOf(GitProjectNotWritableError);
     // Without the setting the adapter cannot tell, so it writes nowhere.
     await expect(
       adapter({ definitionsProjectId: undefined }).publishCommit(
@@ -488,6 +504,7 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter publishing a comm
   });
 
   describe('over ssh, nothing secret or remote-written reaches an answer or a log', () => {
+    const SSH_URL = 'ssh://git@127.0.0.1:2/srv/git/defs.git';
     const KEY_MARKER = 'KEYMATERIALMARKER0123456789';
     const REMOTE_MARKER = 'REMOTETEXTMARKER9876543210';
     const HOST_KEY =
@@ -523,12 +540,11 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter publishing a comm
 
     it('keeps a key marker and remote text out of the error and the log of a refused push', async () => {
       const sshBinary = await leakingSsh();
-      const git = adapter({ sshBinary });
+      const git = adapter({ sshBinary, definitionsRemoteUrl: () => Promise.resolve(SSH_URL) });
       const base = await cloned(git);
-      const sshUrl = 'ssh://git@127.0.0.1:2/srv/git/defs.git';
 
       const error = await git
-        .publishCommit(PROJECT_ID, sshUrl, request(base), {
+        .publishCommit(PROJECT_ID, SSH_URL, request(base), {
           ssh: { privateKey: privateKey(), hostKeys: [HOST_KEY] },
         })
         .then(
@@ -546,11 +562,11 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter publishing a comm
 
     it('keeps them out when the push fails some other way', async () => {
       // Nothing listens on port 2: ssh itself fails, and the key still stays out.
-      const git = adapter();
+      const git = adapter({ definitionsRemoteUrl: () => Promise.resolve(SSH_URL) });
       const base = await cloned(git);
 
       const error = await git
-        .publishCommit(PROJECT_ID, 'ssh://git@127.0.0.1:2/srv/git/defs.git', request(base), {
+        .publishCommit(PROJECT_ID, SSH_URL, request(base), {
           ssh: { privateKey: privateKey(), hostKeys: [HOST_KEY] },
           timeoutMs: 20_000,
         })

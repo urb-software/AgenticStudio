@@ -113,7 +113,7 @@ describe.runIf(linux)('publishing the Draft (PostgreSQL + Redis via Testcontaine
       (await put('agents/reviewer/AGENT.md', agentFile('reviewer', 'Review it twice.\n'))).status,
     ).toBe(200);
     expect((await put('agents/reviewer/run.sh', '#!/bin/sh\necho two\n')).status).toBe(200);
-    expect((await remove('docs/guide.md')).status).toBe(200);
+    expect((await remove('agents/reviewer/notes.txt')).status).toBe(200);
     return (await getDraft()).body as { baseCommit: string; version: number };
   }
 
@@ -173,7 +173,7 @@ describe.runIf(linux)('publishing the Draft (PostgreSQL + Redis via Testcontaine
     );
     expect(gitIn(fixture.bare, ['ls-tree', next, 'agents/reviewer/run.sh'])).toMatch(/^100755 /);
     expect(gitIn(fixture.bare, ['ls-tree', '-r', '--name-only', next])).not.toContain(
-      'docs/guide.md',
+      'agents/reviewer/notes.txt',
     );
     // The Draft is empty again, with a raised version.
     const after = await getDraft();
@@ -268,6 +268,20 @@ describe.runIf(linux)('publishing the Draft (PostgreSQL + Redis via Testcontaine
     expect(refused.body.problems).toEqual([
       expect.objectContaining({ agent: 'broken', path: expect.stringContaining('agents/broken') }),
     ]);
+    expect(gitIn(fixture.bare, ['rev-parse', 'refs/heads/dev'])).toBe(commit);
+  });
+
+  it('refuses a Draft that changes a path outside agents/, listing it, and publishes nothing', async () => {
+    const { fixture, commit } = await connected('publish-outside');
+    expect((await put('agents/helper/AGENT.md', agentFile('helper'))).status).toBe(200);
+    expect((await put('.github/workflows/ci.yml', 'name: ci')).status).toBe(200);
+    const draft = (await getDraft()).body;
+
+    const refused = await publish(body(draft));
+
+    expect(refused.status).toBe(422);
+    expect(refused.body.type).toBe('urn:agentic-studio:problem:publish-path-outside-agents');
+    expect(refused.body.paths).toEqual(['.github/workflows/ci.yml']);
     expect(gitIn(fixture.bare, ['rev-parse', 'refs/heads/dev'])).toBe(commit);
   });
 

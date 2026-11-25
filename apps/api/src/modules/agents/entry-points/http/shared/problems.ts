@@ -26,6 +26,7 @@ export const AGENTS_PROBLEM_TYPES = {
   writeRefused: 'urn:agentic-studio:problem:write-refused',
   publishProblems: 'urn:agentic-studio:problem:publish-problems',
   publishFailed: 'urn:agentic-studio:problem:publish-failed',
+  publishPathOutsideAgents: 'urn:agentic-studio:problem:publish-path-outside-agents',
 } as const;
 
 /** 404 for a project id that names no project (also one that is not a UUID). */
@@ -257,5 +258,16 @@ export function publishFailed(): ProblemException {
     type: AGENTS_PROBLEM_TYPES.publishFailed,
     title: 'The publish failed',
     detail: 'The push to the Git host failed. The Draft is kept; try again later.',
+  });
+}
+
+/** 422 when the Draft changes paths outside `agents/`; the paths are listed. */
+export function publishPathOutsideAgents(paths: readonly string[]): ProblemException {
+  return new ProblemException(HttpStatus.UNPROCESSABLE_ENTITY, {
+    type: AGENTS_PROBLEM_TYPES.publishPathOutsideAgents,
+    title: 'Paths outside agents/',
+    detail:
+      'Publishing writes only below agents/. Revert the changes outside it, or make them with your own Git.',
+    extensions: { paths },
   });
 }

@@ -57,6 +57,14 @@ export class PublishProblemsError extends Error {
   }
 }
 
+/** The Draft changes a path outside `agents/`: Studio writes no other file to the Git host. */
+export class PublishPathOutsideAgentsError extends Error {
+  constructor(readonly paths: readonly string[]) {
+    super('The Draft changes paths outside agents/.');
+    this.name = 'PublishPathOutsideAgentsError';
+  }
+}
+
 /** The publish could not be done for a reason that is not the Operator's to fix in the Draft. */
 export class PublishFailedError extends Error {
   constructor(readonly reason: 'repository_not_ready' | 'unsupported_platform' | 'failed') {

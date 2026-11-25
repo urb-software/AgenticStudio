@@ -1697,7 +1697,7 @@
             }
           },
           "422": {
-            "description": "The Draft has problems; the `problems` member lists each (urn:agentic-studio:problem:publish-problems)",
+            "description": "The Draft has problems; the `problems` member lists each (urn:agentic-studio:problem:publish-problems), or changes paths outside agents/, listed in `paths` (urn:agentic-studio:problem:publish-path-outside-agents)",
             "content": {
               "application/problem+json": {
                 "schema": {

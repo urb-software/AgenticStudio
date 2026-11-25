@@ -122,6 +122,8 @@ export interface SystemGitSettings {
    * Repository (security.md §4). Without it every write is refused.
    */
   definitionsProjectId?: () => Promise<string | null>;
+  /** The remote URL of the definitions Project's Repository, read with its id: a write goes to no other. */
+  definitionsRemoteUrl?: () => Promise<string | null>;
 }
 
 /**
@@ -1370,7 +1372,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     assertPublishRequest(request);
     this.assertBranch(request.branch);
     return this.guarded('push', async () => {
-      await this.assertDefinitionsProject(projectId);
+      await this.assertDefinitionsProject(projectId, remoteUrl);
       return this.queued(projectId, this.settings.fetchTimeoutMs, options, async (options) => {
         const clone = await this.paths.existingClone(projectId);
         if (!clone) {
@@ -1388,9 +1390,9 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
           const commit = await this.buildCommit(context, gitDir, request);
           const checked = await this.checkRemote(context, remote);
           // The kind is read again right before the write, not only at the start.
-          await this.assertDefinitionsProject(projectId);
+          await this.assertDefinitionsProject(projectId, remoteUrl);
           await this.pushCommit(context, gitDir, checked, commit, branch, options.ssh);
-          // The remote has the commit: the Clone's branch follows, only from the base it was built on.
+          // The remote is the source of truth: if this fails, the next fetch heals the Clone.
           const moved = await this.git(context, [
             gitDir,
             'update-ref',
@@ -1407,8 +1409,12 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     });
   }
 
-  private async assertDefinitionsProject(projectId: string): Promise<void> {
-    if ((await this.settings.definitionsProjectId?.()) !== projectId) {
+  /** The Project is the definitions Project and the remote is the one its Repository has. */
+  private async assertDefinitionsProject(projectId: string, remoteUrl: string): Promise<void> {
+    if (
+      (await this.settings.definitionsProjectId?.()) !== projectId ||
+      (await this.settings.definitionsRemoteUrl?.()) !== remoteUrl
+    ) {
       throw new GitProjectNotWritableError();
     }
   }

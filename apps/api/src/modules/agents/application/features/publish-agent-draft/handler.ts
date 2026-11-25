@@ -14,11 +14,13 @@ import {
   NothingToPublishError,
   PublishFailedError,
   PublishNotConfiguredError,
+  PublishPathOutsideAgentsError,
   PublishProblemsError,
   PublishRunningError,
   RepositoryMovedError,
   WriteRefusedError,
 } from '../../../domain/errors/agent-publish-errors.js';
+import { AGENTS_DIRECTORY } from '@agentic-studio/agent-definitions';
 import type { AgentDraft } from '../../../domain/entities/agent-draft.js';
 import {
   AGENT_DRAFT_REPOSITORY,
@@ -26,7 +28,7 @@ import {
 } from '../../../domain/repositories/agent-draft-repository.js';
 import { PublishMessage } from '../../../domain/value-objects/publish-message.js';
 import { AgentDraftBaseReader } from '../../agent-draft-base.js';
-import { AgentDraftReader, DRAFT_WRITE_ATTEMPTS } from '../../agent-draft-reader.js';
+import { AgentDraftReader } from '../../agent-draft-reader.js';
 import {
   DEFINITIONS_COMMIT_IDENTITY,
   type CommitIdentity,
@@ -89,20 +91,28 @@ export class PublishAgentDraftHandler {
     if (baseCommit === null || baseCommit !== input.baseCommit) {
       throw new DraftChangedConcurrentlyError();
     }
+    // Studio writes nothing but agent definitions to the Git host (no CI workflow, no dot-file).
+    const outside = draft.files
+      .map((file) => file.path)
+      .filter((path) => !path.startsWith(`${AGENTS_DIRECTORY}/`));
+    if (outside.length > 0) throw new PublishPathOutsideAgentsError(outside);
     const base = await this.base.read(baseCommit);
     if (base.currentCommit !== baseCommit) throw new RepositoryMovedError();
-    const view = await this.reader.read(draft);
-    if (view.problems.length > 0) throw new PublishProblemsError(view.problems);
+    const problems = await this.reader.judge(draft);
+    // Not judged is not "no problem": a Clone that cannot be read blocks the publish.
+    if (problems === null) throw new PublishFailedError('repository_not_ready');
+    if (problems.length > 0) throw new PublishProblemsError(problems);
 
+    const changes = await this.changesOf(draft, baseCommit, input.version);
     const result = await this.publisher.publish({
       baseCommit,
-      changes: await this.changesOf(draft, baseCommit),
+      changes,
       message: message.value,
       identity,
     });
     switch (result.status) {
       case 'published':
-        await this.discard();
+        await this.discard(input.version);
         return { commit: result.commit };
       case 'repository_moved':
         throw new RepositoryMovedError();
@@ -115,10 +125,15 @@ export class PublishAgentDraftHandler {
     }
   }
 
-  /** The Draft's files as `projects` commits them: bytes (or a delete) and the mode the base has. */
+  /**
+   * The Draft's files as `projects` commits them: bytes (or a delete) and the mode the base has.
+   * Every save raises the version, so the same version before and after the bytes are read proves
+   * that they are the bytes that were judged; any other is a conflict and nothing is pushed.
+   */
   private async changesOf(
     draft: AgentDraft,
     baseCommit: string,
+    version: number,
   ): Promise<DefinitionsPublishChange[]> {
     const written = draft.files.filter((file) => !file.isDeleted);
     const contents = await this.drafts.findContents(written.map((file) => file.path));
@@ -130,6 +145,7 @@ export class PublishAgentDraftHandler {
       if (ids.status !== 'read') throw new DraftBaseUnreadableError();
       for (const { path, executable } of ids.blobs) modes.set(path, executable);
     }
+    if ((await this.drafts.find()).version !== version) throw new DraftChangedConcurrentlyError();
     return draft.files.map((file): DefinitionsPublishChange => {
       if (file.isDeleted) return { path: file.path, content: null, executable: false };
       const content = contents.get(file.path);
@@ -139,19 +155,18 @@ export class PublishAgentDraftHandler {
   }
 
   /**
-   * The push is done: the Draft goes, as a discard does. When other writes keep getting in, the
-   * commit is still the answer: it is published whatever becomes of the Draft's rows.
+   * The push is done: one conditional discard of the published version only. A Draft that moved
+   * on since keeps its edits, and its old base is then handled by the existing base-missing and
+   * conflict answers.
    */
-  private async discard(): Promise<void> {
-    for (let attempt = 1; attempt <= DRAFT_WRITE_ATTEMPTS; attempt += 1) {
-      const draft = await this.drafts.find();
-      draft.discard(new Date());
-      try {
-        await this.drafts.save(draft, new Map());
-        return;
-      } catch (error) {
-        if (!(error instanceof DraftChangedConcurrentlyError)) throw error;
-      }
+  private async discard(version: number): Promise<void> {
+    const draft = await this.drafts.find();
+    if (draft.version !== version) return;
+    draft.discard(new Date());
+    try {
+      await this.drafts.save(draft, new Map());
+    } catch (error) {
+      if (!(error instanceof DraftChangedConcurrentlyError)) throw error;
     }
   }
 }

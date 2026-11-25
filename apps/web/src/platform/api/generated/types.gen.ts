@@ -2058,7 +2058,7 @@ export type PublishAgentDraftErrors = {
      */
     409: ProblemDetails;
     /**
-     * The Draft has problems; the `problems` member lists each (urn:agentic-studio:problem:publish-problems)
+     * The Draft has problems; the `problems` member lists each (urn:agentic-studio:problem:publish-problems), or changes paths outside agents/, listed in `paths` (urn:agentic-studio:problem:publish-path-outside-agents)
      */
     422: ProblemDetails;
     /**

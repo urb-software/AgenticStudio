@@ -13,6 +13,7 @@ import {
   NothingToPublishError,
   PublishFailedError,
   PublishNotConfiguredError,
+  PublishPathOutsideAgentsError,
   PublishProblemsError,
   PublishRunningError,
   RepositoryMovedError,
@@ -45,6 +46,7 @@ const BASE_FILES: Record<string, FakeCommitFile> = {
   'agents/reviewer/run.sh': { executable: '#!/bin/sh\n' },
   'agents/broken/AGENT.md': 'no front matter at all\n',
   'docs/a.md': 'a\n',
+  'agents/reviewer/old.txt': 'old\n',
 };
 
 /** An in-process lock that is taken without waiting, like the database's. */
@@ -121,7 +123,7 @@ describe('PublishAgentDraftHandler', () => {
         draft.put({ ...f, path: 'agents/new/AGENT.md', size: agentFile('new').length });
         draft.put({ ...f, path: 'agents/reviewer/notes.txt', size: 6 });
         draft.put({ ...f, path: 'agents/reviewer/run.sh', size: 9 });
-        draft.delete({ ...f, path: 'docs/a.md' });
+        draft.delete({ ...f, path: 'agents/reviewer/old.txt' });
       },
       {
         'agents/new/AGENT.md': agentFile('new'),
@@ -152,13 +154,13 @@ describe('PublishAgentDraftHandler', () => {
       ['agents/new/AGENT.md', false],
       // A modified file keeps the mode the base has; an added one is a plain file.
       ['agents/reviewer/notes.txt', false],
+      ['agents/reviewer/old.txt', false],
       ['agents/reviewer/run.sh', true],
-      ['docs/a.md', false],
     ]);
     const byPath = new Map(sent.changes.map((change) => [change.path, change.content]));
     expect(Buffer.from(byPath.get('agents/new/AGENT.md')!).toString()).toBe(agentFile('new'));
     expect(Buffer.from(byPath.get('agents/reviewer/notes.txt')!).toString()).toBe('notes2');
-    expect(byPath.get('docs/a.md')).toBeNull();
+    expect(byPath.get('agents/reviewer/old.txt')).toBeNull();
     // The Draft is gone: no file, no base, no stored bytes.
     expect(repository.stored).toMatchObject({ baseCommit: null, files: [] });
     expect(repository.contents.size).toBe(0);
@@ -320,10 +322,93 @@ describe('PublishAgentDraftHandler', () => {
     expect(repository.stored.files).toHaveLength(4);
   });
 
-  it('discards the Draft although other writes keep getting in, and answers the commit anyway', async () => {
+  it('keeps a newer Draft that was saved while the push ran, discarding only the published version', async () => {
     const version = await realisticDraft();
-    repository.conflicts = 5;
+    publisher.publish.mockImplementationOnce(async () => {
+      const draft = await repository.find();
+      draft.put({ ...facts(), path: 'agents/new/extra.md', size: 1 });
+      await repository.save(draft, new Map([['agents/new/extra.md', Buffer.from('x')]]));
+      return { status: 'published', commit: PUBLISHED };
+    });
 
     await expect(handler.execute(request(version))).resolves.toEqual({ commit: PUBLISHED });
+
+    expect(repository.stored.version).toBe(version + 1);
+    expect(repository.stored.files.map((file) => file.path)).toContain('agents/new/extra.md');
+    expect(repository.contents.has('agents/new/extra.md')).toBe(true);
+  });
+
+  it('pushes only the bytes it judged: a save between the judgement and the read is a conflict', async () => {
+    const version = await realisticDraft();
+    const original = repository.findContents.bind(repository);
+    let calls = 0;
+    repository.findContents = async (paths) => {
+      calls += 1;
+      // The second read is the one that fetches the bytes to push.
+      if (calls === 2) {
+        const draft = await repository.find();
+        draft.put({ ...facts(), path: 'agents/new/AGENT.md', size: 5 });
+        await repository.save(draft, new Map([['agents/new/AGENT.md', Buffer.from('hooks')]]));
+      }
+      return original(paths);
+    };
+
+    await expect(handler.execute(request(version))).rejects.toBeInstanceOf(
+      DraftChangedConcurrentlyError,
+    );
+
+    expect(publisher.publish).not.toHaveBeenCalled();
+  });
+
+  it('answers a conflict, not a failure, for a file reverted between the judgement and the read', async () => {
+    const version = await realisticDraft();
+    const original = repository.findContents.bind(repository);
+    let calls = 0;
+    repository.findContents = async (paths) => {
+      calls += 1;
+      if (calls === 2) {
+        const draft = await repository.find();
+        draft.revert({ ...facts(), path: 'agents/reviewer/notes.txt' });
+        await repository.save(draft, new Map());
+      }
+      return original(paths);
+    };
+
+    await expect(handler.execute(request(version))).rejects.toBeInstanceOf(
+      DraftChangedConcurrentlyError,
+    );
+    expect(publisher.publish).not.toHaveBeenCalled();
+  });
+
+  it('refuses a Draft that was not judged because the entry files could not be read', async () => {
+    const version = await realisticDraft();
+    definitions.readFilesFails = true;
+
+    const error = await handler.execute(request(version)).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(PublishFailedError);
+    expect((error as PublishFailedError).reason).toBe('repository_not_ready');
+    expect(publisher.publish).not.toHaveBeenCalled();
+    expect(repository.stored.files).toHaveLength(4);
+  });
+
+  it('refuses any changed path outside agents/, listing them, and publishes nothing', async () => {
+    const version = await draftWith(
+      (draft, f) => {
+        draft.put({ ...f, path: 'agents/new/AGENT.md', size: agentFile('new').length });
+        draft.put({ ...f, path: '.github/workflows/ci.yml', size: 1 });
+        draft.delete({ ...f, path: 'docs/a.md' });
+      },
+      { 'agents/new/AGENT.md': agentFile('new'), '.github/workflows/ci.yml': 'x' },
+    );
+
+    const error = await handler.execute(request(version)).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(PublishPathOutsideAgentsError);
+    expect((error as PublishPathOutsideAgentsError).paths).toEqual([
+      '.github/workflows/ci.yml',
+      'docs/a.md',
+    ]);
+    expect(publisher.publish).not.toHaveBeenCalled();
   });
 });

@@ -42,6 +42,8 @@ export class FakeDefinitionsFiles implements DefinitionsFiles {
   head: string | null = BASE_COMMIT;
   connected = true;
   unavailable: DefinitionsUnavailable | null = null;
+  /** Fails only `readFiles`, as a Clone that lists but cannot read does. */
+  readFilesFails = false;
   truncated = false;
   readonly commits = new Map<string, Map<string, FakeCommitFile>>();
   listTreeCalls = 0;
@@ -84,6 +86,7 @@ export class FakeDefinitionsFiles implements DefinitionsFiles {
     paths: readonly string[],
     maxBytes: number,
   ): Promise<DefinitionsFilesResult> {
+    if (this.readFilesFails) return Promise.resolve({ status: 'failed' });
     if (this.unavailable) return Promise.resolve({ status: this.unavailable });
     const files = this.commits.get(commit);
     if (!files) return Promise.resolve({ status: 'commit_missing' });

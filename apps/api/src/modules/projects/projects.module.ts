@@ -41,8 +41,14 @@ import { ReadIntegrationFileHandler } from './application/features/read-integrat
 import { ProjectRunPreviewSources } from './entry-points/contracts/run-preview-sources.js';
 import { ProjectRunIntegrationFetches } from './entry-points/contracts/run-integration-fetches.js';
 import { ENVIRONMENT_FILE_REPOSITORY } from './domain/repositories/environment-file-repository.js';
-import { PROJECT_REPOSITORY } from './domain/repositories/project-repository.js';
-import { REPOSITORY_CONNECTION_REPOSITORY } from './domain/repositories/repository-connection-repository.js';
+import {
+  PROJECT_REPOSITORY,
+  type ProjectRepository,
+} from './domain/repositories/project-repository.js';
+import {
+  REPOSITORY_CONNECTION_REPOSITORY,
+  type RepositoryConnectionRepository,
+} from './domain/repositories/repository-connection-repository.js';
 import { CloneRepositoryHandler } from './application/features/clone-repository/handler.js';
 import { ConnectRepositoryEndpoint } from './entry-points/http/operator/connect-repository/endpoint.js';
 import {
@@ -182,14 +188,28 @@ export class ProjectsModule {
         { provide: ENVIRONMENT_FILE_CONTENTS, useClass: SecretStoreEnvironmentFileContents },
         {
           provide: REPOSITORY_GIT,
-          useFactory: (config: AppConfig, definitions: GetDefinitionsProjectIdHandler) =>
+          useFactory: (
+            config: AppConfig,
+            definitions: GetDefinitionsProjectIdHandler,
+            projects: ProjectRepository,
+            repositories: RepositoryConnectionRepository,
+          ) =>
             new SystemGitAdapter({
               ...systemGitSettings(config),
               ...options.gitSettings,
               // The adapter reads the kind itself before it writes: only the definitions Project.
               definitionsProjectId: () => definitions.execute(),
+              definitionsRemoteUrl: async () => {
+                const project = await projects.findDefinitions();
+                return project ? ((await repositories.find(project.id))?.url ?? null) : null;
+              },
             }),
-          inject: [APP_CONFIG, GetDefinitionsProjectIdHandler],
+          inject: [
+            APP_CONFIG,
+            GetDefinitionsProjectIdHandler,
+            PROJECT_REPOSITORY,
+            REPOSITORY_CONNECTION_REPOSITORY,
+          ],
         },
         {
           provide: CONNECT_REPOSITORY_SETTINGS,
