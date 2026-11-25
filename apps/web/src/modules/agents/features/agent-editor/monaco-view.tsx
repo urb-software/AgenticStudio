@@ -25,7 +25,6 @@ import 'monaco-editor/languages/definitions/shell/register';
 import 'monaco-editor/languages/definitions/typescript/register';
 import 'monaco-editor/languages/definitions/yaml/register';
 import { jsonDefaults } from 'monaco-editor/languages/features/json/register';
-import { useTheme } from 'next-themes';
 import { useEffect, useRef } from 'react';
 import type { EditorLanguage } from './editor-model';
 
@@ -63,6 +62,9 @@ function tokensOf(): Record<string, string> {
 
 /** `#rrggbb`-only: a token that is not (it should be) falls back to Monaco's own colour. */
 const hex = (value: string) => (/^#[0-9a-f]{6}$/i.test(value) ? value : undefined);
+
+/** The theme the app has applied: next-themes sets the class on `<html>` after its own render. */
+const isDark = () => !document.documentElement.classList.contains('light');
 
 function defineStudioTheme(dark: boolean) {
   const tokens = tokensOf();
@@ -111,14 +113,12 @@ export default function MonacoView({
 }: MonacoViewProps) {
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
-  const { resolvedTheme } = useTheme();
-  const dark = resolvedTheme !== 'light';
 
   // One editor for the view's life; the model and the theme change under it.
   useEffect(() => {
     const element = host.current;
     if (!element) return undefined;
-    const fontFamily = defineStudioTheme(dark);
+    const fontFamily = defineStudioTheme(isDark());
     const created = monaco.editor.create(element, {
       readOnly: true,
       domReadOnly: true,
@@ -147,11 +147,18 @@ export default function MonacoView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Follows the class on `<html>` itself, so the tokens are read after the app has applied them.
   useEffect(() => {
-    const fontFamily = defineStudioTheme(dark);
-    monaco.editor.setTheme(THEME_NAME);
-    editor.current?.updateOptions({ fontFamily });
-  }, [dark]);
+    const apply = () => {
+      const fontFamily = defineStudioTheme(isDark());
+      monaco.editor.setTheme(THEME_NAME);
+      editor.current?.updateOptions({ fontFamily });
+    };
+    apply();
+    const observer = new MutationObserver(apply);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const current = editor.current;

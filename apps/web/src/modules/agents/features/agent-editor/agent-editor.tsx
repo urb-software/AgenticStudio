@@ -136,7 +136,12 @@ function EditorBody() {
   }
 
   const newestCommit = latest.data?.commit ?? undefined;
-  const newer = commit !== undefined && newestCommit !== undefined && newestCommit !== commit;
+  // Also when the marks were read at another commit than the tree: they would describe files
+  // that are not shown.
+  const marksCommit = marks.data?.commit ?? undefined;
+  const newer =
+    (newestCommit !== undefined && newestCommit !== commit) ||
+    (marksCommit !== undefined && marksCommit !== commit);
   const problems = [...agents.values()].flatMap((agent) =>
     agent.problems.map((problem) => ({ agent: agent.name, problem })),
   );
@@ -185,8 +190,11 @@ function EditorBody() {
               </Button>
             }
           >
-            A newer commit, <code className="text-code">{shortSha(newestCommit ?? '')}</code>, has
-            been fetched. The files below are still at the earlier commit.
+            The Repository is now at commit{' '}
+            <code className="text-code">
+              {shortSha((newestCommit !== commit ? newestCommit : marksCommit) ?? '')}
+            </code>
+            , not the one shown here.
           </Banner>
         ) : null}
         {commit === undefined ? (

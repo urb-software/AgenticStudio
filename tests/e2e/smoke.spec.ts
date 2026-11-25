@@ -1406,11 +1406,9 @@ test(RUN_TEST, async ({ page }, testInfo) => {
   await expect.poll(async () => (await readRun()).latestMergeApproval?.result).toBe('carried_out');
 });
 
-// Story #306 (the read-only editor): the agent editor opens a definitions file in Monaco, which
-// is bundled with the app (no request leaves the Studio's origin), cannot change the text,
-// moves to a problem's line, and passes axe in both themes. The three API reads that the editor
-// makes are answered in the browser: the content of a definitions Repository is not what this
-// test is about, and it needs no Repository (so it also runs where Repository features do not).
+// The agent editor opens definitions files in a bundled, read-only Monaco (no request leaves
+// the origin) that follows the app's theme. The editor's three API reads are answered in the
+// browser, so the test needs no definitions Repository.
 test('the agent editor shows a definitions file in a bundled, read-only Monaco', async ({
   page,
 }) => {
@@ -1461,13 +1459,21 @@ test('the agent editor shows a definitions file in a bundled, read-only Monaco',
         commit: sha,
         repository,
         truncated: false,
-        entries: [entry('agents/reviewer/AGENT.md', 'reviewer'), entry('README.md', null)],
+        entries: [
+          entry('agents/reviewer/AGENT.md', 'reviewer'),
+          entry('README.md', null),
+          entry('config.json', null),
+        ],
       }),
     }),
   );
   await page.route(/\/api\/agents\/definitions-repository\/files\/content\?/, (route) => {
     const path = new URL(route.request().url()).searchParams.get('path');
-    const content = path === 'README.md' ? '# Agents\n' : agentMd.join('\n');
+    const contents: Record<string, string> = {
+      'README.md': '# Agents\n',
+      'config.json': '{"mode": 1}\n',
+    };
+    const content = contents[path ?? ''] ?? agentMd.join('\n');
     return route.fulfill({
       ...json,
       body: JSON.stringify({ commit: sha, path, kind: 'text', content }),
@@ -1488,6 +1494,7 @@ test('the agent editor shows a definitions file in a bundled, read-only Monaco',
 
   // Read-only: typing changes nothing.
   await editor.locator('.view-lines').click();
+  await expect(editor).toHaveClass(/focused/);
   await page.keyboard.type('zzz');
   await expect(editor.locator('.view-lines')).not.toContainText('zzz');
 
@@ -1496,15 +1503,54 @@ test('the agent editor shows a definitions file in a bundled, read-only Monaco',
   await expect(editor.locator('.line-numbers.active-line-number')).toHaveText('3');
 
   // The file tree on a desktop, the chooser on a phone.
-  if ((page.viewportSize()?.width ?? 0) < 768) {
-    await page.getByRole('combobox', { name: 'File' }).selectOption('README.md');
-  } else {
-    await page
-      .getByRole('navigation', { name: 'Files' })
-      .getByRole('button', { name: 'README.md' })
-      .click();
-  }
+  const phone = (page.viewportSize()?.width ?? 0) < 768;
+  const openFile = async (name: string) => {
+    if (phone) {
+      await page.getByRole('combobox', { name: 'File' }).selectOption(name);
+    } else {
+      await page
+        .getByRole('navigation', { name: 'Files' })
+        .getByRole('button', { name, exact: true })
+        .click();
+    }
+  };
+  await openFile('README.md');
   await expect(editor.locator('.view-lines')).toContainText('# Agents');
+  // A JSON file starts the JSON service, whose worker is bundled too.
+  await openFile('config.json');
+  await expect(editor.locator('.view-lines')).toContainText('"mode"');
+  await expect(editor.locator('.view-line span span[class^="mtk"]').nth(1)).toBeVisible();
+
+  // The in-app theme toggle moves Monaco's colours with the app's, both ways.
+  const background = () =>
+    page.evaluate(() => {
+      const probe = document.createElement('div');
+      probe.style.background = 'var(--code-bg)';
+      document.body.append(probe);
+      const expected = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      const actual = getComputedStyle(
+        document.querySelector('.monaco-editor .monaco-editor-background')!,
+      ).backgroundColor;
+      return { expected, actual };
+    });
+  const toggleTheme = async (to: 'light' | 'dark') => {
+    const label = `Switch to ${to} theme`;
+    if (phone) {
+      await page.getByRole('button', { name: 'Operator menu' }).click();
+      await page.getByRole('menuitem', { name: label }).click();
+    } else {
+      await page
+        .locator('header[aria-label="Top bar"]')
+        .getByRole('button', { name: label })
+        .click();
+    }
+    await expect(page.locator('html')).toHaveClass(new RegExp(`(^|\\s)${to}(\\s|$)`));
+  };
+  for (const to of ['light', 'dark'] as const) {
+    await toggleTheme(to);
+    await expect.poll(async () => (await background()).actual).toBe((await background()).expected);
+  }
 
   await expectInBothThemes(page, editor);
   expect(foreign, 'a request left the Studio origin').toEqual([]);

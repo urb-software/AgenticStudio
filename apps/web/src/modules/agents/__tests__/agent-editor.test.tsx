@@ -117,6 +117,7 @@ function render_(
   overrides: {
     tree?: Partial<AgentFilesOutput>;
     agents?: AgentSummaryOutput[];
+    listCommit?: string | null;
     path?: string;
   } = {},
 ) {
@@ -125,7 +126,7 @@ function render_(
     { repository: null },
     {
       list: agentList({
-        commit: SHA,
+        commit: overrides.listCommit === undefined ? SHA : overrides.listCommit,
         repository: REPOSITORY,
         agents: [...BUILT_INS, ...(overrides.agents ?? [GOOD, BROKEN])],
       }),
@@ -297,6 +298,23 @@ describe('Agent editor: problems', () => {
 });
 
 describe('Agent editor: the commit it reads', () => {
+  it('offers a Reload when a commit arrives after the view opened with none', async () => {
+    const { api } = render_({ tree: { commit: null, entries: [] }, listCommit: null });
+    await screen.findByText(/Nothing has been fetched/i);
+    expect(screen.queryByRole('button', { name: 'Reload' })).toBeNull();
+
+    api.setAgents(agentList({ commit: NEW_SHA, repository: REPOSITORY, agents: BUILT_INS }));
+    act(() => focusManager.setFocused(true));
+
+    expect(await screen.findByRole('button', { name: 'Reload' })).toBeTruthy();
+  });
+
+  it('offers a Reload when the marks and the tree were read at different commits', async () => {
+    render_({ listCommit: NEW_SHA });
+
+    expect(await screen.findByRole('button', { name: 'Reload' })).toBeTruthy();
+  });
+
   it('offers a Reload when a newer commit exists, and switches only when asked', async () => {
     const { api } = render_({ path: 'agents/reviewer/AGENT.md' });
     await screen.findByTestId('monaco');
