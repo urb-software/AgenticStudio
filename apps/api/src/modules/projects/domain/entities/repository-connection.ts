@@ -198,6 +198,17 @@ export class RepositoryConnection {
     return true;
   }
 
+  /**
+   * A `ready` Repository whose Clone is at `from` took a published commit that the remote now
+   * holds: the Clone's commit is `commit`. The fetch time stays (nothing was fetched). False,
+   * with no change, in any other state or when the Clone is at another commit.
+   */
+  recordPublished(published: { commit: string; from: string }): boolean {
+    if (this.state !== 'ready' || this.headSha !== published.from) return false;
+    this.apply({ headSha: published.commit });
+    return true;
+  }
+
   /** `connecting` → `failed`; false if the state was not `connecting`. */
   failClone(failure: RepositoryFailure): boolean {
     if (!this.lifecycle.acceptsCloneResult) return false;

@@ -174,6 +174,30 @@ describe('token matrix over every route', () => {
     }
   });
 
+  it('answers the publish route, the write to a Repository, to a session only', async () => {
+    const publish = routes.find(
+      (route) => route.label === 'POST /api/agents/definitions-repository/draft/publish',
+    );
+    expect(publish?.kind).toBe('operator');
+    for (const credential of ['worker token', 'controller token', 'nothing'] as const) {
+      expect([401, 403], `publish with ${credential}`).toContain(
+        await outcome(publish!, credential),
+      );
+    }
+    expect(await outcome(publish!, 'session')).toBe(200);
+    // A session without the Studio Origin is refused too: a publish is a mutation.
+    const request = {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: `${cookie.name}=valid-session` },
+    } as unknown as HttpRequest;
+    const context = {
+      getHandler: () => publish!.handler,
+      getClass: () => publish!.controller,
+      switchToHttp: () => ({ getRequest: () => request }),
+    } as unknown as ExecutionContext;
+    expect(() => originGuard.canActivate(context)).toThrow(HttpException);
+  });
+
   it('fails closed on controller routes while no controller token is configured', async () => {
     const closed = new SessionGuard(reflector, cookie, sessions, testConfig());
     const route = controllerRoutes[0]!;

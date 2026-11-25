@@ -44,6 +44,8 @@ export interface RunOptions {
    * this many arrive (`stdoutCut` is then true). For output whose start matters, such as a patch.
    */
   stdoutLimitBytes?: number;
+  /** Written to the process's standard input, which is then closed; absent, stdin is closed unread. */
+  input?: Uint8Array;
 }
 
 export interface RunResult {
@@ -84,9 +86,16 @@ export function runGitProcess(options: RunOptions): Promise<RunResult> {
       env: options.env,
       shell: false,
       detached: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: [
+        options.input === undefined ? ('ignore' as const) : ('pipe' as const),
+        'pipe',
+        'pipe',
+      ],
       windowsHide: true,
     });
+    // A process that exits before it reads its input closes the pipe: that is not an error here.
+    child.stdin?.on('error', () => undefined);
+    if (options.input !== undefined) child.stdin?.end(options.input);
     let stdout = '';
     let stderr = '';
     let stdoutBytes = 0;
@@ -97,7 +106,7 @@ export function runGitProcess(options: RunOptions): Promise<RunResult> {
     const decoder = new StringDecoder('utf8');
     const rawChunks: Buffer[] = [];
     // A limit counts the bytes Git wrote, not the longer text a decoder makes of invalid ones.
-    child.stdout.on('data', (chunk: Buffer) => {
+    child.stdout!.on('data', (chunk: Buffer) => {
       if (stdoutLimit === undefined) {
         stdout = appendCapped(stdout, decoder.write(chunk));
         return;
@@ -110,7 +119,7 @@ export function runGitProcess(options: RunOptions): Promise<RunResult> {
         endGroup();
       }
     });
-    child.stderr.setEncoding('utf8').on('data', (chunk: string) => {
+    child.stderr!.setEncoding('utf8').on('data', (chunk: string) => {
       stderr = appendCapped(stderr, chunk);
     });
 

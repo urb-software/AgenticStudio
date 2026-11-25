@@ -273,6 +273,16 @@ export const zRevertAgentDraftFileRequest = z.object({
     path: z.string().min(1).max(255)
 });
 
+export const zPublishAgentDraftRequest = z.object({
+    message: z.string().min(1).max(2000),
+    baseCommit: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/),
+    version: z.int().gte(0).lte(9007199254740991)
+});
+
+export const zPublishAgentDraftResultOutput = z.object({
+    commit: z.string()
+});
+
 export const zAgentProblemOutput = z.object({
     code: z.enum([
         'entry_missing',
@@ -1628,6 +1638,10 @@ export const zMoveAgentDraftFileResponse = zAgentDraftOutput;
 export const zRevertAgentDraftFileBody = zRevertAgentDraftFileRequest;
 
 export const zRevertAgentDraftFileResponse = zAgentDraftOutput;
+
+export const zPublishAgentDraftBody = zPublishAgentDraftRequest;
+
+export const zPublishAgentDraftResponse = zPublishAgentDraftResultOutput;
 
 export const zListAgentsResponse = zAgentListOutput;
 

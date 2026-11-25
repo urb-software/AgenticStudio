@@ -74,3 +74,42 @@ export function isOutOfMemory(stderr: string): boolean {
     .join('\n');
   return OUT_OF_MEMORY.test(local);
 }
+
+/** A ref the remote refused to move because it holds commits the push lacks (porcelain, then text). */
+const PUSH_MOVED =
+  /^!\t[^\t]*\t\[rejected\]|^ ?! \[rejected\]|Updates were rejected because the (?:remote|tip)|\((?:fetch first|non-fast-forward|stale info)\)/m;
+
+/**
+ * A push the host refused for want of write access: a read-only Deploy key, a protected branch, a
+ * hook or a hidden ref declining it, or a key the host does not know. Matched on Git's and the
+ * common hosts' wording; only the class is kept, never the text.
+ */
+const PUSH_WRITE_REFUSED = [
+  /\[remote rejected\]/i,
+  /marked as read only/i,
+  /Write access to repository not granted/i,
+  /Permission to .* denied/i,
+  /not allowed to (?:push|upload)/i,
+  /protected branch/i,
+  /deny updating a hidden ref/i,
+  /pre-receive hook declined/i,
+  /insufficient permission/i,
+  /User permission denied/i,
+  /requested URL returned error: (?:401|403)/i,
+  /Permission denied \(/i,
+  /HTTP Basic: Access denied/i,
+];
+
+/**
+ * What a failed `git push --porcelain` meant: `moved`, `write_refused`, or the reason
+ * {@link classifyGitFailure} gives. The output is only classified, never returned or logged.
+ */
+export function classifyPushFailure(
+  stdout: string,
+  stderr: string,
+): 'moved' | 'write_refused' | GitFailureReason {
+  const output = `${stdout}\n${stderr}`;
+  if (PUSH_MOVED.test(output)) return 'moved';
+  if (PUSH_WRITE_REFUSED.some((pattern) => pattern.test(output))) return 'write_refused';
+  return classifyGitFailure(stderr);
+}

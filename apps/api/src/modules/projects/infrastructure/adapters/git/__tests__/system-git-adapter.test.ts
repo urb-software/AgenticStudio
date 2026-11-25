@@ -104,6 +104,13 @@ describe('SystemGitAdapter on a platform other than Linux', () => {
         git.fetch(PROJECT_ID, URL, 'main'),
         git.readBranchCommit(PROJECT_ID, 'main'),
         git.removeClone(PROJECT_ID),
+        git.publishCommit(PROJECT_ID, URL, {
+          branch: 'main',
+          baseCommit: 'a'.repeat(40),
+          changes: [{ path: 'agents/a/AGENT.md', content: new Uint8Array(), executable: false }],
+          message: 'Publish',
+          identity: { name: 'Studio', email: 'studio@example.test' },
+        }),
         git.scanHostKey('ssh://git@github.com/owner/repo.git'),
       ];
       for (const operation of operations) {

@@ -17,6 +17,7 @@ const OPERATIONS = [
   'readBlobsAtCommit',
   'blobIdsAtCommit',
   'archiveCommit',
+  'publishCommit',
 ] as const;
 
 /**
@@ -71,6 +72,10 @@ export class FakeRepositoryGit implements RepositoryGit {
   );
 
   archiveCommit = vi.fn<RepositoryGit['archiveCommit']>(() =>
+    Promise.reject(new Error('not used')),
+  );
+
+  publishCommit = vi.fn<RepositoryGit['publishCommit']>(() =>
     Promise.reject(new Error('not used')),
   );
 

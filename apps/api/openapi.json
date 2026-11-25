@@ -1650,6 +1650,99 @@
         ]
       }
     },
+    "/api/agents/definitions-repository/draft/publish": {
+      "post": {
+        "description": "Publishes the Draft as one commit on the definitions Repository's Integration branch: the first write Studio makes to a Repository. The commit is built on the Draft's base commit and pushed as a fast-forward, never forced; author and committer are the identity set in Studio's settings, never the request's. `version` and `baseCommit` must still be the Draft's, the Repository must still hold the base commit, and any problem of the Draft blocks the publish. One publish runs at a time. On success the Draft is discarded, the Clone's Integration branch is the new commit and the agents list reads it; a Run already started keeps its own commit. A refused publish leaves the Draft as it was.",
+        "operationId": "publishAgentDraft",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishAgentDraftRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishAgentDraftResult_Output"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body or message",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The Draft changed since the page read it (urn:agentic-studio:problem:agent-draft-conflict), the Repository moved on (urn:agentic-studio:problem:repository-moved), the Draft changes nothing (urn:agentic-studio:problem:nothing-to-publish), another publish is running (urn:agentic-studio:problem:publish-running), the Git host refused the write (urn:agentic-studio:problem:write-refused), or the Draft base is gone (urn:agentic-studio:problem:agent-draft-base-missing, urn:agentic-studio:problem:agent-draft-no-base)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The Draft has problems; the `problems` member lists each (urn:agentic-studio:problem:publish-problems)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The push failed for another reason (urn:agentic-studio:problem:publish-failed)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The commit identity is not configured (urn:agentic-studio:problem:publish-not-configured) or the Clone cannot be read now (urn:agentic-studio:problem:agent-files-unreadable)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
     "/api/agents": {
       "get": {
         "description": "The agents Studio knows: a built-in Default agent per Provider, then the folders of the definitions Repository at its last fetched commit, each with its problems and whether it is usable. Computed on each request. Also the base rules every Run starts with. Rows are unique by `source` and `name`, not by `name` alone: a folder named like a built-in agent is listed as refused beside it.",
@@ -5023,6 +5116,47 @@
         },
         "required": [
           "path"
+        ],
+        "additionalProperties": false
+      },
+      "PublishAgentDraftRequest": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "The commit message, 1 to 2,000 characters; the first line is the subject. Author and committer are never taken from the request."
+          },
+          "baseCommit": {
+            "type": "string",
+            "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
+            "description": "The Draft's base commit, as the page showed it."
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "The Draft's `version`, as the page showed it; another version is a conflict."
+          }
+        },
+        "required": [
+          "message",
+          "baseCommit",
+          "version"
+        ],
+        "additionalProperties": false
+      },
+      "PublishAgentDraftResult_Output": {
+        "type": "object",
+        "properties": {
+          "commit": {
+            "type": "string",
+            "description": "The commit now on the Integration branch of the Repository."
+          }
+        },
+        "required": [
+          "commit"
         ],
         "additionalProperties": false
       },

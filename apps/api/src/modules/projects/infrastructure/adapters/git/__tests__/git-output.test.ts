@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   classifyGitFailure,
+  classifyPushFailure,
   isOutOfMemory,
   MAX_DETAIL_LENGTH,
   redactGitOutput,
@@ -132,5 +133,76 @@ describe('isOutOfMemory', () => {
     '',
   ])('leaves other failures alone: %j', (stderr) => {
     expect(isOutOfMemory(stderr)).toBe(false);
+  });
+});
+
+describe('classifyPushFailure', () => {
+  const rejected = (reason: string) =>
+    `!\trefs/heads/x:refs/heads/dev\t[rejected] (${reason})\nDone\n`;
+
+  it.each(['fetch first', 'non-fast-forward', 'stale info'])(
+    'reads a rejected ref (%s) as the remote having moved',
+    (reason) => {
+      expect(classifyPushFailure(rejected(reason), 'error: failed to push some refs')).toBe(
+        'moved',
+      );
+    },
+  );
+
+  it('reads the rejection text of a moved remote when no porcelain line arrived', () => {
+    const stderr = [
+      ' ! [rejected]        abc -> dev (fetch first)',
+      'error: failed to push some refs to ssh://git@host/r.git',
+      'hint: Updates were rejected because the remote contains work that you do not have locally.',
+    ].join('\n');
+    expect(classifyPushFailure('', stderr)).toBe('moved');
+  });
+
+  it.each([
+    [
+      'a read-only key',
+      'ERROR: The key you are authenticating with has been marked as read only.\nfatal: Could not read from remote repository.',
+    ],
+    [
+      'a key without write access',
+      'ERROR: Write access to repository not granted.\nfatal: Could not read from remote repository.',
+    ],
+    [
+      'a denied account',
+      'remote: Permission to o/r.git denied to deploy-key.\nfatal: unable to access: The requested URL returned error: 403',
+    ],
+    ['a refused push', 'remote: GitLab: You are not allowed to push code to this project.'],
+    [
+      'a protected branch',
+      'remote: error: GH006: Protected branch update failed for refs/heads/dev.',
+    ],
+    ['a hidden ref', ' ! [remote rejected] abc -> dev (deny updating a hidden ref)'],
+    ['a declined hook', ' ! [remote rejected] abc -> dev (pre-receive hook declined)'],
+    [
+      'a refused key',
+      'git@host: Permission denied (publickey).\nfatal: Could not read from remote repository.',
+    ],
+  ])('reads %s as a refused write', (_name, stderr) => {
+    expect(classifyPushFailure('', stderr)).toBe('write_refused');
+  });
+
+  it('reads a remote rejection in the porcelain output as a refused write', () => {
+    expect(
+      classifyPushFailure('!\tabc:refs/heads/dev\t[remote rejected] (hook declined)\n', ''),
+    ).toBe('write_refused');
+  });
+
+  it('keeps the other reasons of a failed Git command', () => {
+    expect(classifyPushFailure('', 'ssh: Could not resolve hostname git.example.test')).toBe(
+      'host_unreachable',
+    );
+    expect(classifyPushFailure('', 'Host key verification failed.')).toBe('host_key_mismatch');
+    expect(classifyPushFailure('', 'something else')).toBe('unknown');
+  });
+
+  it('does not take remote text for a rejection Git did not report', () => {
+    expect(classifyPushFailure('', 'remote: the moved remote is not rejected by fate')).toBe(
+      'unknown',
+    );
   });
 });

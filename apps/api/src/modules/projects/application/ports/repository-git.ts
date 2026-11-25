@@ -131,6 +131,29 @@ export interface CommitBlobId {
   executable: boolean;
 }
 
+/** One file of a publish: its new bytes, or `null` to delete it. `executable` is mode `100755` (else `100644`). */
+export interface PublishChange {
+  path: string;
+  content: Uint8Array | null;
+  executable: boolean;
+}
+
+/** Author and committer of a publish commit; only Studio's settings supply them. */
+export interface CommitIdentity {
+  name: string;
+  email: string;
+}
+
+export interface PublishRequest {
+  /** The Integration branch the commit goes on top of and is pushed to. */
+  branch: string;
+  /** The commit the changes were made against: the branch's tip in the Clone, and the commit's only parent. */
+  baseCommit: string;
+  changes: readonly PublishChange[];
+  message: string;
+  identity: CommitIdentity;
+}
+
 export type GitFailureReason = Exclude<RepositoryFailureCode, 'interrupted'>;
 
 export const GIT_FAILURE_REASONS: readonly GitFailureReason[] = REPOSITORY_FAILURE_CODES.filter(
@@ -304,6 +327,18 @@ export interface RepositoryGit {
     options?: GitOperationOptions,
   ): Promise<CommitArchiveOutcome>;
 
+  /**
+   * Commits the changes on `baseCommit` with a temporary index, pushes that one commit as a plain
+   * fast-forward, then moves the Clone's branch to it. Throws `GitProjectNotWritableError` for
+   * any Project but the definitions Project, whose kind the adapter reads itself.
+   */
+  publishCommit(
+    projectId: string,
+    remoteUrl: string,
+    request: PublishRequest,
+    options?: GitOperationOptions,
+  ): Promise<{ commit: string }>;
+
   /** Removes the Project's Clone (and any partial one); a missing Clone is not an error. */
   removeClone(projectId: string, options?: GitOperationOptions): Promise<void>;
 }
@@ -345,6 +380,38 @@ export class GitCloneMissingError extends GitRequestRejectedError {
   constructor() {
     super('The project has no Clone.');
     this.name = 'GitCloneMissingError';
+  }
+}
+
+/** The Project is not the definitions Project: Studio writes to no other Repository. A {@link GitRequestRejectedError}. */
+export class GitProjectNotWritableError extends GitRequestRejectedError {
+  constructor() {
+    super('Studio writes only to the definitions Repository.');
+    this.name = 'GitProjectNotWritableError';
+  }
+}
+
+/** The changes make the base commit's own tree: there is nothing to commit. */
+export class GitNothingToCommitError extends GitRequestRejectedError {
+  constructor() {
+    super('The changes leave the tree as it is.');
+    this.name = 'GitNothingToCommitError';
+  }
+}
+
+/** The branch is no longer at the base commit, in the Clone or on the remote (the push was not a fast-forward). */
+export class GitRemoteMovedError extends GitOperationError {
+  constructor() {
+    super('unknown');
+    this.name = 'GitRemoteMovedError';
+  }
+}
+
+/** The remote refused the write: a read-only key, a protected branch or a host rule. */
+export class GitWriteRefusedError extends GitOperationError {
+  constructor() {
+    super('auth_failed');
+    this.name = 'GitWriteRefusedError';
   }
 }
 

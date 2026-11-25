@@ -335,6 +335,28 @@ export type RevertAgentDraftFileRequest = {
     path: string;
 };
 
+export type PublishAgentDraftRequest = {
+    /**
+     * The commit message, 1 to 2,000 characters; the first line is the subject. Author and committer are never taken from the request.
+     */
+    message: string;
+    /**
+     * The Draft's base commit, as the page showed it.
+     */
+    baseCommit: string;
+    /**
+     * The Draft's `version`, as the page showed it; another version is a conflict.
+     */
+    version: number;
+};
+
+export type PublishAgentDraftResultOutput = {
+    /**
+     * The commit now on the Integration branch of the Repository.
+     */
+    commit: string;
+};
+
 export type AgentSummaryOutput = {
     /**
      * Unique together with `source`: a built-in and a refused folder can share a name.
@@ -2018,6 +2040,48 @@ export type RevertAgentDraftFileResponses = {
 };
 
 export type RevertAgentDraftFileResponse = RevertAgentDraftFileResponses[keyof RevertAgentDraftFileResponses];
+
+export type PublishAgentDraftData = {
+    body: PublishAgentDraftRequest;
+    path?: never;
+    query?: never;
+    url: '/api/agents/definitions-repository/draft/publish';
+};
+
+export type PublishAgentDraftErrors = {
+    /**
+     * Invalid body or message
+     */
+    400: ProblemDetails;
+    /**
+     * The Draft changed since the page read it (urn:agentic-studio:problem:agent-draft-conflict), the Repository moved on (urn:agentic-studio:problem:repository-moved), the Draft changes nothing (urn:agentic-studio:problem:nothing-to-publish), another publish is running (urn:agentic-studio:problem:publish-running), the Git host refused the write (urn:agentic-studio:problem:write-refused), or the Draft base is gone (urn:agentic-studio:problem:agent-draft-base-missing, urn:agentic-studio:problem:agent-draft-no-base)
+     */
+    409: ProblemDetails;
+    /**
+     * The Draft has problems; the `problems` member lists each (urn:agentic-studio:problem:publish-problems)
+     */
+    422: ProblemDetails;
+    /**
+     * The push failed for another reason (urn:agentic-studio:problem:publish-failed)
+     */
+    502: ProblemDetails;
+    /**
+     * The commit identity is not configured (urn:agentic-studio:problem:publish-not-configured) or the Clone cannot be read now (urn:agentic-studio:problem:agent-files-unreadable)
+     */
+    503: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type PublishAgentDraftError = PublishAgentDraftErrors[keyof PublishAgentDraftErrors];
+
+export type PublishAgentDraftResponses = {
+    200: PublishAgentDraftResultOutput;
+};
+
+export type PublishAgentDraftResponse = PublishAgentDraftResponses[keyof PublishAgentDraftResponses];
 
 export type ListAgentsData = {
     body?: never;

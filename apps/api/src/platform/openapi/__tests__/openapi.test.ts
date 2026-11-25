@@ -224,6 +224,40 @@ describe('OpenAPI document', () => {
     });
   });
 
+  it('documents the publish route with its request, its commit answer and every refusal', () => {
+    const document = createOpenApiDocument(app);
+    const problem = {
+      content: {
+        'application/problem+json': { schema: { $ref: '#/components/schemas/ProblemDetails' } },
+      },
+    };
+
+    const publish = document.paths['/api/agents/definitions-repository/draft/publish']?.post;
+
+    expect(publish?.operationId).toBe('publishAgentDraft');
+    expect(publish?.responses['200']).toMatchObject({
+      content: {
+        'application/json': {
+          schema: { $ref: '#/components/schemas/PublishAgentDraftResult_Output' },
+        },
+      },
+    });
+    for (const status of ['400', '409', '422', '502', '503']) {
+      expect(publish?.responses[status]).toMatchObject(problem);
+    }
+    expect(document.components?.schemas?.PublishAgentDraftRequest).toMatchObject({
+      required: ['message', 'baseCommit', 'version'],
+      additionalProperties: false,
+    });
+    // The request names no author, committer or identity: those are Studio's settings.
+    expect(
+      Object.keys(
+        (document.components?.schemas?.PublishAgentDraftRequest as { properties: object })
+          .properties,
+      ).sort(),
+    ).toEqual(['baseCommit', 'message', 'version']);
+  });
+
   it('documents the project detail and repository endpoints', () => {
     const document = createOpenApiDocument(app);
     const ref = (name: string) => ({

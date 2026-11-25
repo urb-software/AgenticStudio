@@ -4,6 +4,7 @@ import { DatabaseModule } from '../../platform/database/database.module.js';
 import { SecretsModule } from '../../platform/secrets/secrets.module.js';
 import {
   DEFINITIONS_FILES,
+  DEFINITIONS_PUBLISH,
   DEFINITIONS_REPOSITORIES,
   PROJECT_KINDS,
   RUN_BRANCH_REVIEWS,
@@ -21,7 +22,9 @@ import { ReadDefinitionsBlobIdsHandler } from './application/features/read-defin
 import { ReadDefinitionsBlobsHandler } from './application/features/read-definitions-blobs/handler.js';
 import { ReadDefinitionsFilesHandler } from './application/features/read-definitions-files/handler.js';
 import { ProjectDefinitionsFiles } from './entry-points/contracts/definitions-files.js';
+import { ProjectDefinitionsPublish } from './entry-points/contracts/definitions-publish.js';
 import { ProjectDefinitionsRepositories } from './entry-points/contracts/definitions-repositories.js';
+import { PublishDefinitionsHandler } from './application/features/publish-definitions/handler.js';
 import { GetDefinitionsProjectIdHandler } from './application/features/get-definitions-project-id/handler.js';
 import { GetProjectKindHandler } from './application/features/get-project-kind/handler.js';
 import { ProjectProjectKinds } from './entry-points/contracts/project-kinds.js';
@@ -179,9 +182,14 @@ export class ProjectsModule {
         { provide: ENVIRONMENT_FILE_CONTENTS, useClass: SecretStoreEnvironmentFileContents },
         {
           provide: REPOSITORY_GIT,
-          useFactory: (config: AppConfig) =>
-            new SystemGitAdapter({ ...systemGitSettings(config), ...options.gitSettings }),
-          inject: [APP_CONFIG],
+          useFactory: (config: AppConfig, definitions: GetDefinitionsProjectIdHandler) =>
+            new SystemGitAdapter({
+              ...systemGitSettings(config),
+              ...options.gitSettings,
+              // The adapter reads the kind itself before it writes: only the definitions Project.
+              definitionsProjectId: () => definitions.execute(),
+            }),
+          inject: [APP_CONFIG, GetDefinitionsProjectIdHandler],
         },
         {
           provide: CONNECT_REPOSITORY_SETTINGS,
@@ -277,6 +285,8 @@ export class ProjectsModule {
         ReadDefinitionsBlobsHandler,
         ReadDefinitionsBlobIdsHandler,
         { provide: DEFINITIONS_FILES, useClass: ProjectDefinitionsFiles },
+        PublishDefinitionsHandler,
+        { provide: DEFINITIONS_PUBLISH, useClass: ProjectDefinitionsPublish },
         { provide: PROJECT_KINDS, useClass: ProjectProjectKinds },
         { provide: RUN_PREVIEW_SOURCES, useClass: ProjectRunPreviewSources },
       ],
@@ -284,6 +294,7 @@ export class ProjectsModule {
         PROJECT_KINDS,
         DEFINITIONS_REPOSITORIES,
         DEFINITIONS_FILES,
+        DEFINITIONS_PUBLISH,
         RUN_START_POINTS,
         RUN_ENVIRONMENT_FILES,
         RUN_BRANCH_REVIEWS,
