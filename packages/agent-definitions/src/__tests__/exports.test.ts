@@ -14,3 +14,11 @@ describe('the Provider constants', () => {
     expect(definitions.PROVIDER_MODELS[provider]).toContain(definitions.MODEL_DEFAULT);
   });
 });
+
+describe('RESERVED_AGENT_NAMES', () => {
+  it('names one built-in Default agent per Provider', () => {
+    expect([...definitions.RESERVED_AGENT_NAMES].sort()).toEqual(
+      definitions.PROVIDERS.map((provider) => `default-${provider.replaceAll('_', '-')}`).sort(),
+    );
+  });
+});

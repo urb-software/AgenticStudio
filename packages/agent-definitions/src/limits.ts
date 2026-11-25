@@ -12,6 +12,12 @@ export const RESERVED_SKILLS_DIRECTORY = 'skills';
 /** A usable name: lower-case letters, digits and `-`, up to 64 characters, the same rule as skill names. */
 export const AGENT_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
+/**
+ * Names of the built-in Default agents (one per Provider). A folder with one of these names is
+ * refused, so a name never means two agents.
+ */
+export const RESERVED_AGENT_NAMES = ['default-claude-code', 'default-codex'] as const;
+
 /** The description is one line of 1 to this many characters. */
 export const DESCRIPTION_MAX_LENGTH = 500;
 

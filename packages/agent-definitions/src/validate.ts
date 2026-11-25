@@ -16,6 +16,7 @@ import {
   MAX_FILES,
   MAX_FOLDER_BYTES,
   MAX_INSTRUCTIONS_BYTES,
+  RESERVED_AGENT_NAMES,
 } from './limits.js';
 import { problem, type Problem } from './problems.js';
 
@@ -154,6 +155,9 @@ export function validateAgentFolder(
   if (total > MAX_FOLDER_BYTES) problems.push(problem('folder_too_large', ''));
 
   if (!AGENT_NAME_PATTERN.test(folderName)) problems.push(problem('name_invalid', ''));
+  else if ((RESERVED_AGENT_NAMES as readonly string[]).includes(folderName)) {
+    problems.push(problem('name_reserved', ''));
+  }
 
   const entryFile = fileEntries.find((entry) => entry.path === AGENT_ENTRY_FILE);
   let definition: Omit<AgentDefinition, 'files'> | undefined;

@@ -174,6 +174,11 @@ export const FAILING: Record<string, Fixture> = {
     entries: [entryFile('name: reviewer\ndescription: d\nprovider: codex')],
     expected: ['name_invalid@', 'name_mismatch@AGENT.md'],
   },
+  name_reserved: {
+    folder: 'default-codex',
+    entries: [entryFile('name: default-codex\ndescription: d\nprovider: codex')],
+    expected: ['name_reserved@'],
+  },
   name_mismatch: {
     folder: 'planner',
     entries: [valid()],
