@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { RefreshCwIcon, TriangleAlertIcon } from 'lucide-react';
 import { Badge } from '@/shared/components/badge';
 import { Banner } from '@/shared/components/banner';
@@ -8,13 +8,9 @@ import { EmptyState } from '@/shared/components/empty-state';
 import { Button } from '@/shared/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card';
 import { Skeleton } from '@/shared/ui/skeleton';
-import {
-  ApiError,
-  type AgentListOutput,
-  type AgentProblemOutput,
-  type AgentSummaryOutput,
-} from '../../../../platform/api';
+import { ApiError, type AgentListOutput, type AgentSummaryOutput } from '../../../../platform/api';
 import { useAgents } from '../../api/agents-queries';
+import { Problems } from '../../components/problems';
 import { AgentDetail } from '../agent-detail/agent-detail';
 import { BaseRules } from '../base-rules/base-rules';
 
@@ -48,26 +44,6 @@ function repositoryReason(list: AgentListOutput): string | null {
   return null;
 }
 
-function Problems({ problems }: { problems: AgentProblemOutput[] }) {
-  return (
-    <ul className="m-0 flex list-none flex-col gap-1 p-0 text-small text-run-failed">
-      {problems.map((problem, index) => (
-        <li key={`${problem.code}:${problem.path}:${problem.key ?? ''}:${index}`}>
-          <span className="font-mono text-code break-all">{problem.path}</span>
-          {problem.key ? (
-            <>
-              {' · '}
-              <code className="text-code">{problem.key}</code>
-            </>
-          ) : null}
-          {' — '}
-          {problem.message}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
 function AgentRow({
   agent,
   open,
@@ -77,20 +53,26 @@ function AgentRow({
   open: boolean;
   onToggle: () => void;
 }) {
+  const detailId = useId();
+  const openable = !agent.problems.some((problem) => problem.code === 'name_reserved');
   return (
     <li className="flex flex-col gap-2 border-b border-border px-4 py-3 last:border-b-0">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-mono text-code font-semibold break-all">{agent.name}</span>
         {agent.source === 'built_in' ? <Badge>Built in</Badge> : null}
-        {agent.usable ? null : <Badge className="text-run-failed">Not usable</Badge>}
-        <Button
-          className="ml-auto"
-          aria-expanded={open}
-          aria-label={`${open ? 'Hide' : 'Show'} ${agent.name}`}
-          onClick={onToggle}
-        >
-          {open ? 'Hide' : 'Show'}
-        </Button>
+        {agent.usable ? null : <Badge tone="danger">Not usable</Badge>}
+        {/* A reserved name is judged here only: the API answers another route for it. */}
+        {openable ? (
+          <Button
+            className="ml-auto"
+            aria-expanded={open}
+            aria-controls={open ? detailId : undefined}
+            aria-label={`${open ? 'Hide' : 'Show'} ${agent.name}`}
+            onClick={onToggle}
+          >
+            {open ? 'Hide' : 'Show'}
+          </Button>
+        ) : null}
       </div>
       {agent.usable ? (
         <>
@@ -111,8 +93,8 @@ function AgentRow({
       ) : (
         <Problems problems={agent.problems} />
       )}
-      {open ? (
-        <div className="mt-1 border-t border-border pt-3">
+      {open && openable ? (
+        <div id={detailId} className="mt-1 border-t border-border pt-3">
           <AgentDetail agent={agent} />
         </div>
       ) : null}

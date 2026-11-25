@@ -64,13 +64,9 @@ export function useAgents() {
   return useQuery({ queryKey: AGENTS_KEY, queryFn: api.listAgents });
 }
 
-/** One agent with its instructions and files; read only while `enabled` (an agent is open). */
-export function useAgent(name: string | undefined, enabled: boolean) {
-  return useQuery({
-    queryKey: [...AGENT_KEY, name] as const,
-    queryFn: () => api.getAgent(name ?? ''),
-    enabled: enabled && name !== undefined,
-  });
+/** One agent with its instructions and files; mounted only while the agent is open. */
+export function useAgent(name: string) {
+  return useQuery({ queryKey: [...AGENT_KEY, name] as const, queryFn: () => api.getAgent(name) });
 }
 
 /** Reads the list and the open agent again, e.g. after a fetch brought new commits. */

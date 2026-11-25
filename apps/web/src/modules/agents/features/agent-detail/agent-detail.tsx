@@ -8,6 +8,7 @@ import { Skeleton } from '@/shared/ui/skeleton';
 import { ApiError, type AgentSummaryOutput } from '../../../../platform/api';
 import { useAgent } from '../../api/agents-queries';
 import { formatSize } from '../../components/format-size';
+import { Problems } from '../../components/problems';
 import { PlainText } from '../../components/plain-text';
 
 /**
@@ -16,7 +17,7 @@ import { PlainText } from '../../components/plain-text';
  * files to open here.
  */
 export function AgentDetail({ agent }: { agent: AgentSummaryOutput }) {
-  const query = useAgent(agent.name, true);
+  const query = useAgent(agent.name);
 
   if (query.isPending) {
     return (
@@ -31,8 +32,10 @@ export function AgentDetail({ agent }: { agent: AgentSummaryOutput }) {
       </div>
     );
   }
-  if (query.isError) {
-    const gone = query.error instanceof ApiError && query.error.status === 404;
+  // An answer without `agent` is another route's (the client does not check shapes): not found.
+  const missing = query.isSuccess && !query.data.agent;
+  if (query.isError || missing) {
+    const gone = missing || (query.error instanceof ApiError && query.error.status === 404);
     return (
       <EmptyState
         tone="error"
@@ -56,7 +59,8 @@ export function AgentDetail({ agent }: { agent: AgentSummaryOutput }) {
     );
   }
 
-  const detail = query.data.agent;
+  const detail = query.data?.agent;
+  if (!detail) return null;
   if (detail.source !== agent.source) {
     return (
       <Banner tone="info">
@@ -71,11 +75,21 @@ export function AgentDetail({ agent }: { agent: AgentSummaryOutput }) {
         <p className="m-0 text-small text-text-muted">
           A built-in agent has no instructions of its own: it runs with the base rules only.
         </p>
+      ) : !detail.usable ? (
+        // The API withholds the instructions of a refused folder.
+        <div className="flex flex-col gap-2">
+          <Banner tone="danger">
+            This agent cannot be used until its problems are fixed. Its instructions are not shown.
+          </Banner>
+          <Problems problems={detail.problems} />
+        </div>
       ) : (
         <div className="flex flex-col gap-2">
           <h3 className="m-0 text-small font-semibold">Instructions</h3>
           {detail.instructions === '' ? (
-            <p className="m-0 text-small text-text-muted">This agent has no instructions.</p>
+            <p className="m-0 text-small text-text-muted">
+              The instructions of this agent are empty.
+            </p>
           ) : (
             <PlainText text={detail.instructions} role="region" aria-label="Instructions text" />
           )}

@@ -644,15 +644,18 @@ type RepositoryCardProps = {
   summary: RepositorySummaryOutput | null;
   /** Puts focus on "Connect repository" when the card shows its empty state. */
   autoFocusConnect?: boolean;
-  /** Called once when a fetch ends (the Repository leaves `fetching`), for screens that read the Clone. */
-  onFetchEnded?: () => void;
+  /**
+   * Called when the Repository changes state (connecting to ready, a fetch ending, failed) and
+   * when a disconnect is confirmed, for screens that read the Clone.
+   */
+  onRepositoryChanged?: () => void;
 };
 
 export function RepositoryCard({
   projectId,
   summary,
   autoFocusConnect,
-  onFetchEnded,
+  onRepositoryChanged,
 }: RepositoryCardProps) {
   const [connectOpen, setConnectOpen] = useState(false);
   // Remounts the dialog per opening, so it starts from the right values (empty or prefilled).
@@ -679,7 +682,7 @@ export function RepositoryCard({
     const previous = last.current;
     if (repository && previous && previous.state !== repository.state) {
       void refreshProject();
-      if (previous.state === 'fetching') onFetchEnded?.();
+      onRepositoryChanged?.();
       if (previous.state === 'fetching' && repository.state === 'ready') {
         toast.success(
           repository.headSha && repository.headSha !== previous.headSha
@@ -689,7 +692,7 @@ export function RepositoryCard({
       }
     }
     last.current = repository;
-  }, [repository, refreshProject, onFetchEnded]);
+  }, [repository, refreshProject, onRepositoryChanged]);
 
   // A disconnecting Repository that polling no longer finds (404) is gone: the server's cleanup
   // finished. Confirm it and show the empty state.
@@ -709,7 +712,8 @@ export function RepositoryCard({
     if (disconnectConfirmed.current) return;
     disconnectConfirmed.current = true;
     toast.success(DISCONNECTED_MESSAGE, { id: disconnectedToastId(projectId) });
-  }, [projectId]);
+    onRepositoryChanged?.();
+  }, [projectId, onRepositoryChanged]);
   // Once per disappearance, however often the card re-renders before the cache is updated.
   const goneHandled = useRef(false);
   useEffect(() => {

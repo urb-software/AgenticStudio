@@ -83,6 +83,8 @@ export function fakeAgentsApi(
   const calls: { method: string; path: string; body?: unknown }[] = [];
   const scripted: { status: number; body: unknown }[] = [];
   const listFailures: { status: number; body: unknown }[] = [];
+  const detailFailures: { status: number; body: unknown }[] = [];
+  const gates: { list?: Promise<void>; detail?: Promise<void> } = {};
 
   const fetch = vi.fn(async (request: Request): Promise<Response> => {
     const { pathname } = new URL(request.url);
@@ -94,11 +96,15 @@ export function fakeAgentsApi(
     if (response) return json(response.status, response.body);
 
     if (pathname === '/api/agents' && request.method === 'GET') {
+      await gates.list;
       const failure = listFailures.shift();
       return failure ? json(failure.status, failure.body) : json(200, list);
     }
     const detail = /^\/api\/agents\/([^/]+)$/.exec(pathname);
     if (detail && detail[1] !== 'definitions-repository') {
+      await gates.detail;
+      const failure = detailFailures.shift();
+      if (failure) return json(failure.status, failure.body);
       const found = details[decodeURIComponent(detail[1] ?? '')];
       return found ? json(200, found) : json(404, problem(404, 'Unknown agent'));
     }
@@ -137,6 +143,10 @@ export function fakeAgentsApi(
         repository = { ...repository, state: 'fetching' };
         return json(202, repository);
       }
+      if (request.method === 'DELETE') {
+        repository = null;
+        return new Response(null, { status: 204 });
+      }
       if (request.method === 'POST') {
         const { url, integrationBranch } = body as { url: string; integrationBranch: string };
         repository = {
@@ -158,6 +168,21 @@ export function fakeAgentsApi(
     /** The Repository as the server holds it. */
     get repository() {
       return repository;
+    },
+    /** The next read of an agent fails with this response. */
+    failNextDetail(status: number, body: unknown) {
+      detailFailures.push({ status, body });
+    },
+    /** Holds the answers of the list or of an agent until the returned function is called. */
+    hold(what: 'list' | 'detail'): () => void {
+      let release: () => void = () => undefined;
+      gates[what] = new Promise<void>((resolve) => {
+        release = () => {
+          gates[what] = undefined;
+          resolve();
+        };
+      });
+      return release;
     },
     /** The next read of the agent list fails with this response. */
     failNextList(status: number, body: unknown) {

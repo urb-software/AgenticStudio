@@ -130,9 +130,9 @@ export function AgentsOverview() {
   const { data, error, isPending, isError, isRefetching, refetch } = useDefinitionsRepository();
   // Set when the Project was just created here: the card's first step takes the focus.
   const [justCreated, setJustCreated] = useState(false);
-  // A fetch that has ended may have brought commits: the agents are read again.
+  // A Repository that changed (first clone, fetch, failure, disconnect) changes the agents.
   const refreshAgents = useRefreshAgents();
-  const onFetchEnded = useCallback(() => void refreshAgents(), [refreshAgents]);
+  const onRepositoryChanged = useCallback(() => void refreshAgents(), [refreshAgents]);
 
   let body;
   if (isPending) {
@@ -152,7 +152,13 @@ export function AgentsOverview() {
       />
     );
   } else if (data.project === null) {
-    body = <NotConnected onCreated={() => setJustCreated(true)} />;
+    body = (
+      <>
+        <NotConnected onCreated={() => setJustCreated(true)} />
+        {/* The built-in agents and the base rules exist without a Repository. */}
+        <AgentList />
+      </>
+    );
   } else {
     // The card reads the Project itself: it needs the URL and shares the Project's cache entries,
     // which the connect, fetch and disconnect steps keep current. This answer only names it.
@@ -161,7 +167,7 @@ export function AgentsOverview() {
         <ProjectRepository
           projectId={data.project.id}
           autoFocusConnect={justCreated}
-          onFetchEnded={onFetchEnded}
+          onRepositoryChanged={onRepositoryChanged}
         />
         <AgentList />
       </>

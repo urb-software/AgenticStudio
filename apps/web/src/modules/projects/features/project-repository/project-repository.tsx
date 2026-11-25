@@ -15,13 +15,13 @@ import { RepositoryCard } from '../repository-card/repository-card';
 export function ProjectRepository({
   projectId,
   autoFocusConnect,
-  onFetchEnded,
+  onRepositoryChanged,
 }: {
   projectId: string;
   /** Puts focus on "Connect repository" when the Project has no Repository yet. */
   autoFocusConnect?: boolean;
-  /** Called when a fetch of the Repository ends, so the screen can read the Clone again. */
-  onFetchEnded?: () => void;
+  /** Called when the Repository changes state or is disconnected, so the screen can read the Clone again. */
+  onRepositoryChanged?: () => void;
 }) {
   const { data, isPending, isError, isRefetching, refetch } = useProject(projectId);
 
@@ -58,7 +58,7 @@ export function ProjectRepository({
       projectId={projectId}
       summary={data.repository}
       autoFocusConnect={autoFocusConnect}
-      onFetchEnded={onFetchEnded}
+      onRepositoryChanged={onRepositoryChanged}
     />
   );
 }
