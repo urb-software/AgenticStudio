@@ -54,4 +54,14 @@ describe('Agents page: the models of each Provider', () => {
     await userEvent.click(within(card).getByRole('button', { name: 'Retry' }));
     expect(await within(card).findByRole('group', { name: 'Claude Code' })).toBeTruthy();
   });
+
+  it('lists the models even when the agent list cannot be read', async () => {
+    const api = fakeAgentsApi(null);
+    api.failNextList(503, problem(503, 'Service Unavailable'));
+    renderAgents();
+
+    expect(await screen.findByRole('heading', { name: "Couldn't load the agents" })).toBeTruthy();
+    const card = await screen.findByRole('region', { name: 'Models' });
+    expect(await within(card).findByRole('group', { name: 'Codex' })).toBeTruthy();
+  });
 });

@@ -1,4 +1,4 @@
-import { errorReason } from './cli-output.js';
+import { AgentFailedError } from './runner.js';
 import { MODEL_DEFAULT, PROVIDER_MODELS, type Provider } from '@agentic-studio/agent-definitions';
 
 /**
@@ -45,16 +45,15 @@ export class ModelRefusedError extends Error {
 }
 
 /**
- * How a CLI's own error text says the model is refused: it names the model and says it is unknown,
- * unsupported or not available to the login. Deliberately narrow; anything else stays an agent
- * failure.
+ * How a CLI's own error text says the model is refused. Deliberately narrow: a refusal worded
+ * otherwise stays an agent failure, and the Run still shows the CLI's line as its reason.
  */
 const MODEL_REFUSAL_TEXT = new RegExp(
   [
     String.raw`issue with the selected model`,
     String.raw`model_not_found`,
     String.raw`\b(?:unknown|invalid|unsupported|unrecognized) model\b`,
-    String.raw`\bmodel\b[^\n]{0,80}\b(?:not found|does not exist|do not have access|not supported|not available|not allowed|may not exist)\b`,
+    String.raw`\bmodel\b[^\n]{0,80}\b(?:not found|does not exist|do not have access|not supported|not allowed|may not exist)\b`,
   ].join('|'),
   'i',
 );
@@ -64,22 +63,33 @@ export function refusesModel(text: string): boolean {
   return MODEL_REFUSAL_TEXT.test(text);
 }
 
-/**
- * The error a failed step ends with: {@link ModelRefusedError} when the step ran with a model of
- * the list (not `default`) and the error or the CLI's output says it refuses it, else `error`
- * itself. The CLI's own line goes into the detail when the error does not carry it yet.
- */
-export function classifyModelFailure(
-  error: Error,
-  model: string,
-  cliOutput: readonly string[],
-): Error {
-  if (model === MODEL_DEFAULT) return error;
-  const hit = cliOutput.find(refusesModel);
-  if (hit === undefined && !refusesModel(error.message)) return error;
-  const reason =
-    hit === undefined || error.message.includes('Its error output:')
-      ? error.message
-      : `${error.message} ${errorReason(hit)}`;
-  return new ModelRefusedError(model, reason);
+/** Failures that carry no reason of their own: the CLI's last error line then is the reason. */
+const NO_REASON_OF_ITS_OWN = /exited with code|was stopped|without a result|without completing/;
+
+/** What ended a step, as far as the CLI said it. */
+export interface StepEndReason {
+  /** The CLI's own error text: the error result (Claude Code); Codex puts it in the error. */
+  streamReason?: string | undefined;
+  /** The last line of its standard error. */
+  lastErrorLine?: string | undefined;
 }
+
+/**
+ * {@link ModelRefusedError} only for a plain agent failure of a step that ran with a model of the
+ * list, when the reason that ended it says the model is refused; the matching line is quoted.
+ * Anything else (usage limit, invalid result, `default` model) is returned as it is.
+ */
+export function classifyModelFailure(error: Error, model: string, end: StepEndReason): Error {
+  if (model === MODEL_DEFAULT || !(error instanceof AgentFailedError)) return error;
+  const texts = [end.streamReason, error.message];
+  if (NO_REASON_OF_ITS_OWN.test(error.message)) texts.push(end.lastErrorLine);
+  const hit = texts
+    .flatMap((text) => (text ?? '').split('\n'))
+    .map((text) => text.trim())
+    .find(refusesModel);
+  if (hit === undefined) return error;
+  const quoted = error.message.includes(hit) ? '' : ` The CLI said: ${cut(hit)}`;
+  return new ModelRefusedError(model, `${error.message}${quoted}`);
+}
+
+const cut = (text: string): string => (text.length > 500 ? `${text.slice(0, 499)}�` : text);

@@ -180,7 +180,10 @@ export class ClaudeCodeRunner implements Runner {
     const errorOutput = stderr.trim();
     // A model the CLI refuses ends the Run as such, with the CLI's own line as the reason.
     const fail = (error: Error) =>
-      classifyModelFailure(error, model, [errorOutput, stream.errorText ?? '']);
+      classifyModelFailure(error, model, {
+        streamReason: stream.errorText,
+        lastErrorLine: errorOutput.split('\n').at(-1),
+      });
     if (errorOutput === '') throw fail(outcome.error);
     yield { type: 'notice', text: `Claude Code's error output: ${errorOutput}` };
     // The CLI's own reason goes into the failure detail too, so the operator sees it on the Run

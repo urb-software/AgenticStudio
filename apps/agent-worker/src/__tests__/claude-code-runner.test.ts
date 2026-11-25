@@ -586,6 +586,31 @@ describe('ClaudeCodeRunner at the spawn boundary', () => {
     );
   });
 
+  it('keeps a usage limit resumable when its stderr also carries a model warning', async () => {
+    spawn.mockImplementation(() => {
+      const child = fakeChild(recording('usage-limit'), 1);
+      child.stderr.write('Warning: model opus not found, using fallback metadata\n');
+      return child;
+    });
+
+    const step = drain(runner().start(withModel('x', 'opus')));
+
+    await expect(step).rejects.toBeInstanceOf(UsageLimitError);
+    await expect(step).rejects.toMatchObject({ sessionRef: SESSION });
+  });
+
+  it('does not call an overloaded model a refusal', async () => {
+    spawn.mockImplementation(() => {
+      const child = fakeChild('', 1);
+      child.stderr.write('The model is overloaded and not available right now.\n');
+      return child;
+    });
+
+    await expect(drain(runner().start(withModel('x', 'opus')))).rejects.not.toBeInstanceOf(
+      ModelRefusedError,
+    );
+  });
+
   it('keeps any other failure an agent failure, and a default-model Run too', async () => {
     spawn.mockImplementation(() => {
       const child = fakeChild('', 1);

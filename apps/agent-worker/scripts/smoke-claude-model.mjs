@@ -57,6 +57,10 @@ line(`managed guardrails: ${managed === null ? 'in place' : `FAILED: ${managed}`
 if (managed !== null) process.exit(1);
 
 const root = mkdtempSync(join(tmpdir(), 'studio-claude-model-smoke-'));
+// Removed on every exit, also when the setup below throws.
+process.on('exit', () => {
+  if (!keep) rmSync(root, { recursive: true, force: true });
+});
 const runDir = join(root, 'run');
 const repoDir = join(runDir, 'repo');
 mkdirSync(repoDir, { recursive: true });
@@ -138,8 +142,6 @@ try {
 } catch (error) {
   failures += 1;
   line(`smoke: FAILED (${error?.name ?? 'Error'}: ${error?.message ?? error})`);
-} finally {
-  if (!keep) rmSync(root, { recursive: true, force: true });
 }
 line(failures === 0 ? 'smoke: PASS' : 'smoke: FAIL');
 process.exit(failures === 0 ? 0 : 1);

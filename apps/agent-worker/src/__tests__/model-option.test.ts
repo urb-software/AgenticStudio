@@ -1,8 +1,10 @@
 import { PROVIDER_MODELS } from '@agentic-studio/agent-definitions';
+import { AgentFailedError, UsageLimitError } from '../runner.js';
 import { describe, expect, it } from 'vitest';
 import {
   ModelNotAllowedError,
   modelOption,
+  classifyModelFailure,
   ModelRefusedError,
   refusesModel,
 } from '../model-option.js';
@@ -47,6 +49,10 @@ describe('the model option', () => {
     ['claude_code', ''],
     ['codex', '--sandbox=danger-full-access'],
     ['claude_code', 'opus --dangerously-skip-permissions'],
+    ['claude_code', ' opus'],
+    ['claude_code', 'Opus'],
+    ['claude_code', 'opus '],
+    ['claude_code', 'opus\n'],
   ] as const)('refuses %s model %j', (provider, model) => {
     expect(() => modelOption(provider, model)).toThrow(ModelNotAllowedError);
   });
@@ -71,6 +77,7 @@ describe('what counts as a refused model', () => {
   });
 
   it.each([
+    'The model is overloaded and not available right now. Try again later.',
     'Error: invalid settings file',
     'Error: --json-schema is not a valid JSON Schema',
     'Claude Code exited with code 2 without a result.',
@@ -86,5 +93,45 @@ describe('what counts as a refused model', () => {
       'The provider refused the model "opus". Its error output: no access',
     );
     expect(error).toBeInstanceOf(Error);
+  });
+});
+
+describe('classifying a failed step', () => {
+  const refusal = "There's an issue with the selected model (opus). It may not exist.";
+  const exited = new AgentFailedError('Claude Code exited with code 1 without a result.');
+
+  it('reclassifies only a plain agent failure whose own reason says the model is refused', () => {
+    const error = classifyModelFailure(exited, 'opus', { lastErrorLine: refusal });
+
+    expect(error).toBeInstanceOf(ModelRefusedError);
+    expect(error.message).toBe(
+      `The provider refused the model "opus". ${exited.message} The CLI said: ${refusal}`,
+    );
+  });
+
+  it('quotes the matching line, not a later one, and uses the error result text', () => {
+    const ended = new AgentFailedError('Claude Code ended with an error (success).');
+
+    const error = classifyModelFailure(ended, 'opus', {
+      streamReason: `Warning: x
+${refusal}
+Error: exiting`,
+    });
+
+    expect(error.message).toContain(`The CLI said: ${refusal}`);
+    expect(error.message).not.toContain('exiting');
+  });
+
+  it('never reclassifies a usage limit, an invalid result or a default-model step', () => {
+    const limit = new UsageLimitError('limit', 'sess-1');
+    expect(classifyModelFailure(limit, 'opus', { lastErrorLine: refusal })).toBe(limit);
+    const invalid = new AgentFailedError('Claude Code ended without a valid structured result.');
+    expect(classifyModelFailure(invalid, 'opus', { lastErrorLine: refusal })).toBe(invalid);
+    expect(classifyModelFailure(exited, 'default', { lastErrorLine: refusal })).toBe(exited);
+  });
+
+  it('leaves an overloaded message an agent failure', () => {
+    const overloaded = 'The model is overloaded and not available right now.';
+    expect(classifyModelFailure(exited, 'opus', { lastErrorLine: overloaded })).toBe(exited);
   });
 });

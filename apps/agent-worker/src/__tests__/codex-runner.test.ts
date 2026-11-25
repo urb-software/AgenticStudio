@@ -590,6 +590,31 @@ describe('CodexRunner at the spawn boundary', () => {
     await expect(drain(runner().start(input('x')))).rejects.not.toBeInstanceOf(ModelRefusedError);
   });
 
+  it('keeps a usage limit resumable when its stderr also carries a model warning', async () => {
+    spawn.mockImplementation(() => {
+      const child = fakeChild(recording('usage-limit'), 1);
+      child.stderr.write('Model metadata for gpt-6-luna not found; using fallback metadata\n');
+      return child;
+    });
+
+    const step = drain(runner().start(withModel('x', 'gpt-6-luna')));
+
+    await expect(step).rejects.toBeInstanceOf(UsageLimitError);
+    await expect(step).rejects.toMatchObject({ sessionRef: THREAD });
+  });
+
+  it('does not call an overloaded model a refusal', async () => {
+    spawn.mockImplementation(() => {
+      const child = fakeChild('', 1);
+      child.stderr.write('The model is overloaded and not available right now.\n');
+      return child;
+    });
+
+    await expect(drain(runner().start(withModel('x', 'gpt-6-luna')))).rejects.not.toBeInstanceOf(
+      ModelRefusedError,
+    );
+  });
+
   it("logs the CLI's expected untrusted-project warning as a notice, never as the failure reason", async () => {
     const WARNING = 'warning: Untrusted project-local configuration is disabled for this project.';
     spawn.mockImplementation((_binary: string, args: string[]) => {

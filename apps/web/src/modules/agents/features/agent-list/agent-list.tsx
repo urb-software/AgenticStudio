@@ -145,17 +145,20 @@ export function AgentList() {
   }
   if (isError) {
     return (
-      <EmptyState
-        tone="error"
-        icon={TriangleAlertIcon}
-        title="Couldn't load the agents"
-        description={<span className="font-mono text-small">{readRequestOf(error)}</span>}
-        action={
-          <Button icon={RefreshCwIcon} loading={isRefetching} onClick={() => void refetch()}>
-            Retry
-          </Button>
-        }
-      />
+      <>
+        <EmptyState
+          tone="error"
+          icon={TriangleAlertIcon}
+          title="Couldn't load the agents"
+          description={<span className="font-mono text-small">{readRequestOf(error)}</span>}
+          action={
+            <Button icon={RefreshCwIcon} loading={isRefetching} onClick={() => void refetch()}>
+              Retry
+            </Button>
+          }
+        />
+        <ProviderModels />
+      </>
     );
   }
 
