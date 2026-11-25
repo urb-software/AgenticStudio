@@ -1,14 +1,21 @@
 'use client';
 
+import { type FormEvent, useState } from 'react';
 import { BotIcon, PlusIcon, RefreshCwIcon, TriangleAlertIcon } from 'lucide-react';
 import { Banner } from '@/shared/components/banner';
 import { EmptyState } from '@/shared/components/empty-state';
 import { Button } from '@/shared/ui/button';
+import { TextField } from '@/shared/components/text-field';
 import { Skeleton } from '@/shared/ui/skeleton';
 import { toast } from '@/shared/ui/sonner';
 import { ApiError } from '../../../../platform/api';
 import { ProjectRepository } from '../../../projects';
-import { useCreateDefinitionsProject, useDefinitionsRepository } from '../../api/agents-queries';
+import {
+  DEFINITIONS_PROJECT_NAME,
+  isNameConflict,
+  useCreateDefinitionsProject,
+  useDefinitionsRepository,
+} from '../../api/agents-queries';
 
 /** The request the page makes (generated `getDefinitionsRepository`), shown verbatim on failure. */
 const READ_REQUEST = 'GET /api/agents/definitions-repository';
@@ -34,35 +41,63 @@ function LoadingAgents() {
 }
 
 /** Nothing connected: one action that creates the definitions Project. */
-function NotConnected() {
+function NotConnected({ onCreated }: { onCreated: () => void }) {
   const create = useCreateDefinitionsProject();
+  const [name, setName] = useState(DEFINITIONS_PROJECT_NAME);
   const problem = create.error instanceof ApiError ? create.error.problem : undefined;
+  // A taken name is the operator's to change; only a second definitions Repository is a refusal.
+  const taken = isNameConflict(create.error);
+
+  function submit(event?: FormEvent) {
+    event?.preventDefault();
+    create.mutate(name, {
+      onSuccess: () => {
+        onCreated();
+        toast.success('Definitions Repository added. Connect it next.');
+      },
+    });
+  }
+
   return (
     <div className="flex flex-col gap-4">
-      {create.error ? (
+      {create.error && !taken ? (
         <Banner tone="danger" title={problem?.title}>
           {problem?.detail || 'Could not create the definitions Repository. Try again.'}
         </Banner>
       ) : null}
-      <EmptyState
-        icon={BotIcon}
-        title="No definitions Repository connected"
-        description="Agents and skills are files in one Git repository. Connect it, and Studio keeps its own clone to read them from. It appears in Projects, apart from your other projects."
-        action={
-          <Button
-            variant="primary"
-            icon={PlusIcon}
-            loading={create.isPending}
-            onClick={() =>
-              create.mutate(undefined, {
-                onSuccess: () => toast.success('Definitions Repository created'),
-              })
-            }
-          >
-            {create.isPending ? 'Connecting…' : 'Connect definitions Repository'}
-          </Button>
-        }
-      />
+      {taken ? (
+        <form onSubmit={submit} noValidate className="flex max-w-md flex-col gap-3">
+          <TextField
+            label="Project name"
+            autoComplete="off"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            error="A project with this name already exists. Choose another name."
+            readOnly={create.isPending}
+          />
+          <div>
+            <Button type="submit" variant="primary" loading={create.isPending}>
+              {create.isPending ? 'Creating…' : 'Create'}
+            </Button>
+          </div>
+        </form>
+      ) : (
+        <EmptyState
+          icon={BotIcon}
+          title="No definitions Repository connected"
+          description="Agents and skills are files in one Git repository. Connect it, and Studio keeps its own clone to read them from. It appears in Projects, apart from your other projects."
+          action={
+            <Button
+              variant="primary"
+              icon={PlusIcon}
+              loading={create.isPending}
+              onClick={() => submit()}
+            >
+              {create.isPending ? 'Creating…' : 'Connect definitions Repository'}
+            </Button>
+          }
+        />
+      )}
     </div>
   );
 }
@@ -74,6 +109,8 @@ function NotConnected() {
  */
 export function AgentsOverview() {
   const { data, error, isPending, isError, isRefetching, refetch } = useDefinitionsRepository();
+  // Set when the Project was just created here: the card's first step takes the focus.
+  const [justCreated, setJustCreated] = useState(false);
 
   let body;
   if (isPending) {
@@ -93,9 +130,11 @@ export function AgentsOverview() {
       />
     );
   } else if (data.project === null) {
-    body = <NotConnected />;
+    body = <NotConnected onCreated={() => setJustCreated(true)} />;
   } else {
-    body = <ProjectRepository projectId={data.project.id} />;
+    // The card reads the Project itself: it needs the URL and shares the Project's cache entries,
+    // which the connect, fetch and disconnect steps keep current. This answer only names it.
+    body = <ProjectRepository projectId={data.project.id} autoFocusConnect={justCreated} />;
   }
 
   return (

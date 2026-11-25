@@ -12,7 +12,14 @@ import { RepositoryCard } from '../repository-card/repository-card';
  * branch, the last fetched commit and Fetch. Other modules show it where the Repository belongs
  * to their screen (the Agents page), without the rest of the project page.
  */
-export function ProjectRepository({ projectId }: { projectId: string }) {
+export function ProjectRepository({
+  projectId,
+  autoFocusConnect,
+}: {
+  projectId: string;
+  /** Puts focus on "Connect repository" when the Project has no Repository yet. */
+  autoFocusConnect?: boolean;
+}) {
   const { data, isPending, isError, isRefetching, refetch } = useProject(projectId);
 
   if (isPending) {
@@ -43,5 +50,11 @@ export function ProjectRepository({ projectId }: { projectId: string }) {
       />
     );
   }
-  return <RepositoryCard projectId={projectId} summary={data.repository} />;
+  return (
+    <RepositoryCard
+      projectId={projectId}
+      summary={data.repository}
+      autoFocusConnect={autoFocusConnect}
+    />
+  );
 }

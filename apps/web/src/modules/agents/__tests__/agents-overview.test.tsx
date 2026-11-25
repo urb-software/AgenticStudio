@@ -65,6 +65,11 @@ describe('Agents page: nothing connected', () => {
     );
 
     expect(await screen.findByRole('region', { name: 'Repository' })).toBeTruthy();
+    expect(await screen.findByText('Definitions Repository added. Connect it next.')).toBeTruthy();
+    // Focus moves on to the next step instead of falling to the page.
+    expect(document.activeElement).toBe(
+      within(card()).getByRole('button', { name: 'Connect repository' }),
+    );
     expect(api.calls().find((call) => call.method === 'POST')?.body).toEqual({
       name: DEFINITIONS_PROJECT.name,
       kind: 'definitions',
@@ -92,6 +97,37 @@ describe('Agents page: nothing connected', () => {
 
     expect(await screen.findByText(/already connected/)).toBeTruthy();
     expect(screen.getByRole('alert').textContent).toContain('Definitions Repository exists');
+  });
+
+  it('asks for another name when the name is taken, and creates with it', async () => {
+    const api = fakeAgentsApi(null);
+    renderAgents();
+    await screen.findByRole('button', { name: 'Connect definitions Repository' });
+    api.respondNext(409, {
+      ...problem(409, 'Conflict'),
+      detail: 'A project with this name already exists.',
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Connect definitions Repository' }));
+
+    const field = await screen.findByLabelText<HTMLInputElement>('Project name');
+    expect(field.value).toBe('Agent definitions');
+    expect(screen.getByText(/already exists. Choose another name/)).toBeTruthy();
+    await expect(document.body).toHaveNoAxeViolations();
+    await userEvent.clear(field);
+    await userEvent.type(field, 'Team agents');
+    await userEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+    expect(await screen.findByRole('region', { name: 'Repository' })).toBeTruthy();
+    expect(
+      api
+        .calls()
+        .filter((call) => call.method === 'POST')
+        .map((call) => call.body),
+    ).toEqual([
+      { name: 'Agent definitions', kind: 'definitions' },
+      { name: 'Team agents', kind: 'definitions' },
+    ]);
   });
 
   it('says so, with a Retry, when the page cannot be read', async () => {

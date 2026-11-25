@@ -10,7 +10,7 @@ import {
 import Link from 'next/link';
 import { EmptyState } from '@/shared/components/empty-state';
 import { Button } from '@/shared/ui/button';
-import { StatusPill } from '@/shared/components/status-pill';
+import { Badge } from '@/shared/components/badge';
 import { Skeleton } from '@/shared/ui/skeleton';
 import { ProjectRuns, type RepositoryStatus } from '@/modules/executions';
 import { ApiError, type RepositorySummaryOutput } from '../../../../platform/api';
@@ -97,7 +97,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
         </p>
         {definitions ? (
           <div className="mt-1">
-            <StatusPill status="none">Definitions Repository</StatusPill>
+            <Badge>Definitions Repository</Badge>
           </div>
         ) : (
           <Button asChild icon={GlobeIcon} className="mt-2 self-start">
@@ -108,7 +108,9 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <RepositoryCard projectId={projectId} summary={data.repository} />
         {definitions ? null : <EnvironmentFileCard projectId={projectId} />}
-        <MergeMethodCard projectId={projectId} mergeMethod={data.mergeMethod} />
+        {definitions ? null : (
+          <MergeMethodCard projectId={projectId} mergeMethod={data.mergeMethod} />
+        )}
       </div>
       {/* The executions module owns the Runs section; this screen only composes it. */}
       {definitions ? null : (

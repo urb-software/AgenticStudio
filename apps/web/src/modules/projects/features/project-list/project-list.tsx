@@ -8,6 +8,7 @@ import { Button } from '@/shared/ui/button';
 import { Card } from '@/shared/ui/card';
 import { Skeleton } from '@/shared/ui/skeleton';
 import { ApiError, type ProjectOutput } from '../../../../platform/api';
+import { Badge } from '@/shared/components/badge';
 import { StatusPill } from '@/shared/components/status-pill';
 import { usePreviewStates, useProjects } from '../../api/projects-queries';
 import { formatExactTime, formatTimeAgo } from '@/shared/lib/relative-time';
@@ -163,7 +164,7 @@ function ProjectCard({
         </Heading>
         {project.kind === 'definitions' ? (
           <div>
-            <StatusPill status="none">Definitions Repository</StatusPill>
+            <Badge>Definitions Repository</Badge>
           </div>
         ) : (
           <PreviewBadge state={previewState} />

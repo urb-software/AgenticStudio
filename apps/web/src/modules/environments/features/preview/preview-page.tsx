@@ -18,8 +18,8 @@ import { Button } from '@/shared/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card';
 import { Skeleton } from '@/shared/ui/skeleton';
 import { toast } from '@/shared/ui/sonner';
-import { ApiError, isDefinitionsRefusal, type PreviewOutput } from '../../../../platform/api';
-import { usePreview } from '../../api/preview-queries';
+import { ApiError, type PreviewOutput } from '../../../../platform/api';
+import { usePreview, useProjectKind } from '../../api/preview-queries';
 import { BuildCard } from './build-card';
 import { PreviewSettingsForm } from './preview-settings-form';
 import { RemovePreviewSettingsDialog } from './remove-preview-settings-dialog';
@@ -119,29 +119,37 @@ function Hostname({ preview }: { preview: PreviewOutput }) {
   );
 }
 
-/** A project's Preview: its settings, the hostname it will be served at, and the form to change them. */
+/**
+ * A project's Preview: its settings, the hostname it will be served at, and the form to change
+ * them. The definitions Repository has none, so an old link to it says so up front.
+ */
 export function PreviewPage({ projectId }: { projectId: string }) {
+  const kind = useProjectKind(projectId);
+  if (kind.isPending) return <LoadingPreview />;
+  if (kind.data === 'definitions') {
+    return (
+      <EmptyState
+        icon={GlobeIcon}
+        title="The definitions Repository has no Preview"
+        description="It holds agent definitions only. A Preview belongs to your other projects."
+        action={
+          <Button asChild icon={ArrowLeftIcon}>
+            <Link href="/projects">Back to Projects</Link>
+          </Button>
+        }
+      />
+    );
+  }
+  return <PreviewContent projectId={projectId} />;
+}
+
+function PreviewContent({ projectId }: { projectId: string }) {
   const { data, error, isPending, isError, isRefetching, refetch, dataUpdatedAt } =
     usePreview(projectId);
   const [removeOpen, setRemoveOpen] = useState(false);
 
   if (isPending) return <LoadingPreview />;
   if (isError) {
-    if (isDefinitionsRefusal(error)) {
-      // An old link or another tab: the definitions Repository has no Preview.
-      return (
-        <EmptyState
-          icon={GlobeIcon}
-          title="The definitions Repository has no Preview"
-          description="It holds agent definitions only. A Preview belongs to your other projects."
-          action={
-            <Button asChild icon={ArrowLeftIcon}>
-              <Link href="/projects">Back to Projects</Link>
-            </Button>
-          }
-        />
-      );
-    }
     if (error instanceof ApiError && error.status === 404) {
       return (
         <EmptyState

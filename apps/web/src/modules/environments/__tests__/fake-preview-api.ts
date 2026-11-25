@@ -78,6 +78,7 @@ export function fakePreviewApi(
     state?: PreviewOutput['state'];
     latestChange?: PreviewOutput['latestChange'];
     projectName?: string;
+    kind?: 'code' | 'definitions';
     behind?: boolean;
     mergeRebuild?: PreviewOutput['mergeRebuild'];
   } = {},
@@ -93,6 +94,7 @@ export function fakePreviewApi(
     stateOverride: initial.state ?? null,
     latestChange: initial.latestChange ?? null,
     projectName: initial.projectName ?? 'Acme Shop',
+    kind: initial.kind ?? 'code',
     runReadable: true,
     runTask: 'Add the checkout page',
     behind: initial.behind ?? false,
@@ -173,6 +175,7 @@ export function fakePreviewApi(
         id: PROJECT_ID,
         name: state.projectName,
         mergeMethod: 'squash',
+        kind: state.kind,
         createdAt: '2026-11-12T09:00:00.000Z',
         repository: null,
       });
