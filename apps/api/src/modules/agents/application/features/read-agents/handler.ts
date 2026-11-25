@@ -186,7 +186,7 @@ export class ReadAgentsHandler {
       const judged = validateAgentFolder(
         folder.name,
         folder.entries.map((item) =>
-          item.path === AGENT_ENTRY_FILE && entry?.status === 'found'
+          item.path === AGENT_ENTRY_FILE && entry?.status === 'found' && !entry.binary
             ? { ...item, content: entry.text }
             : item,
         ),

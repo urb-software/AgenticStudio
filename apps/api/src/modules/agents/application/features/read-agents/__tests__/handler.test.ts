@@ -222,6 +222,31 @@ describe('ReadAgentsHandler', () => {
       expect(codes('c-big')).toEqual(['file_too_large']);
     });
 
+    it('refuses a big non-UTF-8 entry file under the limit as unreadable, not too large', async () => {
+      const { handler } = scripted({
+        tree: listed(file('agents/d-600k/AGENT.md', 600_000)),
+        readFiles: {
+          status: 'read',
+          files: [
+            {
+              path: 'agents/d-600k/AGENT.md',
+              status: 'found',
+              // Each invalid byte arrives as a 3-byte replacement character.
+              text: '�'.repeat(600_000),
+              size: 600_000,
+              binary: true,
+            },
+          ],
+        },
+      });
+
+      const { agents } = await handler.execute();
+
+      expect(
+        agents.find((agent) => agent.name === 'd-600k')?.problems.map((problem) => problem.code),
+      ).toEqual(['entry_unreadable']);
+    });
+
     it('lists at most 200 agent folders and says so', async () => {
       const entries = Array.from({ length: MAX_LISTED_AGENTS + 1 }, (_, index) =>
         file(`agents/a${String(index).padStart(3, '0')}/AGENT.md`),
