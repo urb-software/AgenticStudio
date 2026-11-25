@@ -87,9 +87,9 @@ export interface RunRepository {
   /**
    * Hands the oldest eligible Run to `workerId`; a delivery retry or a resumable Run goes only to
    * the worker that last claimed it. Serialized against concurrent claims. `null`
-   * when none is eligible.
+   * when none is eligible. Runs of `excludeProjectId` are never handed out.
    */
-  claimNext(workerId: string, now: Date): Promise<Run | null>;
+  claimNext(workerId: string, now: Date, excludeProjectId?: string | null): Promise<Run | null>;
 
   listWaiting(): Promise<Run[]>;
 

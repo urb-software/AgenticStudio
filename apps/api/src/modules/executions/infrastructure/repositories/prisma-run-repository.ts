@@ -560,7 +560,11 @@ export class PrismaRunRepository implements RunRepository {
     return rows.map((row) => toRun(row));
   }
 
-  async claimNext(workerId: string, now: Date): Promise<Run | null> {
+  async claimNext(
+    workerId: string,
+    now: Date,
+    excludeProjectId: string | null = null,
+  ): Promise<Run | null> {
     return inTransaction(
       this.db,
       async (tx) => {
@@ -571,7 +575,8 @@ export class PrismaRunRepository implements RunRepository {
         // cannot fail the claim and no Run is skipped for being briefly locked.
         const [selected] = await tx.$queryRaw<{ id: string }[]>`
           SELECT r.id FROM runs r
-          WHERE ((r.state = 'queued'
+          WHERE (${excludeProjectId}::uuid IS NULL OR r.project_id <> ${excludeProjectId}::uuid)
+            AND ((r.state = 'queued'
                   AND (r.session_ref IS NULL OR r.last_claimed_by = ${workerId}::uuid))
                  OR (r.state = 'failed' AND r.delivery_requested AND r.claimed_by IS NULL
                      AND r.last_claimed_by = ${workerId}::uuid))

@@ -73,7 +73,11 @@ export class InMemoryRunLookupRepository implements RunLookupRepository {
     return Promise.resolve(stored ? entity(stored) : null);
   }
 
-  claim(workerId: string, rule: LookupHandOutRule): Promise<ClaimedLookup[]> {
+  claim(
+    workerId: string,
+    rule: LookupHandOutRule,
+    excludeProjectId?: string | null,
+  ): Promise<ClaimedLookup[]> {
     for (const lookup of this.lookups) {
       if (rule.claimExpired(lookup)) {
         Object.assign(lookup, { status: 'requested', claimedBy: null, claimedAt: null });
@@ -81,7 +85,7 @@ export class InMemoryRunLookupRepository implements RunLookupRepository {
     }
     const runs = this.runs.runs.map((run) => ({
       id: run.id,
-      hasPullRequest: run.pullRequest !== null,
+      hasPullRequest: run.pullRequest !== null && run.projectId !== excludeProjectId,
       hasRunBranch: run.workingCopy !== null,
     }));
     const claimed: ClaimedLookup[] = [];

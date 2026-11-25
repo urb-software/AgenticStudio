@@ -16,6 +16,7 @@ const PROJECT: ProjectOutput = {
   id: '00000000-0000-4000-8000-0000000000e2',
   name: 'Acme Shop',
   mergeMethod: 'squash',
+  kind: 'code',
   createdAt: '2026-11-12T09:00:00.000Z',
 };
 

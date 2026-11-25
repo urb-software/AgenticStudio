@@ -17,7 +17,10 @@ import { GetEnvironmentFileHandler } from '../../get-environment-file/handler.js
 import { GetRunEnvironmentFileHandler } from '../../get-run-environment-file/handler.js';
 import { RemoveEnvironmentFileHandler } from '../../remove-environment-file/handler.js';
 import { SetEnvironmentFileHandler } from '../handler.js';
-import { ProjectNotFoundError } from '../../../../domain/errors/project-errors.js';
+import {
+  DefinitionsProjectError,
+  ProjectNotFoundError,
+} from '../../../../domain/errors/project-errors.js';
 
 // Test values only: the content goes to the secret store and is never returned.
 
@@ -69,6 +72,22 @@ describe('Environment file handlers', () => {
     expect(JSON.stringify(info)).not.toContain('test-only');
     expect([...secrets.values.values()]).toEqual([CONTENT]);
     await expect(get.execute({ projectId: PROJECT })).resolves.toEqual(info);
+  });
+
+  it('refuses the definitions Repository on every Environment file route, storing nothing', async () => {
+    projects.addProject(UNKNOWN, 'Agents', 'definitions');
+
+    await expect(
+      set.execute({ projectId: UNKNOWN, path: '.env', content: CONTENT }),
+    ).rejects.toBeInstanceOf(DefinitionsProjectError);
+    await expect(get.execute({ projectId: UNKNOWN })).rejects.toBeInstanceOf(
+      DefinitionsProjectError,
+    );
+    await expect(remove.execute({ projectId: UNKNOWN })).rejects.toBeInstanceOf(
+      DefinitionsProjectError,
+    );
+    expect(secrets.values.size).toBe(0);
+    expect(files.files.size).toBe(0);
   });
 
   it('counts the size in UTF-8 bytes', async () => {

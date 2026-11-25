@@ -11,6 +11,7 @@ import {
   PreviewRepositoryNotReadyError,
   PreviewSourceUnavailableError,
   ProjectNotFoundError,
+  DefinitionsProjectError,
 } from '../../../../domain/errors/preview-settings-errors.js';
 import { PreviewSettingsMissingError } from '../../../../domain/errors/preview-operation-errors.js';
 import {
@@ -25,6 +26,7 @@ import {
   savePreviewSettings,
 } from '../../../__tests__/preview-test-kit.js';
 import { RequestPreviewBuildHandler } from '../handler.js';
+import { FakeProjectKinds } from '../../../ports/__tests__/fake-project-kinds.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const OTHER = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
@@ -33,6 +35,7 @@ const CONTROLLER = '7d6c5b4a-3f2e-4d1c-8b0a-9f8e7d6c5b4a';
 
 describe('RequestPreviewBuildHandler', () => {
   let sources: FakePreviewSources;
+  const kinds = new FakeProjectKinds();
   let settings: InMemoryPreviewSettingsRepository;
   let operations: InMemoryPreviewOperationRepository;
   let kit: ReturnType<typeof previewBuildRequests>;
@@ -40,11 +43,12 @@ describe('RequestPreviewBuildHandler', () => {
 
   function arrange(maxRunning = 3) {
     kit = previewBuildRequests(operations, sources, settings, { maxRunning });
-    handler = new RequestPreviewBuildHandler(kit.requests);
+    handler = new RequestPreviewBuildHandler(kinds, kit.requests);
   }
 
   beforeEach(() => {
     sources = new FakePreviewSources();
+    kinds.kind = 'code';
     settings = new InMemoryPreviewSettingsRepository();
     operations = new InMemoryPreviewOperationRepository();
     arrange();
@@ -291,5 +295,15 @@ describe('RequestPreviewBuildHandler', () => {
 
       await expect(handler.execute({ projectId: THIRD })).resolves.toBeDefined();
     });
+  });
+
+  it('refuses the definitions Repository before it reads anything else', async () => {
+    kinds.kind = 'definitions';
+
+    await expect(handler.execute({ projectId: PROJECT })).rejects.toBeInstanceOf(
+      DefinitionsProjectError,
+    );
+    expect(sources.status).not.toHaveBeenCalled();
+    expect([...operations.operations.values()]).toEqual([]);
   });
 });

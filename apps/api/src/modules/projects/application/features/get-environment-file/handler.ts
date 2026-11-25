@@ -18,7 +18,8 @@ export interface GetEnvironmentFileInput {
 export type GetEnvironmentFileResult = EnvironmentFileView | null;
 
 /**
- * Never returns the content. Throws {@link ProjectNotFoundError}.
+ * Never returns the content. Throws {@link ProjectNotFoundError}, or {@link
+ * DefinitionsProjectError} for the definitions Repository.
  */
 @Injectable()
 export class GetEnvironmentFileHandler {
@@ -29,9 +30,9 @@ export class GetEnvironmentFileHandler {
 
   async execute(input: GetEnvironmentFileInput): Promise<GetEnvironmentFileResult> {
     const { projectId } = input;
-    if (!isProjectId(projectId) || !(await this.projects.findById(projectId))) {
-      throw new ProjectNotFoundError();
-    }
+    const project = isProjectId(projectId) ? await this.projects.findById(projectId) : null;
+    if (!project) throw new ProjectNotFoundError();
+    project.assertAcceptsEnvironmentFile();
     const file = await this.files.find(projectId);
     return file ? environmentFileView(file) : null;
   }

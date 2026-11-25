@@ -6,9 +6,16 @@ import {
   environmentFileInfoSchema,
   toEnvironmentFileInfoResponse,
 } from '../../shared/environment-file-response.js';
-import { PROJECTS_PROBLEM_TYPES, projectNotFound } from '../../shared/problems.js';
+import {
+  definitionsProjectEnvironmentFile,
+  PROJECTS_PROBLEM_TYPES,
+  projectNotFound,
+} from '../../shared/problems.js';
 import { GetEnvironmentFileHandler } from '../../../../application/features/get-environment-file/handler.js';
-import { ProjectNotFoundError } from '../../../../domain/errors/project-errors.js';
+import {
+  DefinitionsProjectError,
+  ProjectNotFoundError,
+} from '../../../../domain/errors/project-errors.js';
 
 /**
  * `GET /api/projects/:id/environment-file`, behind the global session guard: path, size and
@@ -31,7 +38,10 @@ export class GetEnvironmentFileEndpoint {
       allOf: [{ $ref: '#/components/schemas/EnvironmentFileInfo_Output' }],
     },
   })
-  @ApiProblemResponses({ 404: `Unknown project (${PROJECTS_PROBLEM_TYPES.projectNotFound})` })
+  @ApiProblemResponses({
+    404: `Unknown project (${PROJECTS_PROBLEM_TYPES.projectNotFound})`,
+    409: `The project is the definitions Repository (${PROJECTS_PROBLEM_TYPES.definitionsProject}; refused: environment_file)`,
+  })
   async get(
     @Param('id') id: string,
     // Nest sends an empty body for a `null` return value; the contract's `null` is written as
@@ -43,6 +53,7 @@ export class GetEnvironmentFileEndpoint {
       info = await this.handler.execute({ projectId: id });
     } catch (error) {
       if (error instanceof ProjectNotFoundError) throw projectNotFound();
+      if (error instanceof DefinitionsProjectError) throw definitionsProjectEnvironmentFile();
       throw error;
     }
     const body: EnvironmentFileInfoResponse | null = info

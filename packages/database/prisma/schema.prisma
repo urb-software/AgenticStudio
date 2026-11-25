@@ -24,6 +24,10 @@ model Project {
   createdAt           DateTime             @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz(6)
   /// How Studio merges this project's Runs: squash | merge_commit (a CHECK constraint holds the list).
   mergeMethod         String               @default("squash") @map("merge_method") @db.VarChar(16)
+  /// code | definitions, fixed at creation (a CHECK holds the list). The partial unique index
+  /// `projects_one_definitions_key` (UNIQUE (kind) WHERE kind = 'definitions') is never dropped;
+  /// Prisma does not model it, see migrations/20261127100000_project_kind.
+  kind                String               @default("code") @db.VarChar(16)
   /// The connected Repository (Story #60): at most one per project.
   repository          Repository?
   /// The project's Runs (`executions` module, Issue #96).

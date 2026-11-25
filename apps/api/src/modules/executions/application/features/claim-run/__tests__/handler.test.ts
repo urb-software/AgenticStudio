@@ -6,6 +6,7 @@ import { InMemoryRunLog } from '../../../../application/ports/__tests__/in-memor
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
 import { ClaimRunHandler } from '../handler.js';
+import { FakeProjectKinds } from '../../../ports/__tests__/fake-project-kinds.js';
 
 const [A, B, C] = [
   '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e',
@@ -15,6 +16,8 @@ const [A, B, C] = [
 const WORKER = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
 const OTHER_WORKER = '7a2d3b5f-0c8e-4d4b-9f32-1e6a7b8c9d0e';
 const T0 = new Date('2026-11-15T12:00:00.000Z');
+
+const kinds = new FakeProjectKinds();
 
 describe('ClaimRunHandler', () => {
   let runs: InMemoryRunRepository;
@@ -47,11 +50,13 @@ describe('ClaimRunHandler', () => {
     files = new Map();
     filesFail = undefined;
     diffs = new InMemoryRunDiffRepository();
+    kinds.definitionsId = null;
     const environmentFiles = {
       forProject: (projectId: string) =>
         filesFail ? Promise.reject(filesFail) : Promise.resolve(files.get(projectId) ?? null),
     };
     handler = new ClaimRunHandler(
+      kinds,
       runs,
       logs,
       { now: () => now },
@@ -63,6 +68,19 @@ describe('ClaimRunHandler', () => {
       },
       diffs,
     );
+  });
+
+  it('never hands out a Run of the definitions Project, and hands out the next', async () => {
+    const excluded = await queue(A);
+    const next = await queue(B);
+    kinds.definitionsId = A;
+
+    expect((await handler.execute({ workerId: WORKER }))?.id).toBe(next.id);
+    expect(await handler.execute({ workerId: OTHER_WORKER })).toBeNull();
+    expect((await runs.findById(excluded.id))?.lifecycle.state).toBe('queued');
+
+    kinds.definitionsId = null;
+    expect((await handler.execute({ workerId: OTHER_WORKER }))?.id).toBe(excluded.id);
   });
 
   it('hands out nothing when no Run is queued', async () => {
@@ -615,6 +633,7 @@ describe('ClaimRunHandler with Environment files', () => {
     current = FILE;
     failRead = undefined;
     handler = new ClaimRunHandler(
+      kinds,
       runs,
       new InMemoryRunLog(runs),
       { now: () => T0 },

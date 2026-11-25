@@ -7,12 +7,14 @@ import {
   zodFieldErrors,
 } from '../../../../../../platform/http/problem-details.js';
 import {
+  definitionsProject,
   EXECUTIONS_PROBLEM_TYPES,
   projectNotFound,
   providerUnavailable,
   repositoryNotReady,
 } from '../../shared/problems.js';
 import {
+  DefinitionsProjectRunError,
   RepositoryNotReadyError,
   RunProjectNotFoundError,
   ProviderUnavailableError,
@@ -34,7 +36,8 @@ export class StartRunEndpoint {
   @ApiProblemResponses({
     404: `Unknown project (${EXECUTIONS_PROBLEM_TYPES.projectNotFound})`,
     409:
-      `The project's repository is missing or not ready (${EXECUTIONS_PROBLEM_TYPES.repositoryNotReady}), ` +
+      `The project is the definitions Repository (${EXECUTIONS_PROBLEM_TYPES.definitionsProject}; refused: run), ` +
+      `or the project's repository is missing or not ready (${EXECUTIONS_PROBLEM_TYPES.repositoryNotReady}), ` +
       'or the provider is switched off on the agent worker or no agent worker is connected ' +
       `(${EXECUTIONS_PROBLEM_TYPES.providerUnavailable})`,
     422: 'Invalid request body (field errors)',
@@ -52,6 +55,7 @@ export class StartRunEndpoint {
       return await this.handler.execute({ projectId, ...parsed.data });
     } catch (error) {
       if (error instanceof RunProjectNotFoundError) throw projectNotFound();
+      if (error instanceof DefinitionsProjectRunError) throw definitionsProject();
       if (error instanceof RepositoryNotReadyError) throw repositoryNotReady(error.message);
       if (error instanceof ProviderUnavailableError) throw providerUnavailable(error.reason);
       // The schema reports these first; this keeps the Task's own rule the one that decides.

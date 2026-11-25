@@ -8,25 +8,47 @@ import { Project } from '../../domain/entities/project.js';
 import { type ProjectRepository } from '../../domain/repositories/project-repository.js';
 import { isProjectId } from '../../domain/value-objects/project-id.js';
 import { isMergeMethod } from '../../domain/value-objects/merge-method.js';
+import { isProjectKind, type ProjectKind } from '../../domain/value-objects/project-kind.js';
 import type { ProjectName } from '../../domain/value-objects/project-name.js';
-import { ProjectNameTakenError } from '../../domain/errors/project-errors.js';
+import {
+  DefinitionsProjectExistsError,
+  ProjectNameTakenError,
+} from '../../domain/errors/project-errors.js';
 
-const PROJECT_FIELDS = { id: true, name: true, mergeMethod: true, createdAt: true } as const;
+const PROJECT_FIELDS = {
+  id: true,
+  name: true,
+  mergeMethod: true,
+  kind: true,
+  createdAt: true,
+} as const;
 
 function toProject(row: {
   id: string;
   name: string;
   mergeMethod: string;
+  kind: string;
   createdAt: Date;
 }): Project {
   // The column's CHECK constraint keeps the list; a value outside it is a broken record.
   if (!isMergeMethod(row.mergeMethod)) throw new Error('A project has an unknown merge method.');
+  if (!isProjectKind(row.kind)) throw new Error('A project has an unknown kind.');
   return Project.restore({
     id: row.id,
     name: row.name,
     mergeMethod: row.mergeMethod,
+    kind: row.kind,
     createdAt: row.createdAt,
   });
+}
+
+const ONE_DEFINITIONS_INDEX = 'projects_one_definitions_key';
+
+/** Which unique index a violation names, read from the error's metadata; `null` when neither. */
+function violatedIndex(error: unknown): 'definitions' | 'name' | null {
+  const named = JSON.stringify((error as { meta?: unknown }).meta ?? '');
+  if (named.includes(ONE_DEFINITIONS_INDEX)) return 'definitions';
+  return named.includes('name_normalized') ? 'name' : null;
 }
 
 /**
@@ -37,21 +59,33 @@ function toProject(row: {
 export class PrismaProjectRepository implements ProjectRepository {
   constructor(@Inject(DATABASE_CLIENT) private readonly db: DatabaseClient) {}
 
-  async add(name: ProjectName): Promise<Project> {
+  async add(name: ProjectName, kind: ProjectKind): Promise<Project> {
     try {
       return toProject(
         await this.db.project.create({
-          data: { name: name.value, nameNormalized: name.uniquenessKey },
+          data: { name: name.value, nameNormalized: name.uniquenessKey, kind },
           select: PROJECT_FIELDS,
         }),
       );
     } catch (error) {
-      // The only unique constraint of `projects` besides the primary key is on name_normalized.
-      if (isUniqueConstraintViolation(error)) {
-        throw new ProjectNameTakenError();
+      if (!isUniqueConstraintViolation(error)) throw error;
+      const violated = violatedIndex(error);
+      if (violated === 'definitions') throw new DefinitionsProjectExistsError();
+      if (violated === 'name') throw new ProjectNameTakenError();
+      // The error names neither index: the existing definitions Project decides.
+      if (kind === 'definitions' && (await this.definitionsExists())) {
+        throw new DefinitionsProjectExistsError();
       }
-      throw error;
+      throw new ProjectNameTakenError();
     }
+  }
+
+  private async definitionsExists(): Promise<boolean> {
+    const row = await this.db.project.findFirst({
+      where: { kind: 'definitions' },
+      select: { id: true },
+    });
+    return row !== null;
   }
 
   async listNewestFirst(): Promise<Project[]> {
@@ -64,6 +98,14 @@ export class PrismaProjectRepository implements ProjectRepository {
 
   async findById(id: string): Promise<Project | null> {
     const row = await this.db.project.findUnique({ where: { id }, select: PROJECT_FIELDS });
+    return row ? toProject(row) : null;
+  }
+
+  async findDefinitions(): Promise<Project | null> {
+    const row = await this.db.project.findFirst({
+      where: { kind: 'definitions' },
+      select: PROJECT_FIELDS,
+    });
     return row ? toProject(row) : null;
   }
 

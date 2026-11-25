@@ -4,24 +4,28 @@ import {
   PROJECT_REPOSITORY,
   type ProjectRepository,
 } from '../../../domain/repositories/project-repository.js';
+import type { ProjectKind } from '../../../domain/value-objects/project-kind.js';
 import { ProjectName } from '../../../domain/value-objects/project-name.js';
 
 export interface CreateProjectInput {
   name: string;
+  /** An ordinary Project when unset. */
+  kind?: ProjectKind;
 }
 
 export type CreateProjectResult = ProjectView;
 
 /**
  * Throws `InvalidProjectNameError` for an empty or too long name and `ProjectNameTakenError`
- * when the name is taken (case-insensitively).
+ * when the name is taken (case-insensitively). A second definitions Project is
+ * `DefinitionsProjectExistsError`.
  */
 @Injectable()
 export class CreateProjectHandler {
   constructor(@Inject(PROJECT_REPOSITORY) private readonly projects: ProjectRepository) {}
 
   async execute(input: CreateProjectInput): Promise<CreateProjectResult> {
-    const project = await this.projects.add(ProjectName.parse(input.name));
+    const project = await this.projects.add(ProjectName.parse(input.name), input.kind ?? 'code');
     return projectView(project);
   }
 }

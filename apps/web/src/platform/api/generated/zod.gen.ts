@@ -15,13 +15,15 @@ export const zSessionResponseOutput = z.object({
 });
 
 export const zCreateProjectRequest = z.object({
-    name: z.string().min(1).max(100)
+    name: z.string().min(1).max(100),
+    kind: z.enum(['code', 'definitions']).optional()
 });
 
 export const zProjectOutput = z.object({
     id: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
     name: z.string(),
     mergeMethod: z.enum(['squash', 'merge_commit']),
+    kind: z.enum(['code', 'definitions']),
     createdAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/)
 });
 
@@ -52,6 +54,7 @@ export const zProjectDetailOutput = z.object({
     id: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
     name: z.string(),
     mergeMethod: z.enum(['squash', 'merge_commit']),
+    kind: z.enum(['code', 'definitions']),
     createdAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/),
     repository: zRepositorySummaryOutput.nullable()
 });
@@ -113,6 +116,26 @@ export const zEnvironmentFileInfoOutput = z.object({
 
 export const zSetMergeMethodRequest = z.object({
     mergeMethod: z.enum(['squash', 'merge_commit'])
+});
+
+export const zDefinitionsRepositoryOutput = z.object({
+    project: z.object({
+        id: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
+        repository: z.object({
+            state: z.enum([
+                'awaiting_key',
+                'awaiting_host_key',
+                'connecting',
+                'ready',
+                'fetching',
+                'failed',
+                'disconnecting'
+            ]),
+            integrationBranch: z.string(),
+            headSha: z.string().nullable(),
+            lastFetchedAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/).nullable()
+        }).nullable()
+    }).nullable()
 });
 
 export const zStartRunRequest = z.object({
@@ -1313,6 +1336,8 @@ export const zSetMergeMethodPath = z.object({
 });
 
 export const zSetMergeMethodResponse = zProjectOutput;
+
+export const zGetDefinitionsRepositoryResponse = zDefinitionsRepositoryOutput;
 
 export const zListProjectRunsPath = z.object({
     id: z.string()

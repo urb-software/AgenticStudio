@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { RunStartPoint, RunStartPoints } from '../../../../../projects/contracts/index.js';
 import {
+  DefinitionsProjectRunError,
   RepositoryNotReadyError,
   RunProjectNotFoundError,
   ProviderUnavailableError,
@@ -8,6 +9,7 @@ import {
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import type { WorkerStatusData } from '../../../../domain/value-objects/worker-status-data.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
+import { FakeProjectKinds } from '../../../ports/__tests__/fake-project-kinds.js';
 import { StartRunHandler } from '../handler.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
@@ -35,10 +37,11 @@ describe('StartRunHandler', () => {
   let startPoint: RunStartPoint;
   let statuses: InMemoryWorkerStatusStore;
   const clock = { now: () => NOW };
+  const kinds = new FakeProjectKinds();
 
   const startPoints: RunStartPoints = { forProject: () => Promise.resolve(startPoint) };
   const start = () =>
-    new StartRunHandler(runs, startPoints, statuses, clock, LEASE, LIMITS).execute({
+    new StartRunHandler(kinds, runs, startPoints, statuses, clock, LEASE, LIMITS).execute({
       projectId: PROJECT,
       provider: 'codex',
       task: 'Fix the login bug',
@@ -60,6 +63,7 @@ describe('StartRunHandler', () => {
       integrationBranch: 'dev',
     };
     statuses = new InMemoryWorkerStatusStore();
+    kinds.kind = 'code';
     workerReports(true);
   });
 
@@ -89,6 +93,13 @@ describe('StartRunHandler', () => {
       lifecycle: { state: 'queued', startedAt: null, finishedAt: null, failure: null },
       delivery: { integrationBranch: 'dev', state: null, pullRequest: null, requested: false },
     });
+  });
+
+  it('refuses the definitions Repository, starting nothing', async () => {
+    kinds.kind = 'definitions';
+
+    await expect(start()).rejects.toBeInstanceOf(DefinitionsProjectRunError);
+    expect(runs.runs).toEqual([]);
   });
 
   it('rejects an unknown project', async () => {

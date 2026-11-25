@@ -9,6 +9,8 @@ import { ProblemException } from '../../../../../platform/http/problem-details.j
 /** Problem `type` URIs of the environments API (RFC 9457); generic validation errors stay `about:blank`. */
 export const ENVIRONMENTS_PROBLEM_TYPES = {
   projectNotFound: 'urn:agentic-studio:problem:project-not-found',
+  /** 409: the Project is the definitions Repository, which accepts no Preview. */
+  definitionsProject: 'urn:agentic-studio:problem:definitions-project',
   /** 409: the Repository cannot be read for a Preview now. */
   repositoryNotReady: 'urn:agentic-studio:problem:preview-repository-not-ready',
   /** 409: the API does not run on Linux, so no Repository can be read. */
@@ -41,6 +43,15 @@ export function projectNotFound(): ProblemException {
     type: ENVIRONMENTS_PROBLEM_TYPES.projectNotFound,
     title: 'Project not found',
     detail: 'No project has this id.',
+  });
+}
+
+export function definitionsProject(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: ENVIRONMENTS_PROBLEM_TYPES.definitionsProject,
+    title: 'Definitions Repository',
+    detail: 'The definitions Repository accepts no Preview settings, build, stop or reset.',
+    extensions: { refused: 'preview' },
   });
 }
 

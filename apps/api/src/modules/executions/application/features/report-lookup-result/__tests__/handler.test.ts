@@ -19,6 +19,7 @@ import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__
 import { inMemoryExecutions } from '../../../__tests__/in-memory-executions.js';
 import { ClaimLookupsHandler } from '../../claim-lookups/handler.js';
 import { LookupNotFoundError, LookupNotHeldError, ReportLookupResultHandler } from '../handler.js';
+import { FakeProjectKinds } from '../../../ports/__tests__/fake-project-kinds.js';
 
 const OTHER_WORKER = '7a2d3b5f-0c8e-4d4b-9f32-1e6a7b8c9d0e';
 const T1 = new Date(T0.getTime() + 5_000);
@@ -29,18 +30,20 @@ describe('lookups: claim and result', () => {
   let executions: ReturnType<typeof inMemoryExecutions>;
   let now: Date;
   let claims: ClaimLookupsHandler;
+  const kinds = new FakeProjectKinds();
   let results: ReportLookupResultHandler;
   let known = ['hunter2-env-value'];
   const secrets = { forRun: () => Promise.resolve(known) };
 
   beforeEach(() => {
     known = ['hunter2-env-value'];
+    kinds.definitionsId = null;
     runs = new InMemoryRunRepository();
     executions = inMemoryExecutions(runs);
     lookups = executions.lookups;
     now = T1;
     const clock = { now: () => now };
-    claims = new ClaimLookupsHandler(lookups, clock);
+    claims = new ClaimLookupsHandler(kinds, lookups, clock);
     results = new ReportLookupResultHandler(lookups, clock, runs, secrets, executions.transactions);
   });
 
@@ -65,6 +68,17 @@ describe('lookups: claim and result', () => {
       runBranch: 'agent/x-r0b8e5c2d',
       integrationBranch: 'dev',
     });
+  });
+
+  it('never hands out the lookup of a Run of the definitions Project', async () => {
+    const run = await deliveredRun(runs);
+    await executions.requests.request(run.id, 'pull_request_state', T0);
+    kinds.definitionsId = run.projectId;
+
+    expect((await claims.execute({ workerId: WORKER })).lookups).toEqual([]);
+
+    kinds.definitionsId = null;
+    expect((await claims.execute({ workerId: WORKER })).lookups).toHaveLength(1);
   });
 
   it('hands out nothing when no lookup waits, and each lookup to one worker only', async () => {

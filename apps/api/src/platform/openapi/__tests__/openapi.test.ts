@@ -80,7 +80,10 @@ describe('OpenAPI document', () => {
     });
     expect(document.components?.schemas?.CreateProjectRequest).toMatchObject({
       type: 'object',
-      properties: { name: { type: 'string', minLength: 1, maxLength: 100 } },
+      properties: {
+        name: { type: 'string', minLength: 1, maxLength: 100 },
+        kind: { type: 'string', enum: ['code', 'definitions'] },
+      },
       required: ['name'],
     });
     expect(create?.responses['201']).toMatchObject({
@@ -92,9 +95,10 @@ describe('OpenAPI document', () => {
         id: { type: 'string', format: 'uuid' },
         name: { type: 'string' },
         mergeMethod: { type: 'string', enum: ['squash', 'merge_commit'] },
+        kind: { type: 'string', enum: ['code', 'definitions'] },
         createdAt: { type: 'string', format: 'date-time' },
       },
-      required: ['id', 'name', 'mergeMethod', 'createdAt'],
+      required: ['id', 'name', 'mergeMethod', 'kind', 'createdAt'],
     });
 
     const list = document.paths['/api/projects']?.get;
@@ -110,6 +114,34 @@ describe('OpenAPI document', () => {
       },
       required: ['items'],
     });
+  });
+
+  it('documents the definitions Repository route and the refusals of a definitions Project', () => {
+    const document = createOpenApiDocument(app);
+    const problem = {
+      content: {
+        'application/problem+json': { schema: { $ref: '#/components/schemas/ProblemDetails' } },
+      },
+    };
+
+    const read = document.paths['/api/agents/definitions-repository']?.get;
+    expect(read?.operationId).toBe('getDefinitionsRepository');
+    expect(read?.responses['200']).toMatchObject({
+      content: {
+        'application/json': {
+          schema: { $ref: '#/components/schemas/DefinitionsRepository_Output' },
+        },
+      },
+    });
+    expect(document.paths['/api/projects']?.post?.responses['409']).toMatchObject(problem);
+    for (const [path, method] of [
+      ['/api/projects/{id}/runs', 'post'],
+      ['/api/projects/{id}/environment-file', 'put'],
+      ['/api/projects/{id}/preview/settings', 'put'],
+      ['/api/projects/{id}/preview/builds', 'post'],
+    ] as const) {
+      expect(document.paths[path]?.[method]?.responses['409']).toMatchObject(problem);
+    }
   });
 
   it('documents the project detail and repository endpoints', () => {
@@ -133,7 +165,7 @@ describe('OpenAPI document', () => {
           anyOf: [{ $ref: '#/components/schemas/RepositorySummary_Output' }, { type: 'null' }],
         },
       },
-      required: ['id', 'name', 'mergeMethod', 'createdAt', 'repository'],
+      required: ['id', 'name', 'mergeMethod', 'kind', 'createdAt', 'repository'],
     });
 
     const read = document.paths['/api/projects/{id}/repository']?.get;

@@ -97,6 +97,14 @@ export class RunProjectNotFoundError extends Error {
   }
 }
 
+/** The project is the definitions Repository, which accepts no Run. */
+export class DefinitionsProjectRunError extends Error {
+  constructor() {
+    super('The definitions Repository accepts no Run.');
+    this.name = 'DefinitionsProjectRunError';
+  }
+}
+
 export class RepositoryNotReadyError extends Error {
   constructor(readonly reason: 'no_repository' | 'not_ready') {
     super(

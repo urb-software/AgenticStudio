@@ -20,7 +20,7 @@ export interface RemoveEnvironmentFileInput {
 
 /**
  * Removing none changes nothing; Runs claimed earlier keep their snapshot. Throws
- * {@link ProjectNotFoundError}.
+ * {@link ProjectNotFoundError}, or {@link DefinitionsProjectError} for the definitions Repository.
  */
 @Injectable()
 export class RemoveEnvironmentFileHandler {
@@ -32,9 +32,9 @@ export class RemoveEnvironmentFileHandler {
 
   async execute(input: RemoveEnvironmentFileInput): Promise<void> {
     const { projectId } = input;
-    if (!isProjectId(projectId) || !(await this.projects.findById(projectId))) {
-      throw new ProjectNotFoundError();
-    }
+    const project = isProjectId(projectId) ? await this.projects.findById(projectId) : null;
+    if (!project) throw new ProjectNotFoundError();
+    project.assertAcceptsEnvironmentFile();
     const secretRef = await this.files.delete(projectId);
     if (secretRef !== null) await this.contents.discard(secretRef);
   }

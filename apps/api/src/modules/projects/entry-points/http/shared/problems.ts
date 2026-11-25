@@ -17,6 +17,10 @@ export const PROJECTS_PROBLEM_TYPES = {
   /** 409: the Repository is not waiting for its Deploy key or host key to be verified. */
   repositoryNotVerifiable: 'urn:agentic-studio:problem:repository-not-verifiable',
   unsupportedPlatform: 'urn:agentic-studio:problem:unsupported-platform',
+  /** 409: the definitions Repository accepts no Run, no Preview and no Environment file. */
+  definitionsProject: 'urn:agentic-studio:problem:definitions-project',
+  /** 409: a definitions Project exists already; at most one does. */
+  definitionsProjectExists: 'urn:agentic-studio:problem:definitions-project-exists',
 } as const;
 
 /** 404 for an unknown project id (also for an id that is not a UUID). */
@@ -58,4 +62,22 @@ export function unsupportedPlatform(action: string): ProblemException {
 /** 503 (the generic body) when the job queue is down; the queue logs the outage itself (once). */
 export function queueUnavailable(): ProblemException {
   return serviceUnavailable();
+}
+
+export function definitionsProjectExists(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: PROJECTS_PROBLEM_TYPES.definitionsProjectExists,
+    title: 'Definitions Repository exists',
+    detail: 'A definitions Repository is already connected. Disconnect it to connect another.',
+  });
+}
+
+/** 409 for a definitions Project that is asked for an Environment file. */
+export function definitionsProjectEnvironmentFile(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: PROJECTS_PROBLEM_TYPES.definitionsProject,
+    title: 'Definitions Repository',
+    detail: 'The definitions Repository accepts no Environment file.',
+    extensions: { refused: 'environment_file' },
+  });
 }

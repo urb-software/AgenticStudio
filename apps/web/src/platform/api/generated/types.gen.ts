@@ -18,6 +18,10 @@ export type SessionResponseOutput = {
 
 export type CreateProjectRequest = {
     name: string;
+    /**
+     * `code` (the default) is an ordinary Project. `definitions` is the one Repository that holds agent definitions; it accepts no Run, no Preview and no Environment file.
+     */
+    kind?: 'code' | 'definitions';
 };
 
 export type ProjectOutput = {
@@ -27,6 +31,10 @@ export type ProjectOutput = {
      * How the project's Runs are merged: `squash` (the default) or `merge_commit`.
      */
     mergeMethod: 'squash' | 'merge_commit';
+    /**
+     * `code` for an ordinary Project; `definitions` for the Repository that holds agent definitions.
+     */
+    kind: 'code' | 'definitions';
     createdAt: string;
 };
 
@@ -52,6 +60,10 @@ export type ProjectDetailOutput = {
      * How the project's Runs are merged: `squash` (the default) or `merge_commit`.
      */
     mergeMethod: 'squash' | 'merge_commit';
+    /**
+     * `code` for an ordinary Project; `definitions` for the Repository that holds agent definitions.
+     */
+    kind: 'code' | 'definitions';
     createdAt: string;
     repository: RepositorySummaryOutput | null;
 };
@@ -110,6 +122,27 @@ export type EnvironmentFileInfoOutput = {
 
 export type SetMergeMethodRequest = {
     mergeMethod: 'squash' | 'merge_commit';
+};
+
+export type DefinitionsRepositoryOutput = {
+    project: {
+        /**
+         * The definitions Project; its Repository is connected through the projects routes.
+         */
+        id: string;
+        /**
+         * Null while the Project has no Repository connected yet.
+         */
+        repository: {
+            state: 'awaiting_key' | 'awaiting_host_key' | 'connecting' | 'ready' | 'fetching' | 'failed' | 'disconnecting';
+            integrationBranch: string;
+            /**
+             * The Integration branch commit the Clone holds; null without a usable Clone.
+             */
+            headSha: string | null;
+            lastFetchedAt: string | null;
+        } | null;
+    } | null;
 };
 
 export type StartRunRequest = {
@@ -868,6 +901,10 @@ export type CreateProjectData = {
 
 export type CreateProjectErrors = {
     /**
+     * A definitions Repository exists already (urn:agentic-studio:problem:definitions-project-exists); a taken name is a field error on name
+     */
+    409: ProblemDetails;
+    /**
      * Error (RFC 9457 problem details)
      */
     default: ProblemDetails;
@@ -1119,6 +1156,10 @@ export type RemoveEnvironmentFileErrors = {
      */
     404: ProblemDetails;
     /**
+     * The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: environment_file)
+     */
+    409: ProblemDetails;
+    /**
      * Error (RFC 9457 problem details)
      */
     default: ProblemDetails;
@@ -1150,6 +1191,10 @@ export type GetEnvironmentFileErrors = {
      */
     404: ProblemDetails;
     /**
+     * The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: environment_file)
+     */
+    409: ProblemDetails;
+    /**
      * Error (RFC 9457 problem details)
      */
     default: ProblemDetails;
@@ -1180,6 +1225,10 @@ export type SetEnvironmentFileErrors = {
      * Unknown project (urn:agentic-studio:problem:project-not-found)
      */
     404: ProblemDetails;
+    /**
+     * The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: environment_file)
+     */
+    409: ProblemDetails;
     /**
      * Invalid path (not a safe relative path, inside .git, or tracked in the repository) or content (over 64 KiB, not UTF-8); field errors on path or content say why
      */
@@ -1226,6 +1275,28 @@ export type SetMergeMethodResponses = {
 
 export type SetMergeMethodResponse = SetMergeMethodResponses[keyof SetMergeMethodResponses];
 
+export type GetDefinitionsRepositoryData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/agents/definitions-repository';
+};
+
+export type GetDefinitionsRepositoryErrors = {
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type GetDefinitionsRepositoryError = GetDefinitionsRepositoryErrors[keyof GetDefinitionsRepositoryErrors];
+
+export type GetDefinitionsRepositoryResponses = {
+    200: DefinitionsRepositoryOutput;
+};
+
+export type GetDefinitionsRepositoryResponse = GetDefinitionsRepositoryResponses[keyof GetDefinitionsRepositoryResponses];
+
 export type ListProjectRunsData = {
     body?: never;
     path: {
@@ -1240,6 +1311,10 @@ export type ListProjectRunsErrors = {
      * Unknown project (urn:agentic-studio:problem:project-not-found)
      */
     404: ProblemDetails;
+    /**
+     * The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: run)
+     */
+    409: ProblemDetails;
     /**
      * Error (RFC 9457 problem details)
      */
@@ -1269,7 +1344,7 @@ export type StartRunErrors = {
      */
     404: ProblemDetails;
     /**
-     * The project's repository is missing or not ready (urn:agentic-studio:problem:repository-not-ready), or the provider is switched off on the agent worker or no agent worker is connected (urn:agentic-studio:problem:provider-unavailable)
+     * The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: run), or the project's repository is missing or not ready (urn:agentic-studio:problem:repository-not-ready), or the provider is switched off on the agent worker or no agent worker is connected (urn:agentic-studio:problem:provider-unavailable)
      */
     409: ProblemDetails;
     /**
@@ -2191,7 +2266,7 @@ export type RemovePreviewSettingsErrors = {
      */
     404: ProblemDetails;
     /**
-     * The Preview is running (urn:agentic-studio:problem:preview-running) or a build is running (urn:agentic-studio:problem:preview-build-running)
+     * The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: preview), The Preview is running (urn:agentic-studio:problem:preview-running) or a build is running (urn:agentic-studio:problem:preview-build-running)
      */
     409: ProblemDetails;
     /**
@@ -2226,7 +2301,7 @@ export type SavePreviewSettingsErrors = {
      */
     404: ProblemDetails;
     /**
-     * The repository cannot be read now (urn:agentic-studio:problem:preview-repository-not-ready), or the API is not on Linux (urn:agentic-studio:problem:preview-unsupported-platform)
+     * The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: preview), The repository cannot be read now (urn:agentic-studio:problem:preview-repository-not-ready), or the API is not on Linux (urn:agentic-studio:problem:preview-unsupported-platform)
      */
     409: ProblemDetails;
     /**
@@ -2266,7 +2341,7 @@ export type RequestPreviewBuildErrors = {
      */
     404: ProblemDetails;
     /**
-     * No Preview settings (urn:agentic-studio:problem:preview-not-configured), the repository cannot be read now (urn:agentic-studio:problem:preview-repository-not-ready), the API is not on Linux (urn:agentic-studio:problem:preview-unsupported-platform), no environment controller is connected (urn:agentic-studio:problem:preview-controller-unavailable), a build is already running (urn:agentic-studio:problem:preview-build-running), a stop or a reset is running (urn:agentic-studio:problem:preview-busy), or every place of the running limit is taken (urn:agentic-studio:problem:preview-limit-reached; `running` lists the projects that hold them)
+     * The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: preview), No Preview settings (urn:agentic-studio:problem:preview-not-configured), the repository cannot be read now (urn:agentic-studio:problem:preview-repository-not-ready), the API is not on Linux (urn:agentic-studio:problem:preview-unsupported-platform), no environment controller is connected (urn:agentic-studio:problem:preview-controller-unavailable), a build is already running (urn:agentic-studio:problem:preview-build-running), a stop or a reset is running (urn:agentic-studio:problem:preview-busy), or every place of the running limit is taken (urn:agentic-studio:problem:preview-limit-reached; `running` lists the projects that hold them)
      */
     409: ProblemDetails;
     /**
@@ -2306,7 +2381,7 @@ export type StopPreviewErrors = {
      */
     404: ProblemDetails;
     /**
-     * No environment controller is connected (urn:agentic-studio:problem:preview-controller-unavailable), a build is running (urn:agentic-studio:problem:preview-build-running), a stop or a reset is running (urn:agentic-studio:problem:preview-busy) or the Preview is not running (urn:agentic-studio:problem:preview-not-running)
+     * The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: preview), No environment controller is connected (urn:agentic-studio:problem:preview-controller-unavailable), a build is running (urn:agentic-studio:problem:preview-build-running), a stop or a reset is running (urn:agentic-studio:problem:preview-busy) or the Preview is not running (urn:agentic-studio:problem:preview-not-running)
      */
     409: ProblemDetails;
     /**
@@ -2338,7 +2413,7 @@ export type ResetPreviewDataErrors = {
      */
     404: ProblemDetails;
     /**
-     * No environment controller is connected (urn:agentic-studio:problem:preview-controller-unavailable), a build is running (urn:agentic-studio:problem:preview-build-running) or a stop or a reset is running (urn:agentic-studio:problem:preview-busy)
+     * The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: preview), No environment controller is connected (urn:agentic-studio:problem:preview-controller-unavailable), a build is running (urn:agentic-studio:problem:preview-build-running) or a stop or a reset is running (urn:agentic-studio:problem:preview-busy)
      */
     409: ProblemDetails;
     /**

@@ -39,7 +39,8 @@ export interface SetEnvironmentFileInput {
 export type SetEnvironmentFileResult = EnvironmentFileView;
 
 /**
- * Throws {@link ProjectNotFoundError}, `InvalidEnvironmentFilePathError` (including
+ * Throws {@link ProjectNotFoundError}, {@link DefinitionsProjectError},
+ * `InvalidEnvironmentFilePathError` (including
  * {@link EnvironmentFilePathTrackedError}) or `InvalidEnvironmentFileContentError`.
  */
 @Injectable()
@@ -54,9 +55,11 @@ export class SetEnvironmentFileHandler {
   ) {}
 
   async execute(input: SetEnvironmentFileInput): Promise<SetEnvironmentFileResult> {
-    if (!isProjectId(input.projectId) || !(await this.projects.findById(input.projectId))) {
-      throw new ProjectNotFoundError();
-    }
+    const project = isProjectId(input.projectId)
+      ? await this.projects.findById(input.projectId)
+      : null;
+    if (!project) throw new ProjectNotFoundError();
+    project.assertAcceptsEnvironmentFile();
     const path = EnvironmentFilePath.of(input.path);
     const content = EnvironmentFileContent.of(input.content);
     await this.refuseTrackedPath(input.projectId, path.value);

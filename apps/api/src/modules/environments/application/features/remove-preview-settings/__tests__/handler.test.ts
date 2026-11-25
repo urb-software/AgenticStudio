@@ -10,9 +10,11 @@ import {
   PreviewBuildRunningError,
   PreviewRunningError,
   ProjectNotFoundError,
+  DefinitionsProjectError,
 } from '../../../../domain/errors/preview-settings-errors.js';
 import { InMemoryPreviewOperationRepository } from '../../../../domain/repositories/__tests__/in-memory-preview-operation-repository.js';
 import { InMemoryPreviewSettingsRepository } from '../../../../domain/repositories/__tests__/in-memory-preview-settings-repository.js';
+import { FakeProjectKinds } from '../../../ports/__tests__/fake-project-kinds.js';
 import { FakePreviewSources } from '../../../ports/__tests__/fake-preview-sources.js';
 import { RemovePreviewSettingsHandler } from '../handler.js';
 
@@ -20,15 +22,17 @@ const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 
 describe('RemovePreviewSettingsHandler', () => {
   let sources: FakePreviewSources;
+  const kinds = new FakeProjectKinds();
   let settings: InMemoryPreviewSettingsRepository;
   let operations: InMemoryPreviewOperationRepository;
   let handler: RemovePreviewSettingsHandler;
 
   beforeEach(() => {
     sources = new FakePreviewSources();
+    kinds.kind = 'code';
     settings = new InMemoryPreviewSettingsRepository();
     operations = new InMemoryPreviewOperationRepository();
-    handler = new RemovePreviewSettingsHandler(sources, settings, operations);
+    handler = new RemovePreviewSettingsHandler(kinds, sources, settings, operations);
   });
 
   async function saved() {
@@ -137,5 +141,14 @@ describe('RemovePreviewSettingsHandler', () => {
 
     await handler.execute({ projectId: PROJECT });
     expect(settings.settings.size).toBe(0);
+  });
+
+  it('refuses the definitions Repository before it reads anything else', async () => {
+    kinds.kind = 'definitions';
+
+    await expect(handler.execute({ projectId: PROJECT })).rejects.toBeInstanceOf(
+      DefinitionsProjectError,
+    );
+    expect(sources.status).not.toHaveBeenCalled();
   });
 });

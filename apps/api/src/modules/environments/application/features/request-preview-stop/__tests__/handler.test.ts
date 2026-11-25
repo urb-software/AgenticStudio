@@ -6,6 +6,7 @@ import {
   PreviewControllerUnavailableError,
   PreviewNotRunningError,
   ProjectNotFoundError,
+  DefinitionsProjectError,
 } from '../../../../domain/errors/preview-settings-errors.js';
 import { InMemoryPreviewOperationRepository } from '../../../../domain/repositories/__tests__/in-memory-preview-operation-repository.js';
 import { InMemoryPreviewSettingsRepository } from '../../../../domain/repositories/__tests__/in-memory-preview-settings-repository.js';
@@ -17,6 +18,7 @@ import {
   seedBuild,
 } from '../../../__tests__/preview-test-kit.js';
 import { RequestPreviewStopHandler } from '../handler.js';
+import { FakeProjectKinds } from '../../../ports/__tests__/fake-project-kinds.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const BUILD = '0b2f6d52-3d0b-4d6e-8a44-6b3c1d8f2a10';
@@ -24,15 +26,17 @@ const CHANGE = '1c3a7e63-4e1c-4e7f-9b55-7c4d2e9a3b21';
 
 describe('RequestPreviewStopHandler', () => {
   let sources: FakePreviewSources;
+  const kinds = new FakeProjectKinds();
   let operations: InMemoryPreviewOperationRepository;
   let kit: ReturnType<typeof previewBuildRequests>;
   let handler: RequestPreviewStopHandler;
 
   beforeEach(() => {
     sources = new FakePreviewSources();
+    kinds.kind = 'code';
     operations = new InMemoryPreviewOperationRepository();
     kit = previewBuildRequests(operations, sources, new InMemoryPreviewSettingsRepository());
-    handler = new RequestPreviewStopHandler(operations, kit.clock, kit.requests);
+    handler = new RequestPreviewStopHandler(kinds, operations, kit.clock, kit.requests);
   });
 
   const stored = () => [...operations.operations.values()];
@@ -110,7 +114,7 @@ describe('RequestPreviewStopHandler', () => {
     );
     const again = previewBuildRequests(other, sources, new InMemoryPreviewSettingsRepository());
     await expect(
-      new RequestPreviewStopHandler(other, again.clock, again.requests).execute({
+      new RequestPreviewStopHandler(kinds, other, again.clock, again.requests).execute({
         projectId: PROJECT,
       }),
     ).rejects.toBeInstanceOf(PreviewBusyError);
@@ -135,5 +139,15 @@ describe('RequestPreviewStopHandler', () => {
       new Date(NOW.getTime() + 600_000),
     );
     await expect(handler.execute({ projectId: PROJECT })).resolves.toBeDefined();
+  });
+
+  it('refuses the definitions Repository before it reads anything else', async () => {
+    kinds.kind = 'definitions';
+
+    await expect(handler.execute({ projectId: PROJECT })).rejects.toBeInstanceOf(
+      DefinitionsProjectError,
+    );
+    expect(sources.status).not.toHaveBeenCalled();
+    expect(stored()).toEqual([]);
   });
 });
