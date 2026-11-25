@@ -23,10 +23,9 @@ export function problem(status: number, title: string, extras: Partial<ProblemDe
 const REPOSITORY = /^\/api\/projects\/([^/]+)\/repository(\/fetch)?$/;
 
 /**
- * The Agents page's API behind `fetch`, enough of it for the page and the Repository card it
- * shows: the definitions Repository read, the one Project create, the project and its Repository
- * (read, connect, fetch). `initial` is the server's state: no Project (`null`), or the Project
- * with its Repository (`null` until connected).
+ * The Agents page's API behind `fetch`: the definitions Repository read, the Project create and
+ * the Project with its Repository (read, connect, fetch). `initial` is the server's state: no
+ * Project (`null`), or the Project with its Repository (`null` until connected).
  */
 export function fakeAgentsApi(initial: { repository: RepositoryOutput | null } | null) {
   let project: ProjectOutput | null = initial ? DEFINITIONS_PROJECT : null;
