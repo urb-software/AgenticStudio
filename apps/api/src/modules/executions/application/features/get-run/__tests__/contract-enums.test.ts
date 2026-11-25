@@ -134,6 +134,8 @@ describe('Run enums of the HTTP contract and the worker protocol', () => {
       runNotHeld: EXECUTIONS_PROBLEM_TYPES.runNotHeld,
       runNotFound: EXECUTIONS_PROBLEM_TYPES.runNotFound,
       stepLimitReached: EXECUTIONS_PROBLEM_TYPES.stepLimitReached,
+      agentFolderUnavailable: EXECUTIONS_PROBLEM_TYPES.agentFolderUnavailable,
+      agentFolderInvalid: EXECUTIONS_PROBLEM_TYPES.agentFolderInvalid,
     });
   });
 

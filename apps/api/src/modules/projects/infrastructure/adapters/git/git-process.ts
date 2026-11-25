@@ -43,6 +43,11 @@ export interface RunOptions {
    * this many arrive (`stdoutCut` is then true). For output whose start matters, such as a patch.
    */
   stdoutLimitBytes?: number;
+  /**
+   * How stdout is decoded (default `utf8`). `latin1` maps every byte to one character, so
+   * `Buffer.from(stdout, 'latin1')` returns the exact bytes of a binary blob.
+   */
+  stdoutEncoding?: 'utf8' | 'latin1';
 }
 
 export interface RunResult {
@@ -91,13 +96,14 @@ export function runGitProcess(options: RunOptions): Promise<RunResult> {
     let interrupted: InterruptReason | null = null;
     let spawnError: Error | null = null;
     const stdoutLimit = options.stdoutLimitBytes;
-    child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
+    const encoding = options.stdoutEncoding ?? 'utf8';
+    child.stdout.setEncoding(encoding).on('data', (chunk: string) => {
       if (stdoutLimit === undefined) {
         stdout = appendCapped(stdout, chunk);
         return;
       }
       if (stdoutCut) return;
-      stdoutBytes += Buffer.byteLength(chunk);
+      stdoutBytes += Buffer.byteLength(chunk, encoding);
       stdout += chunk;
       if (stdoutBytes > stdoutLimit) {
         stdoutCut = true;

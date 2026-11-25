@@ -6,6 +6,8 @@ export const RUN_FAILURE_CODES = [
   'worker_lost',
   'delivery_failed',
   'step_limit',
+  'agent_folder_unavailable',
+  'agent_folder_invalid',
   'unknown',
 ] as const;
 export type RunFailureCode = (typeof RUN_FAILURE_CODES)[number];

@@ -1,6 +1,6 @@
 import type { RunPayload, RunStepResult } from '@agentic-studio/contracts';
 import { createHash } from 'node:crypto';
-import { readFile, rm, writeFile } from 'node:fs/promises';
+import { lstat, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { GIT_TIMEOUTS, type GitOptions, GitRunner, SAFE_DIFF_FLAGS } from './git.js';
@@ -32,6 +32,7 @@ export const FAKE_SCENARIOS = [
   'two-files',
   'resolve-conflicts',
   'resolve-in-tree',
+  'copy-agent-file',
 ] as const;
 export type FakeScenario = (typeof FAKE_SCENARIOS)[number];
 
@@ -72,6 +73,33 @@ export function fakeAgentLine(run: Pick<RunPayload, 'baseRules' | 'agent'>): str
     `base rules ${run.baseRules.version}; ` +
     `instructions ${Buffer.byteLength(agent.instructions)} bytes, sha256 ${digest}`
   );
+}
+
+/**
+ * What the fake runner reports of the agent's files: how many, and each by relative path, mode and
+ * digest, never content or the folder's own path. It only reads: nothing in the folder is run.
+ * `null` without a folder.
+ */
+export async function fakeAgentFolderLine(dir: string | null | undefined): Promise<string | null> {
+  if (!dir) return null;
+  const listed: string[] = [];
+  const walk = async (relative: string): Promise<void> => {
+    for (const entry of await readdir(join(dir, relative), { withFileTypes: true })) {
+      const path = relative === '' ? entry.name : `${relative}/${entry.name}`;
+      if (entry.isDirectory()) await walk(path);
+      else if (entry.isFile()) listed.push(path);
+    }
+  };
+  await walk('');
+  const described: string[] = [];
+  for (const path of listed.sort()) {
+    const mode = ((await lstat(join(dir, path))).mode & 0o777).toString(8).padStart(4, '0');
+    const digest = createHash('sha256')
+      .update(await readFile(join(dir, path)))
+      .digest('hex');
+    described.push(`${path} ${mode} sha256 ${digest}`);
+  }
+  return `fake runner: agent folder ${described.length} files: ${described.join(', ')}`;
 }
 
 /** The fake agent's session reference for a Run: deterministic, per Run. */
@@ -148,6 +176,8 @@ export class FakeRunner implements Runner {
     yield { type: 'message', text: `fake runner: ${scenario}` };
     const agentLine = fakeAgentLine(run);
     if (agentLine !== null) yield { type: 'message', text: agentLine };
+    const folderLine = await fakeAgentFolderLine(workspace.agentFolder);
+    if (folderLine !== null) yield { type: 'message', text: folderLine };
     return yield* this.play(scenario, run, workspace, signal, false);
   }
 
@@ -225,6 +255,11 @@ export class FakeRunner implements Runner {
         await this.write(workspace, FAKE_NOTES_FILE, 'Notes left by the fake runner.\n');
         yield { type: 'output', text: `committed ${FAKE_CHANGE_FILE}; left ${FAKE_NOTES_FILE}` };
         return done();
+      case 'copy-agent-file': {
+        const copied = await this.copyAgentFile(workspace, signal);
+        yield { type: 'output', text: `committed ${copied}, a copy of a file of the agent folder` };
+        return done();
+      }
       case 'checks-failed':
         await change(true);
         yield { type: 'output', text: `committed ${changed}; a check failed` };
@@ -265,6 +300,35 @@ export class FakeRunner implements Runner {
     return paths;
   }
 
+  /**
+   * Copies the agent folder's first file into the Working copy and commits it: what a careless
+   * agent could do, so the worker's check before the push has something to stop. Returns its path.
+   */
+  private async copyAgentFile(workspace: RunWorkspace, signal: AbortSignal): Promise<string> {
+    const dir = workspace.agentFolder;
+    if (!dir) throw new AgentFailedError('The fake agent has no agent folder to copy from.');
+    const names: string[] = [];
+    const walk = async (relative: string): Promise<void> => {
+      for (const entry of await readdir(join(dir, relative), { withFileTypes: true })) {
+        const path = relative === '' ? entry.name : `${relative}/${entry.name}`;
+        if (entry.isDirectory()) await walk(path);
+        else if (entry.isFile()) names.push(path);
+      }
+    };
+    await walk('');
+    const source = names.sort()[0];
+    if (source === undefined) throw new AgentFailedError('The agent folder holds no file.');
+    const target = `copied-${source.replaceAll('/', '-')}`;
+    await this.write(workspace, target, await readFile(join(dir, source)));
+    const options = { cwd: workspace.repoDir, timeoutMs: GIT_TIMEOUTS.local, signal };
+    await this.git.run(['add', '--', `:(literal)${target}`], options);
+    await this.git.run(['commit', '--quiet', '--no-verify', '-m', 'Fake copy of an agent file'], {
+      ...options,
+      config: this.commitConfig,
+    });
+    return target;
+  }
+
   /** Writes the fake change into the Working copy and, if asked, commits it on the Run branch. */
   private async change(workspace: RunWorkspace, signal: AbortSignal, commit: boolean) {
     await this.write(workspace, FAKE_CHANGE_FILE, 'Made by the fake runner.\n');
@@ -282,7 +346,7 @@ export class FakeRunner implements Runner {
    * is at that path (e.g. a symlink to a file outside the Working copy) is removed, never
    * written through, and the file is created exclusively.
    */
-  private async write(workspace: RunWorkspace, name: string, content: string) {
+  private async write(workspace: RunWorkspace, name: string, content: string | Buffer) {
     const file = join(workspace.repoDir, name);
     await rm(file, { force: true });
     await writeFile(file, content, { flag: 'wx', mode: 0o644 });
@@ -326,6 +390,8 @@ export class FakeRunner implements Runner {
     };
     const agentLine = fakeAgentLine(run);
     if (agentLine !== null) yield { type: 'message', text: agentLine };
+    const folderLine = await fakeAgentFolderLine(workspace.agentFolder);
+    if (folderLine !== null) yield { type: 'message', text: folderLine };
     signal.throwIfAborted();
     if (scenario === 'lost-session' || sessionRef !== fakeSessionRef(run.runId)) {
       throw new AgentFailedError(

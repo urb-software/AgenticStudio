@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   GitCloneMissingError,
+  GitCommitMissingError,
   GitOperationError,
   GitRequestRejectedError,
   type GitFailureReason,
@@ -318,20 +319,20 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
 
       await expect(git.listTreeAtCommit(PROJECT_ID, commit, 'agents', 100)).resolves.toEqual({
         entries: [
-          { path: 'agents/linked/AGENT.md', kind: 'symlink', size: 0 },
-          { path: 'agents/reviewer/AGENT.md', kind: 'file', size: 4 },
-          { path: 'agents/reviewer/notes/a.txt', kind: 'file', size: 3 },
-          { path: 'agents/reviewer/run.sh', kind: 'file', size: 10 },
-          { path: 'agents/vendored', kind: 'submodule', size: 0 },
-          { path: 'agents/zeta/AGENT.md', kind: 'file', size: 2 },
+          { path: 'agents/linked/AGENT.md', kind: 'symlink', size: 0, executable: false },
+          { path: 'agents/reviewer/AGENT.md', kind: 'file', size: 4, executable: false },
+          { path: 'agents/reviewer/notes/a.txt', kind: 'file', size: 3, executable: false },
+          { path: 'agents/reviewer/run.sh', kind: 'file', size: 10, executable: true },
+          { path: 'agents/vendored', kind: 'submodule', size: 0, executable: false },
+          { path: 'agents/zeta/AGENT.md', kind: 'file', size: 2, executable: false },
         ],
         truncated: false,
       });
       // Over the entry bound: the first entries only, and it says so.
       await expect(git.listTreeAtCommit(PROJECT_ID, commit, 'agents', 2)).resolves.toEqual({
         entries: [
-          { path: 'agents/linked/AGENT.md', kind: 'symlink', size: 0 },
-          { path: 'agents/reviewer/AGENT.md', kind: 'file', size: 4 },
+          { path: 'agents/linked/AGENT.md', kind: 'symlink', size: 0, executable: false },
+          { path: 'agents/reviewer/AGENT.md', kind: 'file', size: 4, executable: false },
         ],
         truncated: true,
       });
@@ -353,7 +354,7 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
         GitRequestRejectedError,
       );
       await expect(git.listTreeAtCommit(PROJECT_ID, 'f'.repeat(40), 'agents', 10)).rejects.toThrow(
-        GitOperationError,
+        GitCommitMissingError,
       );
       await expect(git.listTreeAtCommit(OTHER_PROJECT_ID, commit, 'agents', 10)).rejects.toThrow(
         GitCloneMissingError,
@@ -406,6 +407,48 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
       expect((reads[6]!.outcome as { text: string }).text).toContain('�');
     });
 
+    it('reads the stored bytes of regular files, binary ones unchanged', async () => {
+      const png = Buffer.from([
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0x00, 0xfe, 0x80,
+      ]);
+      const source = createFixture(
+        fixtures,
+        'agents-blobs',
+        {
+          'agents/a/AGENT.md': 'alpha\n',
+          'agents/a/logo.png': png,
+          'agents/a/big.bin': Buffer.alloc(2048, 0xe9),
+          'agents/a/link': { symlink: 'logo.png' },
+        },
+        { branch: 'dev' },
+      );
+      const git = adapter();
+      const { commit } = await git.clone(PROJECT_ID, source.url, 'dev');
+
+      const reads = await git.readBlobsAtCommit(
+        PROJECT_ID,
+        commit,
+        ['agents/a/logo.png', 'agents/a/big.bin', 'agents/a/link', 'agents/a/none', 'agents/a'],
+        1024,
+      );
+
+      expect(reads.map((read) => [read.path, read.outcome.status])).toEqual([
+        ['agents/a/logo.png', 'found'],
+        ['agents/a/big.bin', 'too_large'],
+        ['agents/a/link', 'missing'],
+        ['agents/a/none', 'missing'],
+        ['agents/a', 'missing'],
+      ]);
+      const found = reads[0]!.outcome as { bytes: Uint8Array };
+      expect(Buffer.from(found.bytes).equals(png)).toBe(true);
+      await expect(git.readBlobsAtCommit(PROJECT_ID, 'f'.repeat(40), ['a'], 1)).rejects.toThrow(
+        GitCommitMissingError,
+      );
+      await expect(git.readBlobsAtCommit(OTHER_PROJECT_ID, commit, ['a'], 1)).rejects.toThrow(
+        GitCloneMissingError,
+      );
+    });
+
     it('reads more files than one Git call lists, and refuses a bad commit or a missing Clone', async () => {
       const files: Record<string, string> = {};
       for (let index = 0; index < 120; index += 1) files[`agents/a${index}/AGENT.md`] = `n${index}`;
@@ -421,7 +464,7 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
         GitRequestRejectedError,
       );
       await expect(git.readFilesAtCommit(PROJECT_ID, 'f'.repeat(40), ['a'], 1)).rejects.toThrow(
-        GitOperationError,
+        GitCommitMissingError,
       );
       await expect(git.readFilesAtCommit(OTHER_PROJECT_ID, commit, ['a'], 1)).rejects.toThrow(
         GitCloneMissingError,

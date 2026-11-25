@@ -105,7 +105,7 @@ export class ClaudeCodeRunner implements Runner {
     await mkdir(files.tmpDir, { recursive: true, mode: 0o700 });
     const marker = this.options.marker?.() ?? randomBytes(6).toString('hex');
     const instructions = await buildInstructions(
-      run,
+      { ...run, agentFolder: workspace.agentFolder ?? null },
       this.repositoryFiles(workspace, run.startCommit, signal),
       marker,
     );

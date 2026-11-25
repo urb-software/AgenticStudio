@@ -1,6 +1,7 @@
 import { MAX_FILE_BYTES, RESERVED_AGENT_NAMES } from '@agentic-studio/agent-definitions';
 import { describe, expect, it, vi } from 'vitest';
 import type {
+  DefinitionsBlobsResult,
   ProjectDefaultAgent,
   ProjectDefaultAgents,
   DefinitionsFiles,
@@ -50,6 +51,9 @@ function scripted(script: Scripted) {
         },
       ),
     ),
+    readBlobs: vi.fn((): Promise<DefinitionsBlobsResult> =>
+      Promise.resolve({ status: 'read', files: [] }),
+    ),
   } satisfies DefinitionsFiles;
   const defaults: ProjectDefaultAgents = {
     forProject: () =>
@@ -58,7 +62,12 @@ function scripted(script: Scripted) {
   return { fake, handler: new ReadAgentsHandler(fake, defaults) };
 }
 
-const file = (path: string, size = 10): DefinitionsTreeEntry => ({ path, kind: 'file', size });
+const file = (path: string, size = 10): DefinitionsTreeEntry => ({
+  path,
+  kind: 'file',
+  size,
+  executable: false,
+});
 const listed = (...entries: DefinitionsTreeEntry[]): DefinitionsTreeResult => ({
   status: 'listed',
   entries,

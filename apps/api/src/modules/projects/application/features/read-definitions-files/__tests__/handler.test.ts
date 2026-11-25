@@ -3,6 +3,7 @@ import { InMemoryProjectRepository } from '../../../../domain/repositories/__tes
 import { InMemoryRepositoryConnectionRepository } from '../../../../domain/repositories/__tests__/in-memory-repository-connection-repository.js';
 import {
   GitCloneMissingError,
+  GitCommitMissingError,
   GitOperationError,
   GitRequestRejectedError,
   GitUnsupportedPlatformError,
@@ -68,6 +69,7 @@ describe('ReadDefinitionsFilesHandler', () => {
   it.each([
     [new GitUnsupportedPlatformError('win32'), 'unsupported_platform'],
     [new GitCloneMissingError(), 'repository_not_ready'],
+    [new GitCommitMissingError(), 'commit_missing'],
     [new GitRequestRejectedError('bad commit'), 'failed'],
     [new GitOperationError('unknown'), 'failed'],
   ] as const)('maps %s to %s', async (error, status) => {

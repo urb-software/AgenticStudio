@@ -275,18 +275,24 @@ export interface DefinitionsSnapshot {
   commit: string | null;
 }
 
-/** One tracked item below `agents/`; `size` is 0 for anything that is not a regular file. */
+/**
+ * One tracked item below `agents/`; `size` is 0 for anything that is not a regular file.
+ * `executable` is Git's mode `100755`, and false for every other entry.
+ */
 export interface DefinitionsTreeEntry {
   path: string;
   kind: 'file' | 'symlink' | 'submodule' | 'other';
   size: number;
+  executable: boolean;
 }
 
 /**
  * Why a read could not happen: `repository_not_ready` (no definitions Repository, or its Clone is
- * gone), `unsupported_platform` (the API does not run on Linux), `failed` (anything else).
+ * gone), `commit_missing` (the Clone does not hold the commit), `unsupported_platform` (the API
+ * does not run on Linux), `failed` (anything else).
  */
-export type DefinitionsUnavailable = 'repository_not_ready' | 'unsupported_platform' | 'failed';
+export type DefinitionsUnavailable =
+  'repository_not_ready' | 'commit_missing' | 'unsupported_platform' | 'failed';
 
 export type DefinitionsTreeResult =
   | { status: 'listed'; entries: DefinitionsTreeEntry[]; truncated: boolean }
@@ -299,6 +305,14 @@ export type DefinitionsFileRead =
 
 export type DefinitionsFilesResult =
   { status: 'read'; files: DefinitionsFileRead[] } | { status: DefinitionsUnavailable };
+
+/** The stored bytes of a regular file; `missing` and `too_large` as for {@link DefinitionsFileRead}. */
+export type DefinitionsBlobRead =
+  | { path: string; status: 'found'; bytes: Uint8Array }
+  | { path: string; status: 'missing' | 'too_large' };
+
+export type DefinitionsBlobsResult =
+  { status: 'read'; files: DefinitionsBlobRead[] } | { status: DefinitionsUnavailable };
 
 /**
  * Reads the definitions Repository's Clone at a commit, from Git's object store only: no checkout
@@ -317,4 +331,11 @@ export interface DefinitionsFiles {
     paths: readonly string[],
     maxBytes: number,
   ): Promise<DefinitionsFilesResult>;
+
+  /** The stored bytes of each regular file (no text decoding), in the order of `paths`. */
+  readBlobs(
+    commit: string,
+    paths: readonly string[],
+    maxBytes: number,
+  ): Promise<DefinitionsBlobsResult>;
 }

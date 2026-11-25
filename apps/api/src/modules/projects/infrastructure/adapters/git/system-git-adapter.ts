@@ -9,11 +9,13 @@ import { parseSshHostKey } from '../../../../../platform/config/ssh-known-hosts.
 import {
   type CommitArchive,
   type CommitArchiveOutcome,
+  type CommitBlobRead,
   type CommitFileOutcome,
   type CommitFileRead,
   type CommitTree,
   type CommitTreeEntry,
   GitCloneMissingError,
+  GitCommitMissingError,
   type GitOperationOptions,
   GitOperationError,
   GitRequestRejectedError,
@@ -277,7 +279,12 @@ function parseTree(output: string, cut: boolean, maxEntries: number): CommitTree
     entries: entries.slice(0, maxEntries).map((entry) => {
       const kind = TREE_KINDS[entry.mode] ?? 'other';
       // A link's blob is its target path: its size is no file size.
-      return { path: entry.path, kind, size: kind === 'file' ? entry.size : 0 };
+      return {
+        path: entry.path,
+        kind,
+        size: kind === 'file' ? entry.size : 0,
+        executable: entry.mode === '100755',
+      };
     }),
     truncated: cut || entries.length > maxEntries,
   };
@@ -1023,6 +1030,44 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     maxBytes: number,
     options: GitOperationOptions = {},
   ): Promise<CommitFileRead[]> {
+    const reads = await this.readBlobEntries(projectId, commit, paths, maxBytes, 'utf8', options);
+    return reads.map(({ path, outcome }) => ({
+      path,
+      outcome: outcome.status === 'found' ? { status: 'found', text: outcome.stdout } : outcome,
+    }));
+  }
+
+  async readBlobsAtCommit(
+    projectId: string,
+    commit: string,
+    paths: readonly string[],
+    maxBytes: number,
+    options: GitOperationOptions = {},
+  ): Promise<CommitBlobRead[]> {
+    const reads = await this.readBlobEntries(projectId, commit, paths, maxBytes, 'latin1', options);
+    return reads.map(({ path, outcome }) => ({
+      path,
+      outcome:
+        outcome.status === 'found'
+          ? { status: 'found', bytes: Uint8Array.from(Buffer.from(outcome.stdout, 'latin1')) }
+          : outcome,
+    }));
+  }
+
+  /** The regular files at `paths`, their stdout decoded with `encoding` (`latin1` is lossless). */
+  private async readBlobEntries(
+    projectId: string,
+    commit: string,
+    paths: readonly string[],
+    maxBytes: number,
+    encoding: 'utf8' | 'latin1',
+    options: GitOperationOptions,
+  ): Promise<
+    {
+      path: string;
+      outcome: { status: 'found'; stdout: string } | { status: 'missing' | 'too_large' };
+    }[]
+  > {
     this.assertSupportedPlatform();
     if (!COMMIT_ID.test(commit)) {
       throw new GitRequestRejectedError('The commit id is not a full commit id.');
@@ -1063,7 +1108,10 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
             if (entry.regular) regular.set(entry.path, entry);
           }
         }
-        const reads: CommitFileRead[] = [];
+        const reads: {
+          path: string;
+          outcome: { status: 'found'; stdout: string } | { status: 'missing' | 'too_large' };
+        }[] = [];
         for (const path of paths) {
           const entry = regular.get(path);
           if (!entry) {
@@ -1077,13 +1125,14 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
               [gitDir, 'cat-file', 'blob', entry.object],
               undefined,
               maxBytes,
+              encoding,
             );
             if (blob.stdoutCut) {
               reads.push({ path, outcome: { status: 'too_large' } });
             } else if (blob.exitCode !== 0) {
               throw new GitOperationError('unknown', redactGitOutput(blob.stderr));
             } else {
-              reads.push({ path, outcome: { status: 'found', text: blob.stdout } });
+              reads.push({ path, outcome: { status: 'found', stdout: blob.stdout } });
             }
           }
         }
@@ -1113,7 +1162,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
       '--quiet',
       `${commit}^{commit}`,
     ]);
-    if (known.exitCode !== 0) throw new GitOperationError('unknown');
+    if (known.exitCode !== 0) throw new GitCommitMissingError();
   }
 
   async archiveCommit(
@@ -1546,6 +1595,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     args: string[],
     watch?: SizeWatch,
     stdoutLimitBytes?: number,
+    stdoutEncoding?: 'utf8' | 'latin1',
   ) {
     const caFile = this.settings.httpsCaFile
       ? ['-c', `http.sslCAInfo=${this.settings.httpsCaFile}`]
@@ -1556,6 +1606,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
       [...hardeningArgs(this.settings.allowedTransports), ...caFile, ...args],
       watch,
       stdoutLimitBytes,
+      stdoutEncoding,
     );
   }
 
@@ -1565,6 +1616,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     args: string[],
     watch?: SizeWatch,
     stdoutLimitBytes?: number,
+    stdoutEncoding?: 'utf8' | 'latin1',
   ) {
     try {
       const result = await runGitProcess({
@@ -1576,6 +1628,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
         signal: context.signal,
         watch,
         stdoutLimitBytes,
+        ...(stdoutEncoding === undefined ? {} : { stdoutEncoding }),
         memoryBound: {
           bytes: this.settings.maxProcessMemoryBytes,
           prlimitBinary: this.prlimitBinary,

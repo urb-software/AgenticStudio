@@ -14,6 +14,7 @@ import {
 } from '../../../domain/repositories/repository-connection-repository.js';
 import {
   GitCloneMissingError,
+  GitCommitMissingError,
   GitOperationError,
   GitRequestRejectedError,
   GitUnsupportedPlatformError,
@@ -56,6 +57,7 @@ export class ListDefinitionsTreeHandler {
     } catch (error) {
       if (error instanceof GitUnsupportedPlatformError) return { status: 'unsupported_platform' };
       if (error instanceof GitCloneMissingError) return { status: 'repository_not_ready' };
+      if (error instanceof GitCommitMissingError) return { status: 'commit_missing' };
       if (error instanceof GitOperationError || error instanceof GitRequestRejectedError) {
         return { status: 'failed' };
       }

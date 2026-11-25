@@ -89,11 +89,13 @@ export type CommitArchiveOutcome =
 /**
  * One tracked item below a folder of a commit. `kind` is `file` (regular, also executable),
  * `symlink`, `submodule` or `other`; `size` is the blob's size in bytes, 0 for a non-blob.
+ * `executable` is mode `100755`.
  */
 export interface CommitTreeEntry {
   path: string;
   kind: 'file' | 'symlink' | 'submodule' | 'other';
   size: number;
+  executable: boolean;
 }
 
 /** `truncated`: more than the limit of entries (or of output) existed; only the first are listed. */
@@ -105,6 +107,14 @@ export interface CommitTree {
 export interface CommitFileRead {
   path: string;
   outcome: CommitFileOutcome;
+}
+
+export type CommitBlobOutcome =
+  { status: 'found'; bytes: Uint8Array } | { status: 'missing' } | { status: 'too_large' };
+
+export interface CommitBlobRead {
+  path: string;
+  outcome: CommitBlobOutcome;
 }
 
 export type GitFailureReason = Exclude<RepositoryFailureCode, 'interrupted'>;
@@ -245,6 +255,18 @@ export interface RepositoryGit {
   ): Promise<CommitFileRead[]>;
 
   /**
+   * {@link RepositoryGit.readFilesAtCommit} answering the stored bytes instead of text, so a
+   * binary file arrives unchanged.
+   */
+  readBlobsAtCommit(
+    projectId: string,
+    commit: string,
+    paths: readonly string[],
+    maxBytes: number,
+    options?: GitOperationOptions,
+  ): Promise<CommitBlobRead[]>;
+
+  /**
    * The tracked tree of `commit` as a tar archive of at most `maxBytes`, built from the Clone's
    * object store (never a working tree, never a remote); Git is killed once the archive passes
    * the limit. Throws the errors of {@link RepositoryGit.isPathTracked}. The caller closes it.
@@ -278,6 +300,17 @@ export class GitRequestRejectedError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'GitRequestRejectedError';
+  }
+}
+
+/**
+ * The Clone does not hold the commit asked for (an `unknown` {@link GitOperationError}), as
+ * opposed to a Clone that cannot be read at all.
+ */
+export class GitCommitMissingError extends GitOperationError {
+  constructor() {
+    super('unknown', 'The Clone does not hold the commit.');
+    this.name = 'GitCommitMissingError';
   }
 }
 

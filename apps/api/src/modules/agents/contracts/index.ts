@@ -1,3 +1,5 @@
+import type { Problem } from '@agentic-studio/agent-definitions';
+
 export const AGENT_RESOLUTION = Symbol('AGENT_RESOLUTION');
 
 /** The agent as a Run records it at start. */
@@ -26,4 +28,29 @@ export interface AgentResolutions {
    * why none can be used. A built-in agent needs no Repository.
    */
   resolveForRun(name: string): Promise<AgentResolution>;
+}
+
+export const AGENT_FOLDERS = Symbol('AGENT_FOLDERS');
+
+/** One file of an agent's folder as stored in Git: its bytes and whether Git marks it executable. */
+export interface AgentFolderFile {
+  /** Relative to the agent's folder, with `/` separators. */
+  path: string;
+  executable: boolean;
+  content: Uint8Array;
+}
+
+/**
+ * `found`: every file of the folder except its entry file `AGENT.md`, by path. `invalid`: the folder
+ * fails the shared validation. `unavailable`: the folder cannot be read at that commit (no such
+ * folder, or no Clone or commit, or a failed read).
+ */
+export type AgentFolderRead =
+  | { status: 'found'; files: AgentFolderFile[] }
+  | { status: 'invalid'; problems: Problem[] }
+  | { status: 'unavailable' };
+
+export interface AgentFolders {
+  /** The folder of the agent `name` at `commit` of the definitions Repository, from Git only. */
+  folderAt(name: string, commit: string): Promise<AgentFolderRead>;
 }

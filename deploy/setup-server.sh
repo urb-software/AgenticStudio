@@ -759,7 +759,7 @@ build_code() {
 
 step_worker() {
   build_code "agent worker" "$WORKER_CODE_DIR" '@agentic-studio/agent-worker' apps/agent-worker/dist/main.js \
-    contracts agent-worker
+    contracts agent-definitions agent-worker
 }
 
 step_controller() {

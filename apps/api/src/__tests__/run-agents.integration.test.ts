@@ -121,7 +121,7 @@ describe('choosing an agent for a Run (PostgreSQL + Redis via Testcontainers)', 
   }
 
   /** The definitions Project, connected to a local remote holding `files` on `dev`. */
-  async function definitionsWith(files: Record<string, string>) {
+  async function definitionsWith(files: Record<string, string | Buffer | { executable: string }>) {
     const fixture = createGitFixture(fixtureRoot, `definitions-${randomUUID().slice(0, 8)}`);
     const commit = pushFiles(fixture, 'dev', fixture.commits.dev!, files);
     const created = await asOperator(http().post('/api/projects')).send({
@@ -599,5 +599,138 @@ describe('choosing an agent for a Run (PostgreSQL + Redis via Testcontainers)', 
         expect(response.body.preselectedReason).toContain('problems');
       },
     );
+  });
+
+  describe("the agent's folder handed to the worker", () => {
+    const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0x00, 0xfe]);
+    const SCRIPT = '#!/bin/sh\necho checks\n';
+    const workerGet = (runId: string, query: string, token: string | null = WORKER_TOKEN) =>
+      http()
+        .get(`/api/worker/runs/${runId}/agent-folder${query}`)
+        .set(token === null ? {} : { Authorization: `Bearer ${token}` });
+    const folderQuery = (workerId = W1) => `?workerId=${workerId}`;
+
+    async function reviewerRun() {
+      const definitions = await definitionsWith({
+        'agents/reviewer/AGENT.md': agentFile('reviewer', 'claude_code'),
+        'agents/reviewer/scripts/check.sh': { executable: SCRIPT },
+        'agents/reviewer/assets/logo.png': PNG,
+        'agents/other/AGENT.md': agentFile('other', 'codex'),
+        'agents/other/other-only.txt': 'not for the reviewer',
+      });
+      const project = await readyProject('Shop');
+      const created = await startRun(project.id, { task: 'Review the change', agent: 'reviewer' });
+      expect(created.status).toBe(201);
+      expect((await claim()).status).toBe(200);
+      return { definitions, runId: created.body.id as string, project };
+    }
+
+    it.runIf(linux)(
+      'answers the files of the Run agent at the recorded commit, without AGENT.md, with the executable bit and the bytes unchanged',
+      async () => {
+        const { definitions, runId } = await reviewerRun();
+
+        const response = await workerGet(runId, folderQuery());
+
+        expect(response.status).toBe(200);
+        expect(response.body).toEqual({
+          commit: definitions.commit,
+          files: [
+            {
+              path: 'assets/logo.png',
+              executable: false,
+              contentBase64: PNG.toString('base64'),
+            },
+            {
+              path: 'scripts/check.sh',
+              executable: true,
+              contentBase64: Buffer.from(SCRIPT).toString('base64'),
+            },
+          ],
+        });
+      },
+    );
+
+    it.runIf(linux)(
+      'keeps answering the commit the Run recorded when the definitions move on',
+      async () => {
+        const { definitions, runId } = await reviewerRun();
+        await changeDefinitions(definitions, definitions.commit, {
+          'agents/reviewer/AGENT.md': agentFile('reviewer', 'claude_code'),
+          'agents/reviewer/scripts/check.sh': 'echo changed\n',
+        });
+
+        const response = await workerGet(runId, folderQuery());
+
+        expect(response.body.commit).toBe(definitions.commit);
+        expect(
+          Buffer.from(
+            response.body.files.find((file: { path: string }) => file.path === 'scripts/check.sh')
+              .contentBase64,
+            'base64',
+          ).toString(),
+        ).toBe(SCRIPT);
+      },
+    );
+
+    it('answers no commit and no files for a built-in agent', async () => {
+      const project = await readyProject('Shop');
+      const created = await startRun(project.id, { task: 'Fix it', agent: 'default-claude-code' });
+      expect((await claim()).status).toBe(200);
+
+      const response = await workerGet(created.body.id, folderQuery());
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ commit: null, files: [] });
+    });
+
+    it('answers only the worker that holds the Run, and looks the same as no Run to another', async () => {
+      const project = await readyProject('Shop');
+      const created = await startRun(project.id, { task: 'Fix it', agent: 'default-claude-code' });
+      expect((await claim()).status).toBe(200);
+
+      expectProblem(
+        await workerGet(created.body.id, folderQuery(randomUUID())),
+        404,
+        'urn:agentic-studio:problem:run-not-found',
+      );
+      expectProblem(
+        await workerGet(randomUUID(), folderQuery()),
+        404,
+        'urn:agentic-studio:problem:run-not-found',
+      );
+      expectProblem(
+        await workerGet('not-a-uuid', folderQuery()),
+        404,
+        'urn:agentic-studio:problem:run-not-found',
+      );
+    });
+
+    it('takes neither an agent nor a commit from the caller', async () => {
+      const project = await readyProject('Shop');
+      const created = await startRun(project.id, { task: 'Fix it', agent: 'default-claude-code' });
+      expect((await claim()).status).toBe(200);
+
+      for (const extra of [`&agent=other`, `&commit=${'a'.repeat(40)}`, '&path=x']) {
+        expectProblem(await workerGet(created.body.id, `${folderQuery()}${extra}`), 422);
+      }
+      expectProblem(await workerGet(created.body.id, ''), 422);
+    });
+
+    it('needs the worker token, and no session or other token reaches it', async () => {
+      const project = await readyProject('Shop');
+      const created = await startRun(project.id, { task: 'Fix it', agent: 'default-claude-code' });
+      expect((await claim()).status).toBe(200);
+
+      expect((await workerGet(created.body.id, folderQuery(), null)).status).toBe(401);
+      expect((await workerGet(created.body.id, folderQuery(), 'not-the-token')).status).toBe(401);
+      expect(
+        (
+          await http()
+            .get(`/api/worker/runs/${created.body.id}/agent-folder${folderQuery()}`)
+            .set('Cookie', cookie)
+        ).status,
+      ).toBe(401);
+    });
   });
 });

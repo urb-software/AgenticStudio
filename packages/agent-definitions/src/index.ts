@@ -1,4 +1,4 @@
-export { validateAgentFolder } from './validate.js';
+export { validateAgentFiles, validateAgentFolder } from './validate.js';
 export type { AgentDefinition, AgentEntry, AgentFolderResult } from './validate.js';
 export { findAgentFolders } from './find.js';
 export type { AgentFolder } from './find.js';

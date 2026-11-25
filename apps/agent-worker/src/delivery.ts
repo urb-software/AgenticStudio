@@ -23,6 +23,7 @@ import {
   type PullRequestClient,
   PullRequestFailedError,
 } from './github.js';
+import { printable } from './agent-definition/bring-up-to-date.js';
 import { isRunBranchOf } from './run-branch.js';
 import { composeProjectName, runDirectories } from './run-layout.js';
 import { studioPathspecs } from './studio-paths.js';
@@ -92,6 +93,12 @@ export interface DeliveriesOptions {
   allowFileRemotes: boolean;
   /** The Agent account on GitHub: its token (when configured) and the REST API's base URL. */
   github: { token?: string; apiUrl: string };
+  /**
+   * The Git blob ids of the files of the Run's agent folder (non-empty files only), each with its
+   * path in the folder. A commit that holds one of them is never pushed. Asked only for a
+   * definitions agent; a failure fails the delivery before the push.
+   */
+  agentFolderBlobs?: (run: RunPayload, signal: AbortSignal) => Promise<ReadonlyMap<string, string>>;
   /** Builds the pull request client (default: {@link GitHubPullRequests}). */
   pullRequests?: (github: { token: string; apiUrl: string }) => PullRequestClient;
   logger: { error(message: string): void };
@@ -242,6 +249,8 @@ export class Deliveries implements DeliveryPort {
         );
       }
     }
+
+    await this.assertNoAgentFiles(run, range, local, signal);
 
     const target = parseGitHubRemote(run.repository.remoteUrl, this.options.allowFileRemotes);
     if (!target) {
@@ -495,6 +504,48 @@ export class Deliveries implements DeliveryPort {
       await rm(pushDir, { recursive: true, force: true });
     }
     return pushedTip;
+  }
+
+  /**
+   * The agent's files are Studio's, never the Repository's: no commit of the Run branch may hold a
+   * file with the content of one of them (compared by blob id, so a copy under any name or path
+   * is found, also in a commit a later one reverted).
+   */
+  private async assertNoAgentFiles(
+    run: RunPayload,
+    range: string,
+    local: GitOptions,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const placed = this.options.agentFolderBlobs;
+    if (!placed || run.agent.source !== 'definitions') return;
+    let blobs: ReadonlyMap<string, string>;
+    try {
+      blobs = await placed(run, signal);
+    } catch (error) {
+      if (signal.aborted) throw error;
+      const reason = error instanceof Error ? error.message : 'unknown error';
+      throw new DeliveryFailedError(
+        `The agent's files could not be checked against the Run branch, so nothing was pushed: ` +
+          `${reason.slice(0, 300)} Retry the delivery.`,
+      );
+    }
+    if (blobs.size === 0) return;
+    const listing = await this.options.git.run(
+      ['log', '--no-renames', '--format=', '--raw', '--no-abbrev', range, '--'],
+      local,
+    );
+    for (const line of listing.split('\n')) {
+      const match = /^:\d{6} \d{6} [0-9a-f]+ ([0-9a-f]+) [A-Z]\t(.*)$/.exec(line);
+      const agentPath = match ? blobs.get(match[1]!) : undefined;
+      if (match && agentPath !== undefined) {
+        throw new DeliveryFailedError(
+          `A commit on the Run branch contains ${printable(match[2]!)}, a copy of the agent's file ` +
+            `${printable(agentPath)}; Studio never pushes the agent's files. Remove it from the ` +
+            'Run branch on the agent side, then retry the delivery.',
+        );
+      }
+    }
   }
 
   private studioPathspecs(prepared: PreparedRun, run: RunPayload): Promise<string[]> {

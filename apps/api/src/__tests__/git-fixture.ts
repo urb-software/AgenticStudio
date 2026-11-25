@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -105,12 +105,17 @@ export function pushFiles(
   fixture: GitFixture,
   branch: string,
   base: string,
-  files: Record<string, string | Buffer>,
+  files: Record<string, string | Buffer | { executable: string | Buffer }>,
 ): string {
   git(fixture.work, ['checkout', '--quiet', '-B', branch, base]);
   for (const [path, content] of Object.entries(files)) {
     mkdirSync(dirname(join(fixture.work, path)), { recursive: true });
-    writeFileSync(join(fixture.work, path), content);
+    if (typeof content === 'string' || Buffer.isBuffer(content)) {
+      writeFileSync(join(fixture.work, path), content);
+    } else {
+      writeFileSync(join(fixture.work, path), content.executable);
+      chmodSync(join(fixture.work, path), 0o755);
+    }
   }
   git(fixture.work, ['add', '--all']);
   git(fixture.work, ['commit', '--quiet', '-m', `change ${branch}`]);

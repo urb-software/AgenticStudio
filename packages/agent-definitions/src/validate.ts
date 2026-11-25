@@ -105,11 +105,13 @@ function pathProblem(path: string): PathCode | undefined {
   return undefined;
 }
 
-/** Judges the entries of one agent folder. Pure: reads nothing, starts nothing. */
-export function validateAgentFolder(
-  folderName: string,
-  entries: readonly AgentEntry[],
-): AgentFolderResult {
+/** The files of a folder, as kept after the path, kind and duplicate checks. */
+interface JudgedEntries {
+  problems: Problem[];
+  fileEntries: AgentEntry[];
+}
+
+function judgeEntries(entries: readonly AgentEntry[]): JudgedEntries {
   const problems: Problem[] = [];
   const fileEntries: AgentEntry[] = [];
   const seen = new Set<string>();
@@ -153,6 +155,23 @@ export function validateAgentFolder(
     if (size > MAX_FILE_BYTES) problems.push(problem('file_too_large', entry.path));
   }
   if (total > MAX_FOLDER_BYTES) problems.push(problem('folder_too_large', ''));
+  return { problems, fileEntries };
+}
+
+/**
+ * Judges the files of a folder by the path, kind, duplicate and size rules alone: no entry file
+ * and no name are needed. What the agent worker checks again before it writes a hand-over.
+ */
+export function validateAgentFiles(entries: readonly AgentEntry[]): Problem[] {
+  return judgeEntries(entries).problems;
+}
+
+/** Judges the entries of one agent folder. Pure: reads nothing, starts nothing. */
+export function validateAgentFolder(
+  folderName: string,
+  entries: readonly AgentEntry[],
+): AgentFolderResult {
+  const { problems, fileEntries } = judgeEntries(entries);
 
   if (!AGENT_NAME_PATTERN.test(folderName)) problems.push(problem('name_invalid', ''));
   else if ((RESERVED_AGENT_NAMES as readonly string[]).includes(folderName)) {

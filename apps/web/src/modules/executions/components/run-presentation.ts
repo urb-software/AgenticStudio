@@ -150,6 +150,9 @@ export const FAILURE_MESSAGE: Record<FailureCode, string> = {
   worker_lost: 'The agent worker stopped responding.',
   delivery_failed: "The run's result could not be delivered.",
   step_limit: 'The run reached its maximum number of run steps.',
+  agent_folder_unavailable:
+    "The agent's files are no longer available in the definitions Repository.",
+  agent_folder_invalid: "The agent's files in the definitions Repository are not valid.",
   unknown: 'The run failed for an unknown reason.',
 };
 

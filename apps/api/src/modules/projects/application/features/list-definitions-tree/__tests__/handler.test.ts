@@ -5,6 +5,7 @@ import { InMemoryProjectRepository } from '../../../../domain/repositories/__tes
 import { InMemoryRepositoryConnectionRepository } from '../../../../domain/repositories/__tests__/in-memory-repository-connection-repository.js';
 import {
   GitCloneMissingError,
+  GitCommitMissingError,
   GitOperationError,
   GitUnsupportedPlatformError,
 } from '../../../ports/repository-git.js';
@@ -43,7 +44,10 @@ describe('ListDefinitionsTreeHandler', () => {
 
   it('lists the agents folder of the definitions Clone at the commit, within the bound', async () => {
     await connected();
-    const entries = [{ path: 'agents/a/AGENT.md', kind: 'file', size: 10 }] as const;
+    const entries = [
+      { path: 'agents/a/AGENT.md', kind: 'file', size: 10, executable: false },
+      { path: 'agents/a/run.sh', kind: 'file', size: 5, executable: true },
+    ] as const;
     git.listTreeAtCommit.mockResolvedValueOnce({ entries: [...entries], truncated: true });
 
     await expect(handler.execute({ commit: HEAD })).resolves.toEqual({
@@ -74,6 +78,7 @@ describe('ListDefinitionsTreeHandler', () => {
   it.each([
     [new GitUnsupportedPlatformError('win32'), 'unsupported_platform'],
     [new GitCloneMissingError(), 'repository_not_ready'],
+    [new GitCommitMissingError(), 'commit_missing'],
     [new GitOperationError('unknown'), 'failed'],
   ] as const)('maps %s to %s', async (error, status) => {
     await connected();
