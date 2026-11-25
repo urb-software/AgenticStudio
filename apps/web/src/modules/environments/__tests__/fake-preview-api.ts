@@ -78,6 +78,8 @@ export function fakePreviewApi(
     state?: PreviewOutput['state'];
     latestChange?: PreviewOutput['latestChange'];
     projectName?: string;
+    behind?: boolean;
+    mergeRebuild?: PreviewOutput['mergeRebuild'];
   } = {},
 ) {
   const state = {
@@ -91,6 +93,10 @@ export function fakePreviewApi(
     stateOverride: initial.state ?? null,
     latestChange: initial.latestChange ?? null,
     projectName: initial.projectName ?? 'Acme Shop',
+    runReadable: true,
+    runTask: 'Add the checkout page',
+    behind: initial.behind ?? false,
+    mergeRebuild: initial.mergeRebuild ?? null,
     /** The log of each build id, in order; a page is cut from it by `after` and `limit`. */
     logs: new Map<string, PreviewBuildEventsOutput['events']>(),
     finalBuilds: new Set<string>(),
@@ -119,8 +125,8 @@ export function fakePreviewApi(
       latestBuild: state.latestBuild,
       latestChange: state.latestChange,
       controller: { connected: state.controllerConnected },
-      behind: false,
-      mergeRebuild: null,
+      behind: state.behind,
+      mergeRebuild: state.mergeRebuild,
     };
   }
 
@@ -157,6 +163,9 @@ export function fakePreviewApi(
       };
       return json(200, page);
     }
+    const runRoute = /^\/api\/runs\/([^/]+)$/.exec(pathname);
+    if (runRoute && !state.runReadable) return json(404, problem(404, 'Run not found'));
+    if (runRoute) return json(200, { id: runRoute[1], task: state.runTask });
     const project = /^\/api\/projects\/([^/]+)$/.exec(pathname);
     if (project) {
       if (project[1] !== PROJECT_ID) return json(404, problem(404, 'Project not found'));

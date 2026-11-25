@@ -476,3 +476,132 @@ describe('Preview build card: polling and log', () => {
     await expect(document.body).toHaveNoAxeViolations();
   });
 });
+
+const RUN_ID = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
+
+describe('Preview page: what started the build and the merge rebuild', () => {
+  it('says the operator started the latest build', async () => {
+    fakePreviewApi({
+      settings: SETTINGS,
+      state: 'running',
+      latestBuild: SUCCEEDED,
+      running: RUNNING,
+    });
+    renderPage();
+
+    const region = await card();
+    expect(within(region).getByText('Started by')).toBeTruthy();
+    expect(within(region).getByText('You')).toBeTruthy();
+  });
+
+  it('links a build a merge started to the Run, by its title', async () => {
+    fakePreviewApi({
+      settings: SETTINGS,
+      state: 'running',
+      latestBuild: { ...SUCCEEDED, startedBy: { kind: 'merge', runId: RUN_ID } },
+      running: RUNNING,
+    });
+    renderPage();
+
+    const link = await screen.findByRole('link', { name: 'Add the checkout page' });
+    expect(link.getAttribute('href')).toBe(`/executions/${RUN_ID}`);
+    expect(link.closest('dd')?.textContent).toContain('The merge of Run ');
+    await expect(document.body).toHaveNoAxeViolations();
+  });
+
+  it('names no Run twice while the Run cannot be read', async () => {
+    const api = fakePreviewApi({
+      settings: SETTINGS,
+      state: 'running',
+      latestBuild: { ...SUCCEEDED, startedBy: { kind: 'merge', runId: RUN_ID } },
+      running: RUNNING,
+    });
+    api.state.runReadable = false;
+    renderPage();
+
+    const link = await screen.findByRole('link', { name: '(title not loaded)' });
+    expect(link.closest('dd')?.textContent).toBe('The merge of Run (title not loaded)');
+  });
+
+  it('tells the Preview is behind, with both commits and Rebuild offered', async () => {
+    const head = 'd'.repeat(40);
+    fakePreviewApi({
+      settings: SETTINGS,
+      state: 'running',
+      latestBuild: SUCCEEDED,
+      running: RUNNING,
+      repository: { ready: true, commit: head },
+      behind: true,
+    });
+    renderPage();
+
+    const region = await card();
+    const banner = await within(region).findByText(/Rebuild to show it\./);
+    expect(banner.textContent).toContain(COMMIT.slice(0, 7));
+    expect(banner.textContent).toContain(head.slice(0, 7));
+    expect(within(region).getByRole('button', { name: 'Rebuild' })).toBeTruthy();
+    await expect(document.body).toHaveNoAxeViolations();
+  });
+
+  it('shows no behind banner when the Preview is current', async () => {
+    fakePreviewApi({
+      settings: SETTINGS,
+      state: 'running',
+      latestBuild: SUCCEEDED,
+      running: RUNNING,
+    });
+    renderPage();
+
+    await card();
+    expect(screen.queryByText(/Rebuild to show it/)).toBeNull();
+  });
+
+  it('shows the waiting rebuild with its reason and the Run, instead of the behind banner', async () => {
+    fakePreviewApi({
+      settings: SETTINGS,
+      state: 'running',
+      latestBuild: SUCCEEDED,
+      running: RUNNING,
+      repository: { ready: true, commit: 'd'.repeat(40) },
+      behind: true,
+      mergeRebuild: {
+        runId: RUN_ID,
+        status: 'waiting',
+        reason: 'the Clone fetch',
+        since: '2026-11-24T10:05:00.000Z',
+      },
+    });
+    renderPage();
+
+    const region = await card();
+    const notice = await within(region).findByText(/for the Clone fetch/);
+    expect(notice.textContent).toContain('After the merge of Run ');
+    expect(await within(region).findByRole('link', { name: 'Add the checkout page' })).toBeTruthy();
+    expect(within(region).queryByText(/Rebuild to show it/)).toBeNull();
+    await expect(document.body).toHaveNoAxeViolations();
+  });
+
+  it('shows the failed rebuild with its reason, and keeps Rebuild offered', async () => {
+    fakePreviewApi({
+      settings: SETTINGS,
+      state: 'running',
+      latestBuild: SUCCEEDED,
+      running: RUNNING,
+      repository: { ready: true, commit: 'd'.repeat(40) },
+      behind: true,
+      mergeRebuild: {
+        runId: RUN_ID,
+        status: 'failed',
+        reason: 'The Compose file was refused: no healthcheck.',
+        since: '2026-11-24T10:05:00.000Z',
+      },
+    });
+    renderPage();
+
+    const region = await card();
+    const notice = await within(region).findByText(/could not start:/);
+    expect(notice.textContent).toContain('The Compose file was refused: no healthcheck.');
+    expect(within(region).getByRole('button', { name: 'Rebuild' })).toBeTruthy();
+    await expect(document.body).toHaveNoAxeViolations();
+  });
+});
