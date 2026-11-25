@@ -9,6 +9,12 @@ export const agentFileEntrySchema = z
       .enum(['file', 'symlink', 'submodule'])
       .describe('A symbolic link and a submodule are listed and never read.'),
     size: z.number().int().min(0).describe('Bytes; 0 for a symbolic link and a submodule.'),
+    openable: z
+      .boolean()
+      .describe(
+        'Whether the content route can read this entry: a regular file within the size limit ' +
+          'and with a path the route accepts.',
+      ),
     agent: z
       .string()
       .nullable()

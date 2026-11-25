@@ -8,7 +8,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { DATABASE_CLIENT, type DatabaseClient } from '../platform/database/database.module.js';
 import { problemDetailsSchema } from '../platform/http/problem-details.js';
-import { createGitFixture, pushFiles } from './git-fixture.js';
+import { createGitFixture, type FixtureFile, pushFiles } from './git-fixture.js';
 import {
   signIn,
   startStudioApp,
@@ -89,7 +89,7 @@ describe('agents API (PostgreSQL + Redis via Testcontainers)', () => {
   }
 
   /** A definitions Project connected to a local remote holding `files` on `dev`, and its fixture. */
-  async function connectedWith(name: string, files: Record<string, string | Buffer>) {
+  async function connectedWith(name: string, files: Record<string, FixtureFile>) {
     const fixture = createGitFixture(fixtureRoot, name);
     const commit = pushFiles(fixture, 'dev', fixture.commits.dev!, files);
     const projectId = await createDefinitionsProject();
@@ -386,9 +386,13 @@ describe('agents API (PostgreSQL + Redis via Testcontainers)', () => {
   });
 
   describe('the files of the definitions Repository', () => {
-    const files = () => http().get('/api/agents/files').set('Cookie', cookie);
+    const files = () =>
+      http().get('/api/agents/definitions-repository/files').set('Cookie', cookie);
     const content = (query: Record<string, string>) =>
-      http().get('/api/agents/files/content').query(query).set('Cookie', cookie);
+      http()
+        .get('/api/agents/definitions-repository/files/content')
+        .query(query)
+        .set('Cookie', cookie);
 
     it('answers an empty tree without a Repository, and 404 for any file', async () => {
       const tree = await files();
@@ -425,7 +429,10 @@ describe('agents API (PostgreSQL + Redis via Testcontainers)', () => {
     );
 
     it('answers the operator session only', async () => {
-      for (const path of ['/api/agents/files', '/api/agents/files/content?path=a']) {
+      for (const path of [
+        '/api/agents/definitions-repository/files',
+        '/api/agents/definitions-repository/files/content?path=a',
+      ]) {
         expect((await http().get(path)).status).toBe(401);
         expect((await http().get(path).set('Authorization', `Bearer ${WORKER_TOKEN}`)).status).toBe(
           401,
@@ -538,6 +545,56 @@ describe('agents API (PostgreSQL + Redis via Testcontainers)', () => {
           kind: 'too_large',
           size: BIG.length,
         });
+      });
+
+      it('answers a big non-UTF-8 file as binary with its real size, never as too large', async () => {
+        const kib = 1024;
+        const { commit } = await connectedWith('big-binary', {
+          'ff-600k.bin': Buffer.alloc(600 * kib, 0xff),
+          'ff-1000k.bin': Buffer.alloc(1000 * kib, 0xff),
+          'log.txt': 'ok \uFFFD ok\n',
+        });
+
+        expect((await content({ path: 'ff-600k.bin' })).body).toEqual({
+          commit,
+          path: 'ff-600k.bin',
+          kind: 'binary',
+          size: 600 * kib,
+        });
+        expect((await content({ path: 'ff-1000k.bin' })).body).toMatchObject({
+          kind: 'binary',
+          size: 1000 * kib,
+        });
+        expect((await content({ path: 'log.txt' })).body).toMatchObject({
+          kind: 'text',
+          content: 'ok \uFFFD ok\n',
+        });
+      });
+
+      it('lists a symbolic link and a submodule, marks them not openable, and never reads them', async () => {
+        await connectedWith('links', {
+          'real.txt': 'real\n',
+          'link.txt': { symlink: 'real.txt' },
+          'vendor/lib': { gitlink: 'c'.repeat(40) },
+          ['docs/' + 'a'.repeat(300) + '.md']: 'long\n',
+        });
+
+        const tree = await files();
+        const byPath = new Map(
+          (tree.body.entries as { path: string; kind: string; openable: boolean }[]).map((item) => [
+            item.path,
+            item,
+          ]),
+        );
+        expect(byPath.get('real.txt')).toMatchObject({ kind: 'file', openable: true });
+        expect(byPath.get('link.txt')).toMatchObject({ kind: 'symlink', size: 0, openable: false });
+        expect(byPath.get('vendor/lib')).toMatchObject({ kind: 'submodule', openable: false });
+        expect(byPath.get('docs/' + 'a'.repeat(300) + '.md')?.openable).toBe(false);
+        for (const path of ['link.txt', 'vendor/lib', 'vendor']) {
+          const response = await content({ path });
+          expect(response.status).toBe(404);
+          expect(response.body.type).toBe('urn:agentic-studio:problem:agent-file-not-found');
+        }
       });
 
       it('answers 404 for a missing file or a folder, and reads the commit asked for', async () => {

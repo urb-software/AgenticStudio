@@ -53,9 +53,9 @@ export class ReadDefinitionsFilesHandler {
       );
       return {
         status: 'read',
-        files: reads.map(({ path, outcome, size }): DefinitionsFileRead => {
+        files: reads.map(({ path, outcome, size, binary }): DefinitionsFileRead => {
           if (outcome.status === 'found')
-            return { path, status: 'found', text: outcome.text, size };
+            return { path, status: 'found', text: outcome.text, size, binary };
           if (outcome.status === 'too_large') return { path, status: 'too_large', size };
           return { path, status: 'missing', size: 0 };
         }),

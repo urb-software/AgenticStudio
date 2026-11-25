@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { lstat, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { StringDecoder } from 'node:string_decoder';
 
 export type InterruptReason = 'timeout' | 'size_limit' | 'aborted';
 
@@ -50,6 +51,8 @@ export interface RunResult {
   stdout: string;
   stderr: string;
   stdoutCut: boolean;
+  /** The bytes of stdout, kept only when a `stdoutLimitBytes` was set. */
+  stdoutRaw?: Buffer;
 }
 
 /** Kept per stream; Git's useful messages are at the end. */
@@ -91,14 +94,17 @@ export function runGitProcess(options: RunOptions): Promise<RunResult> {
     let interrupted: InterruptReason | null = null;
     let spawnError: Error | null = null;
     const stdoutLimit = options.stdoutLimitBytes;
-    child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
+    const decoder = new StringDecoder('utf8');
+    const rawChunks: Buffer[] = [];
+    // A limit counts the bytes Git wrote, not the longer text a decoder makes of invalid ones.
+    child.stdout.on('data', (chunk: Buffer) => {
       if (stdoutLimit === undefined) {
-        stdout = appendCapped(stdout, chunk);
+        stdout = appendCapped(stdout, decoder.write(chunk));
         return;
       }
       if (stdoutCut) return;
-      stdoutBytes += Buffer.byteLength(chunk);
-      stdout += chunk;
+      stdoutBytes += chunk.length;
+      rawChunks.push(chunk);
       if (stdoutBytes > stdoutLimit) {
         stdoutCut = true;
         endGroup();
@@ -163,7 +169,12 @@ export function runGitProcess(options: RunOptions): Promise<RunResult> {
       } else if (spawnError) {
         reject(spawnError);
       } else {
-        resolve({ exitCode, stdout, stderr, stdoutCut });
+        if (stdoutLimit === undefined) {
+          resolve({ exitCode, stdout: appendCapped(stdout, decoder.end()), stderr, stdoutCut });
+        } else {
+          const stdoutRaw = Buffer.concat(rawChunks);
+          resolve({ exitCode, stdout: stdoutRaw.toString('utf8'), stderr, stdoutCut, stdoutRaw });
+        }
       }
     });
   });

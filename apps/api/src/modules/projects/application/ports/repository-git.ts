@@ -107,6 +107,8 @@ export interface CommitFileRead {
   outcome: CommitFileOutcome;
   /** The blob's size in bytes; 0 when the path names no regular file. */
   size: number;
+  /** A found blob holds a NUL byte or is not valid UTF-8; its `text` then has replacement characters. */
+  binary: boolean;
 }
 
 export type GitFailureReason = Exclude<RepositoryFailureCode, 'interrupted'>;

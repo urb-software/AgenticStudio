@@ -3,15 +3,16 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ZodResponse } from 'nestjs-zod';
 import { ListAgentFilesHandler } from '../../../../application/features/list-agent-files/handler.js';
 import { toAgentsRepository } from '../../shared/agent-response.js';
+import { isOpenable } from '../../shared/agent-file-path.js';
 import { AgentFilesResponseDto } from './schema.js';
 
-/** `GET /api/agents/files`, behind the global session guard: an operator route only. */
+/** `GET /api/agents/definitions-repository/files`, behind the global session guard: an operator route only. */
 @ApiTags('agents')
 @Controller('agents')
 export class ListAgentFilesEndpoint {
   constructor(private readonly handler: ListAgentFilesHandler) {}
 
-  @Get('files')
+  @Get('definitions-repository/files')
   @ApiOperation({
     operationId: 'listAgentFiles',
     description:
@@ -28,7 +29,7 @@ export class ListAgentFilesEndpoint {
       commit: result.commit,
       repository: toAgentsRepository(result.repository),
       truncated: result.truncated,
-      entries: result.entries,
+      entries: result.entries.map((entry) => ({ ...entry, openable: isOpenable(entry) })),
     };
   }
 }

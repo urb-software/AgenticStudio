@@ -23,12 +23,9 @@ export type ReadAgentFileResult =
   | { status: 'read'; commit: string; path: string; content: AgentFileContent }
   | { status: 'not_found' | 'commit_missing' | 'unreadable' };
 
-/** What a UTF-8 decoder writes for bytes that are not UTF-8. */
-const REPLACEMENT = String.fromCodePoint(0xfffd);
-
 /**
- * One file at a commit, for display only: binary when it holds a NUL byte or a replacement
- * character (the Git read decodes non-UTF-8 bytes to it), not loaded over the file limit.
+ * One file at a commit, for display only: binary when the read says so (a NUL byte or bytes that
+ * are not UTF-8), not loaded over the file limit.
  */
 @Injectable()
 export class ReadAgentFileHandler {
@@ -49,10 +46,11 @@ export class ReadAgentFileHandler {
     if (file.status === 'too_large') {
       return { ...at, content: { kind: 'too_large', size: file.size } };
     }
-    const binary = file.text.includes('\u0000') || file.text.includes(REPLACEMENT);
     return {
       ...at,
-      content: binary ? { kind: 'binary', size: file.size } : { kind: 'text', content: file.text },
+      content: file.binary
+        ? { kind: 'binary', size: file.size }
+        : { kind: 'text', content: file.text },
     };
   }
 }

@@ -14,14 +14,13 @@ export const AGENT_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 /**
  * Names Studio keeps for itself: the built-in Default agents (one per Provider) and
- * `definitions-repository` and `files`, which the agents API uses as fixed paths next to an agent's name.
+ * `definitions-repository`, which the agents API uses as a fixed path next to an agent's name.
  * A folder with one of these names is refused, so a name never means two things.
  */
 export const RESERVED_AGENT_NAMES = [
   'default-claude-code',
   'default-codex',
   'definitions-repository',
-  'files',
 ] as const;
 
 /** The description is one line of 1 to this many characters. */

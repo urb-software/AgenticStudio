@@ -285,11 +285,11 @@ export type DefinitionsTreeResult =
 
 /**
  * `missing`: no regular file at the path. `too_large`: over the `maxBytes` of the read. `size` is
- * the file's size in bytes (0 for `missing`); the text of a file that is not UTF-8 arrives with
- * replacement characters.
+ * the file's size in bytes (0 for `missing`). `binary`: a NUL byte, or bytes that are not UTF-8
+ * (the text then has replacement characters).
  */
 export type DefinitionsFileRead =
-  | { path: string; status: 'found'; text: string; size: number }
+  | { path: string; status: 'found'; text: string; size: number; binary: boolean }
   | { path: string; status: 'too_large'; size: number }
   | { path: string; status: 'missing'; size: 0 };
 

@@ -159,6 +159,7 @@ export const zAgentFileEntryOutput = z.object({
         'submodule'
     ]),
     size: z.int().gte(0).lte(9007199254740991),
+    openable: z.boolean(),
     agent: z.string().nullable()
 });
 
@@ -169,17 +170,32 @@ export const zAgentFilesOutput = z.object({
     entries: z.array(zAgentFileEntryOutput)
 });
 
-export const zAgentFileOutput = z.object({
+export const zAgentFileTextOutput = z.object({
     commit: z.string(),
     path: z.string(),
-    kind: z.enum([
-        'text',
-        'binary',
-        'too_large'
-    ]),
-    content: z.string().optional(),
-    size: z.int().gte(0).lte(9007199254740991).optional()
+    kind: z.literal('text'),
+    content: z.string()
 });
+
+export const zAgentFileBinaryOutput = z.object({
+    commit: z.string(),
+    path: z.string(),
+    kind: z.literal('binary'),
+    size: z.int().gte(0).lte(9007199254740991)
+});
+
+export const zAgentFileTooLargeOutput = z.object({
+    commit: z.string(),
+    path: z.string(),
+    kind: z.literal('too_large'),
+    size: z.int().gte(0).lte(9007199254740991)
+});
+
+export const zAgentFileOutput = z.union([
+    zAgentFileTextOutput,
+    zAgentFileBinaryOutput,
+    zAgentFileTooLargeOutput
+]);
 
 export const zAgentProblemOutput = z.object({
     code: z.enum([

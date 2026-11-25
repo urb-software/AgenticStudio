@@ -152,14 +152,14 @@ describe('OpenAPI document', () => {
       },
     };
 
-    const tree = document.paths['/api/agents/files']?.get;
+    const tree = document.paths['/api/agents/definitions-repository/files']?.get;
     expect(tree?.operationId).toBe('listAgentFiles');
     expect(tree?.responses['200']).toMatchObject({
       content: {
         'application/json': { schema: { $ref: '#/components/schemas/AgentFiles_Output' } },
       },
     });
-    const content = document.paths['/api/agents/files/content']?.get;
+    const content = document.paths['/api/agents/definitions-repository/files/content']?.get;
     expect(content?.operationId).toBe('getAgentFile');
     expect(content?.parameters?.map((parameter) => 'name' in parameter && parameter.name)).toEqual(
       expect.arrayContaining(['path', 'commit']),

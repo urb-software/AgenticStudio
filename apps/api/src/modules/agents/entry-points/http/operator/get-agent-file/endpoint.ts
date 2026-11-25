@@ -11,13 +11,13 @@ import {
 } from '../../shared/problems.js';
 import { AgentFileResponseDto, GetAgentFileQueryDto } from './schema.js';
 
-/** `GET /api/agents/files/content`, behind the global session guard: an operator route only. */
+/** `GET /api/agents/definitions-repository/files/content`, behind the global session guard: an operator route only. */
 @ApiTags('agents')
 @Controller('agents')
 export class GetAgentFileEndpoint {
   constructor(private readonly handler: ReadAgentFileHandler) {}
 
-  @Get('files/content')
+  @Get('definitions-repository/files/content')
   @ApiOperation({
     operationId: 'getAgentFile',
     description:

@@ -419,6 +419,44 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
       expect(roomy[0]).toMatchObject({ size: 6, outcome: { status: 'found' } });
     });
 
+    it('counts the limit in raw bytes and tells binary from UTF-8 text by the bytes', async () => {
+      const kib = 1024;
+      const source = createFixture(
+        fixtures,
+        'raw-bytes-source',
+        {
+          'ff-600k.bin': Buffer.alloc(600 * kib, 0xff),
+          'ff-1000k.bin': Buffer.alloc(1000 * kib, 0xff),
+          'nul.dat': Buffer.from([0x61, 0x00, 0x62]),
+          'replacement.txt': 'ok � ok\n',
+          'accents.txt': 'zażółć 日本語 😀\n',
+          'latin1.txt': Buffer.from([0x63, 0x61, 0x66, 0xe9]),
+        },
+        { branch: 'dev' },
+      );
+      const git = adapter();
+      const { commit } = await git.clone(PROJECT_ID, source.url, 'dev');
+      const limit = 1024 * kib;
+
+      const reads = await git.readFilesAtCommit(
+        PROJECT_ID,
+        commit,
+        ['ff-600k.bin', 'ff-1000k.bin', 'nul.dat', 'replacement.txt', 'accents.txt', 'latin1.txt'],
+        limit,
+      );
+
+      expect(reads.map((read) => [read.path, read.outcome.status, read.size, read.binary])).toEqual(
+        [
+          ['ff-600k.bin', 'found', 600 * kib, true],
+          ['ff-1000k.bin', 'found', 1000 * kib, true],
+          ['nul.dat', 'found', 3, true],
+          ['replacement.txt', 'found', 10, false],
+          ['accents.txt', 'found', Buffer.byteLength('zażółć 日本語 😀\n'), false],
+          ['latin1.txt', 'found', 4, true],
+        ],
+      );
+    });
+
     it('refuses an unsafe folder or commit, and a missing Clone, when listing a tree', async () => {
       const git = adapter();
       const { commit } = await git.clone(PROJECT_ID, fixture.url, 'dev');

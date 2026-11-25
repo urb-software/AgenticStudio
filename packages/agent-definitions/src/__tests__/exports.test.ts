@@ -16,12 +16,12 @@ describe('the Provider constants', () => {
 });
 
 describe('RESERVED_AGENT_NAMES', () => {
-  it('names one built-in Default agent per Provider, and the fixed agents routes', () => {
+  it('names one built-in Default agent per Provider, and the fixed agents route', () => {
     const defaults = definitions.PROVIDERS.map(
       (provider) => `default-${provider.replaceAll('_', '-')}`,
     );
     expect([...definitions.RESERVED_AGENT_NAMES].sort()).toEqual(
-      [...defaults, 'definitions-repository', 'files'].sort(),
+      [...defaults, 'definitions-repository'].sort(),
     );
   });
 });

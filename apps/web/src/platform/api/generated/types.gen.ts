@@ -167,6 +167,10 @@ export type AgentFileEntryOutput = {
      */
     size: number;
     /**
+     * Whether the content route can read this entry: a regular file within the size limit and with a path the route accepts.
+     */
+    openable: boolean;
+    /**
      * The agent folder the entry is in; null for any other part of the Repository.
      */
     agent: string | null;
@@ -188,25 +192,40 @@ export type AgentFilesOutput = {
     entries: Array<AgentFileEntryOutput>;
 };
 
-export type AgentFileOutput = {
+export type AgentFileTextOutput = {
     /**
      * The commit the file was read at.
      */
     commit: string;
     path: string;
+    kind: 'text';
     /**
-     * `text` has `content`; `binary` (a NUL byte, or not valid UTF-8) and `too_large` (over the 1 MiB file limit) have only `size`.
+     * Plain text, never to be rendered as HTML or followed.
      */
-    kind: 'text' | 'binary' | 'too_large';
-    /**
-     * Only for `text`. Plain text, never to be rendered as HTML or followed.
-     */
-    content?: string;
-    /**
-     * Bytes; only for `binary` and `too_large`.
-     */
-    size?: number;
+    content: string;
 };
+
+export type AgentFileBinaryOutput = {
+    /**
+     * The commit the file was read at.
+     */
+    commit: string;
+    path: string;
+    kind: 'binary';
+    size: number;
+};
+
+export type AgentFileTooLargeOutput = {
+    /**
+     * The commit the file was read at.
+     */
+    commit: string;
+    path: string;
+    kind: 'too_large';
+    size: number;
+};
+
+export type AgentFileOutput = AgentFileTextOutput | AgentFileBinaryOutput | AgentFileTooLargeOutput;
 
 export type AgentSummaryOutput = {
     /**
@@ -1485,7 +1504,7 @@ export type ListAgentFilesData = {
     body?: never;
     path?: never;
     query?: never;
-    url: '/api/agents/files';
+    url: '/api/agents/definitions-repository/files';
 };
 
 export type ListAgentFilesErrors = {
@@ -1516,7 +1535,7 @@ export type GetAgentFileData = {
          */
         commit?: string;
     };
-    url: '/api/agents/files/content';
+    url: '/api/agents/definitions-repository/files/content';
 };
 
 export type GetAgentFileErrors = {

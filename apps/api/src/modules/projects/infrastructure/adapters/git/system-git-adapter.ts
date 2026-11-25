@@ -263,6 +263,20 @@ function parseTreeEntries(output: string): TreeEntry[] {
   return entries;
 }
 
+const UTF8 = new TextDecoder('utf-8', { fatal: true });
+
+/** A NUL byte, or bytes that are not UTF-8. */
+function isBinary(bytes: Buffer | undefined): boolean {
+  if (!bytes) return false;
+  if (bytes.includes(0)) return true;
+  try {
+    UTF8.decode(bytes);
+    return false;
+  } catch {
+    return true;
+  }
+}
+
 const TREE_KINDS: Record<string, CommitTreeEntry['kind']> = {
   '100644': 'file',
   '100755': 'file',
@@ -1069,9 +1083,9 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
         for (const path of paths) {
           const entry = regular.get(path);
           if (!entry) {
-            reads.push({ path, outcome: { status: 'missing' }, size: 0 });
+            reads.push({ path, outcome: { status: 'missing' }, size: 0, binary: false });
           } else if (entry.size > maxBytes) {
-            reads.push({ path, outcome: { status: 'too_large' }, size: entry.size });
+            reads.push({ path, outcome: { status: 'too_large' }, size: entry.size, binary: false });
           } else {
             // `cat-file blob` applies no filter, textconv or attribute: the stored bytes.
             const blob = await this.git(
@@ -1081,7 +1095,12 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
               maxBytes,
             );
             if (blob.stdoutCut) {
-              reads.push({ path, outcome: { status: 'too_large' }, size: entry.size });
+              reads.push({
+                path,
+                outcome: { status: 'too_large' },
+                size: entry.size,
+                binary: false,
+              });
             } else if (blob.exitCode !== 0) {
               throw new GitOperationError('unknown', redactGitOutput(blob.stderr));
             } else {
@@ -1089,6 +1108,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
                 path,
                 outcome: { status: 'found', text: blob.stdout },
                 size: entry.size,
+                binary: isBinary(blob.stdoutRaw),
               });
             }
           }

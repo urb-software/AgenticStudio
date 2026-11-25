@@ -36,12 +36,11 @@ function scripted(script: {
   return { fake, handler: new ReadAgentFileHandler(fake) };
 }
 
-const found = (text: string, size = Buffer.byteLength(text)): DefinitionsFileRead => ({
-  path: 'x',
-  status: 'found',
-  text,
-  size,
-});
+const found = (
+  text: string,
+  size = Buffer.byteLength(text),
+  binary = false,
+): DefinitionsFileRead => ({ path: 'x', status: 'found', text, size, binary });
 
 describe('ReadAgentFileHandler', () => {
   it('reads a text file at the current commit with the package file limit', async () => {
@@ -93,7 +92,7 @@ describe('ReadAgentFileHandler', () => {
   });
 
   it('answers a file with a NUL byte as binary, with its size and no content', async () => {
-    const { handler } = scripted({ read: found('PK\u0000\u0003', 4) });
+    const { handler } = scripted({ read: found('PK\u0000\u0003', 4, true) });
 
     await expect(handler.execute({ path: 'a.zip' })).resolves.toEqual({
       status: 'read',
@@ -103,11 +102,19 @@ describe('ReadAgentFileHandler', () => {
     });
   });
 
-  it('answers a file that is not valid UTF-8 as binary (it arrives with replacement characters)', async () => {
-    const { handler } = scripted({ read: found('a�b', 3) });
+  it('answers a file the read marks binary as binary, with the real size, also a big one', async () => {
+    const { handler } = scripted({ read: found('a�b', 700_000, true) });
 
     await expect(handler.execute({ path: 'a.dat' })).resolves.toMatchObject({
-      content: { kind: 'binary', size: 3 },
+      content: { kind: 'binary', size: 700_000 },
+    });
+  });
+
+  it('keeps valid UTF-8 text that contains U+FFFD as text', async () => {
+    const { handler } = scripted({ read: found('ok � ok') });
+
+    await expect(handler.execute({ path: 'a.log' })).resolves.toMatchObject({
+      content: { kind: 'text', content: 'ok � ok' },
     });
   });
 

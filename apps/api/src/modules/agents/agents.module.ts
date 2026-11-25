@@ -20,7 +20,7 @@ export class AgentsModule {
     return {
       module: AgentsModule,
       imports: [projects],
-      // The fixed routes first: `:name` would also match `definitions-repository` and `files`.
+      // The fixed route first: `:name` would also match `definitions-repository`.
       controllers: [
         GetDefinitionsRepositoryEndpoint,
         ListAgentFilesEndpoint,

@@ -121,12 +121,12 @@ export const getDefinitionsRepository = <ThrowOnError extends boolean = false>(o
 /**
  * The whole definitions Repository as a tree at its last fetched commit: path, kind (`file`, `symlink` or `submodule`), size and the agent folder each entry belongs to. At most 2,000 entries; `truncated` says when there are more. Read from Git, never from a working tree; links and submodules are listed and never followed. Judges nothing: the problems of an agent come from the agent list.
  */
-export const listAgentFiles = <ThrowOnError extends boolean = false>(options?: Options<ListAgentFilesData, ThrowOnError>): RequestResult<ListAgentFilesResponses, ListAgentFilesErrors, ThrowOnError> => (options?.client ?? client).get<ListAgentFilesResponses, ListAgentFilesErrors, ThrowOnError>({ url: '/api/agents/files', ...options });
+export const listAgentFiles = <ThrowOnError extends boolean = false>(options?: Options<ListAgentFilesData, ThrowOnError>): RequestResult<ListAgentFilesResponses, ListAgentFilesErrors, ThrowOnError> => (options?.client ?? client).get<ListAgentFilesResponses, ListAgentFilesErrors, ThrowOnError>({ url: '/api/agents/definitions-repository/files', ...options });
 
 /**
  * One file of the definitions Repository at a commit (the last fetched one by default): its text, or only its kind and size when it is binary (a NUL byte, or not valid UTF-8) or over the 1 MiB file limit. Read from Git, never from a working tree. A symbolic link, a submodule or a folder is not a file and is 404. The content is plain text to display, never to render, run or follow.
  */
-export const getAgentFile = <ThrowOnError extends boolean = false>(options: Options<GetAgentFileData, ThrowOnError>): RequestResult<GetAgentFileResponses, GetAgentFileErrors, ThrowOnError> => (options.client ?? client).get<GetAgentFileResponses, GetAgentFileErrors, ThrowOnError>({ url: '/api/agents/files/content', ...options });
+export const getAgentFile = <ThrowOnError extends boolean = false>(options: Options<GetAgentFileData, ThrowOnError>): RequestResult<GetAgentFileResponses, GetAgentFileErrors, ThrowOnError> => (options.client ?? client).get<GetAgentFileResponses, GetAgentFileErrors, ThrowOnError>({ url: '/api/agents/definitions-repository/files/content', ...options });
 
 /**
  * The agents Studio knows: a built-in Default agent per Provider, then the folders of the definitions Repository at its last fetched commit, each with its problems and whether it is usable. Computed on each request. Also the base rules every Run starts with. Rows are unique by `source` and `name`, not by `name` alone: a folder named like a built-in agent is listed as refused beside it.
