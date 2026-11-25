@@ -251,3 +251,59 @@ export interface RepositoryDisconnectSteps {
   add(step: RepositoryDisconnectStep): void;
   list(): readonly RepositoryDisconnectStep[];
 }
+
+export const DEFINITIONS_FILES = Symbol('DEFINITIONS_FILES');
+
+/** Most entries `listTree` returns; a larger tree is cut and reported as `truncated`. */
+export const DEFINITIONS_TREE_MAX_ENTRIES = 20_000;
+
+/** The definitions Repository as `agents` reads files from it: its state and the commit it holds. */
+export interface DefinitionsSnapshot {
+  state: RepositoryState;
+  /** The Integration branch's commit the Clone holds; `null` without a usable Clone. */
+  commit: string | null;
+}
+
+/** One tracked item below `agents/`; `size` is 0 for anything that is not a regular file. */
+export interface DefinitionsTreeEntry {
+  path: string;
+  kind: 'file' | 'symlink' | 'submodule' | 'other';
+  size: number;
+}
+
+/**
+ * Why a read could not happen: `repository_not_ready` (no definitions Repository, or its Clone is
+ * gone), `unsupported_platform` (the API does not run on Linux), `failed` (anything else).
+ */
+export type DefinitionsUnavailable = 'repository_not_ready' | 'unsupported_platform' | 'failed';
+
+export type DefinitionsTreeResult =
+  | { status: 'listed'; entries: DefinitionsTreeEntry[]; truncated: boolean }
+  | { status: DefinitionsUnavailable };
+
+/** `missing`: no regular file at the path. `too_large`: over the `maxBytes` of the read. */
+export type DefinitionsFileRead =
+  | { path: string; status: 'found'; text: string }
+  | { path: string; status: 'missing' | 'too_large' };
+
+export type DefinitionsFilesResult =
+  { status: 'read'; files: DefinitionsFileRead[] } | { status: DefinitionsUnavailable };
+
+/**
+ * Reads the definitions Repository's Clone at a commit, from Git's object store only: no checkout
+ * and no working-tree change. The caller judges what it reads.
+ */
+export interface DefinitionsFiles {
+  /** The definitions Project's Repository state and last fetched commit, or `null` when none is connected. */
+  snapshot(): Promise<DefinitionsSnapshot | null>;
+
+  /** Everything tracked under `agents/` at `commit`, at most {@link DEFINITIONS_TREE_MAX_ENTRIES}. */
+  listTree(commit: string): Promise<DefinitionsTreeResult>;
+
+  /** The text of each regular file, in the order of `paths`; no file is read past `maxBytes`. */
+  readFiles(
+    commit: string,
+    paths: readonly string[],
+    maxBytes: number,
+  ): Promise<DefinitionsFilesResult>;
+}

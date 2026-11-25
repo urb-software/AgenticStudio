@@ -293,6 +293,141 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
       ).rejects.toThrow(GitCloneMissingError);
     });
 
+    it('lists everything tracked below a folder of the Clone, bounded, without a working tree', async () => {
+      const inner = createFixture(fixtures, 'agents-inner', { 'inner.txt': 'inner\n' });
+      const source = createFixture(
+        fixtures,
+        'agents-source',
+        {
+          'README.md': 'top\n',
+          'agents/reviewer/AGENT.md': 'one\n',
+          'agents/reviewer/notes/a.txt': 'abc',
+          'agents/reviewer/run.sh': { executable: '#!/bin/sh\n' },
+          'agents/linked/AGENT.md': { symlink: '../reviewer/AGENT.md' },
+          'agents/zeta/AGENT.md': 'z\n',
+          'agentsfile.txt': 'not below the folder\n',
+          'skills/s/SKILL.md': 'skill\n',
+        },
+        {
+          branch: 'dev',
+          submodule: { path: 'agents/vendored', url: inner.url, commit: headOf(inner) },
+        },
+      );
+      const git = adapter();
+      const { commit } = await git.clone(PROJECT_ID, source.url, 'dev');
+
+      await expect(git.listTreeAtCommit(PROJECT_ID, commit, 'agents', 100)).resolves.toEqual({
+        entries: [
+          { path: 'agents/linked/AGENT.md', kind: 'symlink', size: 0 },
+          { path: 'agents/reviewer/AGENT.md', kind: 'file', size: 4 },
+          { path: 'agents/reviewer/notes/a.txt', kind: 'file', size: 3 },
+          { path: 'agents/reviewer/run.sh', kind: 'file', size: 10 },
+          { path: 'agents/vendored', kind: 'submodule', size: 0 },
+          { path: 'agents/zeta/AGENT.md', kind: 'file', size: 2 },
+        ],
+        truncated: false,
+      });
+      // Over the entry bound: the first entries only, and it says so.
+      await expect(git.listTreeAtCommit(PROJECT_ID, commit, 'agents', 2)).resolves.toEqual({
+        entries: [
+          { path: 'agents/linked/AGENT.md', kind: 'symlink', size: 0 },
+          { path: 'agents/reviewer/AGENT.md', kind: 'file', size: 4 },
+        ],
+        truncated: true,
+      });
+      await expect(git.listTreeAtCommit(PROJECT_ID, commit, 'nothing', 100)).resolves.toEqual({
+        entries: [],
+        truncated: false,
+      });
+      expect(existsSync(join(clonePath(), 'agents'))).toBe(false);
+    });
+
+    it('refuses an unsafe folder or commit, and a missing Clone, when listing a tree', async () => {
+      const git = adapter();
+      const { commit } = await git.clone(PROJECT_ID, fixture.url, 'dev');
+
+      await expect(git.listTreeAtCommit(PROJECT_ID, commit, '../x', 10)).rejects.toThrow(
+        GitRequestRejectedError,
+      );
+      await expect(git.listTreeAtCommit(PROJECT_ID, 'HEAD', 'agents', 10)).rejects.toThrow(
+        GitRequestRejectedError,
+      );
+      await expect(git.listTreeAtCommit(PROJECT_ID, 'f'.repeat(40), 'agents', 10)).rejects.toThrow(
+        GitOperationError,
+      );
+      await expect(git.listTreeAtCommit(OTHER_PROJECT_ID, commit, 'agents', 10)).rejects.toThrow(
+        GitCloneMissingError,
+      );
+    });
+
+    it('reads several regular files at a commit in one operation, in the order given', async () => {
+      const source = createFixture(
+        fixtures,
+        'agents-read',
+        {
+          'agents/a/AGENT.md': 'alpha\n',
+          'agents/b/AGENT.md': 'x'.repeat(2048),
+          'agents/c/AGENT.md': Buffer.from([0xff, 0xfe, 0x00, 0x41]),
+          'agents/d/AGENT.md': { symlink: '../a/AGENT.md' },
+        },
+        { branch: 'dev' },
+      );
+      const git = adapter();
+      const { commit } = await git.clone(PROJECT_ID, source.url, 'dev');
+
+      const reads = await git.readFilesAtCommit(
+        PROJECT_ID,
+        commit,
+        [
+          'agents/d/AGENT.md',
+          'agents/b/AGENT.md',
+          'agents/a/AGENT.md',
+          'agents/nope/AGENT.md',
+          '../escape',
+          'agents/a',
+          'agents/c/AGENT.md',
+          '*',
+        ],
+        1024,
+      );
+
+      expect(reads.map((read) => [read.path, read.outcome.status])).toEqual([
+        ['agents/d/AGENT.md', 'missing'],
+        ['agents/b/AGENT.md', 'too_large'],
+        ['agents/a/AGENT.md', 'found'],
+        ['agents/nope/AGENT.md', 'missing'],
+        ['../escape', 'missing'],
+        ['agents/a', 'missing'],
+        ['agents/c/AGENT.md', 'found'],
+        ['*', 'missing'],
+      ]);
+      expect(reads[2]!.outcome).toEqual({ status: 'found', text: 'alpha\n' });
+      // Binary content arrives as text with the replacement character, for the validation to refuse.
+      expect((reads[6]!.outcome as { text: string }).text).toContain('�');
+    });
+
+    it('reads more files than one Git call lists, and refuses a bad commit or a missing Clone', async () => {
+      const files: Record<string, string> = {};
+      for (let index = 0; index < 120; index += 1) files[`agents/a${index}/AGENT.md`] = `n${index}`;
+      const source = createFixture(fixtures, 'agents-many', files, { branch: 'dev' });
+      const git = adapter();
+      const { commit } = await git.clone(PROJECT_ID, source.url, 'dev');
+
+      const reads = await git.readFilesAtCommit(PROJECT_ID, commit, Object.keys(files), 1024);
+
+      expect(reads).toHaveLength(120);
+      expect(reads.every((read) => read.outcome.status === 'found')).toBe(true);
+      await expect(git.readFilesAtCommit(PROJECT_ID, 'HEAD', ['a'], 1)).rejects.toThrow(
+        GitRequestRejectedError,
+      );
+      await expect(git.readFilesAtCommit(PROJECT_ID, 'f'.repeat(40), ['a'], 1)).rejects.toThrow(
+        GitOperationError,
+      );
+      await expect(git.readFilesAtCommit(OTHER_PROJECT_ID, commit, ['a'], 1)).rejects.toThrow(
+        GitCloneMissingError,
+      );
+    });
+
     describe('archiving a commit', () => {
       const archiveFolder = () => join(tempRoot, 'preview-archives');
 

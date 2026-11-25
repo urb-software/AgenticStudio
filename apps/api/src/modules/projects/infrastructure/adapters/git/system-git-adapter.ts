@@ -10,6 +10,9 @@ import {
   type CommitArchive,
   type CommitArchiveOutcome,
   type CommitFileOutcome,
+  type CommitFileRead,
+  type CommitTree,
+  type CommitTreeEntry,
   GitCloneMissingError,
   type GitOperationOptions,
   GitOperationError,
@@ -218,6 +221,64 @@ const COMMIT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
 /** Enough for a thousand long paths; a longer file list is cut. */
 const LIST_OUTPUT_LIMIT_BYTES = 2 * 1024 * 1024;
+
+/** The most output of a tree listing kept; a longer one is cut and reported as truncated. */
+const TREE_OUTPUT_LIMIT_BYTES = 16 * 1024 * 1024;
+
+/** Paths per `ls-tree` call when reading several files, so the argument list stays short. */
+const READ_BATCH_PATHS = 50;
+
+interface TreeEntry {
+  path: string;
+  /** The Git object name, for a read. */
+  object: string;
+  size: number;
+  mode: string;
+  /** A regular file (100644 or 100755), the only kind that is read. */
+  regular: boolean;
+}
+
+const TREE_ENTRY = /^(\d{6}) (blob|tree|commit) ([0-9a-f]{40}|[0-9a-f]{64}) +(\d+|-)\t([^\0]*)$/;
+
+/** `git ls-tree -l -z`: `<mode> <type> <object> <size>\t<path>\0` per entry. */
+function parseTreeEntries(output: string): TreeEntry[] {
+  const entries: TreeEntry[] = [];
+  for (const field of output.split('\0')) {
+    if (field === '') continue;
+    const match = TREE_ENTRY.exec(field);
+    if (!match) throw new GitOperationError('unknown');
+    const mode = match[1]!;
+    entries.push({
+      mode,
+      object: match[3]!,
+      size: match[4] === '-' ? 0 : Number(match[4]),
+      path: match[5]!,
+      regular: match[2] === 'blob' && (mode === '100644' || mode === '100755'),
+    });
+  }
+  return entries;
+}
+
+const TREE_KINDS: Record<string, CommitTreeEntry['kind']> = {
+  '100644': 'file',
+  '100755': 'file',
+  '120000': 'symlink',
+  '160000': 'submodule',
+};
+
+/** A listing cut by the output limit ends inside an entry: that last one is dropped. */
+function parseTree(output: string, cut: boolean, maxEntries: number): CommitTree {
+  const complete = cut ? output.slice(0, output.lastIndexOf('\0') + 1) : output;
+  const entries = parseTreeEntries(complete);
+  return {
+    entries: entries.slice(0, maxEntries).map((entry) => {
+      const kind = TREE_KINDS[entry.mode] ?? 'other';
+      // A link's blob is its target path: its size is no file size.
+      return { path: entry.path, kind, size: kind === 'file' ? entry.size : 0 };
+    }),
+    truncated: cut || entries.length > maxEntries,
+  };
+}
 
 /** The domain rule, applied to the branch exactly as given (the domain parse trims). */
 function isIntegrationBranch(branch: string): boolean {
@@ -902,6 +963,149 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
         });
       }),
     );
+  }
+
+  async listTreeAtCommit(
+    projectId: string,
+    commit: string,
+    directory: string,
+    maxEntries: number,
+    options: GitOperationOptions = {},
+  ): Promise<CommitTree> {
+    this.assertSupportedPlatform();
+    if (!COMMIT_ID.test(commit)) {
+      throw new GitRequestRejectedError('The commit id is not a full commit id.');
+    }
+    if (environmentFilePathProblem(directory) !== null) {
+      throw new GitRequestRejectedError('The path is not a safe relative path.');
+    }
+    this.paths.clone(projectId);
+    return this.guarded('ls-tree', () =>
+      this.queued(projectId, this.settings.fetchTimeoutMs, options, async (options) => {
+        const clone = await this.paths.existingClone(projectId);
+        if (!clone) {
+          throw new GitCloneMissingError();
+        }
+        return this.withOperation(this.settings.fetchTimeoutMs, options, async (context) => {
+          const gitDir = `--git-dir=${clone}`;
+          await this.assertKnownCommit(context, gitDir, commit);
+          // The trailing slash names the folder's contents; without it Git lists the entry itself.
+          const listed = await this.git(
+            context,
+            [
+              '--literal-pathspecs',
+              gitDir,
+              'ls-tree',
+              '-r',
+              '-l',
+              '-z',
+              commit,
+              '--',
+              `${directory}/`,
+            ],
+            undefined,
+            TREE_OUTPUT_LIMIT_BYTES,
+          );
+          if (listed.exitCode !== 0 && !listed.stdoutCut) {
+            throw new GitOperationError('unknown', redactGitOutput(listed.stderr));
+          }
+          return parseTree(listed.stdout, listed.stdoutCut, maxEntries);
+        });
+      }),
+    );
+  }
+
+  async readFilesAtCommit(
+    projectId: string,
+    commit: string,
+    paths: readonly string[],
+    maxBytes: number,
+    options: GitOperationOptions = {},
+  ): Promise<CommitFileRead[]> {
+    this.assertSupportedPlatform();
+    if (!COMMIT_ID.test(commit)) {
+      throw new GitRequestRejectedError('The commit id is not a full commit id.');
+    }
+    this.paths.clone(projectId);
+    return this.guarded('cat-file', () =>
+      this.queued(projectId, this.settings.fetchTimeoutMs, options, async (options) => {
+        const clone = await this.paths.existingClone(projectId);
+        if (!clone) {
+          throw new GitCloneMissingError();
+        }
+        return this.withOperation(this.settings.fetchTimeoutMs, options, async (context) => {
+          const gitDir = `--git-dir=${clone}`;
+          await this.assertKnownCommit(context, gitDir, commit);
+          const safe = [
+            ...new Set(paths.filter((path) => environmentFilePathProblem(path) === null)),
+          ];
+          const regular = new Map<string, TreeEntry>();
+          for (let from = 0; from < safe.length; from += READ_BATCH_PATHS) {
+            const listed = await this.git(
+              context,
+              [
+                '--literal-pathspecs',
+                gitDir,
+                'ls-tree',
+                '-l',
+                '-z',
+                commit,
+                '--',
+                ...safe.slice(from, from + READ_BATCH_PATHS),
+              ],
+              undefined,
+              LIST_OUTPUT_LIMIT_BYTES,
+            );
+            if (listed.exitCode !== 0) {
+              throw new GitOperationError('unknown', redactGitOutput(listed.stderr));
+            }
+            for (const entry of parseTreeEntries(listed.stdout)) {
+              if (entry.regular) regular.set(entry.path, entry);
+            }
+          }
+          const reads: CommitFileRead[] = [];
+          for (const path of paths) {
+            const entry = regular.get(path);
+            if (!entry) {
+              reads.push({ path, outcome: { status: 'missing' } });
+            } else if (entry.size > maxBytes) {
+              reads.push({ path, outcome: { status: 'too_large' } });
+            } else {
+              // `cat-file blob` applies no filter, textconv or attribute: the stored bytes.
+              const blob = await this.git(
+                context,
+                [gitDir, 'cat-file', 'blob', entry.object],
+                undefined,
+                maxBytes,
+              );
+              if (blob.stdoutCut) {
+                reads.push({ path, outcome: { status: 'too_large' } });
+              } else if (blob.exitCode !== 0) {
+                throw new GitOperationError('unknown', redactGitOutput(blob.stderr));
+              } else {
+                reads.push({ path, outcome: { status: 'found', text: blob.stdout } });
+              }
+            }
+          }
+          return reads;
+        });
+      }),
+    );
+  }
+
+  private async assertKnownCommit(
+    context: OperationContext,
+    gitDir: string,
+    commit: string,
+  ): Promise<void> {
+    const known = await this.git(context, [
+      gitDir,
+      'rev-parse',
+      '--verify',
+      '--quiet',
+      `${commit}^{commit}`,
+    ]);
+    if (known.exitCode !== 0) throw new GitOperationError('unknown');
   }
 
   async archiveCommit(
