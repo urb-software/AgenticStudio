@@ -7,6 +7,8 @@ import {
   zodFieldErrors,
 } from '../../../../../../platform/http/problem-details.js';
 import {
+  agentNotUsable,
+  agentUnknown,
   definitionsProject,
   EXECUTIONS_PROBLEM_TYPES,
   projectNotFound,
@@ -14,6 +16,10 @@ import {
   repositoryNotReady,
 } from '../../shared/problems.js';
 import {
+  AgentNotChosenError,
+  AgentNotUsableError,
+  AgentProviderMismatchError,
+  AgentUnknownError,
   DefinitionsProjectRunError,
   RepositoryNotReadyError,
   RunProjectNotFoundError,
@@ -39,8 +45,11 @@ export class StartRunEndpoint {
       `The project is the definitions Repository (${EXECUTIONS_PROBLEM_TYPES.definitionsProject}; refused: run), ` +
       `or the project's repository is missing or not ready (${EXECUTIONS_PROBLEM_TYPES.repositoryNotReady}), ` +
       'or the provider is switched off on the agent worker or no agent worker is connected ' +
-      `(${EXECUTIONS_PROBLEM_TYPES.providerUnavailable})`,
-    422: 'Invalid request body (field errors)',
+      `(${EXECUTIONS_PROBLEM_TYPES.providerUnavailable}; reason: provider_disabled), ` +
+      `or no agent has the name (${EXECUTIONS_PROBLEM_TYPES.agentUnknown}; reason: agent_unknown), ` +
+      'or its definition has problems ' +
+      `(${EXECUTIONS_PROBLEM_TYPES.agentNotUsable}; reason: agent_not_usable)`,
+    422: 'Invalid request body (field errors), also for a request naming neither an agent nor a provider, or an agent of another provider than the one named',
   })
   async start(@Param('id') projectId: string, @Body() body: unknown) {
     const parsed = startRunRequestSchema.safeParse(body);
@@ -57,7 +66,25 @@ export class StartRunEndpoint {
       if (error instanceof RunProjectNotFoundError) throw projectNotFound();
       if (error instanceof DefinitionsProjectRunError) throw definitionsProject();
       if (error instanceof RepositoryNotReadyError) throw repositoryNotReady(error.message);
-      if (error instanceof ProviderUnavailableError) throw providerUnavailable(error.reason);
+      if (error instanceof ProviderUnavailableError) {
+        throw providerUnavailable(error.reason, 'provider_disabled');
+      }
+      if (error instanceof AgentUnknownError) throw agentUnknown();
+      if (error instanceof AgentNotUsableError) throw agentNotUsable();
+      if (error instanceof AgentNotChosenError) {
+        throw new FieldProblemException(
+          HttpStatus.UNPROCESSABLE_ENTITY,
+          'The request is invalid.',
+          [{ path: 'agent', message: error.message }],
+        );
+      }
+      if (error instanceof AgentProviderMismatchError) {
+        throw new FieldProblemException(
+          HttpStatus.UNPROCESSABLE_ENTITY,
+          'The request is invalid.',
+          [{ path: 'provider', message: error.message }],
+        );
+      }
       // The schema reports these first; this keeps the Task's own rule the one that decides.
       if (error instanceof InvalidTaskError) {
         throw new FieldProblemException(

@@ -9,6 +9,8 @@ export interface ProjectView {
   name: string;
   mergeMethod: MergeMethod;
   kind: ProjectKind;
+  /** `null` when the Project names none. */
+  defaultAgent: string | null;
   createdAt: Date;
 }
 
@@ -18,6 +20,7 @@ export function projectView(project: Project): ProjectView {
     name: project.name,
     mergeMethod: project.mergeMethod,
     kind: project.kind,
+    defaultAgent: project.defaultAgent,
     createdAt: new Date(project.createdAt),
   };
 }

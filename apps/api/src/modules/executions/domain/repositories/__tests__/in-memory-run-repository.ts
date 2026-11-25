@@ -29,6 +29,7 @@ import { HandOutRule } from '../../value-objects/hand-out-rule.js';
 import { EnvironmentFileSnapshotRule } from '../../value-objects/environment-file-snapshot-rule.js';
 import { PullRequestRefreshRule } from '../../value-objects/pull-request-refresh-rule.js';
 import { RetentionPolicy } from '../../value-objects/retention-policy.js';
+import type { RunAgentData } from '../../value-objects/run-agent.js';
 import { Task } from '../../value-objects/task.js';
 import type { PreparedFollowUp } from '../../entities/prepared-follow-up.js';
 import type { ReviewComments } from '../../entities/review-comments.js';
@@ -56,6 +57,8 @@ export interface StartedRun {
   id?: string;
   projectId: string;
   provider: Provider;
+  /** The built-in Default agent of `provider` when absent. */
+  agent?: RunAgentData;
   task: string;
   startCommit: string;
   remoteUrl: string;
@@ -83,6 +86,16 @@ export type AppendStepOutcome =
   | { status: 'not_held' }
   | { status: 'step_limit' };
 
+/** The built-in Default agent of a Provider, as a Run records it. */
+export const defaultAgentOf = (provider: Provider): RunAgentData => ({
+  name: `default-${provider.replaceAll('_', '-')}`,
+  source: 'built_in',
+  commit: null,
+  provider,
+  model: 'default',
+  instructions: '',
+});
+
 const isClaimed = (state: RunState) => (CLAIMED_RUN_STATES as readonly RunState[]).includes(state);
 const queuedToResume = (run: RestoreData<typeof Run>) =>
   run.state === 'queued' && run.sessionRef !== null;
@@ -98,6 +111,7 @@ export class InMemoryRunRepository implements RunRepository {
       id: run.id,
       projectId: run.projectId,
       provider: run.provider,
+      agent: run.agent.toData(),
       task: run.task,
       startCommit: run.startCommit,
       remoteUrl: run.remoteUrl,
@@ -318,6 +332,7 @@ export class InMemoryRunRepository implements RunRepository {
     return this.add(
       Run.start({
         ...input,
+        agent: input.agent ?? defaultAgentOf(input.provider),
         id: input.id ?? randomUUID(),
         task: Task.of(input.task),
         // Distinct, increasing creation times, like the database's clock.

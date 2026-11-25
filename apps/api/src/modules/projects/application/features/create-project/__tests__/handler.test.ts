@@ -32,6 +32,7 @@ class InMemoryProjectRepository implements ProjectRepository {
         name: name.value,
         mergeMethod: 'squash',
         kind,
+        defaultAgent: null,
         createdAt: new Date('2026-11-12T10:00:00.000Z'),
       }),
     );
@@ -48,6 +49,8 @@ class InMemoryProjectRepository implements ProjectRepository {
   findByIds = notUsed;
 
   saveMergeMethod = notUsed;
+
+  saveDefaultAgent = notUsed;
 }
 
 function notUsed(): Promise<never> {

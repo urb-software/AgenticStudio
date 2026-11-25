@@ -35,6 +35,10 @@ export type ProjectOutput = {
      * `code` for an ordinary Project; `definitions` for the Repository that holds agent definitions.
      */
     kind: 'code' | 'definitions';
+    /**
+     * The agent a Run offers first, by name; null when none is named. Whether it is usable is judged where agents are read.
+     */
+    defaultAgent: string | null;
     createdAt: string;
 };
 
@@ -64,6 +68,10 @@ export type ProjectDetailOutput = {
      * `code` for an ordinary Project; `definitions` for the Repository that holds agent definitions.
      */
     kind: 'code' | 'definitions';
+    /**
+     * The agent a Run offers first, by name; null when none is named. Whether it is usable is judged where agents are read.
+     */
+    defaultAgent: string | null;
     createdAt: string;
     repository: RepositorySummaryOutput | null;
 };
@@ -122,6 +130,13 @@ export type EnvironmentFileInfoOutput = {
 
 export type SetMergeMethodRequest = {
     mergeMethod: 'squash' | 'merge_commit';
+};
+
+export type SetDefaultAgentRequest = {
+    /**
+     * The agent a Run offers first, by name; null names none.
+     */
+    agent: string | null;
 };
 
 export type DefinitionsRepositoryOutput = {
@@ -274,9 +289,45 @@ export type AgentDetailOutput = {
     agent: AgentDetailAgentOutput;
 };
 
+export type RunAgentOptionOutput = {
+    name: string;
+    description: string | null;
+    /**
+     * The Provider follows from the agent.
+     */
+    provider: 'claude_code' | 'codex';
+    /**
+     * The model the agent names; `default` is the CLI own.
+     */
+    model: string;
+    source: 'built_in' | 'definitions';
+};
+
+export type RunAgentListOutput = {
+    /**
+     * The usable agents: the built-in Default agents, then the definitions agents.
+     */
+    agents: Array<RunAgentOptionOutput>;
+    /**
+     * The name of the agent to offer first, always one of `agents`.
+     */
+    preselected: string;
+    /**
+     * Why the default agent of the project is not the preselected one; null when it is, or none is named.
+     */
+    preselectedReason: string | null;
+};
+
 export type StartRunRequest = {
     task: string;
-    provider: 'claude_code' | 'codex';
+    /**
+     * The agent to start with, by name. Absent: the Default agent of `provider`.
+     */
+    agent?: string;
+    /**
+     * Alone, it means the Default agent of this Provider. With an `agent`, it must be the agent's Provider.
+     */
+    provider?: 'claude_code' | 'codex';
 };
 
 export type StartRunResponseOutput = {
@@ -287,6 +338,7 @@ export type RunOutput = {
     id: string;
     projectId: string;
     provider: 'claude_code' | 'codex';
+    agent: RunAgentOutput;
     task: string;
     state: 'queued' | 'preparing' | 'running' | 'waiting_for_operator' | 'succeeded' | 'failed' | 'cancelled' | 'timed_out';
     startCommit: string;
@@ -325,6 +377,27 @@ export type RunOutput = {
     failingChecks?: Array<string>;
     question?: RunQuestionOutput;
     messages?: Array<RunMessageOutput>;
+};
+
+export type RunAgentOutput = {
+    name: string;
+    /**
+     * A built-in Default agent, or a folder.
+     */
+    source: 'built_in' | 'definitions';
+    /**
+     * The definitions Repository commit the agent was read at; null for a built-in one.
+     */
+    commit: string | null;
+    provider: 'claude_code' | 'codex';
+    /**
+     * The model the definition named; `default` is the CLI own.
+     */
+    model: string;
+    /**
+     * A copy of the definition instructions, plain text. Single-Run answers only; lists leave it out.
+     */
+    instructions?: string;
 };
 
 export type RunLimitsOutput = {
@@ -1404,6 +1477,38 @@ export type SetMergeMethodResponses = {
 
 export type SetMergeMethodResponse = SetMergeMethodResponses[keyof SetMergeMethodResponses];
 
+export type SetDefaultAgentData = {
+    body: SetDefaultAgentRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/projects/{id}/default-agent';
+};
+
+export type SetDefaultAgentErrors = {
+    /**
+     * Unknown project (urn:agentic-studio:problem:project-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: default_agent)
+     */
+    409: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type SetDefaultAgentError = SetDefaultAgentErrors[keyof SetDefaultAgentErrors];
+
+export type SetDefaultAgentResponses = {
+    200: ProjectOutput;
+};
+
+export type SetDefaultAgentResponse = SetDefaultAgentResponses[keyof SetDefaultAgentResponses];
+
 export type GetDefinitionsRepositoryData = {
     body?: never;
     path?: never;
@@ -1476,6 +1581,34 @@ export type GetAgentResponses = {
 
 export type GetAgentResponse = GetAgentResponses[keyof GetAgentResponses];
 
+export type ListRunAgentsData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/projects/{id}/run-agents';
+};
+
+export type ListRunAgentsErrors = {
+    /**
+     * Unknown project (urn:agentic-studio:problem:project-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type ListRunAgentsError = ListRunAgentsErrors[keyof ListRunAgentsErrors];
+
+export type ListRunAgentsResponses = {
+    200: RunAgentListOutput;
+};
+
+export type ListRunAgentsResponse = ListRunAgentsResponses[keyof ListRunAgentsResponses];
+
 export type ListProjectRunsData = {
     body?: never;
     path: {
@@ -1523,11 +1656,11 @@ export type StartRunErrors = {
      */
     404: ProblemDetails;
     /**
-     * The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: run), or the project's repository is missing or not ready (urn:agentic-studio:problem:repository-not-ready), or the provider is switched off on the agent worker or no agent worker is connected (urn:agentic-studio:problem:provider-unavailable)
+     * The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: run), or the project's repository is missing or not ready (urn:agentic-studio:problem:repository-not-ready), or the provider is switched off on the agent worker or no agent worker is connected (urn:agentic-studio:problem:provider-unavailable; reason: provider_disabled), or no agent has the name (urn:agentic-studio:problem:agent-unknown; reason: agent_unknown), or its definition has problems (urn:agentic-studio:problem:agent-not-usable; reason: agent_not_usable)
      */
     409: ProblemDetails;
     /**
-     * Invalid request body (field errors)
+     * Invalid request body (field errors), also for a request naming neither an agent nor a provider, or an agent of another provider than the one named
      */
     422: ProblemDetails;
     /**

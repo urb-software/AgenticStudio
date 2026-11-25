@@ -1,4 +1,5 @@
 import type { Provider } from '../value-objects/provider.js';
+import type { RunAgentData } from '../value-objects/run-agent.js';
 import type { RunConversationData } from '../value-objects/run-conversation.js';
 import type { RunDeliveryData } from '../value-objects/run-delivery.js';
 import type { RunLifecycleData } from '../value-objects/run-lifecycle.js';
@@ -18,6 +19,8 @@ export interface RunData
   id: string;
   projectId: string;
   provider: Provider;
+  /** Its provider equals `provider`. Set at start, never changed. */
+  agent: RunAgentData;
   task: string;
   startCommit: string;
   /** Never a credential. */

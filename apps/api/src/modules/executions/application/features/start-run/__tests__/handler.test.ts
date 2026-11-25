@@ -1,6 +1,15 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import type {
+  AgentResolution,
+  AgentResolutions,
+  ResolvedAgent,
+} from '../../../../../agents/contracts/index.js';
 import type { RunStartPoint, RunStartPoints } from '../../../../../projects/contracts/index.js';
 import {
+  AgentNotChosenError,
+  AgentNotUsableError,
+  AgentProviderMismatchError,
+  AgentUnknownError,
   DefinitionsProjectRunError,
   RepositoryNotReadyError,
   RunProjectNotFoundError,
@@ -18,6 +27,23 @@ const REMOTE = 'git@github.com:acme/shop.git';
 const NOW = new Date('2026-11-15T12:00:00.000Z');
 const LEASE = { seconds: 60 };
 const LIMITS = { stepMinutes: 45, maxSteps: 5, waitingDays: 3, maxTotalSteps: 20 };
+
+const BUILT_IN = (provider: 'claude_code' | 'codex'): ResolvedAgent => ({
+  name: `default-${provider.replace('_', '-')}`,
+  source: 'built_in',
+  commit: null,
+  provider,
+  model: 'default',
+  instructions: '',
+});
+const REVIEWER: ResolvedAgent = {
+  name: 'reviewer',
+  source: 'definitions',
+  commit: 'c'.repeat(40),
+  provider: 'claude_code',
+  model: 'opus',
+  instructions: 'Review carefully.',
+};
 
 class InMemoryWorkerStatusStore implements WorkerStatusStore {
   private current: WorkerStatusData | undefined;
@@ -38,14 +64,23 @@ describe('StartRunHandler', () => {
   let statuses: InMemoryWorkerStatusStore;
   const clock = { now: () => NOW };
   const kinds = new FakeProjectKinds();
+  const known: Record<string, AgentResolution> = {};
+  const resolved: string[] = [];
+  const agents: AgentResolutions = {
+    resolveForRun: (name) => {
+      resolved.push(name);
+      return Promise.resolve(known[name] ?? { status: 'unknown' });
+    },
+  };
 
   const startPoints: RunStartPoints = { forProject: () => Promise.resolve(startPoint) };
-  const start = () =>
-    new StartRunHandler(kinds, runs, startPoints, statuses, clock, LEASE, LIMITS).execute({
+  const startWith = (request: { agent?: string; provider?: 'claude_code' | 'codex' }) =>
+    new StartRunHandler(kinds, runs, startPoints, agents, statuses, clock, LEASE, LIMITS).execute({
       projectId: PROJECT,
-      provider: 'codex',
       task: 'Fix the login bug',
+      ...request,
     });
+  const start = () => startWith({ provider: 'codex' });
   const workerReports = (codex: boolean, ageSeconds = 0) =>
     statuses.record({
       workerId: '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d',
@@ -65,6 +100,12 @@ describe('StartRunHandler', () => {
     statuses = new InMemoryWorkerStatusStore();
     kinds.kind = 'code';
     workerReports(true);
+    resolved.length = 0;
+    for (const key of Object.keys(known)) delete known[key];
+    known['default-codex'] = { status: 'resolved', agent: BUILT_IN('codex') };
+    known['default-claude-code'] = { status: 'resolved', agent: BUILT_IN('claude_code') };
+    known['reviewer'] = { status: 'resolved', agent: REVIEWER };
+    known['broken'] = { status: 'not_usable' };
   });
 
   it('copies the limits in force onto the Run', async () => {
@@ -117,6 +158,66 @@ describe('StartRunHandler', () => {
 
     await expect(start()).rejects.toEqual(new RepositoryNotReadyError(reason));
     expect(runs.runs).toEqual([]);
+  });
+
+  describe('the agent', () => {
+    it('means the Default agent of the Provider when a request names only the Provider', async () => {
+      const { id } = await startWith({ provider: 'claude_code' });
+
+      expect(resolved).toEqual(['default-claude-code']);
+      expect((await runs.findById(id))!.agent.toData()).toEqual(BUILT_IN('claude_code'));
+    });
+
+    it('records the named agent as it stands now: name, source, commit, provider, model and instructions', async () => {
+      const { id } = await startWith({ agent: 'reviewer' });
+      const run = (await runs.findById(id))!;
+
+      expect(run.agent.toData()).toEqual(REVIEWER);
+      expect(run.provider).toBe('claude_code');
+    });
+
+    it('takes the Provider from the agent and accepts the same Provider beside it', async () => {
+      const { id } = await startWith({ agent: 'reviewer', provider: 'claude_code' });
+
+      expect((await runs.findById(id))!.provider).toBe('claude_code');
+    });
+
+    it('refuses an agent of another Provider than the one named, starting nothing', async () => {
+      await expect(startWith({ agent: 'reviewer', provider: 'codex' })).rejects.toEqual(
+        new AgentProviderMismatchError('claude_code', 'codex'),
+      );
+      expect(runs.runs).toEqual([]);
+    });
+
+    it('refuses a request that names neither an agent nor a Provider, resolving nothing', async () => {
+      await expect(startWith({})).rejects.toBeInstanceOf(AgentNotChosenError);
+      expect(resolved).toEqual([]);
+      expect(runs.runs).toEqual([]);
+    });
+
+    it('refuses an unknown agent and an agent that is not usable with distinct errors', async () => {
+      await expect(startWith({ agent: 'nobody' })).rejects.toEqual(new AgentUnknownError('nobody'));
+      await expect(startWith({ agent: 'broken' })).rejects.toEqual(
+        new AgentNotUsableError('broken'),
+      );
+      expect(runs.runs).toEqual([]);
+    });
+
+    it('refuses an agent whose Provider is switched off, not the Provider of another agent', async () => {
+      workerReports(false);
+
+      await expect(startWith({ agent: 'default-codex' })).rejects.toEqual(
+        new ProviderUnavailableError('codex', 'Switched off on the agent worker' as never),
+      );
+      expect((await startWith({ agent: 'reviewer' })).id).toBeTruthy();
+    });
+
+    it('checks the project and its Repository before it resolves the agent', async () => {
+      startPoint = { status: 'no_repository' };
+
+      await expect(startWith({ agent: 'nobody' })).rejects.toBeInstanceOf(RepositoryNotReadyError);
+      expect(resolved).toEqual([]);
+    });
   });
 
   describe('provider availability', () => {

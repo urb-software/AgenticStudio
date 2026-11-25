@@ -54,6 +54,7 @@ import type { RunWorkingCopy } from '../value-objects/run-working-copy.js';
 import { Lease } from '../value-objects/lease.js';
 import { WorkerPresence } from '../value-objects/worker-presence.js';
 import type { LookupKind } from '../value-objects/lookup-kind.js';
+import { RunAgent } from '../value-objects/run-agent.js';
 import { RunStep } from './run-step.js';
 
 type RunPatch = Partial<
@@ -63,6 +64,7 @@ type RunPatch = Partial<
     | 'id'
     | 'projectId'
     | 'provider'
+    | 'agent'
     | 'task'
     | 'startCommit'
     | 'remoteUrl'
@@ -102,6 +104,7 @@ export class Run {
   declare readonly id: RunData['id'];
   declare readonly projectId: RunData['projectId'];
   declare readonly provider: RunData['provider'];
+  declare readonly agent: RunAgent;
   declare readonly task: RunData['task'];
   declare readonly startCommit: RunData['startCommit'];
   /** Never a credential. */
@@ -117,10 +120,14 @@ export class Run {
   declare readonly failingChecks: readonly string[];
 
   private constructor(data: RunData) {
+    if (data.agent.provider !== data.provider) {
+      throw new TypeError('The provider of a Run is the provider of its agent.');
+    }
     Object.assign(this, {
       id: data.id,
       projectId: data.projectId,
       provider: data.provider,
+      agent: RunAgent.restore(data.agent),
       task: data.task,
       startCommit: data.startCommit,
       remoteUrl: data.remoteUrl,
@@ -148,6 +155,7 @@ export class Run {
       id: input.id,
       projectId: input.projectId,
       provider: input.provider,
+      agent: input.agent,
       task: input.task.value,
       startCommit: input.startCommit,
       remoteUrl: input.remoteUrl,
