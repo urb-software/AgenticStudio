@@ -126,7 +126,7 @@ export function FileTree({
               ) : null}
               {node.entry.change ? (
                 <span
-                  className={`${unsaved.has(node.path) ? '' : 'ml-auto '}shrink-0 text-caption font-medium whitespace-nowrap ${CHANGE_CLASS[node.entry.change]}`}
+                  className={`${unsaved.has(node.path) ? '' : 'ml-auto'}shrink-0 text-caption font-medium whitespace-nowrap ${CHANGE_CLASS[node.entry.change]}`}
                 >
                   {CHANGE_LABEL[node.entry.change]}
                 </span>
