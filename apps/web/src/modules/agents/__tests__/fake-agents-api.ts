@@ -1,5 +1,50 @@
 import { vi } from 'vitest';
-import type { ProblemDetails, ProjectOutput, RepositoryOutput } from '../../../platform/api';
+import type {
+  AgentDetailOutput,
+  AgentListOutput,
+  AgentSummaryOutput,
+  ProblemDetails,
+  ProjectOutput,
+  RepositoryOutput,
+} from '../../../platform/api';
+
+export const BASE_RULES = { version: '2026-11-1', text: 'Base rules, line one.\nLine two.' };
+
+export const BUILT_INS: AgentSummaryOutput[] = ['default-claude-code', 'default-codex'].map(
+  (name) => ({
+    name,
+    description: `The ${name} agent`,
+    provider: name === 'default-codex' ? 'codex' : 'claude_code',
+    model: 'default',
+    source: 'built_in',
+    usable: true,
+    problems: [],
+  }),
+);
+
+export function agentList(overrides: Partial<AgentListOutput> = {}): AgentListOutput {
+  return {
+    commit: null,
+    repository: null,
+    truncated: false,
+    baseRules: BASE_RULES,
+    agents: BUILT_INS,
+    ...overrides,
+  };
+}
+
+export function agentDetail(
+  agent: AgentSummaryOutput,
+  extras: { instructions?: string; files?: { path: string; size: number }[] } = {},
+  overrides: Partial<AgentDetailOutput> = {},
+): AgentDetailOutput {
+  return {
+    commit: null,
+    repository: null,
+    agent: { ...agent, instructions: extras.instructions ?? '', files: extras.files ?? [] },
+    ...overrides,
+  };
+}
 
 export const DEFINITIONS_PROJECT: ProjectOutput = {
   id: '00000000-0000-4000-8000-0000000000d1',
@@ -27,11 +72,17 @@ const REPOSITORY = /^\/api\/projects\/([^/]+)\/repository(\/fetch)?$/;
  * the Project with its Repository (read, connect, fetch). `initial` is the server's state: no
  * Project (`null`), or the Project with its Repository (`null` until connected).
  */
-export function fakeAgentsApi(initial: { repository: RepositoryOutput | null } | null) {
+export function fakeAgentsApi(
+  initial: { repository: RepositoryOutput | null } | null,
+  agents: { list?: AgentListOutput; details?: Record<string, AgentDetailOutput> } = {},
+) {
+  let list = agents.list ?? agentList();
+  const details = { ...agents.details };
   let project: ProjectOutput | null = initial ? DEFINITIONS_PROJECT : null;
   let repository: RepositoryOutput | null = initial?.repository ?? null;
   const calls: { method: string; path: string; body?: unknown }[] = [];
   const scripted: { status: number; body: unknown }[] = [];
+  const listFailures: { status: number; body: unknown }[] = [];
 
   const fetch = vi.fn(async (request: Request): Promise<Response> => {
     const { pathname } = new URL(request.url);
@@ -42,6 +93,15 @@ export function fakeAgentsApi(initial: { repository: RepositoryOutput | null } |
     const response = request.method === 'GET' ? scripted.shift() : undefined;
     if (response) return json(response.status, response.body);
 
+    if (pathname === '/api/agents' && request.method === 'GET') {
+      const failure = listFailures.shift();
+      return failure ? json(failure.status, failure.body) : json(200, list);
+    }
+    const detail = /^\/api\/agents\/([^/]+)$/.exec(pathname);
+    if (detail && detail[1] !== 'definitions-repository') {
+      const found = details[decodeURIComponent(detail[1] ?? '')];
+      return found ? json(200, found) : json(404, problem(404, 'Unknown agent'));
+    }
     if (pathname === '/api/agents/definitions-repository') {
       return json(200, {
         project: project && {
@@ -98,6 +158,19 @@ export function fakeAgentsApi(initial: { repository: RepositoryOutput | null } |
     /** The Repository as the server holds it. */
     get repository() {
       return repository;
+    },
+    /** The next read of the agent list fails with this response. */
+    failNextList(status: number, body: unknown) {
+      listFailures.push({ status, body });
+    },
+    /** The agents the next reads answer, as after a fetch brought new commits. */
+    setAgents(next: AgentListOutput, nextDetails?: Record<string, AgentDetailOutput>) {
+      list = next;
+      if (nextDetails) Object.assign(details, nextDetails);
+    },
+    /** The running fetch ends: the Repository is `ready` at `headSha`. */
+    finishFetch(headSha: string) {
+      if (repository) repository = { ...repository, state: 'ready', headSha };
     },
     /** The requests the page made, in order. */
     calls: () => calls,

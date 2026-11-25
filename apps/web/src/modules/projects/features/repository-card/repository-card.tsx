@@ -644,9 +644,16 @@ type RepositoryCardProps = {
   summary: RepositorySummaryOutput | null;
   /** Puts focus on "Connect repository" when the card shows its empty state. */
   autoFocusConnect?: boolean;
+  /** Called once when a fetch ends (the Repository leaves `fetching`), for screens that read the Clone. */
+  onFetchEnded?: () => void;
 };
 
-export function RepositoryCard({ projectId, summary, autoFocusConnect }: RepositoryCardProps) {
+export function RepositoryCard({
+  projectId,
+  summary,
+  autoFocusConnect,
+  onFetchEnded,
+}: RepositoryCardProps) {
   const [connectOpen, setConnectOpen] = useState(false);
   // Remounts the dialog per opening, so it starts from the right values (empty or prefilled).
   const [dialogKey, setDialogKey] = useState(0);
@@ -672,6 +679,7 @@ export function RepositoryCard({ projectId, summary, autoFocusConnect }: Reposit
     const previous = last.current;
     if (repository && previous && previous.state !== repository.state) {
       void refreshProject();
+      if (previous.state === 'fetching') onFetchEnded?.();
       if (previous.state === 'fetching' && repository.state === 'ready') {
         toast.success(
           repository.headSha && repository.headSha !== previous.headSha
@@ -681,7 +689,7 @@ export function RepositoryCard({ projectId, summary, autoFocusConnect }: Reposit
       }
     }
     last.current = repository;
-  }, [repository, refreshProject]);
+  }, [repository, refreshProject, onFetchEnded]);
 
   // A disconnecting Repository that polling no longer finds (404) is gone: the server's cleanup
   // finished. Confirm it and show the empty state.

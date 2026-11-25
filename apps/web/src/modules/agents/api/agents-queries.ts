@@ -1,6 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback } from 'react';
 import { api, ApiError } from '../../../platform/api';
 
 /** The definitions Repository: `{ project: null }` until it is created. */
@@ -52,4 +53,35 @@ export function useCreateDefinitionsProject() {
       }
     },
   });
+}
+
+/** The agents as the API lists them (the last fetched commit of the definitions Repository). */
+const AGENTS_KEY = ['agents', 'list'] as const;
+const AGENT_KEY = ['agents', 'detail'] as const;
+
+/** Refetched on window focus (TanStack Query's default), and by `useRefreshAgents`. */
+export function useAgents() {
+  return useQuery({ queryKey: AGENTS_KEY, queryFn: api.listAgents });
+}
+
+/** One agent with its instructions and files; read only while `enabled` (an agent is open). */
+export function useAgent(name: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: [...AGENT_KEY, name] as const,
+    queryFn: () => api.getAgent(name ?? ''),
+    enabled: enabled && name !== undefined,
+  });
+}
+
+/** Reads the list and the open agent again, e.g. after a fetch brought new commits. */
+export function useRefreshAgents() {
+  const queryClient = useQueryClient();
+  return useCallback(
+    () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: AGENTS_KEY, exact: true }),
+        queryClient.invalidateQueries({ queryKey: AGENT_KEY }),
+      ]),
+    [queryClient],
+  );
 }
