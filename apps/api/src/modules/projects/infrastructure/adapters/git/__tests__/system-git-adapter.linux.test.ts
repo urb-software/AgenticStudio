@@ -58,8 +58,8 @@ function serveGitOverHttp(
         REMOTE_ADDR: '127.0.0.1',
       },
     });
-    // A test may stop the backend before it reads the body (the memory bound); the write then
-    // fails with EPIPE, which must not surface as an unhandled error of the test run.
+    // git http-backend may exit before reading the whole body (a client killed by the memory
+    // bound); the write then fails with EPIPE, which must not surface as an unhandled error.
     cgi.stdin.on('error', () => undefined);
     cgi.stdin.end(body);
     let head = Buffer.alloc(0);
