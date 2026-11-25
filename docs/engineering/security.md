@@ -83,6 +83,18 @@ CODEX_CLI_ENABLED=false
 
 **Current status:** Claude Code CLI: record [2026-11-14-claude-code-cli.md](provider-compliance/2026-11-14-claude-code-cli.md) is `Approved` (subscription login), decided 2026-11-14; `CLAUDE_CODE_ENABLED` stays `false` until the operator enables it. Codex CLI: record [2026-11-14-codex-cli.md](provider-compliance/2026-11-14-codex-cli.md) is `Approved` (ChatGPT plan login), decided 2026-11-15; `CODEX_CLI_ENABLED` stays `false` until the operator enables it.
 
+### Agent definitions (Epic #298)
+
+Decided in the refinement of Epic #298, 2026-11-25 ([ADR 0005](../architecture/adr/0005-agent-definitions-in-git.md)). An Agent definition is the text and files an agent is given. It is more powerful than any repository content, so these rules hold:
+
+- **The definitions Repository is never the target of a Run, and the Agent account has no access to it.** Starting a Run on it is refused. Only the operator, through Studio or their own Git, changes what agents are told.
+- **The base rules cannot be overridden.** Studio's built-in text (when to ask, the structured result, Follow-ups, bringing a branch up to date) is always given first. A definition's instructions come after it and cannot edit, remove or outrank it.
+- **A definition may not carry tools, permissions, hooks or MCP servers, in any form.** An unknown front matter key is refused, as is any key that asks for one of these. Limits on file count, size per file and size per folder apply, and a path that leaves the folder is refused; the limits are fixed in the validation's code. An invalid agent is listed with its reason and cannot be chosen.
+- **Scripts never run by themselves.** The CLIs' inline shell execution in definitions stays switched off. An agent runs a script only through its normal command tool, under the same guardrails and operating-system user as any other command.
+- **The write Deploy key is limited to the definitions Repository.** It lives on Studio's side, is stored like any other Deploy key ([ADR 0001](../architecture/adr/0001-secret-store.md)) and never reaches the agent side, a Run's directory, an environment variable of an agent, a response or a log. The Merge credential is not used for publishing. Publishing is a fast-forward push only.
+- **A draft reaches no agent.** Only a commit on the definitions Repository's Integration branch is delivered. A Run uses the commit it started with, and its Follow-ups use the same one.
+- **A model is chosen from a fixed list per Provider.** The lists are in the [Claude Code](provider-compliance/2026-11-14-claude-code-cli.md#mode) and [Codex](provider-compliance/2026-11-14-codex-cli.md#cli-version-and-command) compliance records; any other value is refused.
+
 ## 3. Secrets and credentials
 
 - Use a dedicated secret-management mechanism with scoped, revocable credentials. **Never commit `.env` secrets, auth/session tokens, CLI credentials, private keys or MCP secrets.**
@@ -260,6 +272,7 @@ Enforced controls must **reject** the following, evidenced by automated tests as
 - A malicious `README.md` instructs the agent to output secrets or modify forbidden files.
 - An unapproved MCP tool is invoked, or a tool response includes prompt-injection text.
 - A run requests unauthorized branch merge, credential disclosure, or production DB access.
+- A Run is started on the definitions Repository, a definition with a forbidden key is offered, a draft reaches the agent worker, a publish over a moved Repository succeeds, or the write Deploy key reaches the agent side or a log (Epic #298).
 - A Preview accesses Studio cookies, admin APIs, internal DB/Redis or unapproved network destinations.
 
 Also verify: a canceled or retried execution causes no duplicate irreversible effects.

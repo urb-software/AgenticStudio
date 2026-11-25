@@ -9,6 +9,7 @@
 - **Records prepared on:** 2026-11-14
 - **Revised 2026-11-16 (Issue #105):** Mode gains `--append-system-prompt-file` and `--json-schema` (operator decision, under "Mode"); the `--setting-sources user` finding of ADR 0002 is added to the technical findings (6). The decision itself is unchanged.
 - **Revised 2026-11-19 (Issue #109):** Mode gains `--plugin-dir <per-Run plugin>` (operator decision, under "Mode"); technical finding 6 is updated: the repository's skills and subagents now reach the agent through a sanitized plugin. The decision itself is unchanged.
+- **Revised 2026-11-25 (Epic #298):** Mode gains `--model <alias>` (operator decision, under "Mode"). The decision itself is unchanged.
 - **Note 2026-11-16 (Issue #134):** where Studio's hooks and permission rules come from changed (technical finding 7); the Mode's options are unchanged. The decision itself is unchanged.
 
 This record reports what Anthropic's published pages say on the date read. It is not legal advice. Accepting the remaining ambiguity is the operator's decision, recorded under "Operator decision" below. `CLAUDE_CODE_ENABLED` stays `false` until the operator enables it; this record changes no runtime configuration.
@@ -198,7 +199,8 @@ claude -p "<task prompt>" \
   --max-turns <n> \
   --append-system-prompt-file <Studio instructions file> \
   --json-schema <structured result JSON Schema> \
-  --plugin-dir <per-Run plugin, only when it has content>
+  --plugin-dir <per-Run plugin, only when it has content> \
+  --model <alias, only when the agent names one>
 
 # next step (operator's answer, or a follow-up)
 claude -p "<operator answer>" --resume <session-id> <same options>
@@ -207,6 +209,8 @@ claude -p "<operator answer>" --resume <session-id> <same options>
 - **Revised 2026-11-16 (operator decision, Issue #105):** two options were added to the approved mode. `--append-system-prompt-file` passes Studio's instructions file (the built-in agent definition and the text of the repository's instruction files); `--json-schema` asks for the structured result in Studio's schema. Both are documented options of CLI 2.1.325 and change neither authentication nor permissions. The decision above is unchanged. The agent worker accepts CLI versions `>=2.1.325 <2.2.0`, checked when it starts.
 
 - **Revised 2026-11-19 (operator decision, Issue #109):** one option was added to the approved mode. `--plugin-dir` passes the repository's skills and subagents as a per-Run plugin with the prefix `repo:`. The worker builds the plugin from Git at the Run's start commit and sanitizes it before every step: only regular files, at most 50 skills, 50 agents, 64 KiB per file and 1 MiB in total; names must match `^[a-z0-9][a-z0-9-]{0,63}$`; frontmatter keys are allowlisted (`allowed-tools`, `hooks`, `mcpServers`, `permissionMode`, `memory` and `isolation` never reach the CLI); a skill or agent whose text contains `` !` ``, ```` ```! ```` or `~~~!` anywhere is left out and named in the Run log. The flag is absent when the plugin has no content. `--add-dir` (loaded through the `project` source that `--setting-sources user` excludes) and `--agents` (subagents only) were assessed and rejected. The option changes neither authentication nor the managed permission rules, which still rank above everything the plugin says. The managed settings gain `disableSkillShellExecution: true` as defence in depth. A folder passed to `--plugin-dir` needs CLI 2.1.265 or later; the supported range (`>=2.1.325 <2.2.0`) is unchanged.
+
+- **Revised 2026-11-25 (operator decision, Epic #298):** one option was added to the approved mode. The operator accepted the model option on 2026-11-25 (Epic #298); the coordinator chose the values. `--model <alias>` selects the model for the run. The allowed values are the documented aliases `opus`, `sonnet` and `haiku`; full model IDs are not allowed, because an alias follows the Provider's current model and keeps the list short. An agent that names no model adds no option and the CLI's default applies. The option changes neither authentication nor permissions. A value the CLI or the login refuses fails the Run, so a later change to this list needs an amendment of this record. The decision above is unchanged.
 
 - `--output-format stream-json --verbose`: newline-delimited JSON events (S6). The event tables in S6 list a `session_id` field; S6 has no statement that every event carries it, so the headless test confirms where it appears. The run ends with a result event; exit code 0 on success, non-zero on failure (S6).
 - `--resume <session-id>`: continues a specific conversation (S6, S7).
