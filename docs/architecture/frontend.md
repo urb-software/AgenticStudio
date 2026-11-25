@@ -101,7 +101,7 @@ Feature-specific hooks, tests, UI elements and schema live near the feature. No 
 ## 5. Editors and drafts
 
 - **React Flow** for workflow graph editing; the backend owns a stable workflow definition model independent of the React Flow presentation schema.
-- **Monaco** for agent/skill definitions, with validation and explicit publish semantics.
+- **Monaco** for agent/skill definitions, with validation and explicit publish semantics. The editor is a view over the definitions Repository: a file tree and an editor over Studio's Clone, with the same validation while typing (Epic #298). Text files are edited; binary assets are uploaded or replaced. **Save** and **Publish** are two steps: Save keeps a draft in Studio and reaches no agent; Publish shows the difference, takes a commit message and makes one commit.
 - Heavyweight editors load lazily, only on relevant routes.
 - Lifecycle: `Load saved version → edit isolated draft → validate → save → publish`.
 - A background API refetch never overwrites an unsaved draft. New execution runs use an approved immutable configuration snapshot, not changing editor buffers.

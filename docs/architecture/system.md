@@ -48,11 +48,13 @@ Conceptual diagram. The exact network, queue, auth, and deployment boundaries mu
 | Module | Owns | Does not own |
 | --- | --- | --- |
 | `projects` | Project lifecycle, repository connection, the Clone and its fetch, Git branches, the merge method setting | Agent definitions, raw Docker privilege, the pull request, its review and merge |
-| `agents` | `AgentDefinition`, `SkillDefinition`, assignment, native-file definitions, validation and publishing | Task queue execution |
+| `agents` | Agent definitions read from the definitions Repository's Integration branch, the list of agents with their validation, the Default agents, drafts and publishing; later, `SkillDefinition` | The Repository connection and the Clone, Runs and their queue, Git credentials |
 | `workflows` | Workflow definitions, step dependencies, ordering, conditions, human approval semantics | Individual worker/process execution plumbing |
 | `executions` | Runs, their working copies, state transitions, queue scheduling, progress/log/result records, the pull request, its review diff, the Merge approval and the merge | Direct Docker host control or unrelated project Git internals |
 | `environments` | A Project's Preview settings, the shared Preview and its states, builds and their logs, Compose stack abstraction | CLI agent definitions, Runs, the Project's Clone |
 | `mcp` | Reusable MCP server definitions, bindings, validation/connection checks, CLI tool configuration | Project repository internals or a full gateway in MVP |
+
+**Agent definitions** ([ADR 0005](adr/0005-agent-definitions-in-git.md), Epic #298) are files in one definitions Repository, not rows in the database. The database holds pointers and drafts only: which Repository it is, each Project's default agent, what a Run used, and unpublished changes. The definitions Repository is a Project of its own kind that accepts no Run, no Preview and no Environment file. `agents` reads and writes its Clone only through the public face of `projects` and publishes with that Repository's Deploy key. `executions` records which agent, commit and model a Run used through the public face of `agents`, and hands the agent's folder at that commit to the agent worker with the Run. A Run's commit is the version: whatever is on the definitions Repository's Integration branch is published.
 
 Frontend navigation may cross these boundaries (`/skills` is part of `agents`; `/projects/:id/preview` shows `environments` in a project context). Backend boundaries remain authoritative.
 

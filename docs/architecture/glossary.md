@@ -50,6 +50,32 @@ _Avoid_: Remote, IP
 The states a connected Repository goes through and which operation each state accepts: `awaiting_key` (an SSH Repository whose Deploy key must still be added on the Git host, then verified); `awaiting_host_key` (the Git host is not trusted yet and the operator must confirm its host key); `connecting` (the first Clone is being made); `ready` (the Clone is up to date as of the last fetch); `fetching` (the Clone is being brought up to date); `failed` (the last connect or fetch failed); `disconnecting` (the operator disconnected it and its data is still being removed; the record goes last).
 _Avoid_: Status, workflow
 
+### `agents`
+
+**Agent definition**:
+A folder in the Definitions Repository that tells an agent how to work: an entry file with front matter (name, description, Provider, Model) and instructions in Markdown, and beside it the agent's scripts and assets. It belongs to one Provider and comes after Studio's fixed base rules. A Run uses the commit of the Definitions Repository it started with. An invalid definition is listed with its reason and cannot be chosen.
+_Avoid_: Agent (alone), prompt, profile
+
+**Definitions Repository**:
+The one Repository, a Project of its own kind, that holds the Agent definitions. It accepts no Run, no Preview and no Environment file, and the Agent account has no access to it. Whatever is on its Integration branch is published.
+_Avoid_: Agents repo, config repo
+
+**Default agent**:
+The agent preselected when a Run starts: the Project's named default, or the built-in Default for the Provider. An agent is always chosen. A built-in "Default" agent per Provider exists without any Repository; each Project can name its own Default agent.
+_Avoid_: Standard agent
+
+**Model**:
+The model an Agent definition asks its Provider's CLI to use, from a short fixed list per Provider, or the CLI's default when it names none. Not the same as the Provider.
+_Avoid_: Engine, LLM
+
+**Draft**:
+An unpublished change to Agent definition files, kept in Studio. It reaches no agent.
+_Avoid_: Unsaved version, pending change
+
+**Publish**:
+The operator's action that turns a Draft into one commit on the Definitions Repository's Integration branch, pushed as a fast-forward only. It is refused when the Repository moved since the Draft began.
+_Avoid_: Deploy, release
+
 ### `executions`
 
 **Run**:
@@ -209,7 +235,7 @@ An immutable object defined by its values, with no identity of its own; a change
 
 **Provider**:
 The agent CLI product that carries out a Run (Claude Code or Codex).
-_Avoid_: Agent, model, vendor
+_Avoid_: Agent, model, vendor (see Agent definition and Model)
 
 **Environment file**:
 A per-project file of test settings that Studio places in a Working copy.
