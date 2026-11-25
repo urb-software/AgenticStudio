@@ -63,6 +63,26 @@ describe('ListDefinitionsTreeHandler', () => {
     );
   });
 
+  it('lists the whole tree when asked, within the same bound', async () => {
+    await connected();
+    git.listTreeAtCommit.mockResolvedValueOnce({
+      entries: [{ path: 'README.md', kind: 'file', size: 3 }],
+      truncated: false,
+    });
+
+    await expect(handler.execute({ commit: HEAD, whole: true })).resolves.toEqual({
+      status: 'listed',
+      entries: [{ path: 'README.md', kind: 'file', size: 3 }],
+      truncated: false,
+    });
+    expect(git.listTreeAtCommit).toHaveBeenCalledWith(
+      DEFINITIONS,
+      HEAD,
+      '',
+      DEFINITIONS_TREE_MAX_ENTRIES,
+    );
+  });
+
   it('is not ready without a definitions Project or without a Repository', async () => {
     projects.addProject(CODE, 'Shop');
     await expect(handler.execute({ commit: HEAD })).resolves.toEqual({

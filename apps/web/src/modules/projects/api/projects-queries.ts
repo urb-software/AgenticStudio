@@ -12,6 +12,7 @@ import {
   type ProjectOutput,
   type RepositoryOutput,
   type SetEnvironmentFileRequest,
+  type SetDefaultAgentRequest,
   type SetMergeMethodRequest,
   type VerifyRepositoryRequest,
 } from '../../../platform/api';
@@ -261,6 +262,40 @@ export function useSetMergeMethod(projectId: string) {
         detail ? { ...detail, mergeMethod: project.mergeMethod } : detail,
       );
       await queryClient.invalidateQueries({ queryKey: PROJECTS_QUERY_KEY, exact: true });
+    },
+  });
+}
+
+/** One project's usable agents, its default among them (own entry; the executions module has its own). */
+const runAgentsKey = (projectId: string) => ['projects', projectId, 'run-agents'] as const;
+
+/**
+ * The usable agents of a project and why its default is not the one offered first. Judged where
+ * it is read: an agent that stopped being usable simply drops out of the list.
+ */
+export function useProjectRunAgents(projectId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: runAgentsKey(projectId),
+    queryFn: () => api.listRunAgents(projectId),
+    enabled,
+    retry: false,
+  });
+}
+
+/**
+ * Names the project's default agent, or none. The project and the agents are read again, and the
+ * mutation stays pending until they are (the answer is not written into the cache).
+ */
+export function useSetDefaultAgent(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: SetDefaultAgentRequest) => api.setDefaultAgent(projectId, request),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: projectKey(projectId), exact: true }),
+        queryClient.invalidateQueries({ queryKey: runAgentsKey(projectId), exact: true }),
+        queryClient.invalidateQueries({ queryKey: PROJECTS_QUERY_KEY, exact: true }),
+      ]);
     },
   });
 }

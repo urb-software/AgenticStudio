@@ -71,6 +71,9 @@ const PROJECTS_KEY = ['runs', 'projects'] as const;
 
 const providersKey = (opening: number) => ['runs', 'providers', opening] as const;
 
+const runAgentsKey = (projectId: string, opening: number) =>
+  ['runs', 'run-agents', projectId, opening] as const;
+
 /** The agent side's connection and disk figures. */
 const AGENT_WORKER_KEY = ['runs', 'agent-worker'] as const;
 
@@ -174,6 +177,22 @@ export function useProviderAvailability(opening: number, enabled: boolean) {
     enabled,
     staleTime: Infinity,
     gcTime: 0,
+  });
+}
+
+/**
+ * The agents a Run of the project can start with, the one to offer first and the reason when it
+ * is not the project's default. Each opening has its own entry, like the availability, so the
+ * dialog never shows an earlier opening's agents; the server's start check stays authoritative.
+ */
+export function useRunAgents(projectId: string, opening: number, enabled: boolean) {
+  return useQuery({
+    queryKey: runAgentsKey(projectId, opening),
+    queryFn: () => api.listRunAgents(projectId),
+    enabled,
+    staleTime: Infinity,
+    gcTime: 0,
+    retry: false,
   });
 }
 

@@ -168,6 +168,80 @@ export type AgentsRepositoryOutput = {
     note: string | null;
 };
 
+export type AgentFileEntryOutput = {
+    /**
+     * Relative to the Repository root, with `/` separators.
+     */
+    path: string;
+    /**
+     * A symbolic link and a submodule are listed and never read.
+     */
+    kind: 'file' | 'symlink' | 'submodule';
+    /**
+     * Bytes; 0 for a symbolic link and a submodule.
+     */
+    size: number;
+    /**
+     * Whether the content route can read this entry: a regular file within the size limit and with a path the route accepts.
+     */
+    openable: boolean;
+    /**
+     * The agent folder the entry is in; null for any other part of the Repository.
+     */
+    agent: string | null;
+};
+
+export type AgentFilesOutput = {
+    /**
+     * The commit of the definitions Repository the agents were read at; null when none was.
+     */
+    commit: string | null;
+    /**
+     * Null when no definitions Repository is connected.
+     */
+    repository: AgentsRepositoryOutput | null;
+    /**
+     * True when the Repository holds more entries than are listed.
+     */
+    truncated: boolean;
+    entries: Array<AgentFileEntryOutput>;
+};
+
+export type AgentFileTextOutput = {
+    /**
+     * The commit the file was read at.
+     */
+    commit: string;
+    path: string;
+    kind: 'text';
+    /**
+     * Plain text, never to be rendered as HTML or followed.
+     */
+    content: string;
+};
+
+export type AgentFileBinaryOutput = {
+    /**
+     * The commit the file was read at.
+     */
+    commit: string;
+    path: string;
+    kind: 'binary';
+    size: number;
+};
+
+export type AgentFileTooLargeOutput = {
+    /**
+     * The commit the file was read at.
+     */
+    commit: string;
+    path: string;
+    kind: 'too_large';
+    size: number;
+};
+
+export type AgentFileOutput = AgentFileTextOutput | AgentFileBinaryOutput | AgentFileTooLargeOutput;
+
 export type AgentSummaryOutput = {
     /**
      * Unique together with `source`: a built-in and a refused folder can share a name.
@@ -1530,6 +1604,71 @@ export type GetDefinitionsRepositoryResponses = {
 };
 
 export type GetDefinitionsRepositoryResponse = GetDefinitionsRepositoryResponses[keyof GetDefinitionsRepositoryResponses];
+
+export type ListAgentFilesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/agents/definitions-repository/files';
+};
+
+export type ListAgentFilesErrors = {
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type ListAgentFilesError = ListAgentFilesErrors[keyof ListAgentFilesErrors];
+
+export type ListAgentFilesResponses = {
+    200: AgentFilesOutput;
+};
+
+export type ListAgentFilesResponse = ListAgentFilesResponses[keyof ListAgentFilesResponses];
+
+export type GetAgentFileData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Relative to the Repository root, with `/` separators.
+         */
+        path: string;
+        /**
+         * A full commit id the Clone holds; the last fetched commit when omitted.
+         */
+        commit?: string;
+    };
+    url: '/api/agents/definitions-repository/files/content';
+};
+
+export type GetAgentFileErrors = {
+    /**
+     * Invalid path or commit id
+     */
+    400: ProblemDetails;
+    /**
+     * No regular file at the path (urn:agentic-studio:problem:agent-file-not-found) or the Clone does not hold the commit (urn:agentic-studio:problem:agent-commit-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * The Clone cannot be read now (urn:agentic-studio:problem:agent-files-unreadable)
+     */
+    503: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type GetAgentFileError = GetAgentFileErrors[keyof GetAgentFileErrors];
+
+export type GetAgentFileResponses = {
+    200: AgentFileOutput;
+};
+
+export type GetAgentFileResponse = GetAgentFileResponses[keyof GetAgentFileResponses];
 
 export type ListAgentsData = {
     body?: never;

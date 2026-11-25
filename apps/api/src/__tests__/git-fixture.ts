@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -18,6 +18,10 @@ export interface GitFixture {
   /** The working copy the fixture was built from (pushes to `bare`). */
   work: string;
 }
+
+/** A file's content, a symbolic link to `symlink`, or a submodule entry at `gitlink` (a commit id). */
+export type FixtureFile =
+  string | Buffer | { symlink: string } | { gitlink: string } | { executable: string | Buffer };
 
 function git(cwd: string, args: string[]): string {
   const result = spawnSync('git', args, {
@@ -105,19 +109,27 @@ export function pushFiles(
   fixture: GitFixture,
   branch: string,
   base: string,
-  files: Record<string, string | Buffer | { executable: string | Buffer }>,
+  files: Record<string, FixtureFile>,
 ): string {
   git(fixture.work, ['checkout', '--quiet', '-B', branch, base]);
+  const gitlinks: [string, string][] = [];
   for (const [path, content] of Object.entries(files)) {
     mkdirSync(dirname(join(fixture.work, path)), { recursive: true });
-    if (typeof content === 'string' || Buffer.isBuffer(content)) {
-      writeFileSync(join(fixture.work, path), content);
-    } else {
+    if (typeof content === 'object' && 'symlink' in content) {
+      symlinkSync(content.symlink, join(fixture.work, path));
+    } else if (typeof content === 'object' && 'gitlink' in content) {
+      gitlinks.push([path, content.gitlink]);
+    } else if (typeof content === 'object' && 'executable' in content) {
       writeFileSync(join(fixture.work, path), content.executable);
       chmodSync(join(fixture.work, path), 0o755);
+    } else {
+      writeFileSync(join(fixture.work, path), content);
     }
   }
   git(fixture.work, ['add', '--all']);
+  for (const [path, commit] of gitlinks) {
+    git(fixture.work, ['update-index', '--add', '--cacheinfo', `160000,${commit},${path}`]);
+  }
   git(fixture.work, ['commit', '--quiet', '-m', `change ${branch}`]);
   git(fixture.work, ['push', '--quiet', '--force', fixture.bare, `${branch}:${branch}`]);
   return git(fixture.work, ['rev-parse', 'HEAD']);

@@ -41,8 +41,14 @@ function folders(script: Script) {
           status: 'read',
           files: paths.map((path) =>
             path === 'agents/reviewer/AGENT.md'
-              ? { path, status: 'found' as const, text: ENTRY }
-              : { path, status: 'missing' as const },
+              ? {
+                  path,
+                  status: 'found' as const,
+                  text: ENTRY,
+                  size: ENTRY.length,
+                  binary: false,
+                }
+              : { path, status: 'missing' as const, size: 0 as const },
           ),
         },
       ),

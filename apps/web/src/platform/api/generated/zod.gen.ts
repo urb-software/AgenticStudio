@@ -157,6 +157,52 @@ export const zAgentsRepositoryOutput = z.object({
     note: z.string().nullable()
 });
 
+export const zAgentFileEntryOutput = z.object({
+    path: z.string(),
+    kind: z.enum([
+        'file',
+        'symlink',
+        'submodule'
+    ]),
+    size: z.int().gte(0).lte(9007199254740991),
+    openable: z.boolean(),
+    agent: z.string().nullable()
+});
+
+export const zAgentFilesOutput = z.object({
+    commit: z.string().nullable(),
+    repository: zAgentsRepositoryOutput.nullable(),
+    truncated: z.boolean(),
+    entries: z.array(zAgentFileEntryOutput)
+});
+
+export const zAgentFileTextOutput = z.object({
+    commit: z.string(),
+    path: z.string(),
+    kind: z.literal('text'),
+    content: z.string()
+});
+
+export const zAgentFileBinaryOutput = z.object({
+    commit: z.string(),
+    path: z.string(),
+    kind: z.literal('binary'),
+    size: z.int().gte(0).lte(9007199254740991)
+});
+
+export const zAgentFileTooLargeOutput = z.object({
+    commit: z.string(),
+    path: z.string(),
+    kind: z.literal('too_large'),
+    size: z.int().gte(0).lte(9007199254740991)
+});
+
+export const zAgentFileOutput = z.union([
+    zAgentFileTextOutput,
+    zAgentFileBinaryOutput,
+    zAgentFileTooLargeOutput
+]);
+
 export const zAgentProblemOutput = z.object({
     code: z.enum([
         'entry_missing',
@@ -1470,6 +1516,15 @@ export const zSetDefaultAgentPath = z.object({
 export const zSetDefaultAgentResponse = zProjectOutput;
 
 export const zGetDefinitionsRepositoryResponse = zDefinitionsRepositoryOutput;
+
+export const zListAgentFilesResponse = zAgentFilesOutput;
+
+export const zGetAgentFileQuery = z.object({
+    path: z.string().min(1).max(255),
+    commit: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/).optional()
+});
+
+export const zGetAgentFileResponse = zAgentFileOutput;
 
 export const zListAgentsResponse = zAgentListOutput;
 

@@ -264,6 +264,20 @@ function parseTreeEntries(output: string): TreeEntry[] {
   return entries;
 }
 
+const UTF8 = new TextDecoder('utf-8', { fatal: true });
+
+/** A NUL byte, or bytes that are not UTF-8. */
+function isBinary(bytes: Buffer | undefined): boolean {
+  if (!bytes) return false;
+  if (bytes.includes(0)) return true;
+  try {
+    UTF8.decode(bytes);
+    return false;
+  } catch {
+    return true;
+  }
+}
+
 const TREE_KINDS: Record<string, CommitTreeEntry['kind']> = {
   '100644': 'file',
   '100755': 'file',
@@ -986,7 +1000,8 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     if (!COMMIT_ID.test(commit)) {
       throw new GitRequestRejectedError('The commit id is not a full commit id.');
     }
-    if (environmentFilePathProblem(directory) !== null) {
+    // An empty folder names the whole tree.
+    if (directory !== '' && environmentFilePathProblem(directory) !== null) {
       throw new GitRequestRejectedError('The path is not a safe relative path.');
     }
     this.paths.clone(projectId);
@@ -999,6 +1014,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
         const gitDir = `--git-dir=${clone}`;
         await this.assertKnownCommit(context, gitDir, commit);
         // The trailing slash names the folder's contents; without it Git lists the entry itself.
+        // No pathspec at all lists the whole tree.
         const listed = await this.git(
           context,
           [
@@ -1009,8 +1025,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
             '-l',
             '-z',
             commit,
-            '--',
-            `${directory}/`,
+            ...(directory === '' ? [] : ['--', `${directory}/`]),
           ],
           undefined,
           TREE_OUTPUT_LIMIT_BYTES,
@@ -1030,10 +1045,12 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     maxBytes: number,
     options: GitOperationOptions = {},
   ): Promise<CommitFileRead[]> {
-    const reads = await this.readBlobEntries(projectId, commit, paths, maxBytes, 'utf8', options);
-    return reads.map(({ path, outcome }) => ({
-      path,
-      outcome: outcome.status === 'found' ? { status: 'found', text: outcome.stdout } : outcome,
+    const reads = await this.readRaw(projectId, commit, paths, maxBytes, options);
+    return reads.map((read) => ({
+      path: read.path,
+      outcome: read.outcome,
+      size: read.size,
+      binary: read.binary,
     }));
   }
 
@@ -1044,30 +1061,23 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     maxBytes: number,
     options: GitOperationOptions = {},
   ): Promise<CommitBlobRead[]> {
-    const reads = await this.readBlobEntries(projectId, commit, paths, maxBytes, 'latin1', options);
-    return reads.map(({ path, outcome }) => ({
+    const reads = await this.readRaw(projectId, commit, paths, maxBytes, options);
+    return reads.map(({ path, outcome, raw }) => ({
       path,
       outcome:
         outcome.status === 'found'
-          ? { status: 'found', bytes: Uint8Array.from(Buffer.from(outcome.stdout, 'latin1')) }
+          ? { status: 'found', bytes: Uint8Array.from(raw ?? Buffer.alloc(0)) }
           : outcome,
     }));
   }
 
-  /** The regular files at `paths`, their stdout decoded with `encoding` (`latin1` is lossless). */
-  private async readBlobEntries(
+  private async readRaw(
     projectId: string,
     commit: string,
     paths: readonly string[],
     maxBytes: number,
-    encoding: 'utf8' | 'latin1',
     options: GitOperationOptions,
-  ): Promise<
-    {
-      path: string;
-      outcome: { status: 'found'; stdout: string } | { status: 'missing' | 'too_large' };
-    }[]
-  > {
+  ): Promise<(CommitFileRead & { raw?: Buffer })[]> {
     this.assertSupportedPlatform();
     if (!COMMIT_ID.test(commit)) {
       throw new GitRequestRejectedError('The commit id is not a full commit id.');
@@ -1108,16 +1118,13 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
             if (entry.regular) regular.set(entry.path, entry);
           }
         }
-        const reads: {
-          path: string;
-          outcome: { status: 'found'; stdout: string } | { status: 'missing' | 'too_large' };
-        }[] = [];
+        const reads: (CommitFileRead & { raw?: Buffer })[] = [];
         for (const path of paths) {
           const entry = regular.get(path);
           if (!entry) {
-            reads.push({ path, outcome: { status: 'missing' } });
+            reads.push({ path, outcome: { status: 'missing' }, size: 0, binary: false });
           } else if (entry.size > maxBytes) {
-            reads.push({ path, outcome: { status: 'too_large' } });
+            reads.push({ path, outcome: { status: 'too_large' }, size: entry.size, binary: false });
           } else {
             // `cat-file blob` applies no filter, textconv or attribute: the stored bytes.
             const blob = await this.git(
@@ -1125,14 +1132,24 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
               [gitDir, 'cat-file', 'blob', entry.object],
               undefined,
               maxBytes,
-              encoding,
             );
             if (blob.stdoutCut) {
-              reads.push({ path, outcome: { status: 'too_large' } });
+              reads.push({
+                path,
+                outcome: { status: 'too_large' },
+                size: entry.size,
+                binary: false,
+              });
             } else if (blob.exitCode !== 0) {
               throw new GitOperationError('unknown', redactGitOutput(blob.stderr));
             } else {
-              reads.push({ path, outcome: { status: 'found', stdout: blob.stdout } });
+              reads.push({
+                path,
+                outcome: { status: 'found', text: blob.stdout },
+                size: entry.size,
+                binary: isBinary(blob.stdoutRaw),
+                ...(blob.stdoutRaw ? { raw: blob.stdoutRaw } : {}),
+              });
             }
           }
         }
@@ -1595,7 +1612,6 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     args: string[],
     watch?: SizeWatch,
     stdoutLimitBytes?: number,
-    stdoutEncoding?: 'utf8' | 'latin1',
   ) {
     const caFile = this.settings.httpsCaFile
       ? ['-c', `http.sslCAInfo=${this.settings.httpsCaFile}`]
@@ -1606,7 +1622,6 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
       [...hardeningArgs(this.settings.allowedTransports), ...caFile, ...args],
       watch,
       stdoutLimitBytes,
-      stdoutEncoding,
     );
   }
 
@@ -1616,7 +1631,6 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     args: string[],
     watch?: SizeWatch,
     stdoutLimitBytes?: number,
-    stdoutEncoding?: 'utf8' | 'latin1',
   ) {
     try {
       const result = await runGitProcess({
@@ -1628,7 +1642,6 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
         signal: context.signal,
         watch,
         stdoutLimitBytes,
-        ...(stdoutEncoding === undefined ? {} : { stdoutEncoding }),
         memoryBound: {
           bytes: this.settings.maxProcessMemoryBytes,
           prlimitBinary: this.prlimitBinary,

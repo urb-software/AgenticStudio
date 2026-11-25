@@ -71,6 +71,8 @@ describe('route and guard inventory', () => {
         "GET /api/agents [session]",
         "GET /api/agents/:name [session]",
         "GET /api/agents/definitions-repository [session]",
+        "GET /api/agents/definitions-repository/files [session]",
+        "GET /api/agents/definitions-repository/files/content [session]",
         "GET /api/controller/operations/:operationId/source [controller-token]",
         "GET /api/previews [session]",
         "GET /api/projects [session]",

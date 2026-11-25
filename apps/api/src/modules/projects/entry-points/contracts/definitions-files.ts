@@ -30,8 +30,8 @@ export class ProjectDefinitionsFiles implements DefinitionsFiles {
     return { state: current.repository.state, commit: current.repository.headSha };
   }
 
-  listTree(commit: string): Promise<DefinitionsTreeResult> {
-    return this.treeHandler.execute({ commit });
+  listTree(commit: string, options?: { whole?: boolean }): Promise<DefinitionsTreeResult> {
+    return this.treeHandler.execute({ commit, whole: options?.whole });
   }
 
   readFiles(

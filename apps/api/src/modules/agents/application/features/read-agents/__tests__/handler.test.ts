@@ -45,8 +45,14 @@ function scripted(script: Scripted) {
           status: 'read',
           files: paths.map((path) =>
             path in files
-              ? { path, status: 'found' as const, text: files[path]! }
-              : { path, status: 'missing' as const },
+              ? {
+                  path,
+                  status: 'found' as const,
+                  text: files[path]!,
+                  size: files[path]!.length,
+                  binary: false,
+                }
+              : { path, status: 'missing' as const, size: 0 as const },
           ),
         },
       ),
@@ -211,8 +217,14 @@ describe('ReadAgentsHandler', () => {
         readFiles: {
           status: 'read',
           files: [
-            { path: 'agents/b-binary/AGENT.md', status: 'found', text: '�x' },
-            { path: 'agents/c-big/AGENT.md', status: 'too_large' },
+            {
+              path: 'agents/b-binary/AGENT.md',
+              status: 'found',
+              text: '�x',
+              size: 2,
+              binary: true,
+            },
+            { path: 'agents/c-big/AGENT.md', status: 'too_large', size: 2_000_000 },
           ],
         },
       });
@@ -224,6 +236,31 @@ describe('ReadAgentsHandler', () => {
       expect(codes('a-empty')).toEqual(['entry_missing']);
       expect(codes('b-binary')).toEqual(['entry_unreadable']);
       expect(codes('c-big')).toEqual(['file_too_large']);
+    });
+
+    it('refuses a big non-UTF-8 entry file under the limit as unreadable, not too large', async () => {
+      const { handler } = scripted({
+        tree: listed(file('agents/d-600k/AGENT.md', 600_000)),
+        readFiles: {
+          status: 'read',
+          files: [
+            {
+              path: 'agents/d-600k/AGENT.md',
+              status: 'found',
+              // Each invalid byte arrives as a 3-byte replacement character.
+              text: '�'.repeat(600_000),
+              size: 600_000,
+              binary: true,
+            },
+          ],
+        },
+      });
+
+      const { agents } = await handler.execute();
+
+      expect(
+        agents.find((agent) => agent.name === 'd-600k')?.problems.map((problem) => problem.code),
+      ).toEqual(['entry_unreadable']);
     });
 
     it('lists at most 200 agent folders and says so', async () => {

@@ -24,12 +24,14 @@ import {
 
 export interface ListDefinitionsTreeInput {
   commit: string;
+  /** The whole tree instead of the `agents/` folder. */
+  whole?: boolean;
 }
 
 export type ListDefinitionsTreeResult = DefinitionsTreeResult;
 
 /**
- * Lists what is tracked under `agents/` of the definitions Project's Clone at a commit, from Git's
+ * Lists what is tracked under `agents/` (or all of it) of the definitions Project's Clone at a commit, from Git's
  * object store: no checkout and no working-tree change.
  */
 @Injectable()
@@ -50,7 +52,7 @@ export class ListDefinitionsTreeHandler {
       const tree = await this.git.listTreeAtCommit(
         project.id,
         input.commit,
-        AGENTS_DIRECTORY,
+        input.whole ? '' : AGENTS_DIRECTORY,
         DEFINITIONS_TREE_MAX_ENTRIES,
       );
       return { status: 'listed', entries: tree.entries, truncated: tree.truncated };

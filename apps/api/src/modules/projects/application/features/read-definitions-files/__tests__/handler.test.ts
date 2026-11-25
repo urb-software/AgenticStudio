@@ -41,15 +41,15 @@ describe('ReadDefinitionsFilesHandler', () => {
   it('reads the files of the definitions Clone at the commit, in the order given', async () => {
     await connected();
     git.readFilesAtCommit.mockResolvedValueOnce([
-      { path: PATHS[0]!, outcome: { status: 'found', text: 'hello' } },
-      { path: PATHS[1]!, outcome: { status: 'too_large' } },
+      { path: PATHS[0]!, outcome: { status: 'found', text: 'hello' }, size: 5, binary: false },
+      { path: PATHS[1]!, outcome: { status: 'too_large' }, size: 4096, binary: false },
     ]);
 
     await expect(handler.execute({ commit: HEAD, paths: PATHS, maxBytes: 100 })).resolves.toEqual({
       status: 'read',
       files: [
-        { path: PATHS[0], status: 'found', text: 'hello' },
-        { path: PATHS[1], status: 'too_large' },
+        { path: PATHS[0], status: 'found', text: 'hello', size: 5, binary: false },
+        { path: PATHS[1], status: 'too_large', size: 4096 },
       ],
     });
     expect(git.readFilesAtCommit).toHaveBeenCalledWith(DEFINITIONS, HEAD, PATHS, 100);
