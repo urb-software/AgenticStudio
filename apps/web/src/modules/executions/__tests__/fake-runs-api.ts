@@ -130,8 +130,18 @@ export const SHA = '0123456789abcdef0123456789abcdef01234567';
 
 /** Both providers available: what `GET /api/providers` answers unless a test scripts it. */
 export const BOTH_AVAILABLE: ProviderAvailabilityOutput[] = [
-  { id: 'claude_code', name: 'Claude Code', available: true },
-  { id: 'codex', name: 'Codex', available: true },
+  {
+    id: 'claude_code',
+    name: 'Claude Code',
+    available: true,
+    models: ['default', 'opus', 'sonnet', 'haiku'],
+  },
+  {
+    id: 'codex',
+    name: 'Codex',
+    available: true,
+    models: ['default', 'gpt-6.2-astra', 'gpt-6.2-sol', 'gpt-6.1-sol', 'gpt-6-luna'],
+  },
 ];
 
 /** What `GET /api/projects/:id/run-agents` answers unless a test scripts it: the two Defaults. */

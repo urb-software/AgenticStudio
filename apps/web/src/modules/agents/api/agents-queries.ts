@@ -55,6 +55,11 @@ export function useCreateDefinitionsProject() {
   });
 }
 
+/** The Providers with the models an agent may name for each (`default` first). */
+export function useProviders() {
+  return useQuery({ queryKey: ['agents', 'providers'] as const, queryFn: api.listProviders });
+}
+
 /** The agents as the API lists them (the last fetched commit of the definitions Repository). */
 const AGENTS_KEY = ['agents', 'list'] as const;
 const AGENT_KEY = ['agents', 'detail'] as const;

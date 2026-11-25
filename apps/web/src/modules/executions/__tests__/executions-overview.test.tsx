@@ -53,6 +53,29 @@ describe('Executions page', () => {
     await expect(container).toHaveNoAxeViolations();
   });
 
+  it('shows the model of each Run next to its provider, and "default" when the agent names none', async () => {
+    const agent = (model: string) => ({
+      name: 'reviewer',
+      source: 'definitions' as const,
+      commit: 'c'.repeat(40),
+      provider: 'codex' as const,
+      model,
+    });
+    fakeRunsApi([
+      aRun({ task: 'Review it', provider: 'codex', agent: agent('gpt-6.2-sol') }),
+      aRun({ task: 'Fix the build' }),
+    ]);
+    const { container } = renderExecutions();
+
+    const [first, second] = await rows();
+    expect(within(first!).getByText('Codex')).toBeTruthy();
+    expect(within(first!).getByText('gpt-6.2-sol')).toBeTruthy();
+    expect(within(first!).getByText('Model')).toBeTruthy();
+    expect(within(second!).getByText('Claude Code')).toBeTruthy();
+    expect(within(second!).getByText('default')).toBeTruthy();
+    await expect(container).toHaveNoAxeViolations();
+  });
+
   it('shows an empty state that leads to the projects, where Runs start', async () => {
     fakeRunsApi([]);
     renderExecutions();

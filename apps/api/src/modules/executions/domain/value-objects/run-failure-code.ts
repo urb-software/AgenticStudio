@@ -8,6 +8,8 @@ export const RUN_FAILURE_CODES = [
   'step_limit',
   'agent_folder_unavailable',
   'agent_folder_invalid',
+  'model_not_allowed',
+  'model_refused',
   'unknown',
 ] as const;
 export type RunFailureCode = (typeof RUN_FAILURE_CODES)[number];

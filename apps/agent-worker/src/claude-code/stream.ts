@@ -155,6 +155,11 @@ export class ClaudeStream {
     ];
   }
 
+  /** The text of the CLI's own error result, when the step ended with one. */
+  get errorText(): string | undefined {
+    return this.result?.isError ? this.result.text : undefined;
+  }
+
   /** How the step ended, once the process has exited. */
   finish(end: ProcessEnd): StepOutcome {
     if (end.spawnFailed) {

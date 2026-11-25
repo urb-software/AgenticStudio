@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BASE_RULES } from '@agentic-studio/contracts';
+import { ModelNotAllowedError } from '../model-option.js';
 import {
   checkCodexVersion,
   codexEnvironment,
@@ -56,6 +57,72 @@ describe('the Codex command (compliance record, "CLI version and command")', () 
       '0199a8f2-6c1e-7d43-9b2a-5e8f1c3d7a90',
       '-',
     ]);
+  });
+
+  it('adds only --model <name> after the approval policy on a first step', () => {
+    const args = codexStartArguments({
+      workingCopy: '/w',
+      sandbox: 'workspace-write',
+      files,
+      model: 'gpt-6.2-sol',
+    });
+
+    expect(args).toEqual([
+      ...codexStartArguments({ workingCopy: '/w', sandbox: 'workspace-write', files }).slice(0, 8),
+      '--model',
+      'gpt-6.2-sol',
+      '--output-schema',
+      '/data/runs/r1/codex/result.schema.json',
+      '--output-last-message',
+      '/data/runs/r1/codex/result.json',
+      '-',
+    ]);
+  });
+
+  it('puts --model <name> before resume on a resumed step, as the record shows', () => {
+    expect(
+      codexResumeArguments({
+        workingCopy: '/w',
+        sandbox: 'workspace-write',
+        files,
+        sessionRef: 's-1',
+        model: 'gpt-6-luna',
+      }),
+    ).toEqual([
+      'exec',
+      '--json',
+      '--cd',
+      '/w',
+      '--sandbox',
+      'workspace-write',
+      '-c',
+      'approval_policy="never"',
+      '--model',
+      'gpt-6-luna',
+      'resume',
+      's-1',
+      '-',
+    ]);
+  });
+
+  it('adds no option for the default model: the command equals the one without a model', () => {
+    const input = { workingCopy: '/w', sandbox: 'workspace-write', files } as const;
+
+    expect(codexStartArguments({ ...input, model: 'default' })).toEqual(codexStartArguments(input));
+    expect(codexResumeArguments({ ...input, sessionRef: 's', model: 'default' })).toEqual(
+      codexResumeArguments({ ...input, sessionRef: 's' }),
+    );
+    expect(codexStartArguments(input)).not.toContain('--model');
+  });
+
+  it('refuses a model outside the Provider list in both commands', () => {
+    const input = { workingCopy: '/w', sandbox: 'workspace-write', files } as const;
+    for (const model of ['opus', 'gpt-5', '-c', 'gpt-6-luna --sandbox danger-full-access']) {
+      expect(() => codexStartArguments({ ...input, model })).toThrow(ModelNotAllowedError);
+      expect(() => codexResumeArguments({ ...input, sessionRef: 's', model })).toThrow(
+        ModelNotAllowedError,
+      );
+    }
   });
 
   it('never uses ephemeral mode, the repository check bypass or a dangerous option', () => {

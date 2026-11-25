@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { ModelNotAllowedError } from '../model-option.js';
 import {
   checkClaudeVersion,
   claudeArguments,
@@ -53,6 +54,36 @@ describe("the CLI arguments (the record's Mode)", () => {
 
     expect(withPlugin).toEqual([...plain, '--plugin-dir', '/data/runs/r1/repo-plugin']);
     expect(plain).not.toContain('--plugin-dir');
+  });
+
+  it.each(['opus', 'sonnet', 'haiku'])('adds only --model %s, last, for that alias', (model) => {
+    const plain = claudeArguments(BASE);
+
+    expect(claudeArguments({ ...BASE, model })).toEqual([...plain, '--model', model]);
+    expect(claudeArguments({ ...BASE, pluginDir: FILES.pluginDir, model })).toEqual([
+      ...claudeArguments({ ...BASE, pluginDir: FILES.pluginDir }),
+      '--model',
+      model,
+    ]);
+  });
+
+  it('adds no option for the default model, so the command is the same as without one', () => {
+    expect(claudeArguments({ ...BASE, model: 'default' })).toEqual(claudeArguments(BASE));
+    expect(claudeArguments(BASE)).not.toContain('--model');
+  });
+
+  it('refuses a model outside the Provider list, whatever it looks like', () => {
+    for (const model of ['gpt-6-luna', 'claude-opus-4-1', '--bare', 'opus --bare']) {
+      expect(() => claudeArguments({ ...BASE, model })).toThrow(ModelNotAllowedError);
+    }
+  });
+
+  it('resumes a step with the model too, the same options and the stored session', () => {
+    const args = claudeArguments({ ...BASE, sessionRef: 'session-1', model: 'sonnet' });
+
+    expect(args.slice(0, 4)).toEqual(['-p', BASE.prompt, '--resume', 'session-1']);
+    expect(args.slice(4)).toEqual(claudeArguments({ ...BASE, model: 'sonnet' }).slice(2));
+    expect(args.slice(-2)).toEqual(['--model', 'sonnet']);
   });
 
   it('resumes a step with the same options and the stored session', () => {

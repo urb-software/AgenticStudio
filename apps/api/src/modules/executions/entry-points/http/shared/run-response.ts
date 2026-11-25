@@ -32,6 +32,8 @@ export const runFailureCodeSchema = z.enum([
   'step_limit',
   'agent_folder_unavailable',
   'agent_folder_invalid',
+  'model_not_allowed',
+  'model_refused',
   'unknown',
 ]);
 

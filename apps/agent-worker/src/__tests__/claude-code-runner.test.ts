@@ -20,6 +20,7 @@ import { readGuardrailSettings } from '../claude-code/guardrails.js';
 import { ClaudeCodeRunner, probeClaudeCode } from '../claude-code/runner.js';
 import { DEFAULT_PROVIDER_BINARIES } from '../config.js';
 import { GitCommandError } from '../git.js';
+import { ModelNotAllowedError, ModelRefusedError } from '../model-option.js';
 import { ProviderDisabledError, ProviderGate } from '../provider-gate.js';
 import { drainRunStep, type RunStep, UsageLimitError } from '../runner.js';
 import { agentFields } from './agent-fixtures.js';
@@ -521,6 +522,126 @@ describe('ClaudeCodeRunner at the spawn boundary', () => {
 
     expect(events.length).toBeGreaterThan(0);
     for (const event of events) expect(runnerEventSchema.safeParse(event).success).toBe(true);
+  });
+
+  const withModel = (task: string, model: string) => {
+    const base = input(task);
+    return { ...base, run: { ...base.run, agent: { ...base.run.agent, model } } };
+  };
+
+  it('starts every step with --model of the Run, last, and nothing else changed', async () => {
+    spawn.mockImplementation(() => fakeChild(recording('success')));
+    await drain(runner().start(input('Add a health check')));
+    const plain = spawn.mock.calls[0]![1] as string[];
+    spawn.mockClear();
+
+    await drain(runner().start(withModel('Add a health check', 'sonnet')));
+    spawn.mockImplementation(() => fakeChild(recording('resume')));
+    await drain(
+      runner().resume({
+        ...withModel('Add a store', 'sonnet'),
+        answer: 'PostgreSQL',
+        reason: 'follow_up',
+        sessionRef: SESSION,
+      }),
+    );
+
+    const [start, resume] = spawn.mock.calls.map((call) => call[1] as string[]);
+    expect(start).toEqual([...plain, '--model', 'sonnet']);
+    expect(resume!.slice(-2)).toEqual(['--model', 'sonnet']);
+    expect(resume).toContain('--resume');
+  });
+
+  it('starts a default-model Run with the command it had before models', async () => {
+    spawn.mockImplementation(() => fakeChild(recording('success')));
+
+    await drain(runner().start(input('Add a health check')));
+
+    expect(spawn.mock.calls[0]![1]).not.toContain('--model');
+  });
+
+  it('refuses a model outside the list before anything starts or is written', async () => {
+    const step = drain(runner().start(withModel('x', 'gpt-6-luna')));
+
+    await expect(step).rejects.toBeInstanceOf(ModelNotAllowedError);
+    expect(spawn).not.toHaveBeenCalled();
+    expect(existsSync(join(runDir, 'instructions.md'))).toBe(false);
+  });
+
+  it("ends with ModelRefusedError, the CLI's reason in the detail, when the CLI refuses the model", async () => {
+    spawn.mockImplementation(() => {
+      const child = fakeChild('', 1);
+      child.stderr.write(
+        "There's an issue with the selected model (opus). It may not exist or you may not have access to it.\n",
+      );
+      return child;
+    });
+
+    const step = drain(runner().start(withModel('x', 'opus')));
+
+    await expect(step).rejects.toBeInstanceOf(ModelRefusedError);
+    await expect(step).rejects.toThrow(
+      'The provider refused the model "opus". Claude Code exited with code 1 without a result. ' +
+        "Its error output: There's an issue with the selected model (opus).",
+    );
+  });
+
+  it('keeps a usage limit resumable when its stderr also carries a model warning', async () => {
+    spawn.mockImplementation(() => {
+      const child = fakeChild(recording('usage-limit'), 1);
+      child.stderr.write('Warning: model opus not found, using fallback metadata\n');
+      return child;
+    });
+
+    const step = drain(runner().start(withModel('x', 'opus')));
+
+    await expect(step).rejects.toBeInstanceOf(UsageLimitError);
+    await expect(step).rejects.toMatchObject({ sessionRef: SESSION });
+  });
+
+  it('keeps an invalid result an agent failure when stderr ends with a model warning', async () => {
+    spawn.mockImplementation(() => {
+      const child = fakeChild(recording('invalid-result'));
+      child.stderr.write('Model metadata for opus not found; using fallback metadata');
+      return child;
+    });
+
+    const step = drain(runner().start(withModel('x', 'opus')));
+
+    await expect(step).rejects.not.toBeInstanceOf(ModelRefusedError);
+    await expect(step).rejects.toThrow('Claude Code ended without a valid structured result.');
+  });
+
+  it('does not call an overloaded model a refusal', async () => {
+    spawn.mockImplementation(() => {
+      const child = fakeChild('', 1);
+      child.stderr.write('The model is overloaded and not available right now.\n');
+      return child;
+    });
+
+    await expect(drain(runner().start(withModel('x', 'opus')))).rejects.not.toBeInstanceOf(
+      ModelRefusedError,
+    );
+  });
+
+  it('keeps any other failure an agent failure, and a default-model Run too', async () => {
+    spawn.mockImplementation(() => {
+      const child = fakeChild('', 1);
+      child.stderr.write('Error: invalid settings file\n');
+      return child;
+    });
+    await expect(drain(runner().start(withModel('x', 'opus')))).rejects.toThrow(
+      /^Claude Code exited with code 1/,
+    );
+    await expect(drain(runner().start(withModel('x', 'opus')))).rejects.not.toBeInstanceOf(
+      ModelRefusedError,
+    );
+    spawn.mockImplementation(() => {
+      const child = fakeChild('', 1);
+      child.stderr.write('There is an issue with the selected model (x).\n');
+      return child;
+    });
+    await expect(drain(runner().start(input('x')))).rejects.not.toBeInstanceOf(ModelRefusedError);
   });
 
   it('ends a usage limit with UsageLimitError and the session', async () => {
