@@ -145,6 +145,129 @@ export type DefinitionsRepositoryOutput = {
     } | null;
 };
 
+export type AgentsRepositoryOutput = {
+    state: 'awaiting_key' | 'awaiting_host_key' | 'connecting' | 'ready' | 'fetching' | 'failed' | 'disconnecting';
+    /**
+     * Why the agents are the last known ones, or none; null when all is well.
+     */
+    note: string | null;
+};
+
+export type AgentSummaryOutput = {
+    name: string;
+    /**
+     * Null for an agent that is not usable.
+     */
+    description: string | null;
+    /**
+     * Null for an agent that is not usable.
+     */
+    provider: 'claude_code' | 'codex' | null;
+    /**
+     * Null for an agent that is not usable.
+     */
+    model: string | null;
+    /**
+     * A built-in Default agent, or a folder of the definitions Repository.
+     */
+    source: 'built_in' | 'definitions';
+    /**
+     * False while the definition has problems.
+     */
+    usable: boolean;
+    problems: Array<AgentProblemOutput>;
+};
+
+export type AgentProblemOutput = {
+    code: 'entry_missing' | 'entry_unreadable' | 'front_matter_missing' | 'front_matter_malformed' | 'front_matter_too_large' | 'key_missing' | 'key_invalid' | 'provider_unknown' | 'model_unknown' | 'name_invalid' | 'name_mismatch' | 'name_reserved' | 'unknown_key' | 'forbidden_key' | 'instructions_too_large' | 'too_many_files' | 'file_too_large' | 'folder_too_large' | 'path_outside_folder' | 'nested_git' | 'symlink_refused' | 'kind_refused' | 'duplicate_path' | 'size_invalid' | 'cli_config_path' | 'short_name';
+    /**
+     * The file or folder the problem is about, relative to the agent folder.
+     */
+    path: string;
+    /**
+     * The front matter key, when the problem is about one.
+     */
+    key: string | null;
+    /**
+     * Fixed wording per code; never a value or file content.
+     */
+    message: string;
+};
+
+export type AgentListOutput = {
+    /**
+     * The commit of the definitions Repository the agents were read at; null when none was.
+     */
+    commit: string | null;
+    /**
+     * Null when no definitions Repository is connected.
+     */
+    repository: AgentsRepositoryOutput | null;
+    /**
+     * True when more agent folders exist than are listed.
+     */
+    truncated: boolean;
+    /**
+     * The rules every Run gets before the instructions of its agent. Read-only.
+     */
+    baseRules: {
+        version: string;
+        /**
+         * Plain text, not Markdown. The instructions of an agent come after.
+         */
+        text: string;
+    };
+    agents: Array<AgentSummaryOutput>;
+};
+
+export type AgentDetailAgentOutput = {
+    name: string;
+    /**
+     * Null for an agent that is not usable.
+     */
+    description: string | null;
+    /**
+     * Null for an agent that is not usable.
+     */
+    provider: 'claude_code' | 'codex' | null;
+    /**
+     * Null for an agent that is not usable.
+     */
+    model: string | null;
+    /**
+     * A built-in Default agent, or a folder of the definitions Repository.
+     */
+    source: 'built_in' | 'definitions';
+    /**
+     * False while the definition has problems.
+     */
+    usable: boolean;
+    problems: Array<AgentProblemOutput>;
+    /**
+     * Plain text, never Markdown or HTML to render; empty for a built-in agent.
+     */
+    instructions: string;
+    /**
+     * Every file of the agent folder with its size in bytes; empty for a built-in.
+     */
+    files: Array<{
+        path: string;
+        size: number;
+    }>;
+};
+
+export type AgentDetailOutput = {
+    /**
+     * The commit of the definitions Repository the agents were read at; null when none was.
+     */
+    commit: string | null;
+    /**
+     * Null when no definitions Repository is connected.
+     */
+    repository: AgentsRepositoryOutput | null;
+    agent: AgentDetailAgentOutput;
+};
+
 export type StartRunRequest = {
     task: string;
     provider: 'claude_code' | 'codex';
@@ -1296,6 +1419,56 @@ export type GetDefinitionsRepositoryResponses = {
 };
 
 export type GetDefinitionsRepositoryResponse = GetDefinitionsRepositoryResponses[keyof GetDefinitionsRepositoryResponses];
+
+export type ListAgentsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/agents';
+};
+
+export type ListAgentsErrors = {
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type ListAgentsError = ListAgentsErrors[keyof ListAgentsErrors];
+
+export type ListAgentsResponses = {
+    200: AgentListOutput;
+};
+
+export type ListAgentsResponse = ListAgentsResponses[keyof ListAgentsResponses];
+
+export type GetAgentData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/agents/{name}';
+};
+
+export type GetAgentErrors = {
+    /**
+     * Unknown agent (urn:agentic-studio:problem:agent-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type GetAgentError = GetAgentErrors[keyof GetAgentErrors];
+
+export type GetAgentResponses = {
+    200: AgentDetailOutput;
+};
+
+export type GetAgentResponse = GetAgentResponses[keyof GetAgentResponses];
 
 export type ListProjectRunsData = {
     body?: never;

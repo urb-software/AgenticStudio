@@ -105,7 +105,7 @@ export function pushFiles(
   fixture: GitFixture,
   branch: string,
   base: string,
-  files: Record<string, string>,
+  files: Record<string, string | Buffer>,
 ): string {
   git(fixture.work, ['checkout', '--quiet', '-B', branch, base]);
   for (const [path, content] of Object.entries(files)) {

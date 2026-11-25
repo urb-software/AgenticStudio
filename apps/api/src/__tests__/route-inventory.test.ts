@@ -68,6 +68,8 @@ describe('route and guard inventory', () => {
         "DELETE /api/projects/:id/repository [session]",
         "DELETE /api/runs/:runId/pull-request/failing-checks/prepared [session]",
         "GET /api/agent-worker [session]",
+        "GET /api/agents [session]",
+        "GET /api/agents/:name [session]",
         "GET /api/agents/definitions-repository [session]",
         "GET /api/controller/operations/:operationId/source [controller-token]",
         "GET /api/previews [session]",

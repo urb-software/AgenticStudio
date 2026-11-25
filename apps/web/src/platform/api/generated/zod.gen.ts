@@ -138,6 +138,95 @@ export const zDefinitionsRepositoryOutput = z.object({
     }).nullable()
 });
 
+export const zAgentsRepositoryOutput = z.object({
+    state: z.enum([
+        'awaiting_key',
+        'awaiting_host_key',
+        'connecting',
+        'ready',
+        'fetching',
+        'failed',
+        'disconnecting'
+    ]),
+    note: z.string().nullable()
+});
+
+export const zAgentProblemOutput = z.object({
+    code: z.enum([
+        'entry_missing',
+        'entry_unreadable',
+        'front_matter_missing',
+        'front_matter_malformed',
+        'front_matter_too_large',
+        'key_missing',
+        'key_invalid',
+        'provider_unknown',
+        'model_unknown',
+        'name_invalid',
+        'name_mismatch',
+        'name_reserved',
+        'unknown_key',
+        'forbidden_key',
+        'instructions_too_large',
+        'too_many_files',
+        'file_too_large',
+        'folder_too_large',
+        'path_outside_folder',
+        'nested_git',
+        'symlink_refused',
+        'kind_refused',
+        'duplicate_path',
+        'size_invalid',
+        'cli_config_path',
+        'short_name'
+    ]),
+    path: z.string(),
+    key: z.string().nullable(),
+    message: z.string()
+});
+
+export const zAgentSummaryOutput = z.object({
+    name: z.string(),
+    description: z.string().nullable(),
+    provider: z.enum(['claude_code', 'codex']).nullable(),
+    model: z.string().nullable(),
+    source: z.enum(['built_in', 'definitions']),
+    usable: z.boolean(),
+    problems: z.array(zAgentProblemOutput)
+});
+
+export const zAgentListOutput = z.object({
+    commit: z.string().nullable(),
+    repository: zAgentsRepositoryOutput.nullable(),
+    truncated: z.boolean(),
+    baseRules: z.object({
+        version: z.string(),
+        text: z.string()
+    }),
+    agents: z.array(zAgentSummaryOutput)
+});
+
+export const zAgentDetailAgentOutput = z.object({
+    name: z.string(),
+    description: z.string().nullable(),
+    provider: z.enum(['claude_code', 'codex']).nullable(),
+    model: z.string().nullable(),
+    source: z.enum(['built_in', 'definitions']),
+    usable: z.boolean(),
+    problems: z.array(zAgentProblemOutput),
+    instructions: z.string(),
+    files: z.array(z.object({
+        path: z.string(),
+        size: z.int().gte(0).lte(9007199254740991)
+    }))
+});
+
+export const zAgentDetailOutput = z.object({
+    commit: z.string().nullable(),
+    repository: zAgentsRepositoryOutput.nullable(),
+    agent: zAgentDetailAgentOutput
+});
+
 export const zStartRunRequest = z.object({
     task: z.string().min(1).max(20000),
     provider: z.enum(['claude_code', 'codex'])
@@ -1338,6 +1427,14 @@ export const zSetMergeMethodPath = z.object({
 export const zSetMergeMethodResponse = zProjectOutput;
 
 export const zGetDefinitionsRepositoryResponse = zDefinitionsRepositoryOutput;
+
+export const zListAgentsResponse = zAgentListOutput;
+
+export const zGetAgentPath = z.object({
+    name: z.string()
+});
+
+export const zGetAgentResponse = zAgentDetailOutput;
 
 export const zListProjectRunsPath = z.object({
     id: z.string()
