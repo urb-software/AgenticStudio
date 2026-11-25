@@ -41,10 +41,9 @@ export interface AgentFolderFile {
 }
 
 /**
- * `found`: every file of the folder except its entry file `AGENT.md`, by path. `invalid`: the folder
- * fails the shared validation. `unavailable`: the folder is gone at that commit (no such folder, no
- * Clone or commit). `unreadable`: it could not be read now: `read_failed` (Git failed, retry may
- * work) or `tree_cut` (the listing was cut, so the folder may be partial).
+ * `found`: the folder's files except `AGENT.md`. `invalid`: it fails the shared validation.
+ * `unavailable`: gone at that commit. `unreadable`: not readable now (`read_failed`: retry may
+ * work; `tree_cut`: the listing was cut, so the folder may be partial).
  */
 export type AgentFolderRead =
   | { status: 'found'; files: AgentFolderFile[] }

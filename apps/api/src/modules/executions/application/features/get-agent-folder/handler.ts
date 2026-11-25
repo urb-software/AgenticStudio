@@ -23,10 +23,8 @@ export interface GetAgentFolderResult {
 }
 
 /**
- * The files of the Run's recorded agent at its recorded commit, for the worker that holds the Run.
- * The caller names neither agent nor commit. Throws {@link RunNotFoundError},
- * {@link RunNotHeldError}, {@link AgentFolderUnavailableError}, {@link AgentFolderInvalidError},
- * {@link AgentFolderReadFailedError} or {@link AgentFolderCutError}.
+ * The files of the Run's recorded agent at its recorded commit, for the worker that holds the Run;
+ * the caller names neither. Throws a `RunNotFoundError`, `RunNotHeldError` or an `AgentFolder…Error`.
  */
 @Injectable()
 export class GetAgentFolderHandler {
