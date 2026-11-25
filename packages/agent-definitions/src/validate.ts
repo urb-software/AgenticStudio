@@ -65,12 +65,16 @@ const IGNORED_IN_NAMES = /[\u200c-\u200f\u202a-\u202e\u206a-\u206f\ufeff]/g;
 const SHORT_NAME = /^[^.~]{1,6}~\d+(\.[^.]{0,3})?$/i;
 const CLI_FILES = new Set(CLI_DISCOVERED_FILES.map((name) => name.toLowerCase()));
 
+/** The text without its trailing dots and spaces, cut by a scan, not a pattern that can backtrack. */
+function trimTrailingDotsAndSpaces(text: string): string {
+  let end = text.length;
+  while (end > 0 && (text[end - 1] === '.' || text[end - 1] === ' ')) end -= 1;
+  return text.slice(0, end);
+}
+
 /** A name as another file system may compare it: no ignored characters or trailing dots. */
 function plainName(segment: string): string {
-  return segment
-    .replace(IGNORED_IN_NAMES, '')
-    .replace(/[. ]+$/, '')
-    .toLowerCase();
+  return trimTrailingDotsAndSpaces(segment.replace(IGNORED_IN_NAMES, '')).toLowerCase();
 }
 
 /** True for a segment that Git, or a file system on an operator's machine, reads as `.git`. */
