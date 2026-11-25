@@ -599,6 +599,19 @@ describe('ClaudeCodeRunner at the spawn boundary', () => {
     await expect(step).rejects.toMatchObject({ sessionRef: SESSION });
   });
 
+  it('keeps an invalid result an agent failure when stderr ends with a model warning', async () => {
+    spawn.mockImplementation(() => {
+      const child = fakeChild(recording('invalid-result'));
+      child.stderr.write('Model metadata for opus not found; using fallback metadata');
+      return child;
+    });
+
+    const step = drain(runner().start(withModel('x', 'opus')));
+
+    await expect(step).rejects.not.toBeInstanceOf(ModelRefusedError);
+    await expect(step).rejects.toThrow('Claude Code ended without a valid structured result.');
+  });
+
   it('does not call an overloaded model a refusal', async () => {
     spawn.mockImplementation(() => {
       const child = fakeChild('', 1);

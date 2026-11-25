@@ -122,6 +122,21 @@ Error: exiting`,
     expect(error.message).not.toContain('exiting');
   });
 
+  it('does not scan the stderr suffix of an error that has a reason of its own', () => {
+    const warning = 'Model metadata for gpt-6-luna not found; using fallback metadata';
+    const own = 'Codex ended without a valid structured result.';
+    const shown = new AgentFailedError(`${own} Its error output: ${warning}`);
+
+    const error = classifyModelFailure(new AgentFailedError(own), 'gpt-6-luna', {
+      lastErrorLine: warning,
+      detail: shown.message,
+    });
+
+    expect(error).toBeInstanceOf(AgentFailedError);
+    expect(error).not.toBeInstanceOf(ModelRefusedError);
+    expect(error.message).toBe(shown.message);
+  });
+
   it('never reclassifies a usage limit, an invalid result or a default-model step', () => {
     const limit = new UsageLimitError('limit', 'sess-1');
     expect(classifyModelFailure(limit, 'opus', { lastErrorLine: refusal })).toBe(limit);

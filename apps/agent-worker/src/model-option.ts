@@ -72,6 +72,8 @@ export interface StepEndReason {
   streamReason?: string | undefined;
   /** The last line of its standard error. */
   lastErrorLine?: string | undefined;
+  /** What the Run shows for the failure, when it is more than the error's own message. */
+  detail?: string | undefined;
 }
 
 /**
@@ -80,16 +82,19 @@ export interface StepEndReason {
  * Anything else (usage limit, invalid result, `default` model) is returned as it is.
  */
 export function classifyModelFailure(error: Error, model: string, end: StepEndReason): Error {
-  if (model === MODEL_DEFAULT || !(error instanceof AgentFailedError)) return error;
+  if (!(error instanceof AgentFailedError)) return error;
+  const shown = end.detail ?? error.message;
+  const unchanged = end.detail === undefined ? error : new AgentFailedError(shown);
+  if (model === MODEL_DEFAULT) return unchanged;
   const texts = [end.streamReason, error.message];
   if (NO_REASON_OF_ITS_OWN.test(error.message)) texts.push(end.lastErrorLine);
   const hit = texts
     .flatMap((text) => (text ?? '').split('\n'))
     .map((text) => text.trim())
     .find(refusesModel);
-  if (hit === undefined) return error;
-  const quoted = error.message.includes(hit) ? '' : ` The CLI said: ${cut(hit)}`;
-  return new ModelRefusedError(model, `${error.message}${quoted}`);
+  if (hit === undefined) return unchanged;
+  const quoted = shown.includes(hit) ? '' : ` The CLI said: ${cut(hit)}`;
+  return new ModelRefusedError(model, `${shown}${quoted}`);
 }
 
-const cut = (text: string): string => (text.length > 500 ? `${text.slice(0, 499)}�` : text);
+const cut = (text: string): string => (text.length > 500 ? `${text.slice(0, 499)}…` : text);

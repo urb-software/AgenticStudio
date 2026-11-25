@@ -61,6 +61,9 @@ const root = mkdtempSync(join(tmpdir(), 'studio-claude-model-smoke-'));
 process.on('exit', () => {
   if (!keep) rmSync(root, { recursive: true, force: true });
 });
+// A signal skips the exit handler unless the process exits itself (130 and 143 by convention).
+process.on('SIGINT', () => process.exit(130));
+process.on('SIGTERM', () => process.exit(143));
 const runDir = join(root, 'run');
 const repoDir = join(runDir, 'repo');
 mkdirSync(repoDir, { recursive: true });

@@ -286,12 +286,15 @@ export class CodexRunner implements Runner {
     for (const event of outcome.events) yield event;
     if ('result' in outcome) return outcome.result;
     // A model the CLI refuses ends the Run as such, with the CLI's own line as the reason.
-    const fail = (error: Error) =>
-      classifyModelFailure(error, model, { lastErrorLine: errorOutput.split('\n').at(-1) });
+    const fail = (error: Error, detail?: string) =>
+      classifyModelFailure(error, model, {
+        lastErrorLine: errorOutput.split('\n').at(-1),
+        detail,
+      });
     if (errorOutput === '') throw fail(outcome.error);
     yield { type: 'notice', text: `Codex's error output: ${errorOutput}` };
     if (outcome.error instanceof AgentFailedError) {
-      throw fail(new AgentFailedError(`${outcome.error.message} ${errorReason(errorOutput)}`));
+      throw fail(outcome.error, `${outcome.error.message} ${errorReason(errorOutput)}`);
     }
     throw fail(outcome.error);
   }

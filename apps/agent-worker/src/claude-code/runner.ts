@@ -179,17 +179,18 @@ export class ClaudeCodeRunner implements Runner {
     if ('result' in outcome) return outcome.result;
     const errorOutput = stderr.trim();
     // A model the CLI refuses ends the Run as such, with the CLI's own line as the reason.
-    const fail = (error: Error) =>
+    const fail = (error: Error, detail?: string) =>
       classifyModelFailure(error, model, {
         streamReason: stream.errorText,
         lastErrorLine: errorOutput.split('\n').at(-1),
+        detail,
       });
     if (errorOutput === '') throw fail(outcome.error);
     yield { type: 'notice', text: `Claude Code's error output: ${errorOutput}` };
     // The CLI's own reason goes into the failure detail too, so the operator sees it on the Run
     // without opening the log; Studio redacts the detail.
     if (outcome.error instanceof AgentFailedError) {
-      throw fail(new AgentFailedError(`${outcome.error.message} ${errorReason(errorOutput)}`));
+      throw fail(outcome.error, `${outcome.error.message} ${errorReason(errorOutput)}`);
     }
     throw fail(outcome.error);
   }

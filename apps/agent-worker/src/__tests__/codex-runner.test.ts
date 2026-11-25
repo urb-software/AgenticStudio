@@ -603,6 +603,32 @@ describe('CodexRunner at the spawn boundary', () => {
     await expect(step).rejects.toMatchObject({ sessionRef: THREAD });
   });
 
+  it('keeps an invalid result an agent failure when stderr ends with a model warning', async () => {
+    spawn.mockImplementation(() => {
+      const child = fakeChild(recording('success'));
+      child.stderr.write('Model metadata for gpt-6-luna not found; using fallback metadata');
+      return child;
+    });
+
+    const step = drain(runner().start(withModel('x', 'gpt-6-luna')));
+
+    await expect(step).rejects.not.toBeInstanceOf(ModelRefusedError);
+    await expect(step).rejects.toThrow('Codex ended without a valid structured result.');
+  });
+
+  it('keeps an unrelated failed turn an agent failure when stderr ends with a model warning', async () => {
+    spawn.mockImplementation(() => {
+      const child = fakeChild(recording('turn-failed'), 1);
+      child.stderr.write('Model metadata for gpt-6-luna not found; using fallback metadata');
+      return child;
+    });
+
+    const step = drain(runner().start(withModel('x', 'gpt-6-luna')));
+
+    await expect(step).rejects.toBeInstanceOf(AgentFailedError);
+    await expect(step).rejects.not.toBeInstanceOf(ModelRefusedError);
+  });
+
   it('does not call an overloaded model a refusal', async () => {
     spawn.mockImplementation(() => {
       const child = fakeChild('', 1);
