@@ -31,8 +31,9 @@ export class AppModule {
     } = {},
   ): DynamicModule {
     // One instance each: `executions`, `environments` and `agents` import `projects`, and
-    // `executions` imports `environments`, to reach their public contracts.
+    // `executions` imports `environments` and `agents`, to reach their public contracts.
     const projects = ProjectsModule.register(options.projects);
+    const agents = AgentsModule.register(projects);
     const environments = EnvironmentsModule.register(projects, options.environments);
     return {
       module: AppModule,
@@ -45,8 +46,8 @@ export class AppModule {
         SecretsModule,
         AuthModule,
         projects,
-        AgentsModule.register(projects),
-        ExecutionsModule.register(projects, environments, options.executions),
+        agents,
+        ExecutionsModule.register(projects, environments, agents, options.executions),
         environments,
       ],
     };

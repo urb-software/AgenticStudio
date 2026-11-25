@@ -167,6 +167,11 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
         data: {
           projectId: projects.get(spec.project)!,
           provider: 'codex',
+          agentName: 'default-codex',
+          agentSource: 'built_in',
+          agentProvider: 'codex',
+          agentModel: 'default',
+          agentInstructions: '',
           task: 'Add a health check',
           startCommit: 'a'.repeat(40),
           remoteUrl: 'https://git.example.test/acme/shop.git',

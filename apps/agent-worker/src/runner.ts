@@ -4,7 +4,6 @@ import type {
   RunPayload,
   RunStepResult,
 } from '@agentic-studio/contracts';
-import type { AgentDefinition } from './agent-definition/index.js';
 import type { ProcessGroupRegistry } from './spawn-boundary.js';
 
 /**
@@ -24,6 +23,7 @@ export interface RunWorkspace {
 }
 
 export interface StartRunStepInput {
+  /** It carries the base rules and the recorded agent that a real runner gives its agent. */
   run: RunPayload;
   workspace: RunWorkspace;
   /**
@@ -34,11 +34,6 @@ export interface StartRunStepInput {
   signal: AbortSignal;
   /** Where the step's process groups are registered; `spawnProviderCli` does it. */
   processes: ProcessGroupRegistry;
-  /**
-   * The built-in agent definition: a real runner gives it to its agent with the
-   * Task (it says when to ask the operator and what the structured result is).
-   */
-  agentDefinition: AgentDefinition;
 }
 
 /**

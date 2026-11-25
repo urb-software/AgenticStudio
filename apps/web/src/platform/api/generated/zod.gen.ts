@@ -24,6 +24,7 @@ export const zProjectOutput = z.object({
     name: z.string(),
     mergeMethod: z.enum(['squash', 'merge_commit']),
     kind: z.enum(['code', 'definitions']),
+    defaultAgent: z.string().nullable(),
     createdAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/)
 });
 
@@ -55,6 +56,7 @@ export const zProjectDetailOutput = z.object({
     name: z.string(),
     mergeMethod: z.enum(['squash', 'merge_commit']),
     kind: z.enum(['code', 'definitions']),
+    defaultAgent: z.string().nullable(),
     createdAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/),
     repository: zRepositorySummaryOutput.nullable()
 });
@@ -116,6 +118,10 @@ export const zEnvironmentFileInfoOutput = z.object({
 
 export const zSetMergeMethodRequest = z.object({
     mergeMethod: z.enum(['squash', 'merge_commit'])
+});
+
+export const zSetDefaultAgentRequest = z.object({
+    agent: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/).nullable()
 });
 
 export const zDefinitionsRepositoryOutput = z.object({
@@ -227,13 +233,37 @@ export const zAgentDetailOutput = z.object({
     agent: zAgentDetailAgentOutput
 });
 
+export const zRunAgentOptionOutput = z.object({
+    name: z.string(),
+    description: z.string().nullable(),
+    provider: z.enum(['claude_code', 'codex']),
+    model: z.string(),
+    source: z.enum(['built_in', 'definitions'])
+});
+
+export const zRunAgentListOutput = z.object({
+    agents: z.array(zRunAgentOptionOutput),
+    preselected: z.string(),
+    preselectedReason: z.string().nullable()
+});
+
 export const zStartRunRequest = z.object({
     task: z.string().min(1).max(20000),
-    provider: z.enum(['claude_code', 'codex'])
+    agent: z.string().min(1).max(64).optional(),
+    provider: z.enum(['claude_code', 'codex']).optional()
 });
 
 export const zStartRunResponseOutput = z.object({
     id: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/)
+});
+
+export const zRunAgentOutput = z.object({
+    name: z.string(),
+    source: z.enum(['built_in', 'definitions']),
+    commit: z.string().nullable(),
+    provider: z.enum(['claude_code', 'codex']),
+    model: z.string(),
+    instructions: z.string().optional()
 });
 
 export const zRunLimitsOutput = z.object({
@@ -444,6 +474,7 @@ export const zRunOutput = z.object({
     id: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
     projectId: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
     provider: z.enum(['claude_code', 'codex']),
+    agent: zRunAgentOutput,
     task: z.string(),
     state: z.enum([
         'queued',
@@ -1426,6 +1457,14 @@ export const zSetMergeMethodPath = z.object({
 
 export const zSetMergeMethodResponse = zProjectOutput;
 
+export const zSetDefaultAgentBody = zSetDefaultAgentRequest;
+
+export const zSetDefaultAgentPath = z.object({
+    id: z.string()
+});
+
+export const zSetDefaultAgentResponse = zProjectOutput;
+
 export const zGetDefinitionsRepositoryResponse = zDefinitionsRepositoryOutput;
 
 export const zListAgentsResponse = zAgentListOutput;
@@ -1435,6 +1474,12 @@ export const zGetAgentPath = z.object({
 });
 
 export const zGetAgentResponse = zAgentDetailOutput;
+
+export const zListRunAgentsPath = z.object({
+    id: z.string()
+});
+
+export const zListRunAgentsResponse = zRunAgentListOutput;
 
 export const zListProjectRunsPath = z.object({
     id: z.string()

@@ -1,4 +1,3 @@
-import { AGENT_DEFINITION } from '../agent-definition/index.js';
 import { type RunPayload, runPayloadSchema, type RunStepResult } from '@agentic-studio/contracts';
 import { randomBytes } from 'node:crypto';
 import { EventEmitter } from 'node:events';
@@ -17,6 +16,7 @@ import { RunnerDispatcher } from '../runner-dispatcher.js';
 import { type ProviderCli, spawnProviderCli } from '../spawn-boundary.js';
 import { AgentWorker, type WorkerApi } from '../worker.js';
 import type { WorkingCopyPort } from '../working-copy.js';
+import { agentFields } from './agent-fixtures.js';
 
 // The negative tests of the provider enablement gate, with spawn mocked so each asserts whether
 // it was called (docs/engineering/quality.md §10).
@@ -39,6 +39,7 @@ const payload = (provider: RunPayload['provider'], task = 'Fix the login bug'): 
   runId: '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b',
   projectId: '3a5c7e9b-2d4f-4a6c-8e0b-1d3f5a7c9e2b',
   provider,
+  ...agentFields(provider),
   task,
   startCommit: 'a'.repeat(40),
   repository: { remoteUrl: 'https://git.example.test/acme/shop.git' },
@@ -119,7 +120,6 @@ class CliRunner implements Runner {
       workspace: WORKSPACE,
       signal: new AbortController().signal,
       processes: NO_GROUPS,
-      agentDefinition: AGENT_DEFINITION,
     });
   }
 }
@@ -279,7 +279,6 @@ describe('provider enablement gate (quality.md §10)', () => {
         sessionRef: 'session-1',
         signal: new AbortController().signal,
         processes: NO_GROUPS,
-        agentDefinition: AGENT_DEFINITION,
       });
 
       await expect(resume.next()).rejects.toBeInstanceOf(ProviderDisabledError);
@@ -501,7 +500,6 @@ describe("the negative tests on the Claude Code runner's spawn path", () => {
       workspace: WORKSPACE,
       signal: new AbortController().signal,
       processes: NO_GROUPS,
-      agentDefinition: AGENT_DEFINITION,
     };
 
     await expect(runner.start(input).next()).rejects.toBeInstanceOf(ProviderDisabledError);
@@ -548,7 +546,6 @@ describe("the negative tests on the Codex runner's spawn path", () => {
       workspace: WORKSPACE,
       signal: new AbortController().signal,
       processes: NO_GROUPS,
-      agentDefinition: AGENT_DEFINITION,
     };
 
     await expect(runner.start(input).next()).rejects.toBeInstanceOf(ProviderDisabledError);

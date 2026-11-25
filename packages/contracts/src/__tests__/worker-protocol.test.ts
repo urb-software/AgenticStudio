@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AGENT_INSTRUCTIONS_MAX_BYTES,
   ANSWER_MAX_LENGTH,
   appendRunEventsRequestSchema,
   claimLookupsResponseSchema,
@@ -65,11 +66,25 @@ const WORKER_ID = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
 const RUN_ID = '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b';
 const PROJECT_ID = '3a5c7e9b-2d4f-4a6c-8e0b-1d3f5a7c9e2b';
 
+/** The base rules and the built-in Default agent every claim of a Claude Code Run carries. */
+const AGENT_FIELDS = {
+  baseRules: { version: '2026-11-19.1', text: 'Base rules text.' },
+  agent: {
+    name: 'default-claude-code',
+    source: 'built_in',
+    commit: null,
+    provider: 'claude_code',
+    model: 'default',
+    instructions: '',
+  },
+};
+
 describe('run payload (claim response)', () => {
   const payload = {
     runId: RUN_ID,
     projectId: PROJECT_ID,
     provider: 'claude_code',
+    ...AGENT_FIELDS,
     task: 'Add a health check',
     startCommit: 'a'.repeat(40),
     repository: { remoteUrl: 'git@github.com:acme/shop.git' },
@@ -82,6 +97,67 @@ describe('run payload (claim response)', () => {
 
   it('accepts exactly what a Run needs', () => {
     expect(runPayloadSchema.parse(payload)).toEqual(payload);
+  });
+
+  describe('the base rules and the recorded agent', () => {
+    const definitions = {
+      name: 'reviewer',
+      source: 'definitions',
+      commit: 'b'.repeat(40),
+      provider: 'claude_code',
+      model: 'opus',
+      instructions: 'Review carefully.',
+    };
+    const valid = (patch: object) => runPayloadSchema.safeParse({ ...payload, ...patch }).success;
+
+    it('carries a definitions agent with its commit', () => {
+      expect(valid({ agent: definitions })).toBe(true);
+    });
+
+    it('requires both, since the worker and Studio deploy together', () => {
+      const { baseRules: _rules, ...withoutRules } = payload;
+      const { agent: _agent, ...withoutAgent } = payload;
+      void _rules;
+      void _agent;
+
+      expect(runPayloadSchema.safeParse(withoutRules).success).toBe(false);
+      expect(runPayloadSchema.safeParse(withoutAgent).success).toBe(false);
+    });
+
+    it('ties the commit to the source', () => {
+      expect(valid({ agent: { ...definitions, commit: null } })).toBe(false);
+      expect(valid({ agent: { ...payload.agent, commit: 'b'.repeat(40) } })).toBe(false);
+      expect(valid({ agent: { ...definitions, commit: 'main' } })).toBe(false);
+    });
+
+    it('keeps the Provider of the Run the Provider of its agent', () => {
+      expect(valid({ provider: 'codex' })).toBe(false);
+      expect(valid({ provider: 'codex', agent: { ...definitions, provider: 'codex' } })).toBe(true);
+    });
+
+    it('bounds the instructions in UTF-8 bytes, not characters', () => {
+      const fits = 'é'.repeat(AGENT_INSTRUCTIONS_MAX_BYTES / 2);
+      const over = 'é'.repeat(AGENT_INSTRUCTIONS_MAX_BYTES / 2 + 1);
+
+      expect(valid({ agent: { ...definitions, instructions: fits } })).toBe(true);
+      expect(valid({ agent: { ...definitions, instructions: over } })).toBe(false);
+    });
+
+    it('bounds the instructions and refuses unknown fields', () => {
+      expect(
+        valid({
+          agent: { ...definitions, instructions: 'x'.repeat(AGENT_INSTRUCTIONS_MAX_BYTES) },
+        }),
+      ).toBe(true);
+      expect(
+        valid({
+          agent: { ...definitions, instructions: 'x'.repeat(AGENT_INSTRUCTIONS_MAX_BYTES + 1) },
+        }),
+      ).toBe(false);
+      expect(valid({ agent: { ...definitions, tools: ['bash'] } })).toBe(false);
+      expect(valid({ baseRules: { ...payload.baseRules, extra: 1 } })).toBe(false);
+      expect(valid({ baseRules: { ...payload.baseRules, text: '' } })).toBe(false);
+    });
   });
 
   it('hands out a Run to start or, after a retry request, only to deliver', () => {
@@ -291,7 +367,11 @@ describe('run payload (claim response)', () => {
   });
 
   it('accepts both providers and nothing else', () => {
-    expect(runPayloadSchema.safeParse({ ...payload, provider: 'codex' }).success).toBe(true);
+    const codex = {
+      provider: 'codex',
+      agent: { ...payload.agent, name: 'default-codex', provider: 'codex' },
+    };
+    expect(runPayloadSchema.safeParse({ ...payload, ...codex }).success).toBe(true);
     expect(runPayloadSchema.safeParse({ ...payload, provider: 'gpt' }).success).toBe(false);
   });
 
@@ -309,6 +389,7 @@ describe('Environment file', () => {
     runId: RUN_ID,
     projectId: PROJECT_ID,
     provider: 'claude_code',
+    ...AGENT_FIELDS,
     task: 'Add a health check',
     startCommit: 'a'.repeat(40),
     repository: { remoteUrl: 'git@github.com:acme/shop.git' },
@@ -1052,6 +1133,7 @@ describe('a Follow-up with a new Environment file snapshot', () => {
     runId: RUN_ID,
     projectId: PROJECT_ID,
     provider: 'claude_code',
+    ...AGENT_FIELDS,
     task: 'Add a health check',
     startCommit: 'a'.repeat(40),
     repository: { remoteUrl: 'git@github.com:acme/shop.git' },
@@ -1576,6 +1658,7 @@ describe('bringing a Run branch up to date', () => {
     runId: '0b8e5c2d-3f4a-4b6c-8d9e-1a2b3c4d5e6f',
     projectId: '7c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f',
     provider: 'claude_code',
+    ...AGENT_FIELDS,
     task: 'Add the thing',
     startCommit: 'a'.repeat(40),
     repository: { remoteUrl: 'https://github.com/o/r.git' },

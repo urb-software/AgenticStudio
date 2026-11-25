@@ -17,6 +17,7 @@ import { type GitOptions, GitRunner } from '../git.js';
 import { type PreparedRun, WorkingCopies } from '../working-copy.js';
 import { createRemote, type FixtureRemote, git, isolatedGitEnv } from './fixtures/git-fixture.js';
 import { type StubGitHub, startStubGitHub } from './fixtures/stub-github.js';
+import { agentFields } from './agent-fixtures.js';
 
 // Delivering a Run's result from a real Working copy to a fixture remote and a stub of GitHub.
 
@@ -99,6 +100,7 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
       runId: randomUUID(),
       projectId: '3a5c7e9b-2d4f-4a6c-8e0b-1d3f5a7c9e2b',
       provider: 'claude_code',
+      ...agentFields('claude_code'),
       task: 'Add pagination',
       startCommit: first,
       repository: { remoteUrl: remote.url },

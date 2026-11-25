@@ -72,6 +72,16 @@ export function definitionsProjectExists(): ProblemException {
   });
 }
 
+/** 409 for a definitions Project that is given a default agent. */
+export function definitionsProjectDefaultAgent(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: PROJECTS_PROBLEM_TYPES.definitionsProject,
+    title: 'Definitions Repository',
+    detail: 'The definitions Repository accepts no Run, so it has no default agent.',
+    extensions: { refused: 'default_agent' },
+  });
+}
+
 /** 409 for a definitions Project that is asked for an Environment file. */
 export function definitionsProjectEnvironmentFile(): ProblemException {
   return new ProblemException(HttpStatus.CONFLICT, {

@@ -20,6 +20,7 @@ const PROJECT_FIELDS = {
   name: true,
   mergeMethod: true,
   kind: true,
+  defaultAgent: true,
   createdAt: true,
 } as const;
 
@@ -28,6 +29,7 @@ function toProject(row: {
   name: string;
   mergeMethod: string;
   kind: string;
+  defaultAgent: string | null;
   createdAt: Date;
 }): Project {
   // The column's CHECK constraint keeps the list; a value outside it is a broken record.
@@ -38,6 +40,7 @@ function toProject(row: {
     name: row.name,
     mergeMethod: row.mergeMethod,
     kind: row.kind,
+    defaultAgent: row.defaultAgent,
     createdAt: row.createdAt,
   });
 }
@@ -124,6 +127,14 @@ export class PrismaProjectRepository implements ProjectRepository {
     const { count } = await this.db.project.updateMany({
       where: { id: project.id },
       data: { mergeMethod: project.mergeMethod },
+    });
+    return count > 0;
+  }
+
+  async saveDefaultAgent(project: Project): Promise<boolean> {
+    const { count } = await this.db.project.updateMany({
+      where: { id: project.id },
+      data: { defaultAgent: project.defaultAgent },
     });
     return count > 0;
   }

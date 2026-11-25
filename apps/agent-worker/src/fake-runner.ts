@@ -1,4 +1,5 @@
-import type { RunStepResult } from '@agentic-studio/contracts';
+import type { RunPayload, RunStepResult } from '@agentic-studio/contracts';
+import { createHash } from 'node:crypto';
 import { readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -55,6 +56,22 @@ export interface FakeRunnerOptions {
   git?: GitRunner;
   /** The Agent account its commits are made as (default: the Working copy's own). */
   identity?: { name: string; email: string };
+}
+
+/**
+ * What the fake runner reports of an agent from a definitions Repository: the commit, the base
+ * rules' version and the instructions as a size and a digest, never their text. A built-in
+ * agent reports nothing, so a Run of the Default agent logs exactly what it always did.
+ */
+export function fakeAgentLine(run: Pick<RunPayload, 'baseRules' | 'agent'>): string | null {
+  const { agent } = run;
+  if (agent.source === 'built_in') return null;
+  const digest = createHash('sha256').update(agent.instructions).digest('hex');
+  return (
+    `fake runner: agent ${agent.name} at ${agent.commit}, model ${agent.model}; ` +
+    `base rules ${run.baseRules.version}; ` +
+    `instructions ${Buffer.byteLength(agent.instructions)} bytes, sha256 ${digest}`
+  );
 }
 
 /** The fake agent's session reference for a Run: deterministic, per Run. */
@@ -129,6 +146,8 @@ export class FakeRunner implements Runner {
   private async *startStep({ run, workspace, signal }: StartRunStepInput): RunStep {
     const scenario = fakeScenarioOf(run.task);
     yield { type: 'message', text: `fake runner: ${scenario}` };
+    const agentLine = fakeAgentLine(run);
+    if (agentLine !== null) yield { type: 'message', text: agentLine };
     return yield* this.play(scenario, run, workspace, signal, false);
   }
 
@@ -305,6 +324,8 @@ export class FakeRunner implements Runner {
       type: 'message',
       text: reason === 'follow_up' ? 'fake runner: follow-up' : 'fake runner: resume',
     };
+    const agentLine = fakeAgentLine(run);
+    if (agentLine !== null) yield { type: 'message', text: agentLine };
     signal.throwIfAborted();
     if (scenario === 'lost-session' || sessionRef !== fakeSessionRef(run.runId)) {
       throw new AgentFailedError(

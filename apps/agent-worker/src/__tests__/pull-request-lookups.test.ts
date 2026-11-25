@@ -17,6 +17,7 @@ import {
   type PullRequestReader,
 } from '../github.js';
 import { type LookupApi, PullRequestLookups } from '../pull-request-lookups.js';
+import { agentFields } from './agent-fixtures.js';
 
 // Pull request lookups through the Agent account, against a recording fake of the reader.
 
@@ -742,6 +743,7 @@ describe('PullRequestLookups', () => {
       runId: RUN_ID,
       projectId: '3a5c7e9b-2d4f-4a6c-8e0b-1d3f5a7c9e2b',
       provider: 'codex',
+      ...agentFields('codex'),
       task: 'Add a feature',
       startCommit: 'a'.repeat(40),
       repository: { remoteUrl: 'https://github.com/acme/shop.git' },

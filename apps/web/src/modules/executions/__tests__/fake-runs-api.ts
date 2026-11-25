@@ -119,6 +119,7 @@ export const PROJECT: ProjectOutput = {
   name: 'Acme Shop',
   mergeMethod: 'squash',
   kind: 'code',
+  defaultAgent: null,
   createdAt: '2026-11-12T09:00:00.000Z',
 };
 
@@ -141,6 +142,14 @@ export function aRun(overrides: Partial<RunOutput> = {}): RunOutput {
     id: `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`,
     projectId: PROJECT.id,
     provider: 'claude_code',
+    agent: {
+      name: 'default-claude-code',
+      source: 'built_in',
+      commit: null,
+      provider: 'claude_code',
+      model: 'default',
+      instructions: '',
+    },
     task,
     state: 'queued',
     startCommit: SHA,

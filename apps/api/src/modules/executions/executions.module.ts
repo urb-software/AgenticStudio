@@ -174,11 +174,12 @@ export class ExecutionsModule {
   static register(
     projects: DynamicModule,
     environments: DynamicModule,
+    agents: DynamicModule,
     options: ExecutionsModuleOptions = {},
   ): DynamicModule {
     return {
       module: ExecutionsModule,
-      imports: [DatabaseModule, AuthModule, SecretsModule, projects, environments],
+      imports: [DatabaseModule, AuthModule, SecretsModule, projects, environments, agents],
       controllers: [
         StartRunEndpoint,
         ListProjectRunsEndpoint,

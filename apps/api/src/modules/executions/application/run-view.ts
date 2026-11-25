@@ -1,5 +1,6 @@
 import type { Run } from '../domain/entities/run.js';
 import type { Provider } from '../domain/value-objects/provider.js';
+import type { RunAgentData } from '../domain/value-objects/run-agent.js';
 import type { RunCancelledBy } from '../domain/value-objects/run-cancelled-by.js';
 import type { RunDeliveryState } from '../domain/value-objects/run-delivery.js';
 import type { RunFailureCode } from '../domain/value-objects/run-failure-code.js';
@@ -18,6 +19,8 @@ export interface RunView {
   id: string;
   projectId: string;
   provider: Provider;
+  /** Without its instructions in a list of Runs. */
+  agent: RunAgentData;
   task: string;
   state: RunState;
   startCommit: string;
@@ -74,6 +77,7 @@ export function runView(run: Run, facts: RunViewFacts): RunView {
     id: run.id,
     projectId: run.projectId,
     provider: run.provider,
+    agent: run.agent.toData(),
     task: run.task,
     state: lifecycle.state,
     startCommit: run.startCommit,

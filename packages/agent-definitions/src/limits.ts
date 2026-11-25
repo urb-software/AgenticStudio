@@ -1,4 +1,5 @@
 /** Where Agent definitions live in the definitions Repository, and how a folder is judged. */
+import { AGENT_INSTRUCTIONS_MAX_BYTES } from '@agentic-studio/contracts/providers';
 
 /** The top-level folder holding one folder per agent: `agents/<name>/`. */
 export const AGENTS_DIRECTORY = 'agents';
@@ -27,7 +28,7 @@ export const RESERVED_AGENT_NAMES = [
 export const DESCRIPTION_MAX_LENGTH = 500;
 
 /** Longest instructions (the Markdown after the front matter), in UTF-8 bytes. */
-export const MAX_INSTRUCTIONS_BYTES = 64 * 1024;
+export const MAX_INSTRUCTIONS_BYTES = AGENT_INSTRUCTIONS_MAX_BYTES;
 
 /** Longest front matter (the text between the `---` lines), in UTF-8 bytes. */
 export const MAX_FRONT_MATTER_BYTES = 8 * 1024;

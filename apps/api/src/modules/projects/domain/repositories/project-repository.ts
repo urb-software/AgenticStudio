@@ -30,4 +30,10 @@ export interface ProjectRepository {
    * exists.
    */
   saveMergeMethod(project: Project): Promise<boolean>;
+
+  /**
+   * Writes the Project's default agent and no other field. `false` when the project no longer
+   * exists.
+   */
+  saveDefaultAgent(project: Project): Promise<boolean>;
 }

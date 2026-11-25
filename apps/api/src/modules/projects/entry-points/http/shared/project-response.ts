@@ -22,6 +22,13 @@ export const projectResponseSchema = z
       .describe(
         '`code` for an ordinary Project; `definitions` for the Repository that holds agent definitions.',
       ),
+    defaultAgent: z
+      .string()
+      .nullable()
+      .describe(
+        'The agent a Run offers first, by name; null when none is named. Whether it is usable ' +
+          'is judged where agents are read.',
+      ),
     createdAt: z.iso.datetime(),
   })
   .meta({ id: 'Project' });
@@ -35,6 +42,7 @@ export function toProjectResponse(project: {
   name: string;
   mergeMethod: MergeMethod;
   kind: ProjectKind;
+  defaultAgent: string | null;
   createdAt: Date;
 }): ProjectResponse {
   return {
@@ -42,6 +50,7 @@ export function toProjectResponse(project: {
     name: project.name,
     mergeMethod: project.mergeMethod,
     kind: project.kind,
+    defaultAgent: project.defaultAgent,
     createdAt: project.createdAt.toISOString(),
   };
 }

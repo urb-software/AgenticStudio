@@ -5,6 +5,7 @@ import { InMemoryRunDiffRepository } from '../../../../domain/repositories/__tes
 import { InMemoryRunLog } from '../../../../application/ports/__tests__/in-memory-run-log.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { InMemorySecretStore } from '../../../ports/__tests__/in-memory-secret-store.js';
+import type { RunAgentData } from '../../../../domain/value-objects/run-agent.js';
 import { ClaimRunHandler } from '../handler.js';
 import { FakeProjectKinds } from '../../../ports/__tests__/fake-project-kinds.js';
 
@@ -30,10 +31,20 @@ describe('ClaimRunHandler', () => {
   let filesFail: Error | undefined;
   let diffs: InMemoryRunDiffRepository;
 
-  const queue = (projectId: string) =>
+  const REVIEWER = {
+    name: 'reviewer',
+    source: 'definitions' as const,
+    commit: 'c'.repeat(40),
+    provider: 'claude_code' as const,
+    model: 'opus',
+    instructions: 'Review carefully.',
+  };
+
+  const queue = (projectId: string, agent?: RunAgentData) =>
     runs.start({
       projectId,
       provider: 'claude_code',
+      ...(agent === undefined ? {} : { agent }),
       task: `Task of ${projectId}`,
       startCommit: 'a',
       remoteUrl: 'https://git.example.test/a.git',
@@ -81,6 +92,27 @@ describe('ClaimRunHandler', () => {
 
     kinds.definitionsId = null;
     expect((await handler.execute({ workerId: OTHER_WORKER }))?.id).toBe(excluded.id);
+  });
+
+  it('hands a new Run out with the agent it recorded at start, never resolved again', async () => {
+    const plain = await queue(A);
+    const named = await queue(B, REVIEWER);
+
+    expect(await handler.execute({ workerId: WORKER })).toMatchObject({
+      id: plain.id,
+      agent: {
+        name: 'default-claude-code',
+        source: 'built_in',
+        commit: null,
+        provider: 'claude_code',
+        model: 'default',
+        instructions: '',
+      },
+    });
+    expect(await handler.execute({ workerId: OTHER_WORKER })).toMatchObject({
+      id: named.id,
+      agent: REVIEWER,
+    });
   });
 
   it('hands out nothing when no Run is queued', async () => {
@@ -352,8 +384,8 @@ describe('ClaimRunHandler', () => {
     };
     const QUESTION = { text: 'Which database?' };
 
-    async function answered(projectId: string, recorded = true) {
-      const run = await queue(projectId);
+    async function answered(projectId: string, recorded = true, agent?: RunAgentData) {
+      const run = await queue(projectId, agent);
       await runs.claimNext(WORKER, T0);
       await runs.transitionClaimed({
         runId: run.id,
@@ -418,6 +450,17 @@ describe('ClaimRunHandler', () => {
       expect((await runs.findById(run.id))!).toMatchObject({
         claim: { claimedBy: WORKER },
         lifecycle: { startedAt: T0 },
+      });
+    });
+
+    it('hands the recorded agent to the resume too, whatever the definition is now', async () => {
+      const run = await answered(A, true, REVIEWER);
+      now = new Date(T0.getTime() + 30_000);
+
+      expect(await handler.execute({ workerId: WORKER })).toMatchObject({
+        id: run.id,
+        sessionRef: 'session-1',
+        agent: REVIEWER,
       });
     });
 

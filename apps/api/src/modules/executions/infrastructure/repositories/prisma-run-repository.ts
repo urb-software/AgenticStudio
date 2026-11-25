@@ -10,6 +10,7 @@ import {
   UNDER_WAY_RUN_STATES,
 } from '../../domain/value-objects/run-state.js';
 import { PROVIDERS, type Provider } from '../../domain/value-objects/provider.js';
+import type { RunAgentSource } from '../../domain/value-objects/run-agent.js';
 import {
   RUN_CANCELLED_BY,
   type RunCancelledBy,
@@ -44,6 +45,11 @@ const LIST_FIELDS = {
   id: true,
   projectId: true,
   provider: true,
+  agentName: true,
+  agentSource: true,
+  agentCommit: true,
+  agentProvider: true,
+  agentModel: true,
   task: true,
   state: true,
   startCommit: true,
@@ -106,6 +112,7 @@ const LIST_FIELDS = {
 
 const RUN_FIELDS = {
   ...LIST_FIELDS,
+  agentInstructions: true,
   messages: {
     select: {
       kind: true,
@@ -131,6 +138,13 @@ interface RunRow {
   id: string;
   projectId: string;
   provider: string;
+  agentName: string;
+  agentSource: string;
+  agentCommit: string | null;
+  agentProvider: string;
+  agentModel: string;
+  /** Left out of a list of Runs, which never shows or hands out the agent's text. */
+  agentInstructions?: string;
   task: string;
   state: string;
   startCommit: string;
@@ -296,6 +310,15 @@ function toRun(row: RunRow): Run {
     id: row.id,
     projectId: row.projectId,
     provider: row.provider as Provider,
+    agent: {
+      name: row.agentName,
+      // The CHECK constraint keeps the list; the Run's own check judges the rest.
+      source: row.agentSource as RunAgentSource,
+      commit: row.agentCommit,
+      provider: row.agentProvider as Provider,
+      model: row.agentModel,
+      instructions: row.agentInstructions ?? '',
+    },
     task: row.task,
     state: row.state as RunState,
     startCommit: row.startCommit,
@@ -508,6 +531,12 @@ export class PrismaRunRepository implements RunRepository {
         id: run.id,
         projectId: run.projectId,
         provider: run.provider,
+        agentName: run.agent.name,
+        agentSource: run.agent.source,
+        agentCommit: run.agent.commit,
+        agentProvider: run.agent.provider,
+        agentModel: run.agent.model,
+        agentInstructions: run.agent.instructions,
         task: run.task,
         startCommit: run.startCommit,
         remoteUrl: run.remoteUrl,

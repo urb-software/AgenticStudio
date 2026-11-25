@@ -63,7 +63,7 @@ type NewRunDialogProps = {
 
 const EMPTY: StartRunRequest = { task: '', provider: 'claude_code' };
 
-type Provider = StartRunRequest['provider'];
+type Provider = NonNullable<StartRunRequest['provider']>;
 
 /**
  * The first available provider is preselected (Claude Code when available) unless the prefilled
@@ -128,7 +128,8 @@ export function NewRunDialog({
   // On every opening, once its availability answer is in, move off an unavailable provider
   // (the default or a Run again prefill) to the first available one.
   useEffect(() => {
-    if (!open || !availability.data || !unavailable.has(getValues('provider'))) return;
+    if (!open || !availability.data || !unavailable.has(getValues('provider') ?? 'claude_code'))
+      return;
     const first = PROVIDER_OPTIONS.find((option) => !unavailable.has(option.value));
     if (first) setValue('provider', first.value);
   }, [open, opening, availability.data, unavailable, getValues, setValue]);

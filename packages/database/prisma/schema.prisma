@@ -28,6 +28,9 @@ model Project {
   /// `projects_one_definitions_key` (UNIQUE (kind) WHERE kind = 'definitions') is never dropped;
   /// Prisma does not model it, see migrations/20261127100000_project_kind.
   kind                String               @default("code") @db.VarChar(16)
+  /// The agent a Run of this project offers first; name syntax only, usability is judged where it
+  /// is read. Null when none is named.
+  defaultAgent        String?              @map("default_agent") @db.VarChar(64)
   /// The connected Repository (Story #60): at most one per project.
   repository          Repository?
   /// The project's Runs (`executions` module, Issue #96).
@@ -155,6 +158,16 @@ model Run {
   provider                      String               @db.VarChar(32)
   /// The operator's instruction (1–20 000 characters).
   task                          String               @db.VarChar(20000)
+  /// The agent the Run started with, copied at start and never updated: its name, `built_in` |
+  /// `definitions` (a CHECK holds the list and that agent_commit is set exactly for `definitions`),
+  /// the definitions Repository's commit, the Provider (equal to `provider`), the model the
+  /// definition named and the instructions' text. Treated like the task: never logged in full.
+  agentName                     String               @map("agent_name") @db.VarChar(64)
+  agentSource                   String               @map("agent_source") @db.VarChar(16)
+  agentCommit                   String?              @map("agent_commit") @db.VarChar(64)
+  agentProvider                 String               @map("agent_provider") @db.VarChar(32)
+  agentModel                    String               @map("agent_model") @db.VarChar(64)
+  agentInstructions             String               @map("agent_instructions")
   /// queued | preparing | running | waiting_for_operator | succeeded | failed | cancelled | timed_out.
   state                         String               @db.VarChar(32)
   /// The integration branch's commit when the Run was started.

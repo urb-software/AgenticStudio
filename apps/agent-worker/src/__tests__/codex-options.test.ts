@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AGENT_DEFINITION } from '../agent-definition/index.js';
+import { BASE_RULES } from '@agentic-studio/contracts';
 import {
   checkCodexVersion,
   codexEnvironment,
@@ -89,9 +89,9 @@ describe('the Codex command (compliance record, "CLI version and command")', () 
 
 describe('the Codex prompt', () => {
   it('passes the agent definition, the note that Studio commits and delivers, then the Task', () => {
-    const prompt = codexPrompt(AGENT_DEFINITION.text, 'Add a health check');
+    const prompt = codexPrompt(BASE_RULES.text, 'Add a health check');
 
-    expect(prompt.startsWith(AGENT_DEFINITION.text.trimEnd())).toBe(true);
+    expect(prompt.startsWith(BASE_RULES.text.trimEnd())).toBe(true);
     expect(prompt).toContain('You cannot commit');
     expect(prompt).toContain('AI Agent Studio\ncommits them on the Run branch');
     expect(prompt.trimEnd().endsWith("# The operator's Task\n\nAdd a health check")).toBe(true);

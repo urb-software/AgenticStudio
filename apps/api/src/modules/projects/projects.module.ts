@@ -9,6 +9,7 @@ import {
   RUN_BRANCH_REVIEWS,
   RUN_ENVIRONMENT_FILES,
   RUN_INTEGRATION_FETCHES,
+  PROJECT_DEFAULT_AGENTS,
   RUN_MERGE_METHODS,
   REPOSITORY_DISCONNECT_STEPS,
   RUN_PREVIEW_SOURCES,
@@ -63,6 +64,10 @@ import { RemoveEnvironmentFileEndpoint } from './entry-points/http/operator/remo
 import { RemoveEnvironmentFileHandler } from './application/features/remove-environment-file/handler.js';
 import { SetEnvironmentFileEndpoint } from './entry-points/http/operator/set-environment-file/endpoint.js';
 import { SetEnvironmentFileHandler } from './application/features/set-environment-file/handler.js';
+import { SetDefaultAgentEndpoint } from './entry-points/http/operator/set-default-agent/endpoint.js';
+import { SetDefaultAgentHandler } from './application/features/set-default-agent/handler.js';
+import { GetProjectDefaultAgentHandler } from './application/features/get-project-default-agent/handler.js';
+import { ProjectProjectDefaultAgents } from './entry-points/contracts/project-default-agents.js';
 import { SetMergeMethodEndpoint } from './entry-points/http/operator/set-merge-method/endpoint.js';
 import { SetMergeMethodHandler } from './application/features/set-merge-method/handler.js';
 import { GetRunMergeMethodHandler } from './application/features/get-run-merge-method/handler.js';
@@ -160,6 +165,7 @@ export class ProjectsModule {
         SetEnvironmentFileEndpoint,
         RemoveEnvironmentFileEndpoint,
         SetMergeMethodEndpoint,
+        SetDefaultAgentEndpoint,
       ],
       providers: [
         { provide: PROJECT_REPOSITORY, useClass: PrismaProjectRepository },
@@ -253,6 +259,9 @@ export class ProjectsModule {
         SetMergeMethodHandler,
         GetRunMergeMethodHandler,
         { provide: RUN_MERGE_METHODS, useClass: ProjectRunMergeMethods },
+        SetDefaultAgentHandler,
+        GetProjectDefaultAgentHandler,
+        { provide: PROJECT_DEFAULT_AGENTS, useClass: ProjectProjectDefaultAgents },
         GetPreviewSourceStatusHandler,
         ReadIntegrationFileHandler,
         OpenPreviewArchiveHandler,
@@ -276,6 +285,7 @@ export class ProjectsModule {
         RUN_BRANCH_REVIEWS,
         RUN_INTEGRATION_FETCHES,
         RUN_MERGE_METHODS,
+        PROJECT_DEFAULT_AGENTS,
         RUN_PREVIEW_SOURCES,
         REPOSITORY_DISCONNECT_STEPS,
       ],

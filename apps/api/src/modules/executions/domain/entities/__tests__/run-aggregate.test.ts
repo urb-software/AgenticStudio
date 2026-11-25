@@ -4,6 +4,7 @@ import { type RestoreData } from '../../../../../__tests__/restore-data.js';
 import { RunNotHeldError } from '../../errors/run-errors.js';
 import { RunPullRequestStatus } from '../../value-objects/run-pull-request-status.js';
 import { Task } from '../../value-objects/task.js';
+import { defaultAgentOf } from '../../repositories/__tests__/in-memory-run-repository.js';
 
 const WORKER = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
 const T0 = new Date('2026-11-17T10:00:00.000Z');
@@ -16,6 +17,7 @@ const started = Run.start({
   id: '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b',
   projectId: '3a5c7e9b-2d4f-4a6c-8e0b-1d3f5a7c9e2b',
   provider: 'codex',
+  agent: defaultAgentOf('codex'),
   task: Task.of('Add a health check'),
   startCommit: 'a'.repeat(40),
   remoteUrl: 'https://git.example.test/a.git',
@@ -27,6 +29,7 @@ const STARTED_DATA: RestoreData<typeof Run> = {
   id: '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b',
   projectId: '3a5c7e9b-2d4f-4a6c-8e0b-1d3f5a7c9e2b',
   provider: 'codex',
+  agent: defaultAgentOf('codex'),
   task: 'Add a health check',
   startCommit: 'a'.repeat(40),
   remoteUrl: 'https://git.example.test/a.git',
@@ -90,6 +93,7 @@ describe('restoring a Run from its flat record and giving it back', () => {
     id: '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b',
     projectId: '3a5c7e9b-2d4f-4a6c-8e0b-1d3f5a7c9e2b',
     provider: 'claude_code',
+    agent: defaultAgentOf('claude_code'),
     task: 'Add a health check',
     startCommit: 'a'.repeat(40),
     remoteUrl: 'https://git.example.test/a.git',
@@ -169,6 +173,7 @@ describe('restoring a Run from its flat record and giving it back', () => {
 
     expect(Object.keys(run).sort()).toEqual(
       [
+        'agent',
         'claim',
         'conversation',
         'createdAt',

@@ -51,6 +51,7 @@ export const DEFINITIONS_PROJECT: ProjectOutput = {
   name: 'Agent definitions',
   mergeMethod: 'squash',
   kind: 'definitions',
+  defaultAgent: null,
   createdAt: '2026-11-12T09:00:00.000Z',
 };
 

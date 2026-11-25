@@ -155,6 +155,7 @@ describe('repository connection API (PostgreSQL + Redis via Testcontainers)', ()
         name: 'Detail',
         mergeMethod: 'squash',
         kind: 'code',
+        defaultAgent: null,
         createdAt: expect.stringMatching(ISO_8601),
         repository: null,
       });
