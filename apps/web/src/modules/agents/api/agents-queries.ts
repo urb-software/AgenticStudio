@@ -95,7 +95,7 @@ const FILES_KEY = ['agents', 'editor', 'files'] as const;
 const EDITOR_AGENTS_KEY = ['agents', 'editor', 'agents'] as const;
 const FILE_KEY = ['agents', 'editor', 'file'] as const;
 
-const SNAPSHOT = { staleTime: Infinity, refetchOnWindowFocus: false } as const;
+export const SNAPSHOT = { staleTime: Infinity, refetchOnWindowFocus: false } as const;
 
 /** The whole definitions Repository's tree at its last fetched commit. */
 export function useAgentFiles() {

@@ -1,5 +1,15 @@
 import type { AgentFileEntryOutput, AgentProblemOutput } from '../../../../platform/api';
 
+/** A file of the tree with what the Draft does to it, if anything. */
+export interface EditorEntry extends AgentFileEntryOutput {
+  change?: 'added' | 'modified' | 'deleted';
+  /** The path a moved file came from, for display. */
+  movedFrom?: string | null;
+}
+
+/** How a change of the Draft is named in the view. */
+export const CHANGE_LABEL = { added: 'Added', modified: 'Modified', deleted: 'Deleted' } as const;
+
 /** The file every agent folder is defined by. */
 export const ENTRY_FILE = 'AGENT.md';
 
@@ -72,7 +82,7 @@ export type TreeNode =
       agent: string | null;
       children: TreeNode[];
     }
-  | { kind: 'file'; name: string; path: string; entry: AgentFileEntryOutput };
+  | { kind: 'file'; name: string; path: string; entry: EditorEntry };
 
 const byName = (a: TreeNode, b: TreeNode) => a.name.localeCompare(b.name, 'en');
 
@@ -86,7 +96,7 @@ function sortTree(nodes: TreeNode[]): TreeNode[] {
 }
 
 /** The flat entries as a tree, folders first. A folder is an agent's when `agents/<name>`. */
-export function buildTree(entries: readonly AgentFileEntryOutput[]): TreeNode[] {
+export function buildTree(entries: readonly EditorEntry[]): TreeNode[] {
   const root: TreeNode[] = [];
   const folders = new Map<string, Extract<TreeNode, { kind: 'folder' }>>();
   for (const entry of entries) {

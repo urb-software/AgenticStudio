@@ -1,6 +1,8 @@
 import { vi } from 'vitest';
 import type {
   AgentDetailOutput,
+  AgentDraftFileOutput,
+  AgentDraftOutput,
   AgentFileOutput,
   AgentFilesOutput,
   AgentListOutput,
@@ -100,6 +102,8 @@ export function fakeAgentsApi(
     details?: Record<string, AgentDetailOutput>;
     /** The definitions Repository's files: the tree and each file's content by path. */
     files?: { tree: AgentFilesOutput; contents?: Record<string, AgentFileOutput> };
+    /** The Draft the server starts with. */
+    draft?: Partial<AgentDraftOutput>;
   } = {},
 ) {
   let list = agents.list ?? agentList();
@@ -113,6 +117,28 @@ export function fakeAgentsApi(
   const detailFailures: { status: number; body: unknown }[] = [];
   const providerFailures: { status: number; body: unknown }[] = [];
   const gates: { list?: Promise<void>; detail?: Promise<void> } = {};
+  let draft: AgentDraftOutput = {
+    baseCommit: null,
+    currentCommit: agents.files?.tree.commit ?? null,
+    version: 0,
+    files: [],
+    problems: [],
+    movedUpstream: [],
+    ...agents.draft,
+  };
+  const draftTexts = new Map<string, string>();
+  const draftFailures: { status: number; body: unknown }[] = [];
+  const inTree = (path: string) => files?.tree.entries.some((item) => item.path === path) ?? false;
+  const touch = (next: Partial<AgentDraftOutput>) => {
+    draft = { ...draft, ...next, version: draft.version + 1 };
+    if (draft.files.length === 0) draft = { ...draft, baseCommit: null };
+    return draft;
+  };
+  const upsert = (file: AgentDraftFileOutput) =>
+    touch({
+      baseCommit: draft.baseCommit ?? files?.tree.commit ?? null,
+      files: [...draft.files.filter((item) => item.path !== file.path), file],
+    });
 
   const fetch = vi.fn(async (request: Request): Promise<Response> => {
     const { pathname, search } = new URL(request.url);
@@ -139,6 +165,71 @@ export function fakeAgentsApi(
       if (failure) return json(failure.status, failure.body);
       const found = details[decodeURIComponent(detail[1] ?? '')];
       return found ? json(200, found) : json(404, problem(404, 'Unknown agent'));
+    }
+    if (pathname.startsWith('/api/agents/definitions-repository/draft')) {
+      const search_ = new URL(request.url).searchParams;
+      const draftPath = pathname.slice('/api/agents/definitions-repository/draft'.length);
+      if (request.method !== 'GET') {
+        const failure = draftFailures.shift();
+        if (failure) return json(failure.status, failure.body);
+      }
+      if (draftPath === '' && request.method === 'GET') return json(200, draft);
+      if (draftPath === '' && request.method === 'DELETE') {
+        draftTexts.clear();
+        return json(200, touch({ files: [], problems: [], movedUpstream: [] }));
+      }
+      if (draftPath === '/files/content') {
+        const path = search_.get('path') ?? '';
+        const changed = draft.files.find((item) => item.path === path);
+        if (changed?.change === 'deleted') return json(404, problem(404, 'No such file'));
+        const text = draftTexts.get(path);
+        if (text !== undefined) {
+          return json(200, { commit: draft.baseCommit, path, kind: 'text', content: text });
+        }
+        const found = files?.contents?.[path];
+        return found ? json(200, found) : json(404, problem(404, 'No such file'));
+      }
+      if (draftPath === '/files' && request.method === 'PUT') {
+        const { path, text, contentBase64 } = body as {
+          path: string;
+          text?: string;
+          contentBase64?: string;
+        };
+        if (text !== undefined) draftTexts.set(path, text);
+        const size =
+          text === undefined ? Math.floor(((contentBase64 ?? '').length * 3) / 4) : text.length;
+        const change = draft.files.find((item) => item.path === path)?.change;
+        return json(
+          200,
+          upsert({
+            path,
+            size,
+            movedFrom: null,
+            change: change ?? (inTree(path) ? 'modified' : 'added'),
+          }),
+        );
+      }
+      if (draftPath === '/files' && request.method === 'DELETE') {
+        const path = search_.get('path') ?? '';
+        const own = draft.files.find((item) => item.path === path);
+        if (own?.change === 'added') {
+          return json(200, touch({ files: draft.files.filter((item) => item.path !== path) }));
+        }
+        return json(200, upsert({ path, size: 0, movedFrom: null, change: 'deleted' }));
+      }
+      if (draftPath === '/files/revert') {
+        const { path } = body as { path: string };
+        draftTexts.delete(path);
+        return json(200, touch({ files: draft.files.filter((item) => item.path !== path) }));
+      }
+      if (draftPath === '/files/move') {
+        const { from, to } = body as { from: string; to: string };
+        const text = draftTexts.get(from) ?? '';
+        draftTexts.set(to, text);
+        upsert({ path: from, size: 0, movedFrom: null, change: 'deleted' });
+        return json(200, upsert({ path: to, size: text.length, movedFrom: from, change: 'added' }));
+      }
+      return json(404, problem(404, 'Not Found'));
     }
     if (pathname === '/api/agents/definitions-repository/files') {
       return files ? json(200, files.tree) : json(404, problem(404, 'No files'));
@@ -227,6 +318,18 @@ export function fakeAgentsApi(
     /** The files the next reads answer, as after a fetch brought new commits. */
     setFiles(next: { tree: AgentFilesOutput; contents?: Record<string, AgentFileOutput> }) {
       files = next;
+    },
+    /** The Draft as the server holds it. */
+    get draft() {
+      return draft;
+    },
+    /** Another writer changed the Draft: the server's version moves on. */
+    changeDraftElsewhere(next: Partial<AgentDraftOutput>) {
+      touch(next);
+    },
+    /** The next write to the Draft is refused with this response. */
+    failNextDraftWrite(status: number, body: unknown) {
+      draftFailures.push({ status, body });
     },
     /** The next read of the Providers fails with this response. */
     failNextProviders(status: number, body: unknown) {

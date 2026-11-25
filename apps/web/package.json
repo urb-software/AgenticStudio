@@ -14,6 +14,7 @@
     "client:generate": "openapi-ts"
   },
   "dependencies": {
+    "@agentic-studio/agent-definitions": "workspace:*",
     "@hookform/resolvers": "7.0.5",
     "@tanstack/react-query": "5.107.1",
     "@tanstack/react-virtual": "3.14.26",
