@@ -37,10 +37,18 @@ interface ChangesViewProps {
   baseCommit: string | null;
   selected: string | undefined;
   onSelect: (path: string) => void;
+  /** In a dialog the view has less height than on the page. */
+  compact?: boolean;
 }
 
 /** The changed files of the Draft, and one of them against the base commit. */
-export function ChangesView({ files, baseCommit, selected, onSelect }: ChangesViewProps) {
+export function ChangesView({
+  files,
+  baseCommit,
+  selected,
+  onSelect,
+  compact = false,
+}: ChangesViewProps) {
   if (files.length === 0) {
     return <p className="m-0 p-4 text-small text-text-muted">The Draft has no changes.</p>;
   }
@@ -49,7 +57,7 @@ export function ChangesView({ files, baseCommit, selected, onSelect }: ChangesVi
     <div className="flex flex-col md:flex-row">
       <nav
         aria-label="Changed files"
-        className="max-h-[70vh] w-full shrink-0 overflow-auto border-b border-border p-2 md:w-72 md:border-r md:border-b-0"
+        className={`${compact ? 'max-h-[30vh] md:max-h-[40vh]' : 'max-h-[70vh]'} w-full shrink-0 overflow-auto border-b border-border p-2 md:w-72 md:border-r md:border-b-0`}
       >
         <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
           {files.map((file) => (
@@ -74,7 +82,7 @@ export function ChangesView({ files, baseCommit, selected, onSelect }: ChangesVi
           ))}
         </ul>
       </nav>
-      <div className="min-w-0 flex-1 md:h-[70vh]">
+      <div className={`min-w-0 flex-1 ${compact ? 'h-[40vh]' : 'md:h-[70vh]'}`}>
         <FileDiff file={current} baseCommit={baseCommit} />
       </div>
     </div>

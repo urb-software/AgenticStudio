@@ -58,6 +58,7 @@ import {
 } from './editor-model';
 import { EditorPane, type PaneState } from './editor-pane';
 import { agentState, FileTree } from './file-tree';
+import { PublishDialog } from './publish-dialog';
 import { useDebouncedValue } from './use-debounced-value';
 import { useLeaveGuard } from './use-leave-guard';
 
@@ -80,7 +81,15 @@ function agentStateOfCount(count: number): string {
 const utf8 = new TextEncoder();
 
 type DialogKind =
-  'add' | 'rename' | 'replace' | 'delete' | 'revert' | 'discard' | 'new-agent' | 'confirm-save';
+  | 'add'
+  | 'rename'
+  | 'replace'
+  | 'delete'
+  | 'revert'
+  | 'discard'
+  | 'new-agent'
+  | 'confirm-save'
+  | 'publish';
 
 const TYPING_DELAY_MS = 300;
 
@@ -454,6 +463,21 @@ function EditorBody() {
     };
   }
   const changeCount = draft.files.length;
+  const draftProblemCount = problems.filter((problem) => touched.has(problem.agent)).length;
+  // Why Publish is not offered now; the dialog and the API judge again.
+  const publishBlock = dirty
+    ? 'Save or discard your unsaved edits first.'
+    : changeCount === 0
+      ? 'The Draft has no changes to publish.'
+      : draftProblemCount > 0
+        ? `Fix the ${draftProblemCount} ${draftProblemCount === 1 ? 'problem' : 'problems'} of the Draft first.`
+        : moved
+          ? 'The Repository has a newer commit than the one this Draft began at, so the Draft cannot be published again. Discard it to start again.'
+          : elsewhere || stale
+            ? 'Reload the Draft before publishing it.'
+            : draft.baseCommit === null
+              ? 'The Draft has no base commit to publish onto.'
+              : undefined;
   const openFileKind = pane.kind === 'file' ? pane.file.kind : undefined;
   const closeDialog = () => setDialog(undefined);
 
@@ -611,7 +635,24 @@ function EditorBody() {
                 >
                   Discard Draft
                 </Button>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  disabled={publishBlock !== undefined || working}
+                  aria-describedby={publishBlock ? 'agent-editor-publish-block' : undefined}
+                  onClick={() => setDialog('publish')}
+                >
+                  Publish
+                </Button>
               </span>
+              {publishBlock ? (
+                <p
+                  id="agent-editor-publish-block"
+                  className="m-0 w-full text-small text-text-muted"
+                >
+                  {publishBlock}
+                </p>
+              ) : null}
             </div>
             {editing ? (
               <p className="m-0 border-b border-border px-3 py-2 text-small text-text-muted">
@@ -869,6 +910,32 @@ function EditorBody() {
             clearAllBuffers();
             setBuffers({});
             setFailure(undefined);
+          }}
+        />
+      ) : null}
+      {dialog === 'publish' ? (
+        <PublishDialog
+          open
+          onOpenChange={closeDialog}
+          files={draft.files}
+          baseCommit={draft.baseCommit ?? ''}
+          version={draft.version}
+          movedUpstream={draft.movedUpstream}
+          onReload={reloadFromServer}
+          onDiscard={() => setDialog('discard')}
+          onRevertPaths={async (paths) => {
+            for (const target of paths) {
+              await revert.mutateAsync(target);
+              setBuffer(target, undefined);
+            }
+          }}
+          onPublished={() => {
+            // The Draft is gone: the next answer of the API is the one to show.
+            acceptedRef.current = undefined;
+            setAccepted(undefined);
+            setStale(false);
+            setFailure(undefined);
+            setChanged(undefined);
           }}
         />
       ) : null}

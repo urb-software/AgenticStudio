@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback } from 'react';
 import { api, ApiError, type AgentDraftOutput } from '../../../platform/api';
-import { SNAPSHOT } from './agents-queries';
+import { SNAPSHOT, useRefreshAgents, useReloadEditor } from './agents-queries';
 
 const DRAFT_KEY = ['agents', 'editor', 'draft'] as const;
 const DRAFT_FILE_KEY = ['agents', 'editor', 'draft-file'] as const;
@@ -174,4 +174,172 @@ export function useDiscardDraft(applied?: (draft: AgentDraftOutput) => void) {
       applied?.(draft);
     },
   );
+}
+
+const PUBLISH_PROBLEMS = {
+  moved: 'urn:agentic-studio:problem:repository-moved',
+  nothing: 'urn:agentic-studio:problem:nothing-to-publish',
+  running: 'urn:agentic-studio:problem:publish-running',
+  writeRefused: 'urn:agentic-studio:problem:write-refused',
+  problems: 'urn:agentic-studio:problem:publish-problems',
+  outside: 'urn:agentic-studio:problem:publish-path-outside-agents',
+  failed: 'urn:agentic-studio:problem:publish-failed',
+  notConfigured: 'urn:agentic-studio:problem:publish-not-configured',
+  unreadable: 'urn:agentic-studio:problem:agent-files-unreadable',
+} as const;
+
+/** One problem of the Draft, as a refused publish lists it. */
+export type PublishProblem = {
+  agent: string;
+  path: string;
+  key: string | null;
+  message: string;
+};
+
+/** Why a publish was refused or failed, in words for the operator, and what each one needs. */
+export type PublishFailure = { message: string } & (
+  | {
+      kind:
+        | 'conflict'
+        | 'repository-moved'
+        | 'base-missing'
+        | 'no-base'
+        | 'nothing'
+        | 'running'
+        | 'write-refused'
+        | 'not-configured'
+        | 'unreadable'
+        | 'failed'
+        | 'invalid'
+        | 'other';
+    }
+  | { kind: 'problems'; problems: PublishProblem[] }
+  | { kind: 'outside-agents'; paths: string[] }
+);
+
+/** An array member of a problem document beyond the RFC 9457 ones, or an empty list. */
+function listMember(problem: unknown, member: string): unknown[] {
+  const value =
+    typeof problem === 'object' && problem !== null
+      ? (problem as Record<string, unknown>)[member]
+      : undefined;
+  return Array.isArray(value) ? value : [];
+}
+
+function publishProblemsOf(problem: unknown): PublishProblem[] {
+  return listMember(problem, 'problems').flatMap((item) => {
+    if (typeof item !== 'object' || item === null) return [];
+    const { agent, path, key, message } = item as Record<string, unknown>;
+    if (typeof path !== 'string' || typeof message !== 'string') return [];
+    return [
+      {
+        agent: typeof agent === 'string' ? agent : '',
+        path,
+        key: typeof key === 'string' ? key : null,
+        message,
+      },
+    ];
+  });
+}
+
+/** What a failed publish says. Each refusal of the API has its own plain message. */
+export function publishFailureOf(error: unknown): PublishFailure {
+  const problem = error instanceof ApiError ? error.problem : undefined;
+  switch (problem?.type) {
+    case DRAFT_PROBLEMS.conflict:
+      return { kind: 'conflict', message: draftFailureOf(error).message };
+    case DRAFT_PROBLEMS.baseMissing:
+      return { kind: 'base-missing', message: draftFailureOf(error).message };
+    case DRAFT_PROBLEMS.noBase:
+      return { kind: 'no-base', message: draftFailureOf(error).message };
+    case PUBLISH_PROBLEMS.moved:
+      return {
+        kind: 'repository-moved',
+        message:
+          'The Repository moved on since this Draft began, so the Draft cannot be published again: a Draft is never moved onto a newer commit. If an earlier publish reached the Git host, its changes are already in the Repository and this Draft still holds them. Discard the Draft, then make again any change that is missing.',
+      };
+    case PUBLISH_PROBLEMS.nothing:
+      return {
+        kind: 'nothing',
+        message: 'The Draft changes nothing in the Repository, so there is nothing to publish.',
+      };
+    case PUBLISH_PROBLEMS.running:
+      return {
+        kind: 'running',
+        message: 'Another publish is running. Wait for it to end, then publish again.',
+      };
+    case PUBLISH_PROBLEMS.writeRefused:
+      return {
+        kind: 'write-refused',
+        message:
+          'The Git host refused the push. Give the Deploy key of the definitions Repository write access on the Git host (for that Repository only), and check that its Integration branch accepts a push from the key. The Draft is kept.',
+      };
+    case PUBLISH_PROBLEMS.notConfigured:
+      return {
+        kind: 'not-configured',
+        message:
+          'Studio has no name and email to author the commit with. Set STUDIO_DEFINITIONS_COMMIT_NAME and STUDIO_DEFINITIONS_COMMIT_EMAIL on the server, restart it, and publish again.',
+      };
+    case PUBLISH_PROBLEMS.unreadable:
+      return {
+        kind: 'unreadable',
+        message:
+          'The files of the Repository cannot be read now, so the Draft could not be checked. Try again in a moment.',
+      };
+    case PUBLISH_PROBLEMS.failed:
+      return {
+        kind: 'failed',
+        message:
+          'The push to the Git host failed, and it may still have reached the Git host. The Draft is kept. The next publish will tell: if the Repository has moved on, your changes are probably already there.',
+      };
+    case PUBLISH_PROBLEMS.problems:
+      return {
+        kind: 'problems',
+        message: 'Fix every problem of the Draft before publishing it.',
+        problems: publishProblemsOf(problem),
+      };
+    case PUBLISH_PROBLEMS.outside:
+      return {
+        kind: 'outside-agents',
+        message:
+          'Publishing writes only below agents/. Revert the changes outside it, or make them with your own Git.',
+        paths: listMember(problem, 'paths').filter((p): p is string => typeof p === 'string'),
+      };
+    default:
+      break;
+  }
+  if (error instanceof ApiError && error.status === 400) {
+    return { kind: 'invalid', message: problem?.detail || 'The message was not accepted.' };
+  }
+  return {
+    kind: 'other',
+    message: problem?.detail || 'The Draft could not be published. Try again.',
+  };
+}
+
+/**
+ * Publishes the Draft. A success reads the Draft, the tree and the agents again (the Repository
+ * has a new commit) and drops the cached Draft files; the files read at a commit are keyed by it,
+ * so none of them is stale. A 409 reads the Draft again so the page shows what changed.
+ */
+export function usePublishDraft() {
+  const queryClient = useQueryClient();
+  const reloadEditor = useReloadEditor();
+  const refreshAgents = useRefreshAgents();
+  return useMutation({
+    mutationFn: api.publishAgentDraft,
+    onSuccess: async () => {
+      queryClient.removeQueries({ queryKey: DRAFT_FILE_KEY });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: DRAFT_KEY, exact: true }),
+        reloadEditor(),
+        refreshAgents(),
+      ]);
+    },
+    onError: async (error) => {
+      if (error instanceof ApiError && error.status === 409) {
+        await queryClient.invalidateQueries({ queryKey: DRAFT_KEY, exact: true });
+      }
+    },
+  });
 }
