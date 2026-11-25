@@ -39,7 +39,7 @@ Until now every Run used one built-in definition fixed in the agent worker's cod
 
 - **A published definition is trusted guidance that can carry scripts.** The operator wrote it, so it ranks above the repository's own skills; it is still bounded by the guardrails and the operating-system user, as any command is.
 - **The write Deploy key is a new credential.** It reaches one Repository, lives on Studio's side and never reaches the agent side or a log. A leak would let someone change what agents are told.
-- **Anyone who can push to the definitions Repository changes every later Run.** Protecting that Repository on the Git host is the operator's job; Studio only reads its Integration branch.
+- **Anyone who can push to the definitions Repository changes every later Run.** Protecting that Repository on the Git host is the operator's job; Studio reads its Integration branch, and Publish writes to it with the write Deploy key, as a fast-forward only.
 - **A value the CLI or the login refuses fails the Run.** A later change to the model lists needs an amendment of the compliance records.
 - **A removed agent disappears from the list;** Runs that used it keep their record.
 - **One more kind of Project and one more module** to maintain and test.
