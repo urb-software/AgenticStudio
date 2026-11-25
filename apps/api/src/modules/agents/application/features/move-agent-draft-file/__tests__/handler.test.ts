@@ -82,13 +82,23 @@ describe('MoveAgentDraftFileHandler', () => {
     expect(repository.saves).toBe(0);
   });
 
-  it('cannot carry a binary base file, or one over the file limit', async () => {
-    await expect(handler.execute({ from: 'blob.bin', to: 'x.bin' })).rejects.toEqual(
-      new DraftMoveUnsupportedError('binary'),
-    );
+  it('carries the stored bytes of a binary base file unchanged', async () => {
+    const view = await handler.execute({ from: 'blob.bin', to: 'assets/blob.bin' });
+
+    expect(view.files).toContainEqual({
+      path: 'assets/blob.bin',
+      change: 'added',
+      size: 3,
+      movedFrom: 'blob.bin',
+    });
+    expect(repository.contents.get('assets/blob.bin')).toEqual(new Uint8Array([0, 1, 2]));
+  });
+
+  it('cannot carry a base file over the file limit', async () => {
     definitions.commit(BASE_COMMIT, { 'huge.txt': Buffer.alloc(1024 * 1024 + 1, 97) });
-    await expect(handler.execute({ from: 'huge.txt', to: 'x.txt' })).rejects.toEqual(
-      new DraftMoveUnsupportedError('too_large'),
+
+    await expect(handler.execute({ from: 'huge.txt', to: 'x.txt' })).rejects.toThrow(
+      DraftMoveUnsupportedError,
     );
     expect(repository.saves).toBe(0);
   });

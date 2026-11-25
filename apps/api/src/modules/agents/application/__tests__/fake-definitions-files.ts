@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 import type {
+  DefinitionsBlobIdsResult,
+  DefinitionsBlobRead,
   DefinitionsBlobsResult,
   DefinitionsFileRead,
   DefinitionsFiles,
@@ -88,7 +90,26 @@ export class FakeDefinitionsFiles implements DefinitionsFiles {
     });
   }
 
-  blobIds(commit: string, paths: readonly string[]): Promise<DefinitionsBlobsResult> {
+  readBlobs(
+    commit: string,
+    paths: readonly string[],
+    maxBytes: number,
+  ): Promise<DefinitionsBlobsResult> {
+    if (this.unavailable) return Promise.resolve({ status: this.unavailable });
+    const files = this.commits.get(commit);
+    if (!files) return Promise.resolve({ status: 'commit_missing' });
+    return Promise.resolve({
+      status: 'read',
+      files: paths.map((path): DefinitionsBlobRead => {
+        const bytes = bytesOf(files.get(path) ?? { submodule: true });
+        if (!bytes) return { path, status: 'missing' };
+        if (bytes.length > maxBytes) return { path, status: 'too_large' };
+        return { path, status: 'found', bytes: new Uint8Array(bytes) };
+      }),
+    });
+  }
+
+  blobIds(commit: string, paths: readonly string[]): Promise<DefinitionsBlobIdsResult> {
     if (this.unavailable) return Promise.resolve({ status: this.unavailable });
     const files = this.commits.get(commit);
     if (!files) return Promise.resolve({ status: 'commit_missing' });

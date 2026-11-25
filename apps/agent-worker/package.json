@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@agentic-studio/agent-definitions": "workspace:*",
     "@agentic-studio/contracts": "workspace:*",
     "zod": "4.6.7"
   },

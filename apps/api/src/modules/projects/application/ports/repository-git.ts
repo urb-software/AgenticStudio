@@ -89,11 +89,13 @@ export type CommitArchiveOutcome =
 /**
  * One tracked item below a folder of a commit. `kind` is `file` (regular, also executable),
  * `symlink`, `submodule` or `other`; `size` is the blob's size in bytes, 0 for a non-blob.
+ * `executable` is mode `100755`.
  */
 export interface CommitTreeEntry {
   path: string;
   kind: 'file' | 'symlink' | 'submodule' | 'other';
   size: number;
+  executable?: boolean;
 }
 
 /** `truncated`: more than the limit of entries (or of output) existed; only the first are listed. */
@@ -109,6 +111,14 @@ export interface CommitFileRead {
   size: number;
   /** A found blob holds a NUL byte or is not valid UTF-8; its `text` then has replacement characters. */
   binary: boolean;
+}
+
+export type CommitBlobOutcome =
+  { status: 'found'; bytes: Uint8Array } | { status: 'missing' } | { status: 'too_large' };
+
+export interface CommitBlobRead {
+  path: string;
+  outcome: CommitBlobOutcome;
 }
 
 /** The Git object name of the regular file at a path of a commit; `null` when it names none. */
@@ -253,6 +263,18 @@ export interface RepositoryGit {
     maxBytes: number,
     options?: GitOperationOptions,
   ): Promise<CommitFileRead[]>;
+
+  /**
+   * {@link RepositoryGit.readFilesAtCommit} answering the stored bytes instead of text, so a
+   * binary file arrives unchanged.
+   */
+  readBlobsAtCommit(
+    projectId: string,
+    commit: string,
+    paths: readonly string[],
+    maxBytes: number,
+    options?: GitOperationOptions,
+  ): Promise<CommitBlobRead[]>;
 
   /**
    * The object name of the regular file at each path in `commit`, in the order given, without

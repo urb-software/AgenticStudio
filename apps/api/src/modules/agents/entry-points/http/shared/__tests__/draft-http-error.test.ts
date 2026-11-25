@@ -33,7 +33,7 @@ describe('toDraftHttpError', () => {
     [new DraftPathNotWritableError('a'), 422, AGENTS_PROBLEM_TYPES.draftPathNotWritable],
     [new DraftPathTakenError('a'), 422, AGENTS_PROBLEM_TYPES.draftPathTaken],
     [new DraftPathConflictError('a'), 422, AGENTS_PROBLEM_TYPES.draftPathConflict],
-    [new DraftMoveUnsupportedError('binary'), 422, AGENTS_PROBLEM_TYPES.draftMoveUnsupported],
+    [new DraftMoveUnsupportedError(), 422, AGENTS_PROBLEM_TYPES.draftMoveUnsupported],
     [new DraftFileNotFoundError('a'), 404, AGENTS_PROBLEM_TYPES.agentFileNotFound],
     [new DraftNoBaseError(), 409, AGENTS_PROBLEM_TYPES.draftNoBase],
     [new DraftBaseUnreadableError(), 503, AGENTS_PROBLEM_TYPES.agentFilesUnreadable],
@@ -41,7 +41,7 @@ describe('toDraftHttpError', () => {
     expect(problemOf(toDraftHttpError(error))).toMatchObject({ status, type });
   });
 
-  it('carries the sizes of a limit refusal and the reason of a move refusal', () => {
+  it('carries the sizes of a limit refusal', () => {
     expect(problemOf(toDraftHttpError(new DraftFileTooLargeError(5, 3))).extensions).toEqual({
       size: 5,
       limit: 3,
@@ -52,11 +52,6 @@ describe('toDraftHttpError', () => {
     });
     expect(problemOf(toDraftHttpError(new DraftTooManyFilesError(200))).extensions).toEqual({
       limit: 200,
-    });
-    expect(
-      problemOf(toDraftHttpError(new DraftMoveUnsupportedError('too_large'))).extensions,
-    ).toEqual({
-      reason: 'too_large',
     });
   });
 

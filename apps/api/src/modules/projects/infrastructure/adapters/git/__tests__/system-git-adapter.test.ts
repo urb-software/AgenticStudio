@@ -5,12 +5,14 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { testConfig, WITHOUT_QUEUE_WORKERS } from '../../../../../../__tests__/test-config.js';
 import { createApp } from '../../../../../../app.js';
 import {
+  GitOperationError,
   GitRequestRejectedError,
   GitUnsupportedPlatformError,
   REPOSITORY_GIT,
   type RepositoryGit,
 } from '../../../../application/ports/repository-git.js';
 import {
+  blobBytes,
   PRODUCTION_GIT_LIMITS,
   SystemGitAdapter,
   systemGitSettings,
@@ -131,5 +133,13 @@ describe('SystemGitAdapter on a platform other than Linux', () => {
 describe('Git adapter test platform', () => {
   it.runIf(process.env.GITHUB_ACTIONS === 'true')('runs on Linux in CI', () => {
     expect(process.platform).toBe('linux');
+  });
+});
+
+describe('blobBytes', () => {
+  it('hands over the stored bytes, and refuses to hand over an empty file for bytes it does not have', () => {
+    expect([...blobBytes(Buffer.from([0xff, 0x00, 0x41]))]).toEqual([0xff, 0x00, 0x41]);
+    expect([...blobBytes(Buffer.alloc(0))]).toEqual([]);
+    expect(() => blobBytes(undefined)).toThrow(GitOperationError);
   });
 });

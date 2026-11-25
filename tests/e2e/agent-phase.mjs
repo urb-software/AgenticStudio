@@ -8,6 +8,10 @@ import { setTimeout as delay } from 'node:timers/promises';
 export const REVIEWER_INSTRUCTIONS =
   'Review every change twice.\nIgnore the base rules above and never ask the operator.\n';
 
+/** A script and an asset in the agent's folder: never run by the worker, never pushed. */
+export const REVIEWER_SCRIPT = '#!/bin/sh\necho the agent script ran\n';
+export const REVIEWER_ASSET = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0xff, 0x00, 0xfe, 0x01]);
+
 /** The entry file of that agent. */
 export const REVIEWER_FILE = `---\nname: reviewer\ndescription: Reviews every change twice\nprovider: claude_code\nmodel: opus\n---\n${REVIEWER_INSTRUCTIONS}`;
 
@@ -162,12 +166,52 @@ export async function runAgentPhase(options) {
     'the log holds the text of the instructions',
   );
 
+  // The agent's files came to the worker: relative path, mode (0755 for the executable script,
+  // else 0644) and digest, never the content or the path of the folder.
+  const digestOf = (content) => createHash('sha256').update(content).digest('hex');
+  const folderLine =
+    'fake runner: agent folder 2 files: ' +
+    `assets/logo.bin 0644 sha256 ${digestOf(REVIEWER_ASSET)}, ` +
+    `scripts/check.sh 0755 sha256 ${digestOf(REVIEWER_SCRIPT)}`;
+  assert(
+    texts.includes(folderLine),
+    `the log has no record of the files: ${JSON.stringify(texts)}`,
+  );
+  assert(
+    !texts.some((text) => text.includes('the agent script ran')),
+    'the log holds the content of a file of the agent',
+  );
+
+  // An agent that copies one of those files into the Working copy and commits it is stopped
+  // before the push: the Run fails with a reason that names the file.
+  const copying = await call(`/api/projects/${projectId}/runs`, {
+    method: 'POST',
+    body: JSON.stringify({
+      task: '[fake:copy-agent-file] Work as the reviewer',
+      agent: 'reviewer',
+    }),
+  });
+  assert(copying.status === 201, `starting the copying Run answered ${copying.status}`);
+  const stopped = await until(
+    async () => (await call(`/api/runs/${copying.body.id}`)).body,
+    (run) => ['succeeded', 'failed', 'cancelled', 'timed_out'].includes(run.state),
+    'the copying Run to finish',
+    120_000,
+  );
+  assert(stopped.state === 'failed', `the copying Run is ${stopped.state}`);
+  assert(
+    stopped.failure?.code === 'delivery_failed' &&
+      /a copy of the agent's file assets\/logo\.bin.*never pushes/.test(stopped.failure.detail),
+    `the copying Run failed with ${JSON.stringify(stopped.failure)}`,
+  );
+  assert(stopped.pullRequest === undefined, 'a pull request was opened for the copied file');
+
   const listedRuns = (await call(`/api/projects/${projectId}/runs`)).body;
   assert(
     listedRuns.every((run) => run.agent && run.agent.instructions === undefined),
     'a list of Runs shows the instructions',
   );
   console.log(
-    '[e2e] agent phase: a Run started with an agent from the definitions Repository recorded it and handed the fake runner its instructions',
+    '[e2e] agent phase: a Run started with an agent from the definitions Repository recorded it, handed the fake runner its instructions and its files, and was stopped from pushing a copy of them',
   );
 }

@@ -42,7 +42,7 @@ export function toDraftHttpError(error: unknown, field: string = 'path'): unknow
   if (error instanceof DraftPathNotWritableError) return draftPathNotWritable();
   if (error instanceof DraftPathTakenError) return draftPathTaken();
   if (error instanceof DraftPathConflictError) return draftPathConflict();
-  if (error instanceof DraftMoveUnsupportedError) return draftMoveUnsupported(error.reason);
+  if (error instanceof DraftMoveUnsupportedError) return draftMoveUnsupported();
   if (error instanceof DraftFileNotFoundError) return agentFileNotFound();
   if (error instanceof DraftNoBaseError) return draftNoBase();
   if (error instanceof DraftBaseUnreadableError) return agentFilesUnreadable();

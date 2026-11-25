@@ -12,16 +12,18 @@ import { ReadAgentDraftFileHandler } from './application/features/read-agent-dra
 import { SaveAgentDraftFileHandler } from './application/features/save-agent-draft-file/handler.js';
 import { ReadAgentFileHandler } from './application/features/read-agent-file/handler.js';
 import { ReadAgentsHandler } from './application/features/read-agents/handler.js';
+import { ReadAgentFolderHandler } from './application/features/read-agent-folder/handler.js';
+import { ReadAgentFolderAgentFolders } from './entry-points/contracts/agent-folders.js';
+import { GetAgentFileEndpoint } from './entry-points/http/operator/get-agent-file/endpoint.js';
+import { ReadAgentsAgentResolutions } from './entry-points/contracts/agent-resolutions.js';
+import { ListRunAgentsEndpoint } from './entry-points/http/operator/list-run-agents/endpoint.js';
+import { AGENT_FOLDERS, AGENT_RESOLUTION } from './contracts/index.js';
 import { DeleteAgentDraftFileEndpoint } from './entry-points/http/operator/delete-agent-draft-file/endpoint.js';
 import { DiscardAgentDraftEndpoint } from './entry-points/http/operator/discard-agent-draft/endpoint.js';
 import { GetAgentDraftEndpoint } from './entry-points/http/operator/get-agent-draft/endpoint.js';
 import { GetAgentDraftFileEndpoint } from './entry-points/http/operator/get-agent-draft-file/endpoint.js';
 import { MoveAgentDraftFileEndpoint } from './entry-points/http/operator/move-agent-draft-file/endpoint.js';
 import { SaveAgentDraftFileEndpoint } from './entry-points/http/operator/save-agent-draft-file/endpoint.js';
-import { GetAgentFileEndpoint } from './entry-points/http/operator/get-agent-file/endpoint.js';
-import { ReadAgentsAgentResolutions } from './entry-points/contracts/agent-resolutions.js';
-import { ListRunAgentsEndpoint } from './entry-points/http/operator/list-run-agents/endpoint.js';
-import { AGENT_RESOLUTION } from './contracts/index.js';
 import { AGENT_DRAFT_REPOSITORY } from './domain/repositories/agent-draft-repository.js';
 import { PrismaAgentDraftRepository } from './infrastructure/repositories/prisma-agent-draft-repository.js';
 import { GetAgentEndpoint } from './entry-points/http/operator/get-agent/endpoint.js';
@@ -58,6 +60,7 @@ export class AgentsModule {
       providers: [
         GetDefinitionsRepositoryHandler,
         ReadAgentsHandler,
+        ReadAgentFolderHandler,
         ListAgentFilesHandler,
         ReadAgentFileHandler,
         AgentDraftBaseReader,
@@ -70,8 +73,9 @@ export class AgentsModule {
         DiscardAgentDraftHandler,
         { provide: AGENT_DRAFT_REPOSITORY, useClass: PrismaAgentDraftRepository },
         { provide: AGENT_RESOLUTION, useClass: ReadAgentsAgentResolutions },
+        { provide: AGENT_FOLDERS, useClass: ReadAgentFolderAgentFolders },
       ],
-      exports: [AGENT_RESOLUTION],
+      exports: [AGENT_RESOLUTION, AGENT_FOLDERS],
     };
   }
 }

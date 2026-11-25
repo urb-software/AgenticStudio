@@ -22,6 +22,7 @@ function scripted(script: { snapshot?: DefinitionsSnapshot | null; tree?: Defini
       Promise.resolve(script.tree ?? { status: 'listed', entries: [], truncated: false }),
     ),
     readFiles: vi.fn(() => Promise.reject(new Error('not used'))),
+    readBlobs: vi.fn(() => Promise.reject(new Error('not used'))),
     blobIds: vi.fn(() => Promise.reject(new Error('not used'))),
   } satisfies DefinitionsFiles;
   return { fake, handler: new ListAgentFilesHandler(fake) };

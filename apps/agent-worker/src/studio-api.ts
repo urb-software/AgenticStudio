@@ -1,4 +1,6 @@
 import {
+  type AgentFolderResponse,
+  agentFolderResponseSchema,
   type ClaimLookupsResponse,
   claimLookupsResponseSchema,
   type HeartbeatResponse,
@@ -153,6 +155,18 @@ export class StudioApi {
     return runStatesResponseSchema.parse(await response.json());
   }
 
+  /**
+   * The files of the agent folder this worker's Run recorded, at the commit it recorded; the worker
+   * names neither. A refusal carries its problem type (`agent-folder-unavailable`, `-invalid`).
+   */
+  async agentFolder(runId: string, signal?: AbortSignal): Promise<AgentFolderResponse> {
+    const response = await this.get(
+      `runs/${encodeURIComponent(runId)}/agent-folder?workerId=${encodeURIComponent(this.options.workerId)}`,
+      signal,
+    );
+    return agentFolderResponseSchema.parse(await response.json());
+  }
+
   /** Tells Studio this worker's runner mode and which providers it enables. */
   async reportStatus(status: WorkerStatusReport, signal?: AbortSignal): Promise<void> {
     await this.post('status', status, signal);
@@ -164,17 +178,35 @@ export class StudioApi {
     return heartbeatResponseSchema.parse(await response.json());
   }
 
+  private post(path: string, body: object, signal?: AbortSignal): Promise<Response> {
+    const { token, workerId } = this.options;
+    return this.send(path, signal, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workerId, ...body }),
+    });
+  }
+
+  private get(path: string, signal?: AbortSignal): Promise<Response> {
+    return this.send(path, signal, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${this.options.token}` },
+    });
+  }
+
   /**
    * One call: abandoned after the timeout, or when `signal` aborts (the worker stops). The
    * rejection is then the abort reason (a `TimeoutError` or `AbortError`).
    */
-  private async post(path: string, body: object, signal?: AbortSignal): Promise<Response> {
-    const { apiUrl, token, workerId } = this.options;
+  private async send(
+    path: string,
+    signal: AbortSignal | undefined,
+    init: { method: string; headers: Record<string, string>; body?: string },
+  ): Promise<Response> {
+    const { apiUrl } = this.options;
     const call = this.options.fetch ?? fetch;
     const response = await call(`${apiUrl}/api/worker/${path}`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ workerId, ...body }),
+      ...init,
       signal: AbortSignal.any([
         AbortSignal.timeout(this.options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
         ...(signal ? [signal] : []),

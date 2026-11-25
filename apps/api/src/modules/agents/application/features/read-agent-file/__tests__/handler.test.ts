@@ -27,6 +27,7 @@ function scripted(script: {
       ),
     ),
     listTree: vi.fn(() => Promise.reject(new Error('not used'))),
+    readBlobs: vi.fn(() => Promise.reject(new Error('not used'))),
     readFiles: vi.fn((_c: string, paths: readonly string[]): Promise<DefinitionsFilesResult> => {
       if (script.unavailable) return Promise.resolve({ status: script.unavailable });
       const read = script.read ?? { path: paths[0]!, status: 'missing' as const, size: 0 };

@@ -22,7 +22,7 @@ export type MoveAgentDraftFileResult = AgentDraftView;
 
 /**
  * Moves a file inside the Draft: its content is the Draft's when the Draft holds the file, and the
- * base commit's otherwise (text only: a binary file or one over the limit cannot be carried).
+ * base commit's stored bytes otherwise (a file over the file limit is not carried).
  */
 @Injectable()
 export class MoveAgentDraftFileHandler {
@@ -58,12 +58,11 @@ export class MoveAgentDraftFileHandler {
   private async contentOf(path: string, baseCommit: string): Promise<Uint8Array | null> {
     const stored = await this.drafts.findContent(path);
     if (stored) return stored;
-    const read = await this.definitions.readFiles(baseCommit, [path], MAX_FILE_BYTES);
+    const read = await this.definitions.readBlobs(baseCommit, [path], MAX_FILE_BYTES);
     if (read.status !== 'read') throw new DraftBaseUnreadableError();
     const file = read.files[0];
-    if (!file || file.status === 'missing') return null;
-    if (file.status === 'too_large') throw new DraftMoveUnsupportedError('too_large');
-    if (file.binary) throw new DraftMoveUnsupportedError('binary');
-    return Buffer.from(file.text, 'utf8');
+    if (file?.status === 'found') return file.bytes;
+    if (file?.status === 'too_large') throw new DraftMoveUnsupportedError();
+    return null;
   }
 }

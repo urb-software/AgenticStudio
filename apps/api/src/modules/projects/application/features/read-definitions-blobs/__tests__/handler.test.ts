@@ -5,6 +5,7 @@ import {
   GitCloneMissingError,
   GitCommitMissingError,
   GitOperationError,
+  GitRequestRejectedError,
   GitUnsupportedPlatformError,
 } from '../../../ports/repository-git.js';
 import { FakeRepositoryGit } from '../../../ports/__tests__/fake-repository-git.js';
@@ -12,7 +13,7 @@ import { ReadDefinitionsBlobsHandler } from '../handler.js';
 
 const DEFINITIONS = '4a3c9d2f-5e6b-4c7d-8e8f-9a0b1c2d3e4f';
 const HEAD = 'c'.repeat(40);
-const PATHS = ['agents/a/AGENT.md', 'agents/gone.md'];
+const PATHS = ['agents/a/logo.png', 'agents/a/run.sh'];
 
 describe('ReadDefinitionsBlobsHandler', () => {
   let projects: InMemoryProjectRepository;
@@ -37,50 +38,56 @@ describe('ReadDefinitionsBlobsHandler', () => {
     });
   }
 
-  it('answers the blob id of each path of the definitions Clone at the commit, null for none', async () => {
+  it('reads the bytes of the files of the definitions Clone at the commit, in order', async () => {
     await connected();
-    git.blobIdsAtCommit.mockResolvedValueOnce([
-      { path: PATHS[0]!, blob: 'd'.repeat(40) },
-      { path: PATHS[1]!, blob: null },
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0xff, 0x00]);
+    git.readBlobsAtCommit.mockResolvedValueOnce([
+      { path: PATHS[0]!, outcome: { status: 'found', bytes: png } },
+      { path: PATHS[1]!, outcome: { status: 'too_large' } },
     ]);
 
-    await expect(handler.execute({ commit: HEAD, paths: PATHS })).resolves.toEqual({
+    await expect(handler.execute({ commit: HEAD, paths: PATHS, maxBytes: 100 })).resolves.toEqual({
       status: 'read',
-      blobs: [
-        { path: PATHS[0], blob: 'd'.repeat(40) },
-        { path: PATHS[1], blob: null },
+      files: [
+        { path: PATHS[0], status: 'found', bytes: png },
+        { path: PATHS[1], status: 'too_large' },
       ],
     });
-    expect(git.blobIdsAtCommit).toHaveBeenCalledWith(DEFINITIONS, HEAD, PATHS);
+    expect(git.readBlobsAtCommit).toHaveBeenCalledWith(DEFINITIONS, HEAD, PATHS, 100);
   });
 
   it('is not ready without a definitions Project or a Repository', async () => {
-    await expect(handler.execute({ commit: HEAD, paths: PATHS })).resolves.toEqual({
+    await expect(handler.execute({ commit: HEAD, paths: PATHS, maxBytes: 1 })).resolves.toEqual({
       status: 'repository_not_ready',
     });
     projects.addProject(DEFINITIONS, 'Agents', 'definitions');
-    await expect(handler.execute({ commit: HEAD, paths: PATHS })).resolves.toEqual({
+    await expect(handler.execute({ commit: HEAD, paths: PATHS, maxBytes: 1 })).resolves.toEqual({
       status: 'repository_not_ready',
     });
-    expect(git.blobIdsAtCommit).not.toHaveBeenCalled();
+    expect(git.readBlobsAtCommit).not.toHaveBeenCalled();
   });
 
   it.each([
     [new GitUnsupportedPlatformError('win32'), 'unsupported_platform'],
     [new GitCloneMissingError(), 'repository_not_ready'],
     [new GitCommitMissingError(), 'commit_missing'],
+    [new GitRequestRejectedError('bad commit'), 'failed'],
     [new GitOperationError('unknown'), 'failed'],
   ] as const)('maps %s to %s', async (error, status) => {
     await connected();
-    git.blobIdsAtCommit.mockRejectedValueOnce(error);
+    git.readBlobsAtCommit.mockRejectedValueOnce(error);
 
-    await expect(handler.execute({ commit: HEAD, paths: PATHS })).resolves.toEqual({ status });
+    await expect(handler.execute({ commit: HEAD, paths: PATHS, maxBytes: 1 })).resolves.toEqual({
+      status,
+    });
   });
 
-  it('lets an unexpected error through', async () => {
+  it('does not hide an unexpected error', async () => {
     await connected();
-    git.blobIdsAtCommit.mockRejectedValueOnce(new TypeError('bug'));
+    git.readBlobsAtCommit.mockRejectedValueOnce(new Error('boom'));
 
-    await expect(handler.execute({ commit: HEAD, paths: PATHS })).rejects.toThrow(TypeError);
+    await expect(handler.execute({ commit: HEAD, paths: PATHS, maxBytes: 1 })).rejects.toThrow(
+      'boom',
+    );
   });
 });

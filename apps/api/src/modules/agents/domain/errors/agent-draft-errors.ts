@@ -65,10 +65,10 @@ export class DraftBaseUnreadableError extends Error {
   }
 }
 
-/** A base file cannot move because Studio cannot carry its bytes: it is binary or over the file limit. */
+/** A base file cannot move because it is over the file limit, so Studio does not carry its bytes. */
 export class DraftMoveUnsupportedError extends Error {
-  constructor(readonly reason: 'binary' | 'too_large') {
-    super('The file cannot be moved: it is binary or over the file limit.');
+  constructor() {
+    super('The file cannot be moved: it is over the file limit.');
     this.name = 'DraftMoveUnsupportedError';
   }
 }

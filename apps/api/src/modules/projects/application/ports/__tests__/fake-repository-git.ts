@@ -14,6 +14,7 @@ const OPERATIONS = [
   'readFileAtCommit',
   'listTreeAtCommit',
   'readFilesAtCommit',
+  'readBlobsAtCommit',
   'blobIdsAtCommit',
   'archiveCommit',
 ] as const;
@@ -58,6 +59,10 @@ export class FakeRepositoryGit implements RepositoryGit {
   );
 
   readFilesAtCommit = vi.fn<RepositoryGit['readFilesAtCommit']>(() =>
+    Promise.reject(new Error('not used')),
+  );
+
+  readBlobsAtCommit = vi.fn<RepositoryGit['readBlobsAtCommit']>(() =>
     Promise.reject(new Error('not used')),
   );
 

@@ -916,7 +916,7 @@ describe('agents API (PostgreSQL + Redis via Testcontainers)', () => {
         ]);
       });
 
-      it('carries a binary upload within the limit, and cannot move a binary base file', async () => {
+      it('carries a binary upload within the limit, and a binary base file when it moves', async () => {
         await connectedWith('draft-binary', {
           ...DRAFT_FILES,
           'blob.bin': Buffer.from([0x50, 0x00, 0x03]),
@@ -934,10 +934,18 @@ describe('agents API (PostgreSQL + Redis via Testcontainers)', () => {
         ]);
         const read = await draftContent('assets/icon.bin');
         expect(read.body).toMatchObject({ kind: 'binary', size: 4 });
-        const refused = await move('blob.bin', 'assets/blob.bin');
-        expect(refused.status).toBe(422);
-        expect(refused.body.type).toBe('urn:agentic-studio:problem:agent-draft-move-unsupported');
-        expect(refused.body.reason).toBe('binary');
+        const moved = await move('blob.bin', 'assets/blob.bin');
+        expect(moved.status).toBe(200);
+        expect(moved.body.files).toContainEqual({
+          path: 'assets/blob.bin',
+          change: 'added',
+          size: 3,
+          movedFrom: 'blob.bin',
+        });
+        expect((await draftContent('assets/blob.bin')).body).toMatchObject({
+          kind: 'binary',
+          size: 3,
+        });
       });
 
       it('keeps its base when the Repository moves on, and lists what moved upstream', async () => {

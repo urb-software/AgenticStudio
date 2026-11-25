@@ -52,6 +52,8 @@ export const RUN_FAILURE_CODES = [
   'worker_lost',
   'delivery_failed',
   'step_limit',
+  'agent_folder_unavailable',
+  'agent_folder_invalid',
   'unknown',
 ] as const;
 export const runFailureCodeSchema = z.enum(RUN_FAILURE_CODES);
@@ -454,6 +456,12 @@ export const WORKER_PROBLEM_TYPES = {
   runNotHeld: 'urn:agentic-studio:problem:run-not-held',
   runNotFound: 'urn:agentic-studio:problem:run-not-found',
   stepLimitReached: 'urn:agentic-studio:problem:step-limit-reached',
+  /** 409: the Clone no longer holds the commit the Run's agent was read at. */
+  agentFolderUnavailable: 'urn:agentic-studio:problem:agent-folder-unavailable',
+  /** 409: the agent's folder at that commit fails the shared validation. */
+  agentFolderInvalid: 'urn:agentic-studio:problem:agent-folder-invalid',
+  /** 409: the listing of the definitions Repository is cut, so the folder may be partial. */
+  agentFolderCut: 'urn:agentic-studio:problem:agent-folder-cut',
 } as const;
 
 /** `POST /api/worker/runs/claim` body. */
@@ -1437,3 +1445,40 @@ export const lookupResultRequestSchema = z.union([
   }),
 ]);
 export type LookupResultRequest = z.infer<typeof lookupResultRequestSchema>;
+
+/** Most files in an agent folder hand-over; the validation's own limit is the stricter one. */
+export const AGENT_FOLDER_FILES_MAX = 100;
+
+/** `GET /api/worker/runs/:runId/agent-folder` query: the worker names neither agent nor commit. */
+export const agentFolderQuerySchema = z.strictObject({ workerId: workerIdSchema });
+export type AgentFolderQuery = z.infer<typeof agentFolderQuerySchema>;
+
+const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+
+/**
+ * The files of the Run's agent folder at its recorded commit, without `AGENT.md` (the
+ * instructions travel in the claim). A built-in agent has no commit and no files. The worker
+ * validates paths and sizes again before it writes anything.
+ */
+export const agentFolderResponseSchema = z
+  .strictObject({
+    commit: commitIdSchema.nullable(),
+    files: z
+      .array(
+        z.strictObject({
+          path: z.string().min(1).max(1024),
+          /** Git mode `100755`; every other file is `0644`. */
+          executable: z.boolean(),
+          contentBase64: z
+            .string()
+            .max(2 * 1024 * 1024)
+            .regex(BASE64),
+        }),
+      )
+      .max(AGENT_FOLDER_FILES_MAX),
+  })
+  .refine((answer) => answer.commit !== null || answer.files.length === 0, {
+    path: ['files'],
+    message: 'A built-in agent has no files.',
+  });
+export type AgentFolderResponse = z.infer<typeof agentFolderResponseSchema>;

@@ -361,6 +361,44 @@ describe('CodexRunner at the spawn boundary', () => {
     expect(readFileSync(join(runDir, 'codex', 'answer.md'), 'utf8')).not.toContain('Use pnpm.');
   });
 
+  it('names the agent folder in the prompt and hands it to no option of the CLI', async () => {
+    replaying('success');
+    const agentDir = '/var/lib/studio-agent/runs/0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b/agent';
+    const base = input('Add a health check');
+    const reviewer = {
+      ...base.run,
+      agent: {
+        ...base.run.agent,
+        name: 'reviewer',
+        source: 'definitions' as const,
+        commit: 'c'.repeat(40),
+        instructions: 'Review every change twice.',
+      },
+    };
+
+    await drain(runner().start({ ...base, run: reviewer }));
+    const without = spawn.mock.calls[0]!;
+    spawn.mockClear();
+    replaying('success');
+    await drain(
+      runner().start({
+        ...base,
+        run: reviewer,
+        workspace: { ...base.workspace, agentFolder: agentDir },
+      }),
+    );
+
+    const [binary, args, options] = spawn.mock.calls[0]!;
+    expect(readFileSync(join(runDir, 'codex', 'prompt.md'), 'utf8')).toContain(
+      `are in ${agentDir}; a file the instructions name is relative to that folder.`,
+    );
+    expect(binary).toBe(without[0]);
+    expect(args).toEqual(without[1]);
+    expect(options).toEqual(without[2]);
+    expect(JSON.stringify([args, options])).not.toContain(agentDir);
+    expect(args).not.toContain('--add-dir');
+  });
+
   it('resumes a Follow-up with exactly the command of an answer, its text on standard input', async () => {
     replaying('resume');
     await drain(

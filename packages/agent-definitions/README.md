@@ -17,9 +17,10 @@ The format of an Agent definition and its validation. One pure package, shared b
 ```ts
 const result = validateAgentFolder(name, entries); // { ok: true, definition } | { ok: false, problems }
 const folders = findAgentFolders(repositoryEntries); // agents/<name>/ groups of a Repository tree
+const problems = validateAgentFiles(entries); // the path, kind, duplicate and size rules alone
 ```
 
-`entries` is `{ path, kind, size, content? }[]`, with paths relative to the folder. A refusal always holds at least one problem `{ code, path, key?, message }`. A message quotes at most the offending key or path, never a value or file content.
+`entries` is `{ path, kind, size, content? }[]`, with paths relative to the folder. A refusal always holds at least one problem `{ code, path, key?, message }`. A message quotes at most the offending key or path, never a value or file content. `validateAgentFiles` judges the files without an entry file or a name (the agent worker applies it to the files Studio hands over, which leave `AGENT.md` out).
 
 The package re-exports `PROVIDERS`, `PROVIDER_MODELS`, `MODEL_DEFAULT` and the `Provider` type, so the web app depends on this package only, never on the contracts.
 

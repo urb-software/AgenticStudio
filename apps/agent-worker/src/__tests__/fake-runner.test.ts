@@ -5,6 +5,9 @@ import {
   type RunPayload,
 } from '@agentic-studio/contracts';
 import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { FakeRunner, fakeAgentLine, fakeScenarioOf, fakeSessionRef } from '../fake-runner.js';
 import { AgentFailedError, drainRunStep } from '../runner.js';
@@ -58,6 +61,7 @@ describe('fakeScenarioOf', () => {
     ['[fake:checks-failed] Add a file', 'checks-failed'],
     ['[fake:secret]', 'secret'],
     ['Print it [fake:print-env]', 'print-env'],
+    ['[fake:copy-agent-file]', 'copy-agent-file'],
     ['[fake:unknown]', 'success'],
   ])('reads %j as %s', (task, scenario) => {
     expect(fakeScenarioOf(task)).toBe(scenario);
@@ -291,5 +295,84 @@ describe('the agent the fake runner records', () => {
   it('logs nothing for the built-in Default agent, so its Runs log what they always did', async () => {
     expect(fakeAgentLine(run('x'))).toBeNull();
     expect((await startWith(run('x'))).filter((text) => text.includes('agent'))).toEqual([]);
+  });
+});
+
+describe('the fake runner and the agent folder', () => {
+  const reviewerRun = (task: string): RunPayload => ({
+    ...run(task),
+    agent: {
+      ...run(task).agent,
+      name: 'reviewer',
+      source: 'definitions',
+      commit: 'c'.repeat(40),
+      instructions: 'Review.',
+    },
+  });
+
+  async function startWithFolder(dir: string | null, task = 'Add a feature') {
+    const events: RunnerEvent[] = [];
+    await drainRunStep(
+      new FakeRunner({ slowMs: 10, slowLineMs: 2 }).start({
+        run: reviewerRun(task),
+        workspace: { ...workspace, ...(dir === null ? {} : { agentFolder: dir }) },
+        signal: new AbortController().signal,
+        processes,
+      }),
+      (event) => events.push(event),
+    );
+    return events;
+  }
+
+  it('reports the files of the folder by path, mode and digest, never their content', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'studio-fake-agent-'));
+    try {
+      mkdirSync(join(dir, 'scripts'));
+      mkdirSync(join(dir, 'assets'));
+      writeFileSync(join(dir, 'scripts', 'check.sh'), '#!/bin/sh\necho SECRET-BODY\n', {
+        mode: 0o755,
+      });
+      writeFileSync(join(dir, 'assets', 'logo.bin'), Buffer.from([0xff, 0x00, 0xfe]));
+
+      const events = await startWithFolder(dir);
+
+      const texts = events.map((event) => event.text);
+      const digest = (content: Buffer | string) =>
+        createHash('sha256').update(content).digest('hex');
+      const line = texts.find((text) => text.startsWith('fake runner: agent folder'));
+      expect(line).toMatch(
+        new RegExp(
+          '^fake runner: agent folder 2 files: ' +
+            `assets/logo\\.bin 0[0-7]{3} sha256 ${digest(Buffer.from([0xff, 0x00, 0xfe]))}, ` +
+            `scripts/check\\.sh 0[0-7]{3} sha256 ${digest('#!/bin/sh\necho SECRET-BODY\n')}$`,
+        ),
+      );
+      expect(JSON.stringify(texts)).not.toContain('SECRET-BODY');
+      expect(JSON.stringify(texts)).not.toContain(dir);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('runs nothing it finds in the folder', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'studio-fake-agent-'));
+    try {
+      const marker = join(dir, '..', `studio-fake-ran-${process.pid}`);
+      writeFileSync(join(dir, 'run.sh'), `#!/bin/sh\ntouch '${marker}'\n`, { mode: 0o755 });
+
+      await startWithFolder(dir);
+
+      expect(existsSync(marker)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('says nothing of a folder when there is none: a Run logs what it always did', async () => {
+    const without = (await startWithFolder(null)).map((event) => event.text);
+
+    expect(without.some((text) => text.includes('agent folder'))).toBe(false);
+    const built = await start('Add a feature');
+    expect(built.events.map((event) => event.text)).not.toContain('fake runner: agent folder');
   });
 });

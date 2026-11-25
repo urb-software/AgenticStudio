@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -20,7 +20,8 @@ export interface GitFixture {
 }
 
 /** A file's content, a symbolic link to `symlink`, or a submodule entry at `gitlink` (a commit id). */
-export type FixtureFile = string | Buffer | { symlink: string } | { gitlink: string };
+export type FixtureFile =
+  string | Buffer | { symlink: string } | { gitlink: string } | { executable: string | Buffer };
 
 function git(cwd: string, args: string[]): string {
   const result = spawnSync('git', args, {
@@ -118,6 +119,9 @@ export function pushFiles(
       symlinkSync(content.symlink, join(fixture.work, path));
     } else if (typeof content === 'object' && 'gitlink' in content) {
       gitlinks.push([path, content.gitlink]);
+    } else if (typeof content === 'object' && 'executable' in content) {
+      writeFileSync(join(fixture.work, path), content.executable);
+      chmodSync(join(fixture.work, path), 0o755);
     } else {
       writeFileSync(join(fixture.work, path), content);
     }

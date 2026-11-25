@@ -131,16 +131,12 @@ export function draftPathConflict(): ProblemException {
   });
 }
 
-/** 422 for a base file Studio cannot carry to a new path: binary or over the file limit. */
-export function draftMoveUnsupported(reason: 'binary' | 'too_large'): ProblemException {
+/** 422 for a base file over the file limit, whose bytes Studio does not carry to a new path. */
+export function draftMoveUnsupported(): ProblemException {
   return new ProblemException(HttpStatus.UNPROCESSABLE_ENTITY, {
     type: AGENTS_PROBLEM_TYPES.draftMoveUnsupported,
     title: 'File cannot be moved',
-    detail:
-      reason === 'binary'
-        ? 'A binary file of the Repository cannot be moved in the Draft.'
-        : 'A file over the file limit cannot be moved in the Draft.',
-    extensions: { reason },
+    detail: 'A file over the file limit cannot be moved in the Draft.',
   });
 }
 

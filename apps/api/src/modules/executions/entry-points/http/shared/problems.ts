@@ -15,6 +15,10 @@ export const EXECUTIONS_PROBLEM_TYPES = {
   agentUnknown: 'urn:agentic-studio:problem:agent-unknown',
   agentNotUsable: 'urn:agentic-studio:problem:agent-not-usable',
   runNotHeld: 'urn:agentic-studio:problem:run-not-held',
+  agentFolderUnavailable: 'urn:agentic-studio:problem:agent-folder-unavailable',
+  agentFolderInvalid: 'urn:agentic-studio:problem:agent-folder-invalid',
+  agentFolderCut: 'urn:agentic-studio:problem:agent-folder-cut',
+  agentFolderReadFailed: 'urn:agentic-studio:problem:agent-folder-read-failed',
   tooManyLogStreams: 'urn:agentic-studio:problem:too-many-log-streams',
   illegalRunTransition: 'urn:agentic-studio:problem:illegal-run-transition',
   runAlreadyFinished: 'urn:agentic-studio:problem:run-already-finished',
@@ -410,6 +414,38 @@ export function runNotHeld(): ProblemException {
     type: EXECUTIONS_PROBLEM_TYPES.runNotHeld,
     title: 'Run not held',
     detail: 'This agent worker does not hold the run. Stop working on it.',
+  });
+}
+
+export function agentFolderUnavailable(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: EXECUTIONS_PROBLEM_TYPES.agentFolderUnavailable,
+    title: 'Agent files unavailable',
+    detail: "The agent's files are no longer available in the definitions Repository.",
+  });
+}
+
+export function agentFolderCut(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: EXECUTIONS_PROBLEM_TYPES.agentFolderCut,
+    title: 'Agent files cannot be read whole',
+    detail: "The definitions Repository has too many files to read this agent's folder safely.",
+  });
+}
+
+export function agentFolderReadFailed(): ProblemException {
+  return new ProblemException(HttpStatus.SERVICE_UNAVAILABLE, {
+    type: EXECUTIONS_PROBLEM_TYPES.agentFolderReadFailed,
+    title: 'Agent files not readable now',
+    detail: "The agent's files could not be read right now. Try again.",
+  });
+}
+
+export function agentFolderInvalid(detail: string): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: EXECUTIONS_PROBLEM_TYPES.agentFolderInvalid,
+    title: 'Agent files invalid',
+    detail,
   });
 }
 

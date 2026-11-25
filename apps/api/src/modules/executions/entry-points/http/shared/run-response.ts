@@ -30,6 +30,8 @@ export const runFailureCodeSchema = z.enum([
   'worker_lost',
   'delivery_failed',
   'step_limit',
+  'agent_folder_unavailable',
+  'agent_folder_invalid',
   'unknown',
 ]);
 

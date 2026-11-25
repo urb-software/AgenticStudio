@@ -21,13 +21,15 @@ import {
 export interface ReadDefinitionsBlobsInput {
   commit: string;
   paths: readonly string[];
+  maxBytes: number;
 }
 
 export type ReadDefinitionsBlobsResult = DefinitionsBlobsResult;
 
 /**
- * The Git object name of each file of the definitions Project's Clone at a commit, from Git's
- * object store: no checkout, and no file is read. A path that names no regular file has none.
+ * Reads the stored bytes of files of the definitions Project's Clone at a commit, from Git's
+ * object store: no checkout and no working-tree change. A path that names no regular file is
+ * `missing`.
  */
 @Injectable()
 export class ReadDefinitionsBlobsHandler {
@@ -44,8 +46,20 @@ export class ReadDefinitionsBlobsHandler {
       return { status: 'repository_not_ready' };
     }
     try {
-      const blobs = await this.git.blobIdsAtCommit(project.id, input.commit, input.paths);
-      return { status: 'read', blobs: blobs.map(({ path, blob }) => ({ path, blob })) };
+      const reads = await this.git.readBlobsAtCommit(
+        project.id,
+        input.commit,
+        input.paths,
+        input.maxBytes,
+      );
+      return {
+        status: 'read',
+        files: reads.map(({ path, outcome }) =>
+          outcome.status === 'found'
+            ? { path, status: 'found', bytes: outcome.bytes }
+            : { path, status: outcome.status },
+        ),
+      };
     } catch (error) {
       if (error instanceof GitUnsupportedPlatformError) return { status: 'unsupported_platform' };
       if (error instanceof GitCloneMissingError) return { status: 'repository_not_ready' };

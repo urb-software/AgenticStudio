@@ -156,7 +156,7 @@ export class CodexRunner implements Runner {
       // its text (read at the start commit).
       const marker = this.options.marker?.() ?? randomBytes(6).toString('hex');
       const instructions = await buildInstructions(
-        run,
+        { ...run, agentFolder: workspace.agentFolder ?? null },
         this.repositoryFiles(workspace, run.startCommit, signal),
         marker,
         CODEX_PROJECT_INSTRUCTION_FILES,

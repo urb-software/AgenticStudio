@@ -21,8 +21,8 @@ export class MoveAgentDraftFileEndpoint {
     description:
       'Moves a file inside the Draft: a delete of the old path (or dropping it, when only the ' +
       'Draft holds it) plus an add of the new one, linked by `movedFrom`. Moving onto an existing ' +
-      'path is refused unless the Draft deletes that path. Text only for a file of the base ' +
-      'commit: a binary file or one over 1 MiB cannot be moved. The answer is the new Draft.',
+      'path is refused unless the Draft deletes that path. A file of the base commit over 1 MiB ' +
+      'cannot be moved. The answer is the new Draft.',
   })
   @ZodResponse({ status: 200, type: AgentDraftResponseDto })
   @ApiProblemResponses({

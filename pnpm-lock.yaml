@@ -60,6 +60,9 @@ importers:
 
   apps/agent-worker:
     dependencies:
+      '@agentic-studio/agent-definitions':
+        specifier: workspace:*
+        version: link:../../packages/agent-definitions
       '@agentic-studio/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts

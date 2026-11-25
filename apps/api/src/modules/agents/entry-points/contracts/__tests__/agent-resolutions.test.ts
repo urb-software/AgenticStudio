@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type {
+  DefinitionsBlobsResult,
   ProjectDefaultAgents,
   DefinitionsFiles,
   DefinitionsFilesResult,
@@ -15,7 +16,12 @@ const COMMIT = 'a'.repeat(40);
 const entry = (name: string, provider: string, model = ''): string =>
   `---\nname: ${name}\ndescription: Does ${name}\nprovider: ${provider}\n${model}---\nInstructions of ${name}.\n`;
 
-const file = (path: string): DefinitionsTreeEntry => ({ path, kind: 'file', size: 10 });
+const file = (path: string): DefinitionsTreeEntry => ({
+  path,
+  kind: 'file',
+  size: 10,
+  executable: false,
+});
 
 function resolutions(files: Record<string, string>, snapshot: DefinitionsSnapshot | null) {
   const fake = {
@@ -42,6 +48,9 @@ function resolutions(files: Record<string, string>, snapshot: DefinitionsSnapsho
             : { path, status: 'missing' as const, size: 0 as const },
         ),
       }),
+    ),
+    readBlobs: vi.fn((): Promise<DefinitionsBlobsResult> =>
+      Promise.resolve({ status: 'read', files: [] }),
     ),
     blobIds: vi.fn(() => Promise.reject(new Error('not used'))),
   } satisfies DefinitionsFiles;
