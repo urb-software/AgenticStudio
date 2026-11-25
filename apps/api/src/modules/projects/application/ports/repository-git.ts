@@ -255,10 +255,9 @@ export interface RepositoryGit {
   ): Promise<CommitFileRead[]>;
 
   /**
-   * The object name of the regular file at each path in `commit`, in the order given, from the
-   * Clone's object store and without reading any file: two commits hold the same content at a
-   * path exactly when the names are equal. A path that is unsafe, or names no regular file, has
-   * `null`. Throws the errors of {@link RepositoryGit.readFileAtCommit} for the commit and Clone.
+   * The object name of the regular file at each path in `commit`, in the order given, without
+   * reading any file: equal names mean equal content. A path that is unsafe, or names no regular
+   * file, has `null`. Throws the errors of {@link RepositoryGit.readFileAtCommit}.
    */
   blobIdsAtCommit(
     projectId: string,

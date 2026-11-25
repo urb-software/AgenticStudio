@@ -31,9 +31,8 @@ import { ListAgentsEndpoint } from './entry-points/http/operator/list-agents/end
 
 /**
  * `agents` business module: the agents found in the definitions Repository, the agents a Run can
- * start with, and the Draft of unpublished changes to the definition files, which reaches no
- * agent. It reaches the Repository and the Projects only through the `projects` module's public
- * contract, which the composition root passes in.
+ * start with, and the Draft of unpublished changes, which reaches no agent. It reaches the
+ * Repository and the Projects only through the `projects` module's public contract.
  */
 @Module({})
 export class AgentsModule {

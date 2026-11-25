@@ -18,10 +18,9 @@ import type { AgentDraftWriteFacts } from './agent-draft-write-facts.js';
 type BaseKinds = ReadonlyMap<string, AgentDraftBaseEntry['kind']>;
 
 /**
- * The operator's unpublished changes to the definitions Repository: the files they added,
- * changed or deleted against one base commit. It reaches no agent. The base is the commit the
- * first change was made against and is dropped when the last change goes; every write raises the
- * version, and the last write wins.
+ * The operator's unpublished changes to the definitions Repository, against one base commit (the
+ * one the first change was made against, dropped with the last). It reaches no agent. Every write
+ * raises the version, and the last write wins.
  */
 export class AgentDraft {
   private baseCommitValue: string | null;
@@ -72,10 +71,9 @@ export class AgentDraft {
   }
 
   /**
-   * Stores a file's content: a base file becomes modified, any other path added. Throws
-   * `InvalidAgentDraftPathError`, `DraftFileTooLargeError`, {@link DraftPathNotWritableError},
-   * {@link DraftPathConflictError}, {@link DraftNoBaseError}, `DraftTooManyFilesError` and
-   * `DraftTooLargeError`; a refused write changes nothing.
+   * Stores a file's content: a base file becomes modified, any other path added. A refused write
+   * changes nothing. Throws {@link DraftPathNotWritableError}, {@link DraftPathConflictError},
+   * {@link DraftNoBaseError} and the limit and path errors.
    */
   put(facts: AgentDraftWriteFacts): void {
     const path = AgentDraftPath.of(facts.path);
@@ -116,10 +114,9 @@ export class AgentDraft {
   }
 
   /**
-   * Moves a file: the old path is dropped when only the Draft holds it and deleted otherwise, and
-   * the new path is stored with the same content, linked back by `movedFrom`. Throws what
-   * {@link AgentDraft.put} and {@link AgentDraft.delete} throw, and {@link DraftPathTakenError}
-   * when a file is at the new path and the Draft does not delete it.
+   * Moves a file: the old path is dropped (only the Draft held it) or deleted, the new one added
+   * and linked back by `movedFrom`. Throws what put and delete throw, and
+   * {@link DraftPathTakenError} for a file at the new path that the Draft does not delete.
    */
   move(facts: AgentDraftMoveFacts): void {
     const from = AgentDraftPath.of(facts.from);

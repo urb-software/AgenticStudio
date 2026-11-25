@@ -44,10 +44,9 @@ const LENIENT_UTF8 = new TextDecoder('utf-8', { ignoreBOM: true });
 const entryPathOf = (agent: string) => `${AGENTS_DIRECTORY}/${agent}/${AGENT_ENTRY_FILE}`;
 
 /**
- * Shows the Draft whole: it overlays the Draft on the base tree and judges each agent folder it
- * touches with the shared validation, and lists the Draft's paths that changed upstream by
- * comparing blob ids, with no checkout. When the Clone cannot be read, `problems` and
- * `movedUpstream` are empty: the Draft itself is still shown.
+ * Shows the Draft whole: judges each agent folder it touches with the Draft laid over the base
+ * tree, and lists its paths that changed upstream by blob id. When the Clone cannot be read,
+ * `problems` and `movedUpstream` are empty and the Draft itself is still shown.
  */
 @Injectable()
 export class AgentDraftReader {
