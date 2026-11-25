@@ -42,13 +42,15 @@ export interface AgentFolderFile {
 
 /**
  * `found`: every file of the folder except its entry file `AGENT.md`, by path. `invalid`: the folder
- * fails the shared validation. `unavailable`: the folder cannot be read at that commit (no such
- * folder, or no Clone or commit, or a failed read).
+ * fails the shared validation. `unavailable`: the folder is gone at that commit (no such folder, no
+ * Clone or commit). `unreadable`: it could not be read now: `read_failed` (Git failed, retry may
+ * work) or `tree_cut` (the listing was cut, so the folder may be partial).
  */
 export type AgentFolderRead =
   | { status: 'found'; files: AgentFolderFile[] }
   | { status: 'invalid'; problems: Problem[] }
-  | { status: 'unavailable' };
+  | { status: 'unavailable' }
+  | { status: 'unreadable'; reason: 'read_failed' | 'tree_cut' };
 
 export interface AgentFolders {
   /** The folder of the agent `name` at `commit` of the definitions Repository, from Git only. */

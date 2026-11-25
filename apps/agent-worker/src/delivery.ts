@@ -98,10 +98,22 @@ export interface DeliveriesOptions {
    * path in the folder. A commit that holds one of them is never pushed. Asked only for a
    * definitions agent; a failure fails the delivery before the push.
    */
+  /** Test seam: most bytes of the added-objects list read for that check (default 8 MiB). */
+  agentFilesScanMaxBytes?: number;
   agentFolderBlobs?: (run: RunPayload, signal: AbortSignal) => Promise<ReadonlyMap<string, string>>;
   /** Builds the pull request client (default: {@link GitHubPullRequests}). */
   pullRequests?: (github: { token: string; apiUrl: string }) => PullRequestClient;
   logger: { error(message: string): void };
+}
+
+/** Most of the list of added objects read for the check of the agent's files, in bytes. */
+const AGENT_FILES_SCAN_MAX_BYTES = 8 * 1024 * 1024;
+
+/** The check of the agent's files could not be completed: nothing is pushed unchecked. */
+function unchecked(reason: string): DeliveryFailedError {
+  return new DeliveryFailedError(
+    `The agent's files could not be checked against the Run branch, so nothing was pushed: ${reason} Retry the delivery.`,
+  );
 }
 
 /** Longest first line of the worker's commit message. */
@@ -524,25 +536,35 @@ export class Deliveries implements DeliveryPort {
       blobs = await placed(run, signal);
     } catch (error) {
       if (signal.aborted) throw error;
-      const reason = error instanceof Error ? error.message : 'unknown error';
-      throw new DeliveryFailedError(
-        `The agent's files could not be checked against the Run branch, so nothing was pushed: ` +
-          `${reason.slice(0, 300)} Retry the delivery.`,
-      );
+      throw unchecked(error instanceof Error ? error.message.slice(0, 300) : 'Unknown error.');
     }
     if (blobs.size === 0) return;
-    const listing = await this.options.git.run(
-      ['log', '--no-renames', '--format=', '--raw', '--no-abbrev', range, '--'],
-      local,
-    );
+    // Every object the branch adds beyond its base, merge commits included; a blob in more than
+    // one place is listed once, with one of its paths.
+    const limit = this.options.agentFilesScanMaxBytes ?? AGENT_FILES_SCAN_MAX_BYTES;
+    let listing: string;
+    try {
+      listing = await this.options.git.run(['rev-list', '--objects', range, '--'], {
+        ...local,
+        maxStdout: limit,
+      });
+    } catch (error) {
+      if (signal.aborted) throw error;
+      throw unchecked('Git could not list what the Run branch added.');
+    }
+    // The process runner drops what passes its bound without a word: a full buffer may be a cut.
+    if (listing.length >= limit) {
+      throw unchecked('The Run branch added too many changes to check.');
+    }
     for (const line of listing.split('\n')) {
-      const match = /^:\d{6} \d{6} [0-9a-f]+ ([0-9a-f]+) [A-Z]\t(.*)$/.exec(line);
-      const agentPath = match ? blobs.get(match[1]!) : undefined;
-      if (match && agentPath !== undefined) {
+      const space = line.indexOf(' ');
+      const id = space === -1 ? line : line.slice(0, space);
+      const agentPath = blobs.get(id);
+      if (agentPath !== undefined) {
         throw new DeliveryFailedError(
-          `A commit on the Run branch contains ${printable(match[2]!)}, a copy of the agent's file ` +
-            `${printable(agentPath)}; Studio never pushes the agent's files. Remove it from the ` +
-            'Run branch on the agent side, then retry the delivery.',
+          `A commit on the Run branch contains ${printable(line.slice(space + 1))}, a copy of the ` +
+            `agent's file ${printable(agentPath)}; Studio never pushes the agent's files. Remove it ` +
+            'from the Run branch on the agent side, then retry the delivery.',
         );
       }
     }

@@ -1,7 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { AGENT_FOLDERS, type AgentFolders } from '../../../../agents/contracts/index.js';
 import {
+  AgentFolderCutError,
   AgentFolderInvalidError,
+  AgentFolderReadFailedError,
   AgentFolderUnavailableError,
   RunNotFoundError,
   RunNotHeldError,
@@ -23,7 +25,8 @@ export interface GetAgentFolderResult {
 /**
  * The files of the Run's recorded agent at its recorded commit, for the worker that holds the Run.
  * The caller names neither agent nor commit. Throws {@link RunNotFoundError},
- * {@link RunNotHeldError}, {@link AgentFolderUnavailableError} or {@link AgentFolderInvalidError}.
+ * {@link RunNotHeldError}, {@link AgentFolderUnavailableError}, {@link AgentFolderInvalidError},
+ * {@link AgentFolderReadFailedError} or {@link AgentFolderCutError}.
  */
 @Injectable()
 export class GetAgentFolderHandler {
@@ -40,6 +43,11 @@ export class GetAgentFolderHandler {
     if (agent.source === 'built_in' || agent.commit === null) return { commit: null, files: [] };
     const folder = await this.folders.folderAt(agent.name, agent.commit);
     if (folder.status === 'unavailable') throw new AgentFolderUnavailableError();
+    if (folder.status === 'unreadable') {
+      throw folder.reason === 'tree_cut'
+        ? new AgentFolderCutError()
+        : new AgentFolderReadFailedError();
+    }
     if (folder.status === 'invalid') {
       const listed = folder.problems.map((item) => `${item.code} (${item.path || 'folder'})`);
       throw new AgentFolderInvalidError(

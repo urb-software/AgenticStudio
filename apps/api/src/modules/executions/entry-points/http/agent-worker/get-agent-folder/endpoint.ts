@@ -3,12 +3,21 @@ import { Get, Param, Query } from '@nestjs/common';
 import { WorkerController } from '../../../../../../platform/auth/worker-route.js';
 import { GetAgentFolderHandler } from '../../../../application/features/get-agent-folder/handler.js';
 import {
+  AgentFolderCutError,
   AgentFolderInvalidError,
+  AgentFolderReadFailedError,
   AgentFolderUnavailableError,
   RunNotFoundError,
   RunNotHeldError,
 } from '../../../../domain/errors/run-errors.js';
-import { agentFolderInvalid, agentFolderUnavailable, runNotFound } from '../../shared/problems.js';
+import {
+  agentFolderCut,
+  agentFolderInvalid,
+  agentFolderReadFailed,
+  agentFolderUnavailable,
+  runNotFound,
+  runNotHeld,
+} from '../../shared/problems.js';
 import { AgentFolderQueryDto } from './schema.js';
 
 @WorkerController('runs')
@@ -31,10 +40,10 @@ export class GetAgentFolderEndpoint {
         })),
       });
     } catch (error) {
-      // Another worker's Run looks like no Run at all.
-      if (error instanceof RunNotFoundError || error instanceof RunNotHeldError) {
-        throw runNotFound();
-      }
+      if (error instanceof RunNotFoundError) throw runNotFound();
+      if (error instanceof RunNotHeldError) throw runNotHeld();
+      if (error instanceof AgentFolderCutError) throw agentFolderCut();
+      if (error instanceof AgentFolderReadFailedError) throw agentFolderReadFailed();
       if (error instanceof AgentFolderUnavailableError) throw agentFolderUnavailable();
       if (error instanceof AgentFolderInvalidError) throw agentFolderInvalid(error.detail);
       throw error;

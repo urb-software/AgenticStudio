@@ -460,6 +460,8 @@ export const WORKER_PROBLEM_TYPES = {
   agentFolderUnavailable: 'urn:agentic-studio:problem:agent-folder-unavailable',
   /** 409: the agent's folder at that commit fails the shared validation. */
   agentFolderInvalid: 'urn:agentic-studio:problem:agent-folder-invalid',
+  /** 409: the listing of the definitions Repository is cut, so the folder may be partial. */
+  agentFolderCut: 'urn:agentic-studio:problem:agent-folder-cut',
 } as const;
 
 /** `POST /api/worker/runs/claim` body. */

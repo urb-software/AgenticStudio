@@ -29,6 +29,7 @@ import { AGENT_DIRECTORY_NAME, composeProjectName, STEP_PROCESSES_FILE } from '.
 import type { RunResources } from './run-resources.js';
 import {
   AgentFolderInvalidError,
+  AgentFolderTransientError,
   AgentFolderUnavailableError,
   type PlacedAgentFolder,
 } from './agent-folder.js';
@@ -986,6 +987,9 @@ function failureOf(error: unknown): RunFailure {
   }
   if (error instanceof AgentFolderInvalidError)
     return failure('agent_folder_invalid', error.detail);
+  if (error instanceof AgentFolderTransientError) {
+    return failure('preparation_failed', error.message);
+  }
   if (error instanceof AgentFailedError) return failure('agent_failed', error.message);
   // The agent ended without resolving the conflicts; the merge was aborted.
   if (error instanceof MergeIncompleteError) return failure('agent_failed', error.message);

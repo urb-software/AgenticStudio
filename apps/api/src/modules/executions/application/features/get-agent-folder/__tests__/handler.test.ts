@@ -3,7 +3,9 @@ import type { AgentFolderRead, AgentFolders } from '../../../../../agents/contra
 import type { Run } from '../../../../domain/entities/run.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import {
+  AgentFolderCutError,
   AgentFolderInvalidError,
+  AgentFolderReadFailedError,
   AgentFolderUnavailableError,
   RunNotFoundError,
   RunNotHeldError,
@@ -109,6 +111,19 @@ describe('GetAgentFolderHandler', () => {
     });
     await expect(handler.execute({ runId: run.id, workerId: WORKER })).rejects.toThrow(
       AgentFolderInvalidError,
+    );
+  });
+
+  it('tells a read that failed now, or a cut listing, from a folder that is gone', async () => {
+    const run = await start(reviewer);
+    folderAt.mockResolvedValueOnce({ status: 'unreadable', reason: 'read_failed' });
+    await expect(handler.execute({ runId: run.id, workerId: WORKER })).rejects.toThrow(
+      AgentFolderReadFailedError,
+    );
+
+    folderAt.mockResolvedValueOnce({ status: 'unreadable', reason: 'tree_cut' });
+    await expect(handler.execute({ runId: run.id, workerId: WORKER })).rejects.toThrow(
+      AgentFolderCutError,
     );
   });
 });

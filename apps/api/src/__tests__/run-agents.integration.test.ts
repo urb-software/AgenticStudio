@@ -684,15 +684,15 @@ describe('choosing an agent for a Run (PostgreSQL + Redis via Testcontainers)', 
       expect(response.body).toEqual({ commit: null, files: [] });
     });
 
-    it('answers only the worker that holds the Run, and looks the same as no Run to another', async () => {
+    it('answers only the worker that holds the Run, and answers run-not-held to another, like the other worker routes', async () => {
       const project = await readyProject('Shop');
       const created = await startRun(project.id, { task: 'Fix it', agent: 'default-claude-code' });
       expect((await claim()).status).toBe(200);
 
       expectProblem(
         await workerGet(created.body.id, folderQuery(randomUUID())),
-        404,
-        'urn:agentic-studio:problem:run-not-found',
+        409,
+        'urn:agentic-studio:problem:run-not-held',
       );
       expectProblem(
         await workerGet(randomUUID(), folderQuery()),

@@ -92,6 +92,7 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
   function deliveries(
     github: { token?: string; apiUrl?: string } = { token },
     agentFolderBlobs?: DeliveriesOptions['agentFolderBlobs'],
+    more: Partial<DeliveriesOptions> = {},
   ) {
     return new Deliveries({
       dataDir,
@@ -100,6 +101,7 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
       allowFileRemotes: true,
       github: { apiUrl: stub.url, ...github },
       ...(agentFolderBlobs ? { agentFolderBlobs } : {}),
+      ...more,
       logger,
     });
   }
@@ -375,8 +377,9 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
       run: RunPayload,
       prepared: PreparedRun,
       blobs: DeliveriesOptions['agentFolderBlobs'],
+      more: Partial<DeliveriesOptions> = {},
     ) {
-      const subject = deliveries({ token }, blobs);
+      const subject = deliveries({ token }, blobs, more);
       await subject.commit(prepared, run, DONE, signal());
       return subject.deliver(prepared, run, DONE, signal());
     }
@@ -412,6 +415,68 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
       );
 
       expect((error as DeliveryFailedError).detail).toMatch(/contains copy\.sh/);
+      expect(gitRunner.pushes()).toEqual([]);
+    });
+
+    it('are found in a merge commit too: a copy staged in a Bring up to date resolution', async () => {
+      const run = reviewerRun();
+      const prepared = await prepare(run);
+      agentWrites(prepared, { 'pages.ts': 'x\n' }, 'Run change');
+      remote.commit('Integration change', { 'other.txt': 'main side\n' });
+      inRepo(prepared, ['fetch', '--quiet', remote.url, 'main']);
+      inRepo(prepared, ['merge', '--no-commit', '--no-ff', 'FETCH_HEAD']);
+      agentWrites(prepared, { 'sneaky.sh': SCRIPT });
+      inRepo(prepared, ['add', 'sneaky.sh']);
+      inRepo(prepared, ['commit', '--quiet', '-m', 'Merge main']);
+
+      const error = await finishWith(run, prepared, async () => blobsOf(SCRIPT)).catch(
+        (caught: unknown) => caught,
+      );
+
+      expect((error as DeliveryFailedError).detail).toMatch(/contains sneaky\.sh/);
+      expect(gitRunner.pushes()).toEqual([]);
+    });
+
+    it('fail closed when the list of what the branch added is longer than can be checked', async () => {
+      const run = reviewerRun();
+      const prepared = await prepare(run);
+      const many: Record<string, string> = {};
+      for (let index = 0; index < 60; index += 1)
+        many[`f${index}.txt`] = `file ${index}
+`;
+      agentWrites(prepared, many, 'Many files');
+      agentWrites(prepared, { 'late.sh': SCRIPT }, 'Late copy');
+
+      const error = await finishWith(run, prepared, async () => blobsOf(SCRIPT), {
+        agentFilesScanMaxBytes: 200,
+      }).catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(DeliveryFailedError);
+      expect((error as DeliveryFailedError).detail).toMatch(
+        /could not be checked.*nothing was pushed.*too many changes/s,
+      );
+      expect(gitRunner.pushes()).toEqual([]);
+      expect(remoteBranches()).toEqual(['refs/heads/main']);
+    });
+
+    it('fail closed when Git cannot list what the branch added', async () => {
+      const run = reviewerRun();
+      const prepared = await prepare(run);
+      agentWrites(prepared, { 'pages.ts': 'x\n' }, 'Add pagination');
+      const broken = {
+        run: (args: readonly string[], options: GitOptions) =>
+          args[0] === 'rev-list' && args.includes('--objects')
+            ? Promise.reject(new Error('git is down'))
+            : gitRunner.run(args, options),
+      };
+
+      const error = await finishWith(run, prepared, async () => blobsOf(SCRIPT), {
+        git: broken as unknown as GitRunner,
+      }).catch((caught: unknown) => caught);
+
+      expect((error as DeliveryFailedError).detail).toMatch(
+        /could not be checked.*nothing was pushed/s,
+      );
       expect(gitRunner.pushes()).toEqual([]);
     });
 

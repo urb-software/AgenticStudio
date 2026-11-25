@@ -18,6 +18,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AgentFolderInvalidError,
+  AgentFolderTransientError,
   AgentFolderUnavailableError,
   type AgentFolderApi,
   AgentFolders,
@@ -214,6 +215,8 @@ describe('AgentFolders', () => {
     answer = { commit: COMMIT, files: [file('../x', 'two')] };
 
     await expect(place()).rejects.toThrow(AgentFolderInvalidError);
+
+    expect(await readFile(join(dir, 'a.txt'), 'utf8')).toBe('one');
   });
 
   it('turns the API refusals into the errors the Run fails with', async () => {
@@ -231,12 +234,45 @@ describe('AgentFolders', () => {
     );
     await expect(place()).rejects.toThrow(AgentFolderInvalidError);
 
-    const other = new StudioApiError(404, '/api/worker/runs/x/agent-folder');
-    answer = other;
-    await expect(place()).rejects.toBe(other);
-    const network = new TypeError('fetch failed');
-    answer = network;
-    await expect(place()).rejects.toBe(network);
+    answer = new StudioApiError(
+      409,
+      '/api/worker/runs/x/agent-folder',
+      WORKER_PROBLEM_TYPES.agentFolderCut,
+    );
+    const cut = await place().catch((error: unknown) => error);
+    expect(cut).toBeInstanceOf(AgentFolderUnavailableError);
+    expect((cut as Error).message).toMatch(/too many files/);
+
+    // Not held, or no such Run: the worker's own loss handling decides, so the error is kept.
+    for (const [status, type] of [
+      [404, undefined],
+      [409, WORKER_PROBLEM_TYPES.runNotHeld],
+    ] as const) {
+      const lost = new StudioApiError(status, '/api/worker/runs/x/agent-folder', type);
+      answer = lost;
+      await expect(place()).rejects.toBe(lost);
+    }
+  });
+
+  it('turns a failed read on the side of Studio, or an outage, into a transient failure, not a lost folder', async () => {
+    for (const failure of [
+      new StudioApiError(503, '/api/worker/runs/x/agent-folder'),
+      new StudioApiError(500, '/api/worker/runs/x/agent-folder'),
+      new TypeError('fetch failed'),
+    ]) {
+      answer = failure;
+      const error = await place().catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(AgentFolderTransientError);
+      expect((error as Error).message).toMatch(/try again/i);
+    }
+  });
+
+  it('keeps the reason of a stop: an aborted call is not a transient failure', async () => {
+    const stop = new AbortController();
+    stop.abort(new Error('stopped'));
+    answer = new DOMException('aborted', 'AbortError');
+
+    await expect(folders.place(run(), dir, stop.signal)).rejects.toThrow('aborted');
   });
 
   it('starts no process and never runs a file it wrote: a script stays unrun', async () => {

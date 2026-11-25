@@ -146,18 +146,15 @@ describe('ReadAgentFolderHandler', () => {
 
   it.each([
     ['no folder of that name at the commit', { entries: [entry('agents/other/AGENT.md')] }],
-    ['an unreadable tree', { tree: { status: 'commit_missing' } as DefinitionsTreeResult }],
-    ['a failed tree', { tree: { status: 'failed' } as DefinitionsTreeResult }],
+    ['a commit the Clone lacks', { tree: { status: 'commit_missing' } as DefinitionsTreeResult }],
+    ['a Clone that is gone', { tree: { status: 'repository_not_ready' } as DefinitionsTreeResult }],
     [
-      'an entry file that cannot be read',
+      'an entry file of a commit the Clone lacks',
       { entries: REVIEWER, readFiles: { status: 'commit_missing' } as DefinitionsFilesResult },
     ],
     [
-      'blobs that cannot be read',
-      {
-        entries: REVIEWER,
-        readBlobs: { status: 'repository_not_ready' } as DefinitionsBlobsResult,
-      },
+      'blobs of a commit the Clone lacks',
+      { entries: REVIEWER, readBlobs: { status: 'commit_missing' } as DefinitionsBlobsResult },
     ],
     [
       'a file that vanished',
@@ -177,13 +174,55 @@ describe('ReadAgentFolderHandler', () => {
     });
   });
 
-  it('does not judge a folder a cut tree may hold only in part', async () => {
+  it.each([
+    ['a failed tree', { tree: { status: 'failed' } as DefinitionsTreeResult }],
+    [
+      'an unsupported platform',
+      { tree: { status: 'unsupported_platform' } as DefinitionsTreeResult },
+    ],
+    [
+      'a failed read of the entry file',
+      { entries: REVIEWER, readFiles: { status: 'failed' } as DefinitionsFilesResult },
+    ],
+    [
+      'failed reads of the blobs',
+      { entries: REVIEWER, readBlobs: { status: 'failed' } as DefinitionsBlobsResult },
+    ],
+  ])(
+    'is unreadable, not unavailable, for %s: the commit may well be there',
+    async (_what, script: Script) => {
+      const { handler } = folders(script);
+
+      await expect(handler.execute({ name: 'reviewer', commit: COMMIT })).resolves.toEqual({
+        status: 'unreadable',
+        reason: 'read_failed',
+      });
+    },
+  );
+
+  it('is unreadable with the cut as the reason when a cut listing may hold the folder only in part', async () => {
     const { handler } = folders({
       tree: { status: 'listed', entries: REVIEWER.slice(0, 3), truncated: true },
     });
 
     await expect(handler.execute({ name: 'reviewer', commit: COMMIT })).resolves.toEqual({
-      status: 'unavailable',
+      status: 'unreadable',
+      reason: 'tree_cut',
+    });
+  });
+
+  it('still reads a folder that a cut listing holds whole', async () => {
+    const { handler } = folders({
+      tree: {
+        status: 'listed',
+        entries: [entry('agents/reviewer/AGENT.md', 60), entry('agents/zeta/AGENT.md')],
+        truncated: true,
+      },
+    });
+
+    await expect(handler.execute({ name: 'reviewer', commit: COMMIT })).resolves.toEqual({
+      status: 'found',
+      files: [],
     });
   });
 });

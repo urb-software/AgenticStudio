@@ -5,8 +5,14 @@ import type {
   RunStepResult,
   WorkingCopyReport,
 } from '@agentic-studio/contracts';
+import { spawn } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AgentFolders } from '../agent-folder.js';
+import { runProcess } from '../process-runner.js';
 import {
   type BranchUpdatePort,
   type BranchUpdateStart,
@@ -26,7 +32,11 @@ import { ProviderDisabledError } from '../provider-gate.js';
 import type { LookupService } from '../pull-request-lookups.js';
 import { type ComputedRunDiff, type RunDiffPort, RunDiffUnavailableError } from '../run-diff.js';
 import { StudioApiError } from '../studio-api.js';
-import { AgentFolderInvalidError, AgentFolderUnavailableError } from '../agent-folder.js';
+import {
+  AgentFolderInvalidError,
+  AgentFolderTransientError,
+  AgentFolderUnavailableError,
+} from '../agent-folder.js';
 import {
   AgentWorker,
   type AgentFolderPort,
@@ -36,6 +46,11 @@ import {
 } from '../worker.js';
 import { PreparationFailedError, type PreparedRun, type WorkingCopyPort } from '../working-copy.js';
 import { agentFields } from './agent-fixtures.js';
+
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>();
+  return { ...actual, spawn: vi.fn(actual.spawn) };
+});
 
 // The worker loop against a recording fake of the worker routes.
 const payload = (task: string, n = 1): RunPayload => ({
@@ -2440,6 +2455,7 @@ describe('the agent folder of a Run', () => {
 
   it.each([
     [new AgentFolderUnavailableError(), 'agent_folder_unavailable'],
+    [new AgentFolderTransientError(), 'preparation_failed'],
     [
       new AgentFolderInvalidError('The agent files fail the validation: nested_git (a/.git).'),
       'agent_folder_invalid',
@@ -2472,5 +2488,76 @@ describe('the agent folder of a Run', () => {
 
     // Rebuilding is asked for every Run; the folder itself answers "none" for a built-in agent.
     expect(folders.events[0]).toBe(`place start /data/runs/${run.runId}/agent`);
+  });
+});
+
+describe('the processes of a step with agent files', () => {
+  it('starts no process whose command, argument or working directory is in the agent folder', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'studio-step-'));
+    try {
+      const runDir = join(root, 'run');
+      mkdirSync(join(runDir, 'repo'), { recursive: true });
+      const marker = join(root, 'ran');
+      const base = payload('Add a feature');
+      const run: RunPayload = {
+        ...base,
+        agent: {
+          ...base.agent,
+          name: 'reviewer',
+          source: 'definitions',
+          commit: 'c'.repeat(40),
+          instructions: 'Review.',
+        },
+      };
+      class TmpCopies extends FakeWorkingCopies {
+        override async prepare(claimed: RunPayload): Promise<PreparedRun> {
+          return { ...(await super.prepare(claimed)), runDir, repoDir: join(runDir, 'repo') };
+        }
+      }
+      const folders = new AgentFolders({
+        api: {
+          agentFolder: async () => ({
+            commit: 'c'.repeat(40),
+            files: [
+              {
+                path: 'run.sh',
+                executable: true,
+                contentBase64: Buffer.from(`#!/bin/sh\ntouch '${marker}'\n`).toString('base64'),
+              },
+              {
+                path: 'tool.py',
+                executable: true,
+                contentBase64: Buffer.from('x').toString('base64'),
+              },
+            ],
+          }),
+        },
+      });
+      const spawned = vi.mocked(spawn);
+      spawned.mockClear();
+      // The spy sees every process this module graph starts: one started on purpose proves it.
+      await runProcess({
+        binary: process.execPath,
+        args: ['-e', '0'],
+        cwd: root,
+        env: {},
+        timeoutMs: 10_000,
+      });
+      expect(spawned).toHaveBeenCalledTimes(1);
+      const api = new RecordingApi([run]);
+      startWorker(api, new FakeRunner({ slowMs: 10 }), new TmpCopies(), { agentFolders: folders });
+
+      await until(() => api.reports().length === 3);
+
+      const agentDir = join(runDir, 'agent');
+      expect(readdirSync(agentDir).sort()).toEqual(['run.sh', 'tool.py']);
+      expect(existsSync(marker)).toBe(false);
+      for (const [command, args, options] of spawned.mock.calls) {
+        const started = [String(command), ...(args ?? []), String(options?.cwd ?? '')];
+        for (const part of started) expect(part.includes(agentDir), part).toBe(false);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

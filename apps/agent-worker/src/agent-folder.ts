@@ -7,7 +7,7 @@ import { AGENT_ENTRY_FILE, validateAgentFiles } from '@agentic-studio/agent-defi
 import { createHash } from 'node:crypto';
 import { chmod, mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep } from 'node:path';
-import { StudioApiError } from './studio-api.js';
+import { isTransient, StudioApiError } from './studio-api.js';
 
 /** The hand-over route as the worker uses it ({@link StudioApi} in production). */
 export interface AgentFolderApi {
@@ -16,9 +16,19 @@ export interface AgentFolderApi {
 
 /** Studio no longer has the agent's files; the Run fails `agent_folder_unavailable`. */
 export class AgentFolderUnavailableError extends Error {
-  constructor() {
-    super("The agent's files are no longer available in the definitions Repository.");
+  constructor(detail = "The agent's files are no longer available in the definitions Repository.") {
+    super(detail);
     this.name = 'AgentFolderUnavailableError';
+  }
+}
+
+/** Studio could not read the files now (a failed read, an outage); the Run fails `preparation_failed`. */
+export class AgentFolderTransientError extends Error {
+  constructor() {
+    super(
+      "The agent's files could not be fetched from Studio right now. Start the run again to try again.",
+    );
+    this.name = 'AgentFolderTransientError';
   }
 }
 
@@ -109,6 +119,8 @@ export class AgentFolders {
     try {
       handed = await this.options.api.agentFolder(run.runId, signal);
     } catch (error) {
+      // A stop is the caller's, never a failure of the hand-over.
+      if (signal.aborted) throw error;
       if (error instanceof StudioApiError && error.status === 409) {
         if (error.problemType === WORKER_PROBLEM_TYPES.agentFolderUnavailable) {
           throw new AgentFolderUnavailableError();
@@ -116,7 +128,13 @@ export class AgentFolders {
         if (error.problemType === WORKER_PROBLEM_TYPES.agentFolderInvalid) {
           throw new AgentFolderInvalidError("Studio refused the agent's files as invalid.");
         }
+        if (error.problemType === WORKER_PROBLEM_TYPES.agentFolderCut) {
+          throw new AgentFolderUnavailableError(
+            "The definitions Repository has too many files to read this agent's folder safely.",
+          );
+        }
       }
+      if (isTransient(error)) throw new AgentFolderTransientError();
       throw error;
     }
     if (handed.commit !== agent.commit) {
