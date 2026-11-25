@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { PROVIDERS, type Provider } from './providers.js';
+import { AGENT_INSTRUCTIONS_MAX_BYTES, PROVIDERS, type Provider } from './providers.js';
 
 export { PROVIDERS, type Provider };
 
@@ -202,11 +202,15 @@ export const runDiffStateSchema = z.strictObject({
 });
 export type RunDiffState = z.infer<typeof runDiffStateSchema>;
 
-/** A usable agent name: lower-case letters, digits and `-`, up to 64 characters. */
+/** Longest agent name, in characters. */
+export const RUN_AGENT_NAME_MAX_LENGTH = 64;
+
+/** A usable agent name: lower-case letters, digits and `-`, up to {@link RUN_AGENT_NAME_MAX_LENGTH}. */
 export const RUN_AGENT_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
-/** Longest instructions of an agent, in characters: the definitions' own limit in bytes, 64 KiB. */
-export const AGENT_INSTRUCTIONS_MAX_LENGTH = 64 * 1024;
+/** Text bounded in UTF-8 bytes, which the schema's character count alone does not give. */
+const withinBytes = (limit: number) => (text: string) =>
+  new TextEncoder().encode(text).length <= limit;
 
 /**
  * Studio's base rules as a claim carries them: the version for the Run's log and the text every
@@ -214,7 +218,7 @@ export const AGENT_INSTRUCTIONS_MAX_LENGTH = 64 * 1024;
  */
 export const baseRulesPayloadSchema = z.strictObject({
   version: z.string().min(1).max(64),
-  text: z.string().min(1).max(AGENT_INSTRUCTIONS_MAX_LENGTH),
+  text: z.string().min(1).refine(withinBytes(AGENT_INSTRUCTIONS_MAX_BYTES)),
 });
 export type BaseRulesPayload = z.infer<typeof baseRulesPayloadSchema>;
 
@@ -232,7 +236,9 @@ export const runAgentPayloadSchema = z
     provider: providerSchema,
     /** Recorded and carried; the runners do not pass it to the CLI yet. */
     model: z.string().min(1).max(64),
-    instructions: z.string().max(AGENT_INSTRUCTIONS_MAX_LENGTH),
+    instructions: z.string().refine(withinBytes(AGENT_INSTRUCTIONS_MAX_BYTES), {
+      message: 'The instructions are longer than the definitions limit in bytes.',
+    }),
   })
   .refine((agent) => (agent.source === 'definitions') === (agent.commit !== null), {
     path: ['commit'],

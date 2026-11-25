@@ -13,6 +13,7 @@ import { GitCommandError } from '../git.js';
 import { ProviderDisabledError, ProviderGate } from '../provider-gate.js';
 import { AgentFailedError, drainRunStep, type RunStep, UsageLimitError } from '../runner.js';
 import { agentFields } from './agent-fixtures.js';
+import { golden, GOLDEN_REPOSITORY } from './golden-files.js';
 
 // The Codex runner at the mocked process-spawn boundary; the real process is in
 // codex-runner.linux.test.ts.
@@ -286,6 +287,15 @@ describe('CodexRunner at the spawn boundary', () => {
       const prompt = readFileSync(join(runDir, 'codex', 'prompt.md'), 'utf8');
       const sectionStart = prompt.indexOf('\n## Agent instructions');
       expect(prompt.slice(0, sectionStart)).toBe(BASE_RULES.text.trimEnd() + '\n');
+    });
+
+    it('writes exactly the prompt it always did for the built-in Default agent, repository files present', async () => {
+      Object.assign(repoFiles, GOLDEN_REPOSITORY);
+      replaying('success');
+
+      await drain(runner().start(input('Add a health check')));
+
+      expect(readFileSync(join(runDir, 'codex', 'prompt.md'), 'utf8')).toBe(golden('codex-prompt'));
     });
 
     it('leaves the prompt as it always was for the built-in Default agent', async () => {

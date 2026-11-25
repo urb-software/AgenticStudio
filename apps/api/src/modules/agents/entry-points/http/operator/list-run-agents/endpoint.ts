@@ -2,19 +2,19 @@ import { Controller, Get, Param } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ZodResponse } from 'nestjs-zod';
 import { ApiProblemResponses } from '../../../../../../platform/http/problem-details.js';
-import { PreselectRunAgentHandler } from '../../../../application/features/preselect-run-agent/handler.js';
 import { ReadAgentsHandler } from '../../../../application/features/read-agents/handler.js';
-import { AGENTS_PROBLEM_TYPES, projectNotFound } from '../../shared/problems.js';
+import {
+  AGENTS_PROBLEM_TYPES,
+  definitionsProject,
+  projectNotFound,
+} from '../../shared/problems.js';
 import { RunAgentListResponseDto } from './schema.js';
 
 /** `GET /api/projects/:id/run-agents`, behind the global session guard: an operator route only. */
 @ApiTags('agents')
 @Controller('projects')
 export class ListRunAgentsEndpoint {
-  constructor(
-    private readonly agents: ReadAgentsHandler,
-    private readonly preselect: PreselectRunAgentHandler,
-  ) {}
+  constructor(private readonly agents: ReadAgentsHandler) {}
 
   @Get(':id/run-agents')
   @ApiOperation({
@@ -28,30 +28,17 @@ export class ListRunAgentsEndpoint {
   @ZodResponse({ status: 200, type: RunAgentListResponseDto })
   @ApiProblemResponses({
     404: `Unknown project (${AGENTS_PROBLEM_TYPES.projectNotFound})`,
+    409: `The project is the definitions Repository (${AGENTS_PROBLEM_TYPES.definitionsProject}; refused: run)`,
   })
   async list(@Param('id') projectId: string) {
-    const { agents } = await this.agents.execute();
-    const chosen = await this.preselect.execute({
-      projectId,
-      agents: agents.map(({ name, usable }) => ({ name, usable })),
-    });
-    if (chosen.status === 'project_not_found') throw projectNotFound();
+    const { forRun } = await this.agents.execute({ projectId });
+    if (forRun?.status === 'project_not_found') throw projectNotFound();
+    if (forRun?.status === 'definitions_project') throw definitionsProject();
+    if (forRun?.status !== 'offered') throw new Error('The agents of a project were not read.');
     return {
-      agents: agents.flatMap((agent) =>
-        agent.usable && agent.provider !== null && agent.model !== null
-          ? [
-              {
-                name: agent.name,
-                description: agent.description,
-                provider: agent.provider,
-                model: agent.model,
-                source: agent.source,
-              },
-            ]
-          : [],
-      ),
-      preselected: chosen.agent,
-      preselectedReason: chosen.reason,
+      agents: forRun.agents,
+      preselected: forRun.preselected,
+      preselectedReason: forRun.reason,
     };
   }
 }

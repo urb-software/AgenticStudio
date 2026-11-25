@@ -5,6 +5,7 @@ import { ProblemException } from '../../../../../platform/http/problem-details.j
 export const AGENTS_PROBLEM_TYPES = {
   agentNotFound: 'urn:agentic-studio:problem:agent-not-found',
   projectNotFound: 'urn:agentic-studio:problem:project-not-found',
+  definitionsProject: 'urn:agentic-studio:problem:definitions-project',
 } as const;
 
 /** 404 for a project id that names no project (also one that is not a UUID). */
@@ -13,6 +14,16 @@ export function projectNotFound(): ProblemException {
     type: AGENTS_PROBLEM_TYPES.projectNotFound,
     title: 'Project not found',
     detail: 'No project has this id.',
+  });
+}
+
+/** 409 for the definitions Project, which accepts no Run and so offers no agent for one. */
+export function definitionsProject(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: AGENTS_PROBLEM_TYPES.definitionsProject,
+    title: 'Definitions Repository',
+    detail: 'The definitions Repository accepts no Run.',
+    extensions: { refused: 'run' },
   });
 }
 

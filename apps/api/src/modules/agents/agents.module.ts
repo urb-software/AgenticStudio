@@ -1,7 +1,6 @@
 import { type DynamicModule, Module } from '@nestjs/common';
 import { GetDefinitionsRepositoryHandler } from './application/features/get-definitions-repository/handler.js';
 import { ReadAgentsHandler } from './application/features/read-agents/handler.js';
-import { PreselectRunAgentHandler } from './application/features/preselect-run-agent/handler.js';
 import { ReadAgentsAgentResolutions } from './entry-points/contracts/agent-resolutions.js';
 import { ListRunAgentsEndpoint } from './entry-points/http/operator/list-run-agents/endpoint.js';
 import { AGENT_RESOLUTION } from './contracts/index.js';
@@ -30,7 +29,6 @@ export class AgentsModule {
       providers: [
         GetDefinitionsRepositoryHandler,
         ReadAgentsHandler,
-        PreselectRunAgentHandler,
         { provide: AGENT_RESOLUTION, useClass: ReadAgentsAgentResolutions },
       ],
       exports: [AGENT_RESOLUTION],

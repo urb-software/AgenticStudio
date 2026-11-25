@@ -209,6 +209,18 @@ describe('choosing an agent for a Run (PostgreSQL + Redis via Testcontainers)', 
       expectProblem(await runAgents('not-a-uuid'), 404, PROBLEM.projectNotFound);
     });
 
+    it('refuses the definitions Project, which accepts no Run, with 409 definitions-project', async () => {
+      const created = await asOperator(http().post('/api/projects')).send({
+        name: 'Agent definitions',
+        kind: 'definitions',
+      });
+
+      const response = await runAgents(created.body.id);
+
+      expectProblem(response, 409, PROBLEM.definitionsProject);
+      expect(response.body.refused).toBe('run');
+    });
+
     it('needs a session', async () => {
       const project = await readyProject('Shop');
 

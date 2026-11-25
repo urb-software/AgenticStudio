@@ -1596,6 +1596,10 @@ export type ListRunAgentsErrors = {
      */
     404: ProblemDetails;
     /**
+     * The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: run)
+     */
+    409: ProblemDetails;
+    /**
      * Error (RFC 9457 problem details)
      */
     default: ProblemDetails;

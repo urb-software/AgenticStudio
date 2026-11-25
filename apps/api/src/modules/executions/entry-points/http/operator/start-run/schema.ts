@@ -1,3 +1,4 @@
+import { RUN_AGENT_NAME_MAX_LENGTH } from '@agentic-studio/contracts';
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 import { PROVIDERS } from '../../../../domain/value-objects/provider.js';
@@ -17,7 +18,7 @@ export const startRunRequestSchema = z
     agent: z
       .string()
       .min(1)
-      .max(64)
+      .max(RUN_AGENT_NAME_MAX_LENGTH)
       .optional()
       .describe('The agent to start with, by name. Absent: the Default agent of `provider`.'),
     provider: z

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  AGENT_INSTRUCTIONS_MAX_LENGTH,
+  AGENT_INSTRUCTIONS_MAX_BYTES,
   ANSWER_MAX_LENGTH,
   appendRunEventsRequestSchema,
   claimLookupsResponseSchema,
@@ -135,15 +135,23 @@ describe('run payload (claim response)', () => {
       expect(valid({ provider: 'codex', agent: { ...definitions, provider: 'codex' } })).toBe(true);
     });
 
+    it('bounds the instructions in UTF-8 bytes, not characters', () => {
+      const fits = 'é'.repeat(AGENT_INSTRUCTIONS_MAX_BYTES / 2);
+      const over = 'é'.repeat(AGENT_INSTRUCTIONS_MAX_BYTES / 2 + 1);
+
+      expect(valid({ agent: { ...definitions, instructions: fits } })).toBe(true);
+      expect(valid({ agent: { ...definitions, instructions: over } })).toBe(false);
+    });
+
     it('bounds the instructions and refuses unknown fields', () => {
       expect(
         valid({
-          agent: { ...definitions, instructions: 'x'.repeat(AGENT_INSTRUCTIONS_MAX_LENGTH) },
+          agent: { ...definitions, instructions: 'x'.repeat(AGENT_INSTRUCTIONS_MAX_BYTES) },
         }),
       ).toBe(true);
       expect(
         valid({
-          agent: { ...definitions, instructions: 'x'.repeat(AGENT_INSTRUCTIONS_MAX_LENGTH + 1) },
+          agent: { ...definitions, instructions: 'x'.repeat(AGENT_INSTRUCTIONS_MAX_BYTES + 1) },
         }),
       ).toBe(false);
       expect(valid({ agent: { ...definitions, tools: ['bash'] } })).toBe(false);

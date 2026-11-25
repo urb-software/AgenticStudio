@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { AgentResolution, AgentResolutions } from '../../contracts/index.js';
+import { RunnableAgent } from '../../domain/value-objects/runnable-agent.js';
 import { ReadAgentsHandler } from '../../application/features/read-agents/handler.js';
 
 /**
@@ -15,18 +16,17 @@ export class ReadAgentsAgentResolutions implements AgentResolutions {
     const { commit, agents } = await this.read.execute({ name });
     const agent = agents[0];
     if (!agent) return { status: 'unknown' };
-    if (!agent.usable || agent.provider === null || agent.model === null) {
-      return { status: 'not_usable' };
-    }
+    const runnable = RunnableAgent.from(agent);
+    if (runnable === null) return { status: 'not_usable' };
     return {
       status: 'resolved',
       agent: {
-        name: agent.name,
-        source: agent.source,
-        commit: agent.source === 'definitions' ? commit : null,
-        provider: agent.provider,
-        model: agent.model,
-        instructions: agent.instructions,
+        name: runnable.name,
+        source: runnable.source,
+        commit: runnable.source === 'definitions' ? commit : null,
+        provider: runnable.provider,
+        model: runnable.model,
+        instructions: runnable.instructions,
       },
     };
   }

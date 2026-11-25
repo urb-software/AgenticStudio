@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type {
+  ProjectDefaultAgents,
   DefinitionsFiles,
   DefinitionsFilesResult,
   DefinitionsSnapshot,
@@ -37,7 +38,10 @@ function resolutions(files: Record<string, string>, snapshot: DefinitionsSnapsho
       }),
     ),
   } satisfies DefinitionsFiles;
-  return new ReadAgentsAgentResolutions(new ReadAgentsHandler(fake));
+  const defaults: ProjectDefaultAgents = {
+    forProject: () => Promise.resolve({ status: 'project_not_found' }),
+  };
+  return new ReadAgentsAgentResolutions(new ReadAgentsHandler(fake, defaults));
 }
 
 const READY = { state: 'ready', commit: COMMIT } as const;

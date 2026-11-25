@@ -8,6 +8,7 @@ import {
   type RepositoryFiles,
 } from '../claude-code/instructions.js';
 import { agentFields } from './agent-fixtures.js';
+import { golden, GOLDEN_MARKER, GOLDEN_REPOSITORY } from './golden-files.js';
 
 // The instructions file of a Claude Code step: the agent definition, then the repository's
 // CLAUDE.md and AGENTS.md at the start commit, delimited as untrusted conventions.
@@ -100,16 +101,19 @@ describe('the instructions file', () => {
   it(`cuts the text at ${INSTRUCTIONS_MAX_BYTES / 1024} KiB with a notice`, async () => {
     const built = await buildInstructions(
       agentFields(),
-      repository({ 'CLAUDE.md': 'é'.repeat(40_000), 'AGENTS.md': 'never reached' }),
+      repository({
+        'CLAUDE.md': 'é'.repeat(INSTRUCTIONS_MAX_BYTES),
+        'AGENTS.md': 'never reached',
+      }),
       MARKER,
     );
 
     expect(new TextEncoder().encode(built.text).length).toBeLessThanOrEqual(INSTRUCTIONS_MAX_BYTES);
-    expect(built.text).toContain("[... cut: the instructions reached Studio's limit of 64 KiB]");
+    expect(built.text).toContain("[... cut: the instructions reached Studio's limit of 128 KiB]");
     expect(built.text).toContain('===== END c0ffee12 project conventions: CLAUDE.md =====');
     expect(built.text).not.toContain('never reached');
     expect(built.notices).toEqual([
-      "The repository's instruction text was cut at 64 KiB (in CLAUDE.md); the rest was not given to the agent.",
+      "The repository's instruction text was cut at 128 KiB in total (in CLAUDE.md); the rest was not given to the agent.",
     ]);
   });
 
@@ -197,6 +201,17 @@ describe('the instructions of the Run agent', () => {
     expect(built.text.endsWith('===== END c0ffee12 agent instructions =====\n')).toBe(true);
   });
 
+  it('give the built-in Default agent exactly the file it always had, repository files and all', async () => {
+    const built = await buildInstructions(
+      agentFields(),
+      repository(GOLDEN_REPOSITORY),
+      GOLDEN_MARKER,
+    );
+
+    expect(built.text).toBe(golden('claude-instructions'));
+    expect(built.notices).toEqual([]);
+  });
+
   it('leave the file byte-identical for the built-in Default agent', async () => {
     const files = repository({ 'CLAUDE.md': 'Use pnpm.\n', 'AGENTS.md': 'Run the tests.\n' });
 
@@ -216,25 +231,42 @@ describe('the instructions of the Run agent', () => {
     expect(built.text).toBe(BASE_RULES.text.trimEnd() + '\n');
   });
 
-  it('do not count against the limit on the repository text', async () => {
-    const long = { ...REVIEWER, agent: { ...REVIEWER.agent, instructions: 'x'.repeat(60 * 1024) } };
-    const repositoryText = 'y'.repeat(INSTRUCTIONS_MAX_BYTES - BASE_RULES.text.length - 1200);
+  it('share one total bound with the repository text: the repository text is cut first', async () => {
+    const full = { ...REVIEWER.agent, instructions: 'x'.repeat(64 * 1024) };
+    const repositoryText = 'y'.repeat(INSTRUCTIONS_MAX_BYTES);
 
-    const alone = await buildInstructions(
-      agentFields(),
-      repository({ 'CLAUDE.md': repositoryText }),
-      MARKER,
-    );
-    const withAgent = await buildInstructions(
-      long,
+    const built = await buildInstructions(
+      { ...REVIEWER, agent: full },
       repository({ 'CLAUDE.md': repositoryText }),
       MARKER,
     );
 
-    expect(alone.notices).toEqual([]);
-    expect(withAgent.notices).toEqual([]);
-    expect(withAgent.text).toContain(repositoryText);
-    expect(new TextEncoder().encode(withAgent.text).length).toBeGreaterThan(INSTRUCTIONS_MAX_BYTES);
+    expect(new TextEncoder().encode(built.text).length).toBeLessThanOrEqual(INSTRUCTIONS_MAX_BYTES);
+    expect(built.text.startsWith(BASE_RULES.text.trimEnd() + '\n')).toBe(true);
+    expect(built.text).toContain(full.instructions);
+    expect(built.text).not.toContain(repositoryText);
+    expect(built.notices).toEqual([
+      "The repository's instruction text was cut at 128 KiB in total (in CLAUDE.md); the rest was not given to the agent.",
+    ]);
+  });
+
+  it('are cut only after the repository text is gone, never the base rules, with a notice', async () => {
+    const huge = { ...REVIEWER.agent, instructions: 'z'.repeat(INSTRUCTIONS_MAX_BYTES * 2) };
+
+    const built = await buildInstructions(
+      { ...REVIEWER, agent: huge },
+      repository({ 'CLAUDE.md': 'Use pnpm.' }),
+      MARKER,
+    );
+
+    expect(new TextEncoder().encode(built.text).length).toBeLessThanOrEqual(INSTRUCTIONS_MAX_BYTES);
+    expect(built.text.startsWith(BASE_RULES.text.trimEnd() + '\n')).toBe(true);
+    expect(built.text).toContain(`===== END ${MARKER} agent instructions =====`);
+    expect(built.text).not.toContain('Use pnpm.');
+    expect(built.notices).toEqual([
+      "The agent's instructions were cut at 128 KiB in total; the rest was not given to the agent.",
+      "The repository's instruction text was cut at 128 KiB in total (in CLAUDE.md); the rest was not given to the agent.",
+    ]);
   });
 });
 

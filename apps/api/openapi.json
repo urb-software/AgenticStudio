@@ -1151,6 +1151,16 @@
               }
             }
           },
+          "409": {
+            "description": "The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: run)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "default": {
             "description": "Error (RFC 9457 problem details)",
             "content": {

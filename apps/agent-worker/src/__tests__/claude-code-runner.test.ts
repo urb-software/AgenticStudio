@@ -23,6 +23,7 @@ import { GitCommandError } from '../git.js';
 import { ProviderDisabledError, ProviderGate } from '../provider-gate.js';
 import { drainRunStep, type RunStep, UsageLimitError } from '../runner.js';
 import { agentFields } from './agent-fixtures.js';
+import { golden, GOLDEN_REPOSITORY } from './golden-files.js';
 
 // The Claude Code runner at the mocked process-spawn boundary; the real process is in
 // claude-code-runner.linux.test.ts.
@@ -350,6 +351,17 @@ describe('ClaudeCodeRunner at the spawn boundary', () => {
       const line = `Base rules ${BASE_RULES.version}; agent reviewer (definitions at ${'c'.repeat(12)}, model opus)`;
       expect(events).toContainEqual({ type: 'notice', text: line });
       expect(JSON.stringify(events)).not.toContain('Secret working method.');
+    });
+
+    it('writes exactly the file it always did for the built-in Default agent, repository files present', async () => {
+      Object.assign(repoFiles, GOLDEN_REPOSITORY);
+      spawn.mockImplementation(() => fakeChild(recording('success')));
+
+      await drain(runner().start(input('x')));
+
+      expect(readFileSync(join(runDir, 'instructions.md'), 'utf8')).toBe(
+        golden('claude-instructions'),
+      );
     });
 
     it('leaves the file as it always was for the built-in Default agent', async () => {

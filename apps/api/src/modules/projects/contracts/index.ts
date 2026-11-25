@@ -68,7 +68,7 @@ export const PROJECT_DEFAULT_AGENTS = Symbol('PROJECT_DEFAULT_AGENTS');
 
 /** The agent a Project names as its default, by name only; `project_not_found` for an unknown id. */
 export type ProjectDefaultAgent =
-  { status: 'found'; agent: string | null } | { status: 'project_not_found' };
+  { status: 'found'; kind: ProjectKind; agent: string | null } | { status: 'project_not_found' };
 
 export interface ProjectDefaultAgents {
   /** The Project's stored default agent as named, whether or not that agent is usable. */
