@@ -45,6 +45,7 @@ const app = await buildApp(
       runLogMaxBytes: 8 * 1024 * 1024,
       runSnapshotRetentionDays: 7,
       operatorGithubLogin: null,
+      definitionsCommitIdentity: null,
       mergeCredential: null,
       mergeGithubApiUrl: null,
       previewDomain: null,

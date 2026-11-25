@@ -77,6 +77,7 @@ describe('loadConfig', () => {
       runLogMaxBytes: 8 * 1024 * 1024,
       runSnapshotRetentionDays: 7,
       operatorGithubLogin: null,
+      definitionsCommitIdentity: null,
       mergeCredential: null,
       mergeGithubApiUrl: null,
       previewDomain: null,
@@ -689,6 +690,74 @@ describe('loadConfig', () => {
         loadConfig({ ...requiredEnv, STUDIO_RUN_SNAPSHOT_RETENTION_DAYS: value }),
       );
       expect(error.message).toMatch(/STUDIO_RUN_SNAPSHOT_RETENTION_DAYS/);
+    });
+  });
+
+  describe('the commit identity of the definitions Repository', () => {
+    const identity = {
+      STUDIO_DEFINITIONS_COMMIT_NAME: 'Studio Publisher',
+      STUDIO_DEFINITIONS_COMMIT_EMAIL: 'studio@example.test',
+    };
+
+    it('is unset by default, and empty values count as unset', () => {
+      expect(loadConfig(requiredEnv).definitionsCommitIdentity).toBeNull();
+      expect(
+        loadConfig({
+          ...requiredEnv,
+          STUDIO_DEFINITIONS_COMMIT_NAME: ' ',
+          STUDIO_DEFINITIONS_COMMIT_EMAIL: '',
+        }).definitionsCommitIdentity,
+      ).toBeNull();
+    });
+
+    it('reads a name and an email, trimmed', () => {
+      expect(
+        loadConfig({
+          ...requiredEnv,
+          STUDIO_DEFINITIONS_COMMIT_NAME: '  Studio Publisher ',
+          STUDIO_DEFINITIONS_COMMIT_EMAIL: ' studio@example.test ',
+        }).definitionsCommitIdentity,
+      ).toEqual({ name: 'Studio Publisher', email: 'studio@example.test' });
+    });
+
+    it('refuses one of the two without the other, naming the missing one', () => {
+      const noEmail = captureError(() =>
+        loadConfig({ ...requiredEnv, STUDIO_DEFINITIONS_COMMIT_NAME: 'Studio Publisher' }),
+      );
+      expect(noEmail.message).toContain('STUDIO_DEFINITIONS_COMMIT_EMAIL');
+      const noName = captureError(() =>
+        loadConfig({ ...requiredEnv, STUDIO_DEFINITIONS_COMMIT_EMAIL: 'studio@example.test' }),
+      );
+      expect(noName.message).toContain('STUDIO_DEFINITIONS_COMMIT_NAME');
+    });
+
+    it.each([
+      'a<b',
+      'a>b',
+      'two' + String.fromCharCode(10) + 'lines',
+      'a'.repeat(101),
+      'bell' + String.fromCharCode(7),
+    ])('refuses the name %j', (value) => {
+      const error = captureError(() =>
+        loadConfig({ ...requiredEnv, ...identity, STUDIO_DEFINITIONS_COMMIT_NAME: value }),
+      );
+      expect(error.message).toContain('STUDIO_DEFINITIONS_COMMIT_NAME');
+      expect(error.message).not.toContain(value);
+    });
+
+    it.each([
+      'no-at-sign',
+      'a b@example.test',
+      'a<b@example.test',
+      '@example.test',
+      'a@',
+      `${'a'.repeat(250)}@x.test`,
+    ])('refuses the email %j', (value) => {
+      const error = captureError(() =>
+        loadConfig({ ...requiredEnv, ...identity, STUDIO_DEFINITIONS_COMMIT_EMAIL: value }),
+      );
+      expect(error.message).toContain('STUDIO_DEFINITIONS_COMMIT_EMAIL');
+      expect(error.message).not.toContain(value);
     });
   });
 

@@ -367,3 +367,47 @@ export interface DefinitionsFiles {
    */
   blobIds(commit: string, paths: readonly string[]): Promise<DefinitionsBlobIdsResult>;
 }
+
+export const DEFINITIONS_PUBLISH = Symbol('DEFINITIONS_PUBLISH');
+
+/** One file of a publish: its new bytes, or `null` to delete it. `executable` is Git's mode `100755`. */
+export interface DefinitionsPublishChange {
+  path: string;
+  content: Uint8Array | null;
+  executable: boolean;
+}
+
+export interface DefinitionsPublishInput {
+  /** The commit the changes were made against; it must be the commit the Clone holds. */
+  baseCommit: string;
+  changes: readonly DefinitionsPublishChange[];
+  message: string;
+  /** Author and committer: Studio's settings, never the request's. */
+  identity: { name: string; email: string };
+}
+
+/**
+ * `repository_moved`: the Clone or the remote is past the base. `write_refused`: the Git host
+ * refused the write. `nothing_to_publish`: the tree would not change. `repository_not_ready`: no
+ * usable definitions Clone. `failed`: anything else; no remote text is ever in the answer.
+ */
+export type DefinitionsPublishResult =
+  | { status: 'published'; commit: string }
+  | {
+      status:
+        | 'repository_moved'
+        | 'write_refused'
+        | 'nothing_to_publish'
+        | 'repository_not_ready'
+        | 'unsupported_platform'
+        | 'failed';
+    };
+
+/**
+ * Studio's one write to a Repository: a commit on the definitions Repository's Integration branch,
+ * pushed as a fast-forward. It takes no Project: only the definitions Project is ever written, and
+ * the Git adapter checks that again.
+ */
+export interface DefinitionsPublish {
+  publish(input: DefinitionsPublishInput): Promise<DefinitionsPublishResult>;
+}

@@ -18,13 +18,18 @@ import {
   GitCloneMissingError,
   GitCommitMissingError,
   type GitOperationOptions,
+  GitNothingToCommitError,
   GitOperationError,
+  GitProjectNotWritableError,
+  GitRemoteMovedError,
   GitRequestRejectedError,
   GitUnsupportedPlatformError,
+  GitWriteRefusedError,
   type MergeDiffFile,
   type MergeDiffFileStatus,
   type MergeDiffLimits,
   type MergeDiffOutcome,
+  type PublishRequest,
   type RemoteInspection,
   type RepositoryGit,
   type ReviewFetch,
@@ -40,7 +45,12 @@ import {
   InvalidIntegrationBranchError,
 } from '../../../domain/value-objects/integration-branch.js';
 import { ClonePaths } from './clone-paths.js';
-import { classifyGitFailure, isOutOfMemory, redactGitOutput } from './git-output.js';
+import {
+  classifyGitFailure,
+  classifyPushFailure,
+  isOutOfMemory,
+  redactGitOutput,
+} from './git-output.js';
 import { diskUsage, GitProcessInterrupted, runGitProcess, type SizeWatch } from './git-process.js';
 import { checkedAddresses, type ResolveHost, systemResolveHost } from './remote-host.js';
 import {
@@ -107,6 +117,13 @@ export interface SystemGitSettings {
    * The production wiring never sets it.
    */
   httpsCaFile?: string;
+  /**
+   * The id of the definitions Project, read at the moment of a write: Studio writes to no other
+   * Repository (security.md §4). Without it every write is refused.
+   */
+  definitionsProjectId?: () => Promise<string | null>;
+  /** The remote URL of the definitions Project's Repository, read with its id: a write goes to no other. */
+  definitionsRemoteUrl?: () => Promise<string | null>;
 }
 
 /**
@@ -333,6 +350,44 @@ function abortError(): Error {
   const error = new Error('The Git operation was aborted.');
   error.name = 'AbortError';
   return error;
+}
+
+/** What a Git call may add: bytes for its standard input, and no diagnostic text in the log. */
+interface RunExtras {
+  input?: Uint8Array;
+  quiet?: boolean;
+}
+
+/** A name or email Git stores in a commit: one line, no angle bracket, no control character. */
+// eslint-disable-next-line no-control-regex
+const IDENTITY_PART = /^[^<>\u0000-\u001f\u007f]+$/;
+const MAX_PUBLISH_CHANGES = 10_000;
+
+/** The shape of a publish, checked before Git starts: a base, safe paths, a message and an identity Git can store. */
+function assertPublishRequest(request: PublishRequest): void {
+  const { baseCommit, changes, message, identity } = request;
+  if (!COMMIT_ID.test(baseCommit)) {
+    throw new GitRequestRejectedError('The base commit is not a full commit id.');
+  }
+  if (changes.length === 0 || changes.length > MAX_PUBLISH_CHANGES) {
+    throw new GitRequestRejectedError('A publish changes between 1 and 10,000 files.');
+  }
+  const paths = new Set<string>();
+  for (const change of changes) {
+    if (environmentFilePathProblem(change.path) !== null) {
+      throw new GitRequestRejectedError('A path is not a safe relative path.');
+    }
+    if (paths.has(change.path)) throw new GitRequestRejectedError('A path is changed twice.');
+    paths.add(change.path);
+  }
+  if (message.trim() === '' || message.includes('\0')) {
+    throw new GitRequestRejectedError('The commit message is empty or holds a NUL.');
+  }
+  for (const part of [identity.name, identity.email]) {
+    if (part.trim() === '' || !IDENTITY_PART.test(part)) {
+      throw new GitRequestRejectedError('The commit identity is not a single plain line.');
+    }
+  }
 }
 
 interface OperationContext {
@@ -1305,6 +1360,185 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     );
   }
 
+  async publishCommit(
+    projectId: string,
+    remoteUrl: string,
+    request: PublishRequest,
+    options: GitOperationOptions = {},
+  ): Promise<{ commit: string }> {
+    this.assertSupportedPlatform();
+    this.paths.clone(projectId);
+    const remote = this.parseRemote(remoteUrl, options);
+    assertPublishRequest(request);
+    this.assertBranch(request.branch);
+    return this.guarded('push', async () => {
+      await this.assertDefinitionsProject(projectId, remoteUrl);
+      return this.queued(projectId, this.settings.fetchTimeoutMs, options, async (options) => {
+        const clone = await this.paths.existingClone(projectId);
+        if (!clone) {
+          throw new GitCloneMissingError();
+        }
+        await removeStaleLocks(clone);
+        return this.withOperation(this.settings.fetchTimeoutMs, options, async (context) => {
+          const gitDir = `--git-dir=${clone}`;
+          const { baseCommit, branch } = request;
+          await this.assertKnownCommit(context, gitDir, baseCommit);
+          // The Clone's branch must still be the base: the commit is built on what the Operator saw.
+          if ((await this.revParse(context, clone, branch)) !== baseCommit) {
+            throw new GitRemoteMovedError();
+          }
+          const commit = await this.buildCommit(context, gitDir, request);
+          const checked = await this.checkRemote(context, remote);
+          // The kind is read again right before the write, not only at the start.
+          await this.assertDefinitionsProject(projectId, remoteUrl);
+          await this.pushCommit(context, gitDir, checked, commit, branch, options.ssh);
+          // The remote is the source of truth: if this fails, the next fetch heals the Clone.
+          const moved = await this.git(context, [
+            gitDir,
+            'update-ref',
+            `refs/heads/${branch}`,
+            commit,
+            baseCommit,
+          ]);
+          if (moved.exitCode !== 0) {
+            this.log('The Clone was not moved to the pushed commit; the next fetch does it.');
+          }
+          return { commit };
+        });
+      });
+    });
+  }
+
+  /** The Project is the definitions Project and the remote is the one its Repository has. */
+  private async assertDefinitionsProject(projectId: string, remoteUrl: string): Promise<void> {
+    if (
+      (await this.settings.definitionsProjectId?.()) !== projectId ||
+      (await this.settings.definitionsRemoteUrl?.()) !== remoteUrl
+    ) {
+      throw new GitProjectNotWritableError();
+    }
+  }
+
+  /**
+   * Builds the commit with a private index and no working tree, filter or hook; the identity is
+   * author and committer. Throws {@link GitNothingToCommitError} when the tree is the base's.
+   */
+  private async buildCommit(
+    context: OperationContext,
+    gitDir: string,
+    request: PublishRequest,
+  ): Promise<string> {
+    const { baseCommit, changes, message, identity } = request;
+    const indexed: OperationContext = {
+      ...context,
+      env: { ...context.env, GIT_INDEX_FILE: join(context.dir, 'publish-index') },
+    };
+    await this.localGit(indexed, [gitDir, 'read-tree', baseCommit]);
+    const zero = '0'.repeat(baseCommit.length);
+    const lines: string[] = [];
+    for (const change of changes) {
+      if (change.content === null) {
+        lines.push(`0 ${zero}\t${change.path}\0`);
+        continue;
+      }
+      // `--stdin` with no path applies no filter and no attribute: the bytes as they are.
+      const blob = await this.localGit(
+        indexed,
+        [gitDir, 'hash-object', '-w', '-t', 'blob', '--no-filters', '--stdin'],
+        change.content,
+      );
+      lines.push(`${change.executable ? '100755' : '100644'} ${blob.trim()}\t${change.path}\0`);
+    }
+    await this.localGit(
+      indexed,
+      [gitDir, 'update-index', '-z', '--index-info'],
+      Buffer.from(lines.join('')),
+    );
+    const tree = (await this.localGit(indexed, [gitDir, 'write-tree'])).trim();
+    const baseTree = (
+      await this.localGit(context, [gitDir, 'rev-parse', `${baseCommit}^{tree}`])
+    ).trim();
+    if (tree === baseTree) throw new GitNothingToCommitError();
+    const committed = await this.localGit(
+      {
+        ...context,
+        env: {
+          ...context.env,
+          GIT_AUTHOR_NAME: identity.name,
+          GIT_AUTHOR_EMAIL: identity.email,
+          GIT_COMMITTER_NAME: identity.name,
+          GIT_COMMITTER_EMAIL: identity.email,
+        },
+      },
+      [gitDir, 'commit-tree', tree, '-p', baseCommit, '-m', message],
+    );
+    const commit = committed.trim();
+    if (!COMMIT_ID.test(commit)) throw new GitOperationError('unknown');
+    return commit;
+  }
+
+  /** A local Git command that must succeed; its (redacted) error text is Git's own, never a remote's. */
+  private async localGit(
+    context: OperationContext,
+    args: string[],
+    input?: Uint8Array,
+  ): Promise<string> {
+    const result = await this.git(context, args, undefined, undefined, { input });
+    if (result.exitCode !== 0) {
+      throw new GitOperationError('unknown', redactGitOutput(result.stderr));
+    }
+    return result.stdout;
+  }
+
+  /**
+   * One push of one ref, `<commit>:refs/heads/<branch>`: a fast-forward only, never forced (no
+   * flag, no `+`), hooks and credential helpers off, the Deploy key for this process only. Git's
+   * output is read to classify the failure and then dropped: no remote text is logged or returned.
+   */
+  private async pushCommit(
+    context: OperationContext,
+    gitDir: string,
+    remote: CheckedRemote,
+    commit: string,
+    branch: string,
+    ssh: SshCredentials | undefined,
+  ): Promise<void> {
+    const refspec = `${commit}:refs/heads/${branch}`;
+    if (!COMMIT_ID.test(commit)) {
+      throw new GitRequestRejectedError('The push is not a plain ref update.');
+    }
+    const env =
+      remote.transport === 'ssh' && ssh
+        ? {
+            ...context.env,
+            ...(await this.sshEnvironment(context, ssh, sshAddress(remote.addresses))),
+          }
+        : context.env;
+    const result = await this.git(
+      { ...context, env },
+      [
+        ...pinArgs(remote),
+        gitDir,
+        'push',
+        '--porcelain',
+        '--no-verify',
+        '--no-recurse-submodules',
+        '--',
+        remote.url,
+        refspec,
+      ],
+      undefined,
+      undefined,
+      { quiet: true },
+    );
+    if (result.exitCode === 0) return;
+    const outcome = classifyPushFailure(result.stdout, result.stderr);
+    this.log(`git push failed (${outcome})`);
+    if (outcome === 'moved') throw new GitRemoteMovedError();
+    if (outcome === 'write_refused' || outcome === 'auth_failed') throw new GitWriteRefusedError();
+    throw new GitOperationError(outcome);
+  }
+
   async removeClone(projectId: string, options: GitOperationOptions = {}): Promise<void> {
     this.assertSupportedPlatform();
     const target = this.paths.clone(projectId);
@@ -1673,6 +1907,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     args: string[],
     watch?: SizeWatch,
     stdoutLimitBytes?: number,
+    extra?: RunExtras,
   ) {
     const caFile = this.settings.httpsCaFile
       ? ['-c', `http.sslCAInfo=${this.settings.httpsCaFile}`]
@@ -1683,6 +1918,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
       [...hardeningArgs(this.settings.allowedTransports), ...caFile, ...args],
       watch,
       stdoutLimitBytes,
+      extra,
     );
   }
 
@@ -1692,6 +1928,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     args: string[],
     watch?: SizeWatch,
     stdoutLimitBytes?: number,
+    extra?: RunExtras,
   ) {
     try {
       const result = await runGitProcess({
@@ -1703,6 +1940,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
         signal: context.signal,
         watch,
         stdoutLimitBytes,
+        input: extra?.input,
         memoryBound: {
           bytes: this.settings.maxProcessMemoryBytes,
           prlimitBinary: this.prlimitBinary,
@@ -1710,7 +1948,11 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
       });
       if (result.exitCode !== 0 && isOutOfMemory(result.stderr)) {
         // The process hit its memory bound: the repository is too large for Studio's limits.
-        this.log(`${basename(binary)} ran out of memory: ${redactGitOutput(result.stderr)}`);
+        this.log(
+          extra?.quiet
+            ? `${basename(binary)} ran out of memory`
+            : `${basename(binary)} ran out of memory: ${redactGitOutput(result.stderr)}`,
+        );
         throw new GitOperationError('size_limit');
       }
       return result;

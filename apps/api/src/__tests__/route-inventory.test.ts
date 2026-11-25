@@ -103,6 +103,7 @@ describe('route and guard inventory', () => {
         "GET /api/worker/runs/:runId/agent-folder [worker-token]",
         "POST /api/agents/definitions-repository/draft/files/move [session]",
         "POST /api/agents/definitions-repository/draft/files/revert [session]",
+        "POST /api/agents/definitions-repository/draft/publish [session]",
         "POST /api/controller/operations/:operationId/log [controller-token]",
         "POST /api/controller/operations/:operationId/state [controller-token]",
         "POST /api/controller/operations/claim [controller-token]",

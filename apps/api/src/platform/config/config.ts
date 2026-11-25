@@ -122,6 +122,25 @@ const githubLoginSchema = z
     message: 'must be a GitHub login: letters, digits and hyphens, at most 39 characters',
   });
 
+/** What Git takes as an author or committer name: no angle brackets, no control character, at most 100. */
+// eslint-disable-next-line no-control-regex
+const COMMIT_NAME = /^[^<>\u0000-\u001f\u007f]{1,100}$/;
+/** An email Git can store: no whitespace, control character or angle bracket, one `@`, at most 254. */
+// eslint-disable-next-line no-control-regex
+const COMMIT_EMAIL = /^[^<>@\s\u0000-\u001f\u007f]+@[^<>@\s\u0000-\u001f\u007f]+$/;
+
+/** An optional setting: unset and blank are the same, anything else is trimmed. */
+const optionalText = z
+  .string()
+  .optional()
+  .transform((value) => (value === undefined || value.trim() === '' ? null : value.trim()));
+
+/** A publish commit's author and committer; both settings come together. */
+export interface DefinitionsCommitIdentity {
+  name: string;
+  email: string;
+}
+
 /** A DNS name: two or more lowercase LDH labels of at most 63 characters, 253 in all, not an IP address. */
 function isDnsName(value: string): boolean {
   const labels = value.split('.');
@@ -325,6 +344,10 @@ const environmentSchema = z.object({
   // The operator's own GitHub login, matched case-insensitively; its Review comments are
   // preselected. Unset or empty: nothing is preselected.
   STUDIO_OPERATOR_GITHUB_LOGIN: githubLoginSchema,
+  // Author and committer of the commits that publish a Draft to the definitions Repository.
+  // Both or neither; while unset, publishing answers 503 publish_not_configured.
+  STUDIO_DEFINITIONS_COMMIT_NAME: optionalText,
+  STUDIO_DEFINITIONS_COMMIT_EMAIL: optionalText,
   // The Merge credential (merging is off while unset); only an operator's merge or close uses it.
   STUDIO_MERGE_TOKEN: mergeTokenSchema,
   // Test-only: the GitHub API the merge adapter calls instead of api.github.com.
@@ -362,6 +385,41 @@ function schemaFor(workspaceRoot: string | undefined) {
       {
         path: ['STUDIO_CONTROLLER_TOKEN'],
         message: 'must differ from STUDIO_WORKER_TOKEN: the two protocols never share a credential',
+      },
+    )
+    .refine(
+      (env) =>
+        env.STUDIO_DEFINITIONS_COMMIT_NAME === null ||
+        COMMIT_NAME.test(env.STUDIO_DEFINITIONS_COMMIT_NAME),
+      {
+        path: ['STUDIO_DEFINITIONS_COMMIT_NAME'],
+        message: 'must be 1 to 100 characters, with no angle bracket or control character',
+      },
+    )
+    .refine(
+      (env) =>
+        env.STUDIO_DEFINITIONS_COMMIT_EMAIL === null ||
+        (env.STUDIO_DEFINITIONS_COMMIT_EMAIL.length <= 254 &&
+          COMMIT_EMAIL.test(env.STUDIO_DEFINITIONS_COMMIT_EMAIL)),
+      {
+        path: ['STUDIO_DEFINITIONS_COMMIT_EMAIL'],
+        message: 'must be an email address of at most 254 characters',
+      },
+    )
+    .refine(
+      (env) =>
+        env.STUDIO_DEFINITIONS_COMMIT_NAME === null || env.STUDIO_DEFINITIONS_COMMIT_EMAIL !== null,
+      {
+        path: ['STUDIO_DEFINITIONS_COMMIT_EMAIL'],
+        message: 'is required when STUDIO_DEFINITIONS_COMMIT_NAME is set',
+      },
+    )
+    .refine(
+      (env) =>
+        env.STUDIO_DEFINITIONS_COMMIT_EMAIL === null || env.STUDIO_DEFINITIONS_COMMIT_NAME !== null,
+      {
+        path: ['STUDIO_DEFINITIONS_COMMIT_NAME'],
+        message: 'is required when STUDIO_DEFINITIONS_COMMIT_EMAIL is set',
       },
     )
     .refine((env) => env.STUDIO_MERGE_GITHUB_API_URL === undefined || env.NODE_ENV === 'test', {
@@ -435,6 +493,11 @@ export interface AppConfig {
    * the author of the Review comments that are preselected.
    */
   operatorGithubLogin: string | null;
+  /**
+   * Author and committer of a publish commit (`STUDIO_DEFINITIONS_COMMIT_NAME` and `_EMAIL`), or
+   * `null` while unset: publishing then answers `publish_not_configured`.
+   */
+  definitionsCommitIdentity: DefinitionsCommitIdentity | null;
   /**
    * The Merge credential (`STUDIO_MERGE_TOKEN`), or `null` while merging is off. It prints as
    * redacted; only the merge adapter's wiring reveals it.
@@ -517,6 +580,14 @@ export function loadConfig(
     runLogMaxBytes: result.data.STUDIO_RUN_LOG_MAX_BYTES,
     runSnapshotRetentionDays: result.data.STUDIO_RUN_SNAPSHOT_RETENTION_DAYS,
     operatorGithubLogin: result.data.STUDIO_OPERATOR_GITHUB_LOGIN,
+    definitionsCommitIdentity:
+      result.data.STUDIO_DEFINITIONS_COMMIT_NAME !== null &&
+      result.data.STUDIO_DEFINITIONS_COMMIT_EMAIL !== null
+        ? {
+            name: result.data.STUDIO_DEFINITIONS_COMMIT_NAME,
+            email: result.data.STUDIO_DEFINITIONS_COMMIT_EMAIL,
+          }
+        : null,
     mergeCredential: result.data.STUDIO_MERGE_TOKEN,
     mergeGithubApiUrl: result.data.STUDIO_MERGE_GITHUB_API_URL?.replace(/\/+$/, '') ?? null,
     previewDomain: result.data.STUDIO_PREVIEW_DOMAIN,

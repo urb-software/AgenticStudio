@@ -19,6 +19,14 @@ export const AGENTS_PROBLEM_TYPES = {
   draftNoBase: 'urn:agentic-studio:problem:agent-draft-no-base',
   draftConflict: 'urn:agentic-studio:problem:agent-draft-conflict',
   draftBaseMissing: 'urn:agentic-studio:problem:agent-draft-base-missing',
+  publishNotConfigured: 'urn:agentic-studio:problem:publish-not-configured',
+  publishRunning: 'urn:agentic-studio:problem:publish-running',
+  nothingToPublish: 'urn:agentic-studio:problem:nothing-to-publish',
+  repositoryMoved: 'urn:agentic-studio:problem:repository-moved',
+  writeRefused: 'urn:agentic-studio:problem:write-refused',
+  publishProblems: 'urn:agentic-studio:problem:publish-problems',
+  publishFailed: 'urn:agentic-studio:problem:publish-failed',
+  publishPathOutsideAgents: 'urn:agentic-studio:problem:publish-path-outside-agents',
 } as const;
 
 /** 404 for a project id that names no project (also one that is not a UUID). */
@@ -167,5 +175,99 @@ export function draftBaseMissing(): ProblemException {
     title: 'Draft base is gone',
     detail:
       'The commit the Draft began from is gone from the Clone. Discard the Draft or apply its changes again.',
+  });
+}
+
+/** 503 while the commit identity settings are not set: Studio will not commit as nobody. */
+export function publishNotConfigured(): ProblemException {
+  return new ProblemException(HttpStatus.SERVICE_UNAVAILABLE, {
+    type: AGENTS_PROBLEM_TYPES.publishNotConfigured,
+    title: 'Publishing is not configured',
+    detail:
+      'Set STUDIO_DEFINITIONS_COMMIT_NAME and STUDIO_DEFINITIONS_COMMIT_EMAIL so that Studio can author the commit.',
+  });
+}
+
+/** 409 while another publish holds the lock. */
+export function publishRunning(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: AGENTS_PROBLEM_TYPES.publishRunning,
+    title: 'A publish is running',
+    detail: 'Another publish is running. Wait for it to end, then try again.',
+  });
+}
+
+/** 409 when the Draft changes no file, or leaves the tree as the base has it. */
+export function nothingToPublish(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: AGENTS_PROBLEM_TYPES.nothingToPublish,
+    title: 'Nothing to publish',
+    detail: 'The Draft changes nothing in the Repository.',
+  });
+}
+
+/** 409 when the Repository holds another commit than the one the Draft began from, or the push was not a fast-forward. */
+export function repositoryMoved(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: AGENTS_PROBLEM_TYPES.repositoryMoved,
+    title: 'The Repository moved on',
+    detail:
+      'The definitions Repository holds a newer commit than the one the Draft began from. Fetch it, review what changed, and publish again.',
+  });
+}
+
+/** 409 when the Git host refused the write; the Draft is kept. */
+export function writeRefused(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: AGENTS_PROBLEM_TYPES.writeRefused,
+    title: 'The Git host refused the write',
+    detail:
+      'The Git host refused the push. Give the Deploy key of the definitions Repository write access on the Git host, and check that its branch accepts a push from it. The Draft is kept.',
+  });
+}
+
+/** 422 while the Draft has any problem: each one is listed. */
+export function publishProblems(
+  problems: readonly {
+    agent: string;
+    code: string;
+    path: string;
+    key: string | null;
+    message: string;
+  }[],
+): ProblemException {
+  return new ProblemException(HttpStatus.UNPROCESSABLE_ENTITY, {
+    type: AGENTS_PROBLEM_TYPES.publishProblems,
+    title: 'The Draft has problems',
+    detail: 'Fix every problem of the Draft before publishing it.',
+    extensions: {
+      problems: problems.map(({ agent, code, path, key, message }) => ({
+        agent,
+        code,
+        path,
+        key,
+        message,
+      })),
+    },
+  });
+}
+
+/** 502 when the push failed for a reason that is not the Draft's: the host or the network. The Draft is kept. */
+export function publishFailed(): ProblemException {
+  return new ProblemException(HttpStatus.BAD_GATEWAY, {
+    type: AGENTS_PROBLEM_TYPES.publishFailed,
+    title: 'The publish failed',
+    detail: 'The push to the Git host failed. The Draft is kept; try again later.',
+  });
+}
+
+/** 422 when the Draft changes paths outside `agents/`; the paths are listed. */
+export function publishPathOutsideAgents(paths: readonly string[]): ProblemException {
+  return new ProblemException(HttpStatus.UNPROCESSABLE_ENTITY, {
+    type: AGENTS_PROBLEM_TYPES.publishPathOutsideAgents,
+    title: 'Paths outside agents/',
+    detail:
+      'Publishing writes only below agents/. Revert the changes outside it, or make them with your own Git.',
+    extensions: { paths },
   });
 }

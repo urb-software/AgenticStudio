@@ -441,6 +441,43 @@ describe('RepositoryConnection', () => {
     });
   });
 
+  describe('a published commit', () => {
+    it('moves the Clone commit on from the commit the publish was built on, and keeps the fetch time', () => {
+      const repository = ready();
+
+      expect(repository.recordPublished({ commit: NEW_SHA, from: SHA })).toBe(true);
+
+      expect(repository).toMatchObject({
+        state: 'ready',
+        headSha: NEW_SHA,
+        lastFetchedAt: AT,
+        failure: null,
+      });
+    });
+
+    it('changes nothing when the Clone is not at that commit any more', () => {
+      const repository = ready();
+
+      expect(repository.recordPublished({ commit: NEW_SHA, from: 'c'.repeat(40) })).toBe(false);
+
+      expect(repository.pendingChanges().fields).toEqual({});
+      expect(repository.headSha).toBe(SHA);
+    });
+
+    it.each([
+      ['connecting', stored({})],
+      ['failed', stored({ state: 'failed', failure: FAILURE, ...clone })],
+      ['fetching', stored({ state: 'fetching', ...clone })],
+      ['disconnecting', stored({ state: 'disconnecting' })],
+    ])('changes nothing for a %s Repository', (_case, data) => {
+      const repository = restore(data);
+
+      expect(repository.recordPublished({ commit: NEW_SHA, from: SHA })).toBe(false);
+
+      expect(repository.pendingChanges().fields).toEqual({});
+    });
+  });
+
   describe('disconnecting', () => {
     it.each([
       ['connecting', stored({})],

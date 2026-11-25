@@ -1,4 +1,5 @@
 import { type DynamicModule, Module } from '@nestjs/common';
+import { APP_CONFIG, type AppConfig } from '../../platform/config/config.js';
 import { DatabaseModule } from '../../platform/database/database.module.js';
 import { AgentDraftBaseReader } from './application/agent-draft-base.js';
 import { AgentDraftReader } from './application/agent-draft-reader.js';
@@ -10,6 +11,11 @@ import { GetAgentDraftHandler } from './application/features/get-agent-draft/han
 import { GetDefinitionsRepositoryHandler } from './application/features/get-definitions-repository/handler.js';
 import { ListAgentFilesHandler } from './application/features/list-agent-files/handler.js';
 import { MoveAgentDraftFileHandler } from './application/features/move-agent-draft-file/handler.js';
+import { PublishAgentDraftHandler } from './application/features/publish-agent-draft/handler.js';
+import { DEFINITIONS_COMMIT_IDENTITY } from './application/ports/commit-identity.js';
+import { PUBLISH_LOCK } from './application/ports/publish-lock.js';
+import { PrismaPublishLock } from './infrastructure/repositories/prisma-publish-lock.js';
+import { PublishAgentDraftEndpoint } from './entry-points/http/operator/publish-agent-draft/endpoint.js';
 import { ReadAgentDraftFileHandler } from './application/features/read-agent-draft-file/handler.js';
 import { SaveAgentDraftFileHandler } from './application/features/save-agent-draft-file/handler.js';
 import { ReadAgentFileHandler } from './application/features/read-agent-file/handler.js';
@@ -58,6 +64,7 @@ export class AgentsModule {
         DeleteAgentDraftFileEndpoint,
         RevertAgentDraftFileEndpoint,
         DiscardAgentDraftEndpoint,
+        PublishAgentDraftEndpoint,
         ListAgentsEndpoint,
         GetAgentEndpoint,
         ListRunAgentsEndpoint,
@@ -79,6 +86,14 @@ export class AgentsModule {
         DiscardAgentDraftForDisconnectHandler,
         AgentDraftDisconnectStep,
         DiscardAgentDraftHandler,
+        PublishAgentDraftHandler,
+        { provide: PUBLISH_LOCK, useClass: PrismaPublishLock },
+        {
+          // Studio's settings only; read per call so a missing identity answers 503, not a crash.
+          provide: DEFINITIONS_COMMIT_IDENTITY,
+          useFactory: (config: AppConfig) => ({ get: () => config.definitionsCommitIdentity }),
+          inject: [APP_CONFIG],
+        },
         { provide: AGENT_DRAFT_REPOSITORY, useClass: PrismaAgentDraftRepository },
         { provide: AGENT_RESOLUTION, useClass: ReadAgentsAgentResolutions },
         { provide: AGENT_FOLDERS, useClass: ReadAgentFolderAgentFolders },

@@ -85,6 +85,8 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     runLogMaxBytes: 8 * 1024 * 1024,
     runSnapshotRetentionDays: 7,
     operatorGithubLogin: null,
+    // Publishing refuses with publish_not_configured unless a suite sets an identity.
+    definitionsCommitIdentity: null,
     // Merging off unless a suite sets a credential.
     mergeCredential: null,
     mergeGithubApiUrl: null,
