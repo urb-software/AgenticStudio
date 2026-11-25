@@ -110,6 +110,8 @@ describe('projects API (PostgreSQL + Redis via Testcontainers)', () => {
         name: 'Agentic Studio',
         mergeMethod: 'squash',
         kind: 'code',
+        // No default agent is named yet.
+        defaultAgent: null,
         createdAt: expect.stringMatching(ISO_8601),
       });
       expect(await listedNames()).toEqual(['Agentic Studio']);

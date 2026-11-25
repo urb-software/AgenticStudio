@@ -16,6 +16,7 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { createRemote, isolatedGitEnv } from './fixtures/git-fixture.js';
+import { agentFields } from './agent-fixtures.js';
 
 // The built main.js as a process against a stub of the worker routes: SIGTERM ends in a clean exit.
 
@@ -26,6 +27,7 @@ const RUN = {
   runId: '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b',
   projectId: '3a5c7e9b-2d4f-4a6c-8e0b-1d3f5a7c9e2b',
   provider: 'codex',
+  ...agentFields('codex'),
   task: '[fake:slow] Take your time',
   // Set to a fixture remote (file://) and its commit in beforeAll.
   startCommit: '',

@@ -243,8 +243,12 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       void _followUp;
       void _merge;
       void _integrationBranch;
-      expect(projectRuns.body).toEqual([listed]);
-      expect((await http().get('/api/runs').set('Cookie', cookie)).body).toEqual([listed]);
+      // ... and the instructions of the agent, which only the single-Run answer carries.
+      const { instructions: _instructions, ...agent } = read.agent;
+      void _instructions;
+      const listedRun = { ...listed, agent };
+      expect(projectRuns.body).toEqual([listedRun]);
+      expect((await http().get('/api/runs').set('Cookie', cookie)).body).toEqual([listedRun]);
     });
 
     it('lists Runs newest first, all projects or one', async () => {

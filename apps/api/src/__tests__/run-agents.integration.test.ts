@@ -246,23 +246,22 @@ describe('choosing an agent for a Run (PostgreSQL + Redis via Testcontainers)', 
     });
 
     it.each([['Upper'], ['has space'], [''], ['a'.repeat(65)], [7]])(
-      'refuses the name %j with 422 and field errors',
+      'refuses the name %j with 400 and keeps the stored default',
       async (agent) => {
         const project = await readyProject('Shop');
 
-        const response = await setDefault(project.id, { agent });
-
-        expectProblem(response, 422);
-        expect(response.body.errors.length).toBeGreaterThan(0);
-        expect((await runAgents(project.id)).body.preselected).toBe('default-claude-code');
+        expectProblem(await setDefault(project.id, { agent }), 400);
+        expect(
+          (await http().get(`/api/projects/${project.id}`).set('Cookie', cookie)).body,
+        ).toMatchObject({ defaultAgent: null });
       },
     );
 
-    it('refuses an unknown field and a missing agent with 422', async () => {
+    it('refuses an unknown field and a missing agent with 400', async () => {
       const project = await readyProject('Shop');
 
-      expectProblem(await setDefault(project.id, { agent: null, extra: 1 }), 422);
-      expectProblem(await setDefault(project.id, {}), 422);
+      expectProblem(await setDefault(project.id, { agent: null, extra: 1 }), 400);
+      expectProblem(await setDefault(project.id, {}), 400);
     });
 
     it('answers 404 for an unknown project', async () => {
@@ -429,7 +428,7 @@ describe('choosing an agent for a Run (PostgreSQL + Redis via Testcontainers)', 
         });
 
         // The definition changes and then goes away: the Run keeps the copy it recorded.
-        const second = await changeDefinitions(definitions, definitions.commit, {
+        await changeDefinitions(definitions, definitions.commit, {
           'agents/reviewer/AGENT.md': agentFile(
             'reviewer',
             'codex',
@@ -438,7 +437,7 @@ describe('choosing an agent for a Run (PostgreSQL + Redis via Testcontainers)', 
           ),
         });
         expect((await getRun(created.body.id)).body.agent).toEqual(recorded);
-        await changeDefinitions(definitions, second, {
+        await changeDefinitions(definitions, definitions.fixture.commits.dev!, {
           'agents/planner/AGENT.md': agentFile('planner', 'codex'),
         });
         expect((await getRun(created.body.id)).body.agent).toEqual(recorded);
@@ -521,7 +520,7 @@ describe('choosing an agent for a Run (PostgreSQL + Redis via Testcontainers)', 
         });
         expect(delivered.status).toBe(204);
 
-        await changeDefinitions(definitions, definitions.commit, {
+        await changeDefinitions(definitions, definitions.fixture.commits.dev!, {
           'agents/other/AGENT.md': agentFile('other', 'codex'),
         });
         const sent = await asOperator(http().post(`/api/runs/${created.body.id}/follow-up`)).send({
@@ -561,7 +560,7 @@ describe('choosing an agent for a Run (PostgreSQL + Redis via Testcontainers)', 
           (await runAgents(project.id)).body.agents.map((a: { name: string }) => a.name),
         ).not.toContain('broken');
 
-        await changeDefinitions(definitions, definitions.commit, {
+        await changeDefinitions(definitions, definitions.fixture.commits.dev!, {
           'agents/other/AGENT.md': agentFile('other', 'codex'),
         });
         expectProblem(
