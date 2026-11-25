@@ -959,6 +959,124 @@
         ]
       }
     },
+    "/api/agents/files": {
+      "get": {
+        "description": "The whole definitions Repository as a tree at its last fetched commit: path, kind (`file`, `symlink` or `submodule`), size and the agent folder each entry belongs to. At most 2,000 entries; `truncated` says when there are more. Read from Git, never from a working tree; links and submodules are listed and never followed. Judges nothing: the problems of an agent come from the agent list.",
+        "operationId": "listAgentFiles",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentFiles_Output"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/api/agents/files/content": {
+      "get": {
+        "description": "One file of the definitions Repository at a commit (the last fetched one by default): its text, or only its kind and size when it is binary (a NUL byte, or not valid UTF-8) or over the 1 MiB file limit. Read from Git, never from a working tree. A symbolic link, a submodule or a folder is not a file and is 404. The content is plain text to display, never to render, run or follow.",
+        "operationId": "getAgentFile",
+        "parameters": [
+          {
+            "name": "path",
+            "required": true,
+            "in": "query",
+            "description": "Relative to the Repository root, with `/` separators.",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 255,
+              "type": "string"
+            }
+          },
+          {
+            "name": "commit",
+            "required": false,
+            "in": "query",
+            "description": "A full commit id the Clone holds; the last fetched commit when omitted.",
+            "schema": {
+              "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentFile_Output"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path or commit id",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No regular file at the path (urn:agentic-studio:problem:agent-file-not-found) or the Clone does not hold the commit (urn:agentic-studio:problem:agent-commit-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Clone cannot be read now (urn:agentic-studio:problem:agent-files-unreadable)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
     "/api/agents": {
       "get": {
         "description": "The agents Studio knows: a built-in Default agent per Provider, then the folders of the definitions Repository at its last fetched commit, each with its problems and whether it is usable. Computed on each request. Also the base rules every Run starts with. Rows are unique by `source` and `name`, not by `name` alone: a folder named like a built-in agent is listed as refused beside it.",
@@ -3839,6 +3957,121 @@
         "required": [
           "state",
           "note"
+        ],
+        "additionalProperties": false
+      },
+      "AgentFileEntry_Output": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Relative to the Repository root, with `/` separators."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "file",
+              "symlink",
+              "submodule"
+            ],
+            "description": "A symbolic link and a submodule are listed and never read."
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Bytes; 0 for a symbolic link and a submodule."
+          },
+          "agent": {
+            "description": "The agent folder the entry is in; null for any other part of the Repository.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "path",
+          "kind",
+          "size",
+          "agent"
+        ],
+        "additionalProperties": false
+      },
+      "AgentFiles_Output": {
+        "type": "object",
+        "properties": {
+          "commit": {
+            "description": "The commit of the definitions Repository the agents were read at; null when none was.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repository": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentsRepository_Output"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null when no definitions Repository is connected."
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True when the Repository holds more entries than are listed."
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentFileEntry_Output"
+            }
+          }
+        },
+        "required": [
+          "commit",
+          "repository",
+          "truncated",
+          "entries"
+        ],
+        "additionalProperties": false
+      },
+      "AgentFile_Output": {
+        "type": "object",
+        "properties": {
+          "commit": {
+            "type": "string",
+            "description": "The commit the file was read at."
+          },
+          "path": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "text",
+              "binary",
+              "too_large"
+            ],
+            "description": "`text` has `content`; `binary` (a NUL byte, or not valid UTF-8) and `too_large` (over the 1 MiB file limit) have only `size`."
+          },
+          "content": {
+            "type": "string",
+            "description": "Only for `text`. Plain text, never to be rendered as HTML or followed."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Bytes; only for `binary` and `too_large`.",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "commit",
+          "path",
+          "kind"
         ],
         "additionalProperties": false
       },

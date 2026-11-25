@@ -76,6 +76,7 @@ const STATE_NOTES: Record<Exclude<RepositoryState, 'ready'>, string> = {
 const UNAVAILABLE_NOTES: Record<DefinitionsUnavailable, string> = {
   repository_not_ready: 'The Repository has no Clone to read agents from.',
   unsupported_platform: 'Studio can read the definitions Repository only on Linux.',
+  commit_missing: 'The Clone of the Repository does not hold that commit.',
   failed: 'The Clone of the Repository could not be read.',
 };
 

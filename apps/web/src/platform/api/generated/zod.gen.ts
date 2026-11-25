@@ -151,6 +151,36 @@ export const zAgentsRepositoryOutput = z.object({
     note: z.string().nullable()
 });
 
+export const zAgentFileEntryOutput = z.object({
+    path: z.string(),
+    kind: z.enum([
+        'file',
+        'symlink',
+        'submodule'
+    ]),
+    size: z.int().gte(0).lte(9007199254740991),
+    agent: z.string().nullable()
+});
+
+export const zAgentFilesOutput = z.object({
+    commit: z.string().nullable(),
+    repository: zAgentsRepositoryOutput.nullable(),
+    truncated: z.boolean(),
+    entries: z.array(zAgentFileEntryOutput)
+});
+
+export const zAgentFileOutput = z.object({
+    commit: z.string(),
+    path: z.string(),
+    kind: z.enum([
+        'text',
+        'binary',
+        'too_large'
+    ]),
+    content: z.string().optional(),
+    size: z.int().gte(0).lte(9007199254740991).optional()
+});
+
 export const zAgentProblemOutput = z.object({
     code: z.enum([
         'entry_missing',
@@ -1427,6 +1457,15 @@ export const zSetMergeMethodPath = z.object({
 export const zSetMergeMethodResponse = zProjectOutput;
 
 export const zGetDefinitionsRepositoryResponse = zDefinitionsRepositoryOutput;
+
+export const zListAgentFilesResponse = zAgentFilesOutput;
+
+export const zGetAgentFileQuery = z.object({
+    path: z.string().min(1).max(255),
+    commit: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/).optional()
+});
+
+export const zGetAgentFileResponse = zAgentFileOutput;
 
 export const zListAgentsResponse = zAgentListOutput;
 

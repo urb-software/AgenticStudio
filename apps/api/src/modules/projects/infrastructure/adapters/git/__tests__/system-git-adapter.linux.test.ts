@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   GitCloneMissingError,
+  GitCommitMissingError,
   GitOperationError,
   GitRequestRejectedError,
   type GitFailureReason,
@@ -340,6 +341,82 @@ describe.runIf(process.platform === 'linux')('SystemGitAdapter on Linux (real gi
         truncated: false,
       });
       expect(existsSync(join(clonePath(), 'agents'))).toBe(false);
+    });
+
+    it('lists the whole tree for an empty folder, with awkward names and every kind', async () => {
+      const inner = createFixture(fixtures, 'whole-inner', { 'inner.txt': 'inner\n' });
+      const source = createFixture(
+        fixtures,
+        'whole-source',
+        {
+          'README.md': 'top\n',
+          'agents/a/AGENT.md': 'alpha\n',
+          'agents/a/my notes \u00e9 "q".txt': 'abc',
+          'skills/s/SKILL.md': 'skill\n',
+          'link.md': { symlink: 'README.md' },
+        },
+        {
+          branch: 'dev',
+          submodule: { path: 'vendor/lib', url: inner.url, commit: headOf(inner) },
+        },
+      );
+      const git = adapter();
+      const { commit } = await git.clone(PROJECT_ID, source.url, 'dev');
+
+      const whole = await git.listTreeAtCommit(PROJECT_ID, commit, '', 100);
+
+      expect(whole.truncated).toBe(false);
+      expect(whole.entries).toEqual(
+        expect.arrayContaining([
+          { path: 'README.md', kind: 'file', size: 4 },
+          { path: 'agents/a/AGENT.md', kind: 'file', size: 6 },
+          { path: 'agents/a/my notes \u00e9 "q".txt', kind: 'file', size: 3 },
+          { path: 'skills/s/SKILL.md', kind: 'file', size: 6 },
+          { path: 'link.md', kind: 'symlink', size: 0 },
+          { path: 'vendor/lib', kind: 'submodule', size: 0 },
+        ]),
+      );
+      await expect(git.listTreeAtCommit(PROJECT_ID, commit, '', 2)).resolves.toMatchObject({
+        truncated: true,
+      });
+      expect(existsSync(join(clonePath(), 'README.md'))).toBe(false);
+    });
+
+    it('tells a commit the Clone does not hold from other failures', async () => {
+      const git = adapter();
+      const { commit } = await git.clone(PROJECT_ID, fixture.url, 'dev');
+      const absent = commit === 'f'.repeat(40) ? 'e'.repeat(40) : 'f'.repeat(40);
+
+      await expect(git.listTreeAtCommit(PROJECT_ID, absent, '', 10)).rejects.toThrow(
+        GitCommitMissingError,
+      );
+      await expect(git.readFilesAtCommit(PROJECT_ID, absent, ['a'], 1)).rejects.toThrow(
+        GitCommitMissingError,
+      );
+    });
+
+    it('reports the size of each file it reads, also for a binary or a too large one', async () => {
+      const source = createFixture(
+        fixtures,
+        'sizes-source',
+        {
+          'a.txt': 'alpha\n',
+          'big.bin': Buffer.from([0x00, 0x01, 0x02, 0xff, 0xfe, 0x03, 0x04, 0x05]),
+        },
+        { branch: 'dev' },
+      );
+      const git = adapter();
+      const { commit } = await git.clone(PROJECT_ID, source.url, 'dev');
+
+      const reads = await git.readFilesAtCommit(PROJECT_ID, commit, ['a.txt', 'big.bin', 'x'], 4);
+
+      expect(reads.map((read) => [read.path, read.outcome.status, read.size])).toEqual([
+        ['a.txt', 'too_large', 6],
+        ['big.bin', 'too_large', 8],
+        ['x', 'missing', 0],
+      ]);
+      const roomy = await git.readFilesAtCommit(PROJECT_ID, commit, ['a.txt'], 100);
+      expect(roomy[0]).toMatchObject({ size: 6, outcome: { status: 'found' } });
     });
 
     it('refuses an unsafe folder or commit, and a missing Clone, when listing a tree', async () => {

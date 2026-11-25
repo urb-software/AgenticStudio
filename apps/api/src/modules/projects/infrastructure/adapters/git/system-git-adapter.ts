@@ -14,6 +14,7 @@ import {
   type CommitTree,
   type CommitTreeEntry,
   GitCloneMissingError,
+  GitCommitMissingError,
   type GitOperationOptions,
   GitOperationError,
   GitRequestRejectedError,
@@ -979,7 +980,8 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
     if (!COMMIT_ID.test(commit)) {
       throw new GitRequestRejectedError('The commit id is not a full commit id.');
     }
-    if (environmentFilePathProblem(directory) !== null) {
+    // An empty folder names the whole tree.
+    if (directory !== '' && environmentFilePathProblem(directory) !== null) {
       throw new GitRequestRejectedError('The path is not a safe relative path.');
     }
     this.paths.clone(projectId);
@@ -992,6 +994,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
         const gitDir = `--git-dir=${clone}`;
         await this.assertKnownCommit(context, gitDir, commit);
         // The trailing slash names the folder's contents; without it Git lists the entry itself.
+        // No pathspec at all lists the whole tree.
         const listed = await this.git(
           context,
           [
@@ -1002,8 +1005,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
             '-l',
             '-z',
             commit,
-            '--',
-            `${directory}/`,
+            ...(directory === '' ? [] : ['--', `${directory}/`]),
           ],
           undefined,
           TREE_OUTPUT_LIMIT_BYTES,
@@ -1067,9 +1069,9 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
         for (const path of paths) {
           const entry = regular.get(path);
           if (!entry) {
-            reads.push({ path, outcome: { status: 'missing' } });
+            reads.push({ path, outcome: { status: 'missing' }, size: 0 });
           } else if (entry.size > maxBytes) {
-            reads.push({ path, outcome: { status: 'too_large' } });
+            reads.push({ path, outcome: { status: 'too_large' }, size: entry.size });
           } else {
             // `cat-file blob` applies no filter, textconv or attribute: the stored bytes.
             const blob = await this.git(
@@ -1079,11 +1081,15 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
               maxBytes,
             );
             if (blob.stdoutCut) {
-              reads.push({ path, outcome: { status: 'too_large' } });
+              reads.push({ path, outcome: { status: 'too_large' }, size: entry.size });
             } else if (blob.exitCode !== 0) {
               throw new GitOperationError('unknown', redactGitOutput(blob.stderr));
             } else {
-              reads.push({ path, outcome: { status: 'found', text: blob.stdout } });
+              reads.push({
+                path,
+                outcome: { status: 'found', text: blob.stdout },
+                size: entry.size,
+              });
             }
           }
         }
@@ -1113,7 +1119,7 @@ export class SystemGitAdapter implements RepositoryGit, OnModuleInit {
       '--quiet',
       `${commit}^{commit}`,
     ]);
-    if (known.exitCode !== 0) throw new GitOperationError('unknown');
+    if (known.exitCode !== 0) throw new GitCommitMissingError();
   }
 
   async archiveCommit(

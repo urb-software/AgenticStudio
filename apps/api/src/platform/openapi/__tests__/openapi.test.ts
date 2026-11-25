@@ -144,6 +144,31 @@ describe('OpenAPI document', () => {
     }
   });
 
+  it('documents the agent files routes, with their refusals', () => {
+    const document = createOpenApiDocument(app);
+    const problem = {
+      content: {
+        'application/problem+json': { schema: { $ref: '#/components/schemas/ProblemDetails' } },
+      },
+    };
+
+    const tree = document.paths['/api/agents/files']?.get;
+    expect(tree?.operationId).toBe('listAgentFiles');
+    expect(tree?.responses['200']).toMatchObject({
+      content: {
+        'application/json': { schema: { $ref: '#/components/schemas/AgentFiles_Output' } },
+      },
+    });
+    const content = document.paths['/api/agents/files/content']?.get;
+    expect(content?.operationId).toBe('getAgentFile');
+    expect(content?.parameters?.map((parameter) => 'name' in parameter && parameter.name)).toEqual(
+      expect.arrayContaining(['path', 'commit']),
+    );
+    for (const status of ['400', '404', '503']) {
+      expect(content?.responses[status]).toMatchObject(problem);
+    }
+  });
+
   it('documents the project detail and repository endpoints', () => {
     const document = createOpenApiDocument(app);
     const ref = (name: string) => ({

@@ -41,8 +41,8 @@ function scripted(script: Scripted) {
           status: 'read',
           files: paths.map((path) =>
             path in files
-              ? { path, status: 'found' as const, text: files[path]! }
-              : { path, status: 'missing' as const },
+              ? { path, status: 'found' as const, text: files[path]!, size: files[path]!.length }
+              : { path, status: 'missing' as const, size: 0 as const },
           ),
         },
       ),
@@ -195,8 +195,8 @@ describe('ReadAgentsHandler', () => {
         readFiles: {
           status: 'read',
           files: [
-            { path: 'agents/b-binary/AGENT.md', status: 'found', text: '�x' },
-            { path: 'agents/c-big/AGENT.md', status: 'too_large' },
+            { path: 'agents/b-binary/AGENT.md', status: 'found', text: '�x', size: 2 },
+            { path: 'agents/c-big/AGENT.md', status: 'too_large', size: 2_000_000 },
           ],
         },
       });

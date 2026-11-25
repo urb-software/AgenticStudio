@@ -184,6 +184,11 @@ export const FAILING: Record<string, Fixture> = {
     entries: [entryFile('name: definitions-repository\ndescription: d\nprovider: codex')],
     expected: ['name_reserved@'],
   },
+  'name_reserved (the files route)': {
+    folder: 'files',
+    entries: [entryFile('name: files\ndescription: d\nprovider: codex')],
+    expected: ['name_reserved@'],
+  },
   name_mismatch: {
     folder: 'planner',
     entries: [valid()],

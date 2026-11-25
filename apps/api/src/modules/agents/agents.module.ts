@@ -1,8 +1,12 @@
 import { type DynamicModule, Module } from '@nestjs/common';
 import { GetDefinitionsRepositoryHandler } from './application/features/get-definitions-repository/handler.js';
+import { ListAgentFilesHandler } from './application/features/list-agent-files/handler.js';
+import { ReadAgentFileHandler } from './application/features/read-agent-file/handler.js';
 import { ReadAgentsHandler } from './application/features/read-agents/handler.js';
+import { GetAgentFileEndpoint } from './entry-points/http/operator/get-agent-file/endpoint.js';
 import { GetAgentEndpoint } from './entry-points/http/operator/get-agent/endpoint.js';
 import { GetDefinitionsRepositoryEndpoint } from './entry-points/http/operator/get-definitions-repository/endpoint.js';
+import { ListAgentFilesEndpoint } from './entry-points/http/operator/list-agent-files/endpoint.js';
 import { ListAgentsEndpoint } from './entry-points/http/operator/list-agents/endpoint.js';
 
 /**
@@ -16,9 +20,20 @@ export class AgentsModule {
     return {
       module: AgentsModule,
       imports: [projects],
-      // The fixed route first: `:name` would also match `definitions-repository`.
-      controllers: [GetDefinitionsRepositoryEndpoint, ListAgentsEndpoint, GetAgentEndpoint],
-      providers: [GetDefinitionsRepositoryHandler, ReadAgentsHandler],
+      // The fixed routes first: `:name` would also match `definitions-repository` and `files`.
+      controllers: [
+        GetDefinitionsRepositoryEndpoint,
+        ListAgentFilesEndpoint,
+        GetAgentFileEndpoint,
+        ListAgentsEndpoint,
+        GetAgentEndpoint,
+      ],
+      providers: [
+        GetDefinitionsRepositoryHandler,
+        ReadAgentsHandler,
+        ListAgentFilesHandler,
+        ReadAgentFileHandler,
+      ],
     };
   }
 }

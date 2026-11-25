@@ -385,6 +385,198 @@ describe('agents API (PostgreSQL + Redis via Testcontainers)', () => {
     });
   });
 
+  describe('the files of the definitions Repository', () => {
+    const files = () => http().get('/api/agents/files').set('Cookie', cookie);
+    const content = (query: Record<string, string>) =>
+      http().get('/api/agents/files/content').query(query).set('Cookie', cookie);
+
+    it('answers an empty tree without a Repository, and 404 for any file', async () => {
+      const tree = await files();
+
+      expect(tree.status).toBe(200);
+      expect(tree.body).toEqual({ commit: null, repository: null, truncated: false, entries: [] });
+      const read = await content({ path: 'agents/a/AGENT.md' });
+      expect(read.status).toBe(404);
+      expect(read.body.type).toBe('urn:agentic-studio:problem:agent-file-not-found');
+      expect(problemDetailsSchema.safeParse(read.body).success).toBe(true);
+    });
+
+    it.each([
+      '../x',
+      'agents/../../x',
+      '/etc/passwd',
+      'agents\\a\\AGENT.md',
+      './a',
+      'a//b',
+      'a/',
+      '.git/config',
+    ])('refuses the path %j with 400', async (path) => {
+      const response = await content({ path });
+
+      expect(response.status).toBe(400);
+      expect(problemDetailsSchema.safeParse(response.body).success).toBe(true);
+    });
+
+    it.each([{}, { path: '' }, { path: 'a', commit: 'HEAD' }, { path: 'a', commit: 'ABC' }])(
+      'refuses the query %j with 400',
+      async (query) => {
+        expect((await content(query as Record<string, string>)).status).toBe(400);
+      },
+    );
+
+    it('answers the operator session only', async () => {
+      for (const path of ['/api/agents/files', '/api/agents/files/content?path=a']) {
+        expect((await http().get(path)).status).toBe(401);
+        expect((await http().get(path).set('Authorization', `Bearer ${WORKER_TOKEN}`)).status).toBe(
+          401,
+        );
+      }
+      expect((await files()).status).toBe(200);
+    });
+
+    describe.runIf(linux)('with the real git (Linux)', () => {
+      const BIG = Buffer.alloc(1024 * 1024 + 1, 0x61);
+      const BINARY = Buffer.from([0x50, 0x4b, 0x00, 0x03, 0x04]);
+      const NOT_UTF8 = Buffer.from([0x61, 0xff, 0xfe, 0x62]);
+
+      it('lists the whole Repository with sizes and the agent of each entry', async () => {
+        const { commit } = await connectedWith('tree', {
+          'README.md': '# Agents\n',
+          'agents/reviewer/AGENT.md': agentFile('reviewer'),
+          'agents/reviewer/notes/style.md': '# Style\n',
+          'agents/broken/AGENT.md': '---\nname: broken\n---\nx\n',
+          'skills/helper/SKILL.md': 'skill\n',
+          'docs/my notes "q" é.txt': 'abc',
+        });
+
+        const response = await files();
+
+        expect(response.status).toBe(200);
+        expect(response.body.commit).toBe(commit);
+        expect(response.body.repository).toEqual({ state: 'ready', note: null });
+        expect(response.body.truncated).toBe(false);
+        const byPath = new Map(
+          (
+            response.body.entries as {
+              path: string;
+              kind: string;
+              size: number;
+              agent: string | null;
+            }[]
+          ).map((entry) => [entry.path, entry]),
+        );
+        expect(byPath.get('README.md')).toEqual({
+          path: 'README.md',
+          kind: 'file',
+          size: 9,
+          agent: null,
+        });
+        expect(byPath.get('agents/reviewer/notes/style.md')).toEqual({
+          path: 'agents/reviewer/notes/style.md',
+          kind: 'file',
+          size: 8,
+          agent: 'reviewer',
+        });
+        expect(byPath.get('agents/broken/AGENT.md')?.agent).toBe('broken');
+        expect(byPath.get('skills/helper/SKILL.md')?.agent).toBeNull();
+        expect(byPath.get('docs/my notes "q" é.txt')?.size).toBe(3);
+      });
+
+      it('bounds the tree at 2,000 entries and says so', async () => {
+        const many: Record<string, string> = {};
+        for (let index = 0; index < 2005; index += 1)
+          many[`f/${String(index).padStart(4, '0')}`] = 'x';
+        await connectedWith('big-tree', many);
+
+        const response = await files();
+
+        expect(response.status).toBe(200);
+        expect(response.body.entries).toHaveLength(2000);
+        expect(response.body.truncated).toBe(true);
+      });
+
+      it('reads a text file, a binary one, and one over the limit', async () => {
+        const { commit } = await connectedWith('contents', {
+          'agents/reviewer/AGENT.md': agentFile('reviewer'),
+          'run.sh': '#!/bin/sh\necho "<b>hi</b>"\n',
+          'blob.zip': BINARY,
+          'latin.txt': NOT_UTF8,
+          'huge.txt': BIG,
+          'empty.txt': '',
+          'notes/my file "q" é.md': '# é\n',
+        });
+
+        const text = await content({ path: 'run.sh' });
+        expect(text.status).toBe(200);
+        expect(text.body).toEqual({
+          commit,
+          path: 'run.sh',
+          kind: 'text',
+          content: '#!/bin/sh\necho "<b>hi</b>"\n',
+        });
+        expect((await content({ path: 'empty.txt' })).body).toMatchObject({
+          kind: 'text',
+          content: '',
+        });
+        expect((await content({ path: 'notes/my file "q" é.md' })).body).toMatchObject({
+          kind: 'text',
+          content: '# é\n',
+        });
+        expect((await content({ path: 'blob.zip' })).body).toEqual({
+          commit,
+          path: 'blob.zip',
+          kind: 'binary',
+          size: BINARY.length,
+        });
+        expect((await content({ path: 'latin.txt' })).body).toMatchObject({
+          kind: 'binary',
+          size: NOT_UTF8.length,
+        });
+        expect((await content({ path: 'huge.txt' })).body).toEqual({
+          commit,
+          path: 'huge.txt',
+          kind: 'too_large',
+          size: BIG.length,
+        });
+      });
+
+      it('answers 404 for a missing file or a folder, and reads the commit asked for', async () => {
+        const { fixture, projectId, commit } = await connectedWith('commits', {
+          'a.txt': 'one\n',
+        });
+        const next = pushFiles(fixture, 'dev', commit, { 'a.txt': 'two\n' });
+        expect(
+          (await asOperator(http().post(`/api/projects/${projectId}/repository/fetch`))).status,
+        ).toBe(202);
+        await settled(projectId);
+
+        expect((await content({ path: 'a.txt' })).body).toMatchObject({
+          commit: next,
+          content: 'two\n',
+        });
+        expect((await content({ path: 'a.txt', commit })).body).toMatchObject({
+          commit,
+          content: 'one\n',
+        });
+        expect((await content({ path: 'nope.txt' })).status).toBe(404);
+        expect((await content({ path: 'agents' })).status).toBe(404);
+        const unknown = await content({ path: 'a.txt', commit: 'f'.repeat(40) });
+        expect(unknown.status).toBe(404);
+        expect(unknown.body.type).toBe('urn:agentic-studio:problem:agent-commit-not-found');
+      });
+
+      it('leaves no working tree behind in the Clone', async () => {
+        await connectedWith('files-bare', { 'docs/readme.md': '# hi\n' });
+
+        await files();
+        await content({ path: 'docs/readme.md' });
+
+        const entries = await readdir(dataDir, { recursive: true });
+        expect(entries.filter((entry) => entry.endsWith('readme.md'))).toEqual([]);
+      });
+    });
+  });
+
   describe('access', () => {
     it.each(['/api/agents', '/api/agents/default-codex'])(
       'answers %s to the operator session only',
