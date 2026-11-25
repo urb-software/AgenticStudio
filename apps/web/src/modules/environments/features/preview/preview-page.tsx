@@ -19,7 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card';
 import { Skeleton } from '@/shared/ui/skeleton';
 import { toast } from '@/shared/ui/sonner';
 import { ApiError, type PreviewOutput } from '../../../../platform/api';
-import { usePreview } from '../../api/preview-queries';
+import { usePreview, useProjectKind } from '../../api/preview-queries';
 import { BuildCard } from './build-card';
 import { PreviewSettingsForm } from './preview-settings-form';
 import { RemovePreviewSettingsDialog } from './remove-preview-settings-dialog';
@@ -119,8 +119,34 @@ function Hostname({ preview }: { preview: PreviewOutput }) {
   );
 }
 
-/** A project's Preview: its settings, the hostname it will be served at, and the form to change them. */
+/**
+ * A project's Preview: its settings, the hostname it will be served at, and the form to change
+ * them. The definitions Repository has none, so an old link to it says so up front.
+ */
 export function PreviewPage({ projectId }: { projectId: string }) {
+  const kind = useProjectKind(projectId);
+  // Starts the Preview read at the same time as the kind's (one cache entry, shared with the
+  // content below), so an ordinary project does not wait for two round trips in a row.
+  usePreview(projectId);
+  if (kind.isPending) return <LoadingPreview />;
+  if (kind.data === 'definitions') {
+    return (
+      <EmptyState
+        icon={GlobeIcon}
+        title="The definitions Repository has no Preview"
+        description="It holds agent definitions only. A Preview belongs to your other projects."
+        action={
+          <Button asChild icon={ArrowLeftIcon}>
+            <Link href="/projects">Back to Projects</Link>
+          </Button>
+        }
+      />
+    );
+  }
+  return <PreviewContent projectId={projectId} />;
+}
+
+function PreviewContent({ projectId }: { projectId: string }) {
   const { data, error, isPending, isError, isRefetching, refetch, dataUpdatedAt } =
     usePreview(projectId);
   const [removeOpen, setRemoveOpen] = useState(false);

@@ -642,9 +642,11 @@ type RepositoryCardProps = {
   projectId: string;
   /** From the project detail: whether a Repository exists, and its state when last read. */
   summary: RepositorySummaryOutput | null;
+  /** Puts focus on "Connect repository" when the card shows its empty state. */
+  autoFocusConnect?: boolean;
 };
 
-export function RepositoryCard({ projectId, summary }: RepositoryCardProps) {
+export function RepositoryCard({ projectId, summary, autoFocusConnect }: RepositoryCardProps) {
   const [connectOpen, setConnectOpen] = useState(false);
   // Remounts the dialog per opening, so it starts from the right values (empty or prefilled).
   const [dialogKey, setDialogKey] = useState(0);
@@ -719,9 +721,14 @@ export function RepositoryCard({ projectId, summary }: RepositoryCardProps) {
       <EmptyState
         icon={GitBranchIcon}
         title="No repository connected"
-        description="Connect a public Git repository over HTTPS, or a private one over SSH with a deploy key Studio generates. Studio keeps its own clone, which agents later work from."
+        description="Connect a public Git repository over HTTPS, or a private one over SSH with a deploy key Studio generates. Studio keeps its own clone."
         action={
-          <Button variant="primary" icon={PlusIcon} onClick={() => openConnect()}>
+          <Button
+            variant="primary"
+            icon={PlusIcon}
+            autoFocus={autoFocusConnect}
+            onClick={() => openConnect()}
+          >
             Connect repository
           </Button>
         }

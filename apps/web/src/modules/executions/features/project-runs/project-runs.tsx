@@ -6,6 +6,7 @@ import { EmptyState } from '@/shared/components/empty-state';
 import { Button } from '@/shared/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card';
 import { Skeleton } from '@/shared/ui/skeleton';
+import { isDefinitionsRefusal } from '../../../../platform/api';
 import { useProjectRuns } from '../../api/runs-queries';
 import { failedRequest } from '../../components/failed-request';
 import { RunRows } from '../../components/run-rows';
@@ -64,6 +65,15 @@ export function ProjectRuns({ projectId, repository }: ProjectRunsProps) {
   let body;
   if (isPending) {
     body = <LoadingRuns />;
+  } else if (isDefinitionsRefusal(error)) {
+    // An old link or another tab: this Project is the definitions Repository, which has no Runs.
+    body = (
+      <EmptyState
+        icon={ActivityIcon}
+        title="The definitions Repository has no runs"
+        description="It holds agent definitions only. Runs belong to your other projects."
+      />
+    );
   } else if (!data) {
     body = (
       <EmptyState

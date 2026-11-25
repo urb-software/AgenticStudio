@@ -14,6 +14,24 @@ import {
 /** One project's Preview: its settings, hostname and whether the Repository can be read. */
 const previewKey = (projectId: string) => ['projects', projectId, 'preview'] as const;
 
+/** The project's kind, in this module's own cache entry (the projects module's are private). */
+const projectKindKey = (projectId: string) => ['environments', 'project-kind', projectId] as const;
+
+/**
+ * Whether the project is the definitions Repository, which has no Preview. A failed read counts as
+ * an ordinary project: the Preview's own read then shows the error.
+ */
+export function useProjectKind(projectId: string) {
+  return useQuery({
+    queryKey: projectKindKey(projectId),
+    queryFn: () =>
+      api.getProject(projectId).then(
+        (project) => project.kind,
+        () => 'code' as const,
+      ),
+  });
+}
+
 export const PREVIEW_BUILDING_POLL_MS = 2_000;
 export const PREVIEW_IDLE_POLL_MS = 15_000;
 
