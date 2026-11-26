@@ -166,7 +166,8 @@ export const zAgentFileEntryOutput = z.object({
     ]),
     size: z.int().gte(0).lte(9007199254740991),
     openable: z.boolean(),
-    agent: z.string().nullable()
+    agent: z.string().nullable(),
+    skill: z.string().nullable()
 });
 
 export const zAgentFilesOutput = z.object({
@@ -211,7 +212,8 @@ export const zAgentDraftFileOutput = z.object({
         'deleted'
     ]),
     size: z.int().gte(0).lte(9007199254740991),
-    movedFrom: z.string().nullable()
+    movedFrom: z.string().nullable(),
+    skill: z.string().nullable()
 });
 
 export const zAgentDraftProblemOutput = z.object({
@@ -255,12 +257,49 @@ export const zAgentDraftProblemOutput = z.object({
     message: z.string()
 });
 
+export const zAgentDraftSkillProblemOutput = z.object({
+    skill: z.string(),
+    code: z.enum([
+        'entry_missing',
+        'entry_unreadable',
+        'front_matter_missing',
+        'front_matter_malformed',
+        'front_matter_too_large',
+        'key_missing',
+        'key_invalid',
+        'provider_unknown',
+        'model_unknown',
+        'name_invalid',
+        'name_mismatch',
+        'name_reserved',
+        'unknown_key',
+        'forbidden_key',
+        'instructions_too_large',
+        'too_many_files',
+        'file_too_large',
+        'folder_too_large',
+        'path_outside_folder',
+        'nested_git',
+        'symlink_refused',
+        'kind_refused',
+        'duplicate_path',
+        'size_invalid',
+        'cli_config_path',
+        'short_name',
+        'shell_line'
+    ]),
+    path: z.string(),
+    key: z.string().nullable(),
+    message: z.string()
+});
+
 export const zAgentDraftOutput = z.object({
     baseCommit: z.string().nullable(),
     currentCommit: z.string().nullable(),
     version: z.int().gte(0).lte(9007199254740991),
     files: z.array(zAgentDraftFileOutput),
     problems: z.array(zAgentDraftProblemOutput),
+    skillProblems: z.array(zAgentDraftSkillProblemOutput),
     movedUpstream: z.array(z.string())
 });
 

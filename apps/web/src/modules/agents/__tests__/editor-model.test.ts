@@ -16,6 +16,7 @@ const entry = (
   size: 10,
   openable: true,
   agent: null,
+  skill: null,
   ...overrides,
 });
 

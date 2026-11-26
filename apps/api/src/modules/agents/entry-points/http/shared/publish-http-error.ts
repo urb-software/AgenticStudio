@@ -4,7 +4,7 @@ import {
   NothingToPublishError,
   PublishFailedError,
   PublishNotConfiguredError,
-  PublishPathOutsideAgentsError,
+  PublishPathOutsideDefinitionsError,
   PublishProblemsError,
   PublishRunningError,
   RepositoryMovedError,
@@ -17,7 +17,7 @@ import {
   nothingToPublish,
   publishFailed,
   publishNotConfigured,
-  publishPathOutsideAgents,
+  publishPathOutsideDefinitions,
   publishProblems,
   publishRunning,
   repositoryMoved,
@@ -40,8 +40,12 @@ export function toPublishHttpError(error: unknown): unknown {
   if (error instanceof NothingToPublishError) return nothingToPublish();
   if (error instanceof RepositoryMovedError) return repositoryMoved();
   if (error instanceof WriteRefusedError) return writeRefused();
-  if (error instanceof PublishPathOutsideAgentsError) return publishPathOutsideAgents(error.paths);
-  if (error instanceof PublishProblemsError) return publishProblems(error.problems);
+  if (error instanceof PublishPathOutsideDefinitionsError) {
+    return publishPathOutsideDefinitions(error.paths);
+  }
+  if (error instanceof PublishProblemsError) {
+    return publishProblems(error.problems, error.skillProblems);
+  }
   if (error instanceof PublishFailedError) {
     return error.reason === 'failed' ? publishFailed() : agentFilesUnreadable();
   }

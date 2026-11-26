@@ -132,6 +132,7 @@ export function fakeAgentsApi(
     version: 0,
     files: [],
     problems: [],
+    skillProblems: [],
     movedUpstream: [],
     ...agents.draft,
   };
@@ -185,7 +186,7 @@ export function fakeAgentsApi(
       if (draftPath === '' && request.method === 'GET') return json(200, draft);
       if (draftPath === '' && request.method === 'DELETE') {
         draftTexts.clear();
-        return json(200, touch({ files: [], problems: [], movedUpstream: [] }));
+        return json(200, touch({ files: [], problems: [], skillProblems: [], movedUpstream: [] }));
       }
       if (draftPath === '/files/content') {
         const path = search_.get('path') ?? '';
@@ -210,6 +211,7 @@ export function fakeAgentsApi(
           version: draft.version + 1,
           files: [],
           problems: [],
+          skillProblems: [],
           movedUpstream: [],
           ...result.draft,
         };
@@ -231,6 +233,7 @@ export function fakeAgentsApi(
             path,
             size,
             movedFrom: null,
+            skill: null,
             change: change ?? (inTree(path) ? 'modified' : 'added'),
           }),
         );
@@ -241,7 +244,10 @@ export function fakeAgentsApi(
         if (own?.change === 'added') {
           return json(200, touch({ files: draft.files.filter((item) => item.path !== path) }));
         }
-        return json(200, upsert({ path, size: 0, movedFrom: null, change: 'deleted' }));
+        return json(
+          200,
+          upsert({ path, size: 0, movedFrom: null, skill: null, change: 'deleted' }),
+        );
       }
       if (draftPath === '/files/revert') {
         const { path } = body as { path: string };
@@ -252,8 +258,11 @@ export function fakeAgentsApi(
         const { from, to } = body as { from: string; to: string };
         const text = draftTexts.get(from) ?? '';
         draftTexts.set(to, text);
-        upsert({ path: from, size: 0, movedFrom: null, change: 'deleted' });
-        return json(200, upsert({ path: to, size: text.length, movedFrom: from, change: 'added' }));
+        upsert({ path: from, size: 0, movedFrom: null, skill: null, change: 'deleted' });
+        return json(
+          200,
+          upsert({ path: to, size: text.length, movedFrom: from, skill: null, change: 'added' }),
+        );
       }
       return json(404, problem(404, 'Not Found'));
     }

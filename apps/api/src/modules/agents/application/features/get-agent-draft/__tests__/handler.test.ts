@@ -61,6 +61,7 @@ describe('GetAgentDraftHandler', () => {
       version: 0,
       files: [],
       problems: [],
+      skillProblems: [],
       movedUpstream: [],
     });
     expect(definitions.listTreeCalls).toBe(0);
@@ -85,14 +86,15 @@ describe('GetAgentDraftHandler', () => {
       movedUpstream: [],
     });
     expect(view.files).toEqual([
-      { path: 'README.md', change: 'deleted', size: 0, movedFrom: null },
+      { path: 'README.md', change: 'deleted', size: 0, movedFrom: null, skill: null },
       {
         path: 'agents/new/AGENT.md',
         change: 'added',
         size: agentFile('new').length,
         movedFrom: null,
+        skill: null,
       },
-      { path: 'docs/README.md', change: 'added', size: 4, movedFrom: 'README.md' },
+      { path: 'docs/README.md', change: 'added', size: 4, movedFrom: 'README.md', skill: null },
     ]);
   });
 
@@ -231,6 +233,167 @@ describe('GetAgentDraftHandler', () => {
       definitions.truncated = true;
 
       await expect(handler.execute()).resolves.toMatchObject({ problems: [] });
+    });
+  });
+
+  describe('skills', () => {
+    const skillFile = (name: string, extra = '') =>
+      `---\nname: ${name}\ndescription: Does the ${name} thing\n${extra}---\nSteps.\n`;
+    const SKILL_FILES: Record<string, FakeCommitFile> = {
+      ...BASE_FILES,
+      'skills/lint/SKILL.md': skillFile('lint'),
+      'skills/lint/notes.md': 'notes\n',
+      'skills/rotten/SKILL.md': 'no front matter\n',
+      'agents/user/AGENT.md': agentFile('user', 'skills:\n  - lint\n'),
+      'agents/stale/AGENT.md': agentFile('stale', 'skills:\n  - rotten\n'),
+    };
+
+    beforeEach(() => {
+      definitions = new FakeDefinitionsFiles(SKILL_FILES);
+      handler = new GetAgentDraftHandler(repository, new AgentDraftReader(definitions, repository));
+    });
+
+    const put = (path: string, text: string) =>
+      draftWith(
+        (draft, facts) => {
+          draft.put({
+            ...facts,
+            baseEntries: entriesOf(SKILL_FILES),
+            path,
+            size: text.length,
+          });
+        },
+        { [path]: text },
+      );
+
+    it('names the skill each Draft path belongs to', async () => {
+      await draftWith(
+        (draft, facts) => {
+          const f = { ...facts, baseEntries: entriesOf(SKILL_FILES) };
+          draft.put({ ...f, path: 'skills/new/SKILL.md', size: 1 });
+          draft.put({ ...f, path: 'skills/new/deep/a.md', size: 1 });
+          draft.put({ ...f, path: 'agents/new/AGENT.md', size: 1 });
+        },
+        { 'skills/new/SKILL.md': 'x', 'skills/new/deep/a.md': 'x', 'agents/new/AGENT.md': 'x' },
+      );
+
+      const { files } = await handler.execute();
+
+      expect(files.map((file) => [file.path, file.skill])).toEqual([
+        ['agents/new/AGENT.md', null],
+        ['skills/new/SKILL.md', 'new'],
+        ['skills/new/deep/a.md', 'new'],
+      ]);
+    });
+
+    it('flags a skill with a forbidden key, which is saved all the same', async () => {
+      await put('skills/lint/SKILL.md', skillFile('lint', 'tools: Bash\n'));
+
+      const view = await handler.execute();
+
+      expect(view.skillProblems).toEqual([
+        {
+          skill: 'lint',
+          code: 'forbidden_key',
+          path: 'skills/lint/SKILL.md',
+          key: 'tools',
+          message: expect.stringContaining('tools'),
+        },
+      ]);
+      // The agent naming it is made invalid by it.
+      expect(view.problems.map((p) => [p.agent, p.code, p.key])).toEqual([
+        ['user', 'skill_invalid', 'lint'],
+      ]);
+    });
+
+    it('flags a shell line in a Markdown file beside the entry file', async () => {
+      await put('skills/lint/notes.md', '!`rm -rf /`\n');
+
+      const { skillProblems } = await handler.execute();
+
+      expect(skillProblems.map((p) => [p.skill, p.code, p.path])).toEqual([
+        ['lint', 'shell_line', 'skills/lint/notes.md'],
+      ]);
+    });
+
+    it('flags an agent that names a skill missing from the Draft, though the agent is untouched', async () => {
+      await draftWith((draft, facts) => {
+        const f = { ...facts, baseEntries: entriesOf(SKILL_FILES) };
+        draft.delete({ ...f, path: 'skills/lint/SKILL.md' });
+        draft.delete({ ...f, path: 'skills/lint/notes.md' });
+      });
+
+      const view = await handler.execute();
+
+      expect(view.problems).toEqual([
+        {
+          agent: 'user',
+          code: 'skill_missing',
+          path: 'agents/user/AGENT.md',
+          key: 'lint',
+          message: expect.stringContaining('lint'),
+        },
+      ]);
+      expect(view.skillProblems).toEqual([]);
+    });
+
+    it('flags a skill folder left without its entry file', async () => {
+      await draftWith((draft, facts) => {
+        draft.delete({
+          ...facts,
+          baseEntries: entriesOf(SKILL_FILES),
+          path: 'skills/lint/SKILL.md',
+        });
+      });
+
+      const { skillProblems } = await handler.execute();
+
+      expect(skillProblems.map((p) => [p.skill, p.code, p.path])).toEqual([
+        ['lint', 'entry_missing', 'skills/lint/SKILL.md'],
+      ]);
+    });
+
+    it('has no problem for a new agent and the new skill it names, in one Draft', async () => {
+      await draftWith(
+        (draft, facts) => {
+          const f = { ...facts, baseEntries: entriesOf(SKILL_FILES) };
+          draft.put({ ...f, path: 'skills/fresh/SKILL.md', size: 1 });
+          draft.put({ ...f, path: 'agents/fresh/AGENT.md', size: 1 });
+        },
+        {
+          'skills/fresh/SKILL.md': skillFile('fresh'),
+          'agents/fresh/AGENT.md': agentFile('fresh', 'skills:\n  - fresh\n'),
+        },
+      );
+
+      await expect(handler.execute()).resolves.toMatchObject({ problems: [], skillProblems: [] });
+    });
+
+    it('leaves a skill and an agent already broken at the base alone when the Draft does not touch them', async () => {
+      await put('skills/lint/extra.txt', 'x');
+
+      await expect(handler.execute()).resolves.toMatchObject({ problems: [], skillProblems: [] });
+    });
+
+    it('judges the skills an edited agent names against the Draft', async () => {
+      await put(
+        'agents/new/AGENT.md',
+        agentFile('new', 'skills:\n  - lint\n  - rotten\n  - nope\n'),
+      );
+
+      const { problems } = await handler.execute();
+
+      expect(problems.map((p) => [p.agent, p.code, p.key])).toEqual([
+        ['new', 'skill_invalid', 'rotten'],
+        ['new', 'skill_missing', 'nope'],
+      ]);
+    });
+
+    it('has no problems when the Clone cannot be read', async () => {
+      await put('skills/lint/SKILL.md', 'bad');
+      definitions.readFilesFails = true;
+
+      await expect(handler.execute()).resolves.toMatchObject({ problems: [], skillProblems: [] });
     });
   });
 

@@ -11,6 +11,7 @@ const VIEW = {
   version: 4,
   files: [],
   problems: [],
+  skillProblems: [],
   movedUpstream: [],
 };
 

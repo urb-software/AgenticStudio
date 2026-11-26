@@ -11,6 +11,7 @@ const entry = (path: string, kind: AgentFileEntry['kind'], size: number): AgentF
   kind,
   size,
   agent: null,
+  skill: null,
 });
 
 describe('ListAgentFilesEndpoint', () => {

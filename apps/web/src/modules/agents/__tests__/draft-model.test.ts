@@ -21,6 +21,7 @@ const entry = (path: string, overrides: Partial<EditorEntry> = {}): EditorEntry 
   size: 10,
   openable: true,
   agent: null,
+  skill: null,
   ...overrides,
 });
 
@@ -28,7 +29,14 @@ const change = (
   path: string,
   kind: AgentDraftFileOutput['change'],
   overrides: Partial<AgentDraftFileOutput> = {},
-): AgentDraftFileOutput => ({ path, change: kind, size: 5, movedFrom: null, ...overrides });
+): AgentDraftFileOutput => ({
+  path,
+  change: kind,
+  size: 5,
+  movedFrom: null,
+  skill: null,
+  ...overrides,
+});
 
 describe('overlayDraft', () => {
   const base = [entry('README.md'), entry('agents/a/AGENT.md', { agent: 'a' })];

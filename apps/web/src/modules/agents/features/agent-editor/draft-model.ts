@@ -43,6 +43,7 @@ export function overlayDraft(
       size: changed.size,
       openable: true,
       agent: agentOfPath(changed.path),
+      skill: changed.skill,
       change: changed.change,
       movedFrom: changed.movedFrom,
     });

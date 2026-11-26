@@ -42,7 +42,8 @@ export class PublishAgentDraftEndpoint {
       `(${AGENTS_PROBLEM_TYPES.draftBaseMissing}, ${AGENTS_PROBLEM_TYPES.draftNoBase})`,
     422:
       `The Draft has problems; the \`problems\` member lists each (${AGENTS_PROBLEM_TYPES.publishProblems}), ` +
-      `or changes paths outside agents/, listed in \`paths\` (${AGENTS_PROBLEM_TYPES.publishPathOutsideAgents})`,
+      `\`skillProblems\` those of skills, or changes paths outside agents/ and skills/, listed in \`paths\` ` +
+      `(${AGENTS_PROBLEM_TYPES.publishPathOutsideDefinitions})`,
     502: `The push failed for another reason (${AGENTS_PROBLEM_TYPES.publishFailed})`,
     503:
       `The commit identity is not configured (${AGENTS_PROBLEM_TYPES.publishNotConfigured}) or the ` +

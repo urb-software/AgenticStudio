@@ -10,8 +10,9 @@ const VIEW = {
   baseCommit: 'a'.repeat(40),
   currentCommit: 'a'.repeat(40),
   version: 1,
-  files: [{ path: 'docs/a.md', change: 'added' as const, size: 2, movedFrom: null }],
+  files: [{ path: 'docs/a.md', change: 'added' as const, size: 2, movedFrom: null, skill: null }],
   problems: [],
+  skillProblems: [],
   movedUpstream: [],
 };
 

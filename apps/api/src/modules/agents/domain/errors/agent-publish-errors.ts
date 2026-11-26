@@ -1,9 +1,18 @@
-import type { ProblemCode } from '@agentic-studio/agent-definitions';
+import type { ProblemCode, SkillProblemCode } from '@agentic-studio/agent-definitions';
 
 /** One problem the shared validation found in an agent folder the Draft touches. */
 export interface PublishProblem {
   agent: string;
   code: ProblemCode;
+  path: string;
+  key: string | null;
+  message: string;
+}
+
+/** One problem the shared validation found in a skill folder the Draft touches. */
+export interface PublishSkillProblem {
+  skill: string;
+  code: SkillProblemCode;
   path: string;
   key: string | null;
   message: string;
@@ -49,19 +58,22 @@ export class WriteRefusedError extends Error {
   }
 }
 
-/** The Draft would make agents that fail the shared validation: any problem blocks a publish. */
+/** The Draft would make skills or agents that fail the shared validation: any problem blocks a publish. */
 export class PublishProblemsError extends Error {
-  constructor(readonly problems: readonly PublishProblem[]) {
+  constructor(
+    readonly problems: readonly PublishProblem[],
+    readonly skillProblems: readonly PublishSkillProblem[] = [],
+  ) {
     super('The Draft has problems that block a publish.');
     this.name = 'PublishProblemsError';
   }
 }
 
-/** The Draft changes a path outside `agents/`: Studio writes no other file to the Git host. */
-export class PublishPathOutsideAgentsError extends Error {
+/** The Draft changes a path outside `agents/` and `skills/`: Studio writes no other file to the Git host. */
+export class PublishPathOutsideDefinitionsError extends Error {
   constructor(readonly paths: readonly string[]) {
-    super('The Draft changes paths outside agents/.');
-    this.name = 'PublishPathOutsideAgentsError';
+    super('The Draft changes paths outside agents/ and skills/.');
+    this.name = 'PublishPathOutsideDefinitionsError';
   }
 }
 

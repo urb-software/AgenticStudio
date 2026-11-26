@@ -271,7 +271,7 @@ describe.runIf(linux)('publishing the Draft (PostgreSQL + Redis via Testcontaine
     expect(gitIn(fixture.bare, ['rev-parse', 'refs/heads/dev'])).toBe(commit);
   });
 
-  it('refuses a Draft that changes a path outside agents/, listing it, and publishes nothing', async () => {
+  it('refuses a Draft that changes a path outside agents/ and skills/, listing it, and publishes nothing', async () => {
     const { fixture, commit } = await connected('publish-outside');
     expect((await put('agents/helper/AGENT.md', agentFile('helper'))).status).toBe(200);
     expect((await put('.github/workflows/ci.yml', 'name: ci')).status).toBe(200);
@@ -280,7 +280,7 @@ describe.runIf(linux)('publishing the Draft (PostgreSQL + Redis via Testcontaine
     const refused = await publish(body(draft));
 
     expect(refused.status).toBe(422);
-    expect(refused.body.type).toBe('urn:agentic-studio:problem:publish-path-outside-agents');
+    expect(refused.body.type).toBe('urn:agentic-studio:problem:publish-path-outside-definitions');
     expect(refused.body.paths).toEqual(['.github/workflows/ci.yml']);
     expect(gitIn(fixture.bare, ['rev-parse', 'refs/heads/dev'])).toBe(commit);
   });

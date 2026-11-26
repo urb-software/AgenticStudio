@@ -36,7 +36,7 @@ const listed = (entries: DefinitionsTreeEntry[], truncated = false): Definitions
 });
 
 describe('ListAgentFilesHandler', () => {
-  it('lists the whole tree at the last fetched commit and names the agent of each entry', async () => {
+  it('lists the whole tree at the last fetched commit and names the agent and the skill of each entry', async () => {
     const { handler, fake } = scripted({
       tree: listed([
         file('README.md', 3),
@@ -57,13 +57,25 @@ describe('ListAgentFilesHandler', () => {
       repository: { state: 'ready', note: null },
       truncated: false,
       entries: [
-        { path: 'README.md', kind: 'file', size: 3, agent: null },
-        { path: 'agents/reviewer/AGENT.md', kind: 'file', size: 40, agent: 'reviewer' },
-        { path: 'agents/reviewer/notes/a.txt', kind: 'file', size: 5, agent: 'reviewer' },
-        { path: 'agents/linked/AGENT.md', kind: 'symlink', size: 0, agent: 'linked' },
-        { path: 'agents/vendored', kind: 'submodule', size: 0, agent: 'vendored' },
-        { path: 'agents/stray.txt', kind: 'file', size: 1, agent: null },
-        { path: 'skills/s/SKILL.md', kind: 'file', size: 6, agent: null },
+        { path: 'README.md', kind: 'file', size: 3, agent: null, skill: null },
+        {
+          path: 'agents/reviewer/AGENT.md',
+          kind: 'file',
+          size: 40,
+          agent: 'reviewer',
+          skill: null,
+        },
+        {
+          path: 'agents/reviewer/notes/a.txt',
+          kind: 'file',
+          size: 5,
+          agent: 'reviewer',
+          skill: null,
+        },
+        { path: 'agents/linked/AGENT.md', kind: 'symlink', size: 0, agent: 'linked', skill: null },
+        { path: 'agents/vendored', kind: 'submodule', size: 0, agent: 'vendored', skill: null },
+        { path: 'agents/stray.txt', kind: 'file', size: 1, agent: null, skill: null },
+        { path: 'skills/s/SKILL.md', kind: 'file', size: 6, agent: null, skill: 's' },
       ],
     });
   });

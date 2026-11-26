@@ -182,7 +182,7 @@ const PUBLISH_PROBLEMS = {
   running: 'urn:agentic-studio:problem:publish-running',
   writeRefused: 'urn:agentic-studio:problem:write-refused',
   problems: 'urn:agentic-studio:problem:publish-problems',
-  outside: 'urn:agentic-studio:problem:publish-path-outside-agents',
+  outside: 'urn:agentic-studio:problem:publish-path-outside-definitions',
   failed: 'urn:agentic-studio:problem:publish-failed',
   notConfigured: 'urn:agentic-studio:problem:publish-not-configured',
   unreadable: 'urn:agentic-studio:problem:agent-files-unreadable',
@@ -214,7 +214,7 @@ export type PublishFailure = { message: string } & (
         | 'other';
     }
   | { kind: 'problems'; problems: PublishProblem[] }
-  | { kind: 'outside-agents'; paths: string[] }
+  | { kind: 'outside-definitions'; paths: string[] }
 );
 
 /** An array member of a problem document beyond the RFC 9457 ones, or an empty list. */
@@ -227,19 +227,22 @@ function listMember(problem: unknown, member: string): unknown[] {
 }
 
 function publishProblemsOf(problem: unknown): PublishProblem[] {
-  return listMember(problem, 'problems').flatMap((item) => {
-    if (typeof item !== 'object' || item === null) return [];
-    const { agent, path, key, message } = item as Record<string, unknown>;
-    if (typeof path !== 'string' || typeof message !== 'string') return [];
-    return [
-      {
-        agent: typeof agent === 'string' ? agent : '',
-        path,
-        key: typeof key === 'string' ? key : null,
-        message,
-      },
-    ];
-  });
+  const read = (member: string, owner: 'agent' | 'skill') =>
+    listMember(problem, member).flatMap((item) => {
+      if (typeof item !== 'object' || item === null) return [];
+      const { path, key, message, ...rest } = item as Record<string, unknown>;
+      if (typeof path !== 'string' || typeof message !== 'string') return [];
+      const name = rest[owner];
+      return [
+        {
+          agent: typeof name === 'string' ? name : '',
+          path,
+          key: typeof key === 'string' ? key : null,
+          message,
+        },
+      ];
+    });
+  return [...read('problems', 'agent'), ...read('skillProblems', 'skill')];
 }
 
 /** What a failed publish says. Each refusal of the API has its own plain message. */
@@ -300,9 +303,9 @@ export function publishFailureOf(error: unknown): PublishFailure {
       };
     case PUBLISH_PROBLEMS.outside:
       return {
-        kind: 'outside-agents',
+        kind: 'outside-definitions',
         message:
-          'Publishing writes only below agents/. Revert the changes outside it, or make them with your own Git.',
+          'Publishing writes only below agents/ and skills/. Revert the changes outside them, or make them with your own Git.',
         paths: listMember(problem, 'paths').filter((p): p is string => typeof p === 'string'),
       };
     default:
