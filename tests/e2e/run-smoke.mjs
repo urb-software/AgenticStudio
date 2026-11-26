@@ -46,7 +46,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { REVIEWER_ASSET, REVIEWER_FILE, REVIEWER_SCRIPT, runAgentPhase } from './agent-phase.mjs';
+import {
+  REVIEWER_ASSET,
+  REVIEWER_FILE,
+  REVIEWER_SCRIPT,
+  runAgentPhase,
+  SKILL_FILE,
+  SKILL_NAME,
+} from './agent-phase.mjs';
 import { COMPOSE, runControllerPhase } from './controller-phase.mjs';
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
@@ -207,6 +214,7 @@ async function createAgentFixtures(root) {
     'agents/reviewer/AGENT.md': REVIEWER_FILE,
     'agents/reviewer/scripts/check.sh': { executable: REVIEWER_SCRIPT },
     'agents/reviewer/assets/logo.bin': REVIEWER_ASSET,
+    [`skills/${SKILL_NAME}/SKILL.md`]: SKILL_FILE,
   });
   return {
     codeUrl: code.url,

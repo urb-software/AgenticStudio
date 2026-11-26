@@ -964,6 +964,44 @@ describe('choosing an agent for a Run (PostgreSQL + Redis via Testcontainers)', 
       },
     );
 
+    it.runIf(linux)(
+      'never hands over a Draft: with a Draft changing a skill, the route answers the committed bytes',
+      async () => {
+        const { runId } = await runWithSkills();
+        expect((await claim()).status).toBe(200);
+        const draftPath = '/api/agents/definitions-repository/draft/files';
+        for (const [path, text] of [
+          ['skills/lint/SKILL.md', skillFile('lint', 'Rewritten in the Draft')],
+          ['skills/lint/extra.md', 'Only in the Draft.'],
+          ['skills/notes/SKILL.md', skillFile('notes', 'Rewritten in the Draft')],
+        ] as const) {
+          const saved = await asOperator(http().put(draftPath)).send({ path, text });
+          expect(saved.status).toBe(200);
+        }
+
+        const response = await skillsGet(runId, query());
+
+        expect(response.status).toBe(200);
+        const files = response.body.skills.flatMap(
+          (skill: { name: string; files: { path: string; contentBase64: string }[] }) =>
+            skill.files.map((file) => [
+              `${skill.name}/${file.path}`,
+              Buffer.from(file.contentBase64, 'base64').toString(),
+            ]),
+        );
+        expect(files).toEqual([
+          ['notes/SKILL.md', skillFile('notes')],
+          ['lint/SKILL.md', skillFile('lint')],
+          ['lint/run.sh', SCRIPT],
+        ]);
+        const claimed = await http().get(`/api/runs/${runId}`).set('Cookie', cookie);
+        expect(claimed.body.agent.skills).toEqual(['notes', 'lint']);
+        // Test isolation only: the Draft goes back to its start.
+        await db().$executeRaw`DELETE FROM agent_draft_files`;
+        await db().$executeRaw`UPDATE agent_drafts SET base_commit = NULL, version = 0`;
+      },
+    );
+
     it('answers no skills for a built-in agent', async () => {
       const project = await readyProject('Shop');
       const created = await startRun(project.id, { task: 'Fix it', agent: 'default-claude-code' });

@@ -44,6 +44,7 @@ import { AnswerQuestion, RunConversation } from './run-conversation';
 import { RunCommits, RunDelivery } from './run-delivery';
 import { RunFollowUp } from './run-follow-up';
 import { RunAgentInstructions } from './run-agent-instructions';
+import { RunSkills } from './run-skills';
 import { RunPullRequest } from './run-pull-request';
 import { ResumeRun } from './run-resume';
 
@@ -452,6 +453,9 @@ export function RunDetail({ runId }: { runId: string }) {
                 ) : (
                   <span className="text-text-dim">None</span>
                 )}
+              </Fact>
+              <Fact term="Skills">
+                <RunSkills skills={run.agent.skills} />
               </Fact>
               {run.provider === 'codex' ? <CodexFacts /> : null}
               <Fact term="Start commit">

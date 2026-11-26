@@ -12,8 +12,12 @@ export const REVIEWER_INSTRUCTIONS =
 export const REVIEWER_SCRIPT = '#!/bin/sh\necho the agent script ran\n';
 export const REVIEWER_ASSET = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0xff, 0x00, 0xfe, 0x01]);
 
+/** The skill that agent names: the Run records its name and the worker places it, validated. */
+export const SKILL_NAME = 'release-notes';
+export const SKILL_FILE = `---\nname: ${SKILL_NAME}\ndescription: Writes release notes\n---\nSummarise the merged pull requests.\n`;
+
 /** The entry file of that agent. */
-export const REVIEWER_FILE = `---\nname: reviewer\ndescription: Reviews every change twice\nprovider: claude_code\nmodel: opus\n---\n${REVIEWER_INSTRUCTIONS}`;
+export const REVIEWER_FILE = `---\nname: reviewer\ndescription: Reviews every change twice\nprovider: claude_code\nmodel: opus\nskills:\n  - release-notes\n---\n${REVIEWER_INSTRUCTIONS}`;
 
 async function until(read, done, what, timeoutMs = 60_000) {
   const deadline = Date.now() + timeoutMs;
@@ -130,7 +134,7 @@ export async function runAgentPhase(options) {
     commit: definitionsCommit,
     provider: 'claude_code',
     model: 'opus',
-    skills: [],
+    skills: [SKILL_NAME],
     instructions: REVIEWER_INSTRUCTIONS,
   };
   const queued = (await call(`/api/runs/${runId}`)).body;
