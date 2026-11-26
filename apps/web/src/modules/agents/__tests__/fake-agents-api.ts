@@ -122,6 +122,7 @@ export function fakeAgentsApi(
         commit: string;
         files?: { tree: AgentFilesOutput; contents?: Record<string, AgentFileOutput> };
         list?: AgentListOutput;
+        draft?: Partial<AgentDraftOutput>;
       }
     | undefined;
   let draft: AgentDraftOutput = {
@@ -209,6 +210,7 @@ export function fakeAgentsApi(
           files: [],
           problems: [],
           movedUpstream: [],
+          ...result.draft,
         };
         return json(200, { commit: result.commit });
       }
@@ -344,6 +346,7 @@ export function fakeAgentsApi(
       after?: {
         files?: { tree: AgentFilesOutput; contents?: Record<string, AgentFileOutput> };
         list?: AgentListOutput;
+        draft?: Partial<AgentDraftOutput>;
       },
     ) {
       published = { commit, ...after };

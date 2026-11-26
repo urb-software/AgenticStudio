@@ -213,7 +213,9 @@ describe('Publish: the button', () => {
     setup({ draft: { ...MODIFIED, currentCommit: NEW_SHA } });
     await screen.findByRole('navigation', { name: 'Files' });
     expect(publishButton().disabled).toBe(true);
-    expect(screen.getByText(/cannot be published again/)).toBeTruthy();
+    expect(
+      screen.getByText(/moved since the Draft began, so the Draft cannot be published\./),
+    ).toBeTruthy();
   });
 });
 
@@ -421,19 +423,21 @@ describe('Publish: each refusal has its own message', () => {
     await expect(dialog).toHaveNoAxeViolations();
   });
 
-  it('publish-running, nothing-to-publish and an unreadable Clone each say what happened', async () => {
-    for (const [status, type, pattern] of [
-      [409, 'publish-running', /Another publish is running/],
-      [409, 'nothing-to-publish', /changes nothing/],
-      [503, 'agent-files-unreadable', /cannot be read/],
-      [409, 'agent-draft-base-missing', /no longer in the Repository/],
-    ] as const) {
-      const { dialog, unmount } = await refused(status, fail(status, type));
+  it.each([
+    [409, 'publish-running', /Another publish is running/],
+    [409, 'nothing-to-publish', /changes nothing/],
+    [503, 'agent-files-unreadable', /cannot be read/],
+    [409, 'agent-draft-base-missing', /no longer in the Repository/],
+    [409, 'agent-draft-no-base', /no fetched commit/],
+    [500, 'unknown-server-failure', /may still have gone through/],
+  ] as const)(
+    '%s %s says what happened',
+    async (status, type, pattern) => {
+      const { dialog } = await refused(status, fail(status, type));
       expect(await within(dialog).findByText(pattern)).toBeTruthy();
-      unmount();
-      vi.unstubAllGlobals();
-    }
-  });
+    },
+    15000,
+  );
 
   it('keeps the dialog open and the message after a refusal, so a retry needs no retyping', async () => {
     const { api, user, dialog } = await refused(409, fail(409, 'publish-running'));
@@ -444,5 +448,76 @@ describe('Publish: each refusal has its own message', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Publish' }));
     await within(dialog).findByText(/Published as commit/);
     expect(publishes(api)).toHaveLength(2);
+  });
+
+  it('shows the reason of a refused message for a 400', async () => {
+    const { dialog } = await refused(
+      400,
+      fail(400, 'validation', { errors: [{ path: 'message', message: 'Too long for the host.' }] }),
+    );
+    expect(await within(dialog).findByText('Too long for the host.')).toBeTruthy();
+  });
+
+  it('says so when reverting the paths outside agents/ is refused, and stays open', async () => {
+    const { api, user, dialog } = await refused(
+      422,
+      fail(422, 'publish-path-outside-agents', { paths: ['README.md'] }),
+    );
+    await within(dialog).findByRole('list', { name: 'Paths outside agents/' });
+    api.failNextDraftWrite(500, problem(500, 'Broken'));
+    await user.click(within(dialog).getByRole('button', { name: 'Revert these files' }));
+    expect(await within(dialog).findByText(/Broken \(test\)/)).toBeTruthy();
+    expect(screen.getByRole('dialog')).toBe(dialog);
+    await expect(dialog).toHaveNoAxeViolations();
+  });
+
+  it('reads the Draft and the tree again after an answer the API has no name for', async () => {
+    const { api, dialog } = await refused(500, fail(500, 'unknown-server-failure'));
+    await within(dialog).findByText(/may still have gone through/);
+    await waitFor(() =>
+      expect(
+        api
+          .calls()
+          .filter(
+            (call) => call.method === 'GET' && call.path.endsWith('/definitions-repository/files'),
+          ),
+      ).toHaveLength(2),
+    );
+  });
+});
+
+describe('Publish: a Draft kept through the publish', () => {
+  it('says the commit was published but the saved changes cannot be, and offers to discard', async () => {
+    const { api } = setup({ draft: MODIFIED });
+    api.willPublish(NEW_SHA, {
+      draft: {
+        baseCommit: SHA,
+        version: 9,
+        files: [{ path: 'agents/reviewer/late.md', change: 'added', size: 3, movedFrom: null }],
+      },
+    });
+    const user = userEvent.setup();
+    const dialog = await openDialog(user);
+    await submit(user, dialog);
+
+    const status = await within(dialog).findByText(/Published as commit/);
+    expect(status.textContent).not.toMatch(/Draft is empty/);
+    expect(
+      await within(dialog).findByText(/saved to the Draft while it was being published/),
+    ).toBeTruthy();
+    await expect(dialog).toHaveNoAxeViolations();
+    await user.click(within(dialog).getByRole('button', { name: 'Discard the Draft' }));
+    expect(await screen.findByRole('alertdialog')).toBeTruthy();
+  });
+
+  it('says the Draft is empty only when it is, and moves focus to the result', async () => {
+    const { api } = setup({ draft: MODIFIED });
+    api.willPublish(NEW_SHA);
+    const user = userEvent.setup();
+    const dialog = await openDialog(user);
+    await submit(user, dialog);
+    const status = await within(dialog).findByText(/The Draft is empty/);
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    expect(status.closest('div')).toBe(document.activeElement);
   });
 });

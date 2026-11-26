@@ -472,7 +472,7 @@ function EditorBody() {
       : draftProblemCount > 0
         ? `Fix the ${draftProblemCount} ${draftProblemCount === 1 ? 'problem' : 'problems'} of the Draft first.`
         : moved
-          ? 'The Repository has a newer commit than the one this Draft began at, so the Draft cannot be published again. Discard it to start again.'
+          ? 'The Repository moved since the Draft began, so the Draft cannot be published. Copy what you need, discard it, and make the changes again.'
           : elsewhere || stale
             ? 'Reload the Draft before publishing it.'
             : draft.baseCommit === null

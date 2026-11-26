@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Banner } from '@/shared/components/banner';
 import { TextField } from '@/shared/components/text-field';
 import { Button } from '@/shared/ui/button';
@@ -21,6 +21,37 @@ import { ChangesView } from './changes-view';
 import { PUBLISH_MESSAGE_MAX, publishMessageError } from './draft-model';
 
 const shortSha = (sha: string) => sha.slice(0, 7);
+
+/**
+ * The result of a publish. Focus moves here when it appears, and the live region is filled one
+ * render after it exists, so a screen reader announces the text.
+ */
+function PublishedStatus({ commit, keptFiles }: { commit: string; keptFiles: number }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [announced, setAnnounced] = useState(false);
+  useEffect(() => {
+    box.current?.focus();
+    const timer = setTimeout(() => setAnnounced(true), 0);
+    return () => clearTimeout(timer);
+  }, []);
+  return (
+    <div ref={box} tabIndex={-1} className="outline-none">
+      <p className="m-0" role="status">
+        {announced ? (
+          <>
+            Published as commit{' '}
+            <code className="text-code" title={commit}>
+              {shortSha(commit)}
+            </code>
+            {keptFiles === 0
+              ? '. The Draft is empty, and the editor now reads that commit.'
+              : '. The editor now reads that commit.'}
+          </>
+        ) : null}
+      </p>
+    </div>
+  );
+}
 
 interface PublishDialogProps {
   open: boolean;
@@ -66,6 +97,11 @@ export function PublishDialog({
   const [failure, setFailure] = useState<PublishFailure>();
   const [reverting, setReverting] = useState(false);
   const [commit, setCommit] = useState<string>();
+  const failureBox = useRef<HTMLDivElement>(null);
+  // A result replaces what had focus (a button that is now busy or disabled): focus follows it.
+  useEffect(() => {
+    if (failure) failureBox.current?.focus();
+  }, [failure]);
   const pending = publish.isPending || reverting;
   const problem = publishMessageError(message);
 
@@ -114,13 +150,21 @@ export function PublishDialog({
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
-            <p className="m-0" role="status">
-              Published as commit{' '}
-              <code className="text-code" title={commit}>
-                {shortSha(commit)}
-              </code>
-              . The Draft is empty, and the editor now reads that commit.
-            </p>
+            <PublishedStatus commit={commit} keptFiles={files.length} />
+            {files.length > 0 ? (
+              <Banner
+                tone="warning"
+                action={
+                  <Button size="sm" variant="danger" onClick={onDiscard}>
+                    Discard the Draft
+                  </Button>
+                }
+              >
+                The commit was published, but changes were saved to the Draft while it was being
+                published. They are kept on the old commit and cannot be published. Copy what you
+                need, then discard the Draft and make those changes again.
+              </Banner>
+            ) : null}
           </DialogBody>
           <DialogFooter>
             <DialogClose asChild>
@@ -146,36 +190,38 @@ export function PublishDialog({
           </DialogHeader>
           <DialogBody>
             {failure ? (
-              <Banner
-                tone="danger"
-                action={
-                  failure.kind === 'conflict' ? (
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        onReload();
-                        onOpenChange(false);
-                      }}
-                    >
-                      Reload the Draft
-                    </Button>
-                  ) : failure.kind === 'repository-moved' || failure.kind === 'base-missing' ? (
-                    <Button size="sm" variant="danger" onClick={onDiscard}>
-                      Discard the Draft
-                    </Button>
-                  ) : failure.kind === 'outside-agents' ? (
-                    <Button
-                      size="sm"
-                      loading={reverting}
-                      onClick={() => void revert(failure.paths)}
-                    >
-                      Revert these files
-                    </Button>
-                  ) : undefined
-                }
-              >
-                {failure.message}
-              </Banner>
+              <div ref={failureBox} tabIndex={-1} className="outline-none">
+                <Banner
+                  tone="danger"
+                  action={
+                    failure.kind === 'conflict' ? (
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          onReload();
+                          onOpenChange(false);
+                        }}
+                      >
+                        Reload the Draft
+                      </Button>
+                    ) : failure.kind === 'repository-moved' || failure.kind === 'base-missing' ? (
+                      <Button size="sm" variant="danger" onClick={onDiscard}>
+                        Discard the Draft
+                      </Button>
+                    ) : failure.kind === 'outside-agents' ? (
+                      <Button
+                        size="sm"
+                        loading={reverting}
+                        onClick={() => void revert(failure.paths)}
+                      >
+                        Revert these files
+                      </Button>
+                    ) : undefined
+                  }
+                >
+                  {failure.message}
+                </Banner>
+              </div>
             ) : null}
             {failure?.kind === 'problems' ? (
               <ul

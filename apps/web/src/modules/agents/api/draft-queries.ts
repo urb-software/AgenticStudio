@@ -256,7 +256,7 @@ export function publishFailureOf(error: unknown): PublishFailure {
       return {
         kind: 'repository-moved',
         message:
-          'The Repository moved on since this Draft began, so the Draft cannot be published again: a Draft is never moved onto a newer commit. If an earlier publish reached the Git host, its changes are already in the Repository and this Draft still holds them. Discard the Draft, then make again any change that is missing.',
+          'The Repository moved on since this Draft began, so the Draft cannot be published again: a Draft is never moved onto a newer commit. If an earlier publish reached the Git host, its changes are already in the Repository and this Draft still holds them. Copy anything you still need from it first: discarding the Draft deletes it for good. Then discard the Draft and make again any change that is missing.',
       };
     case PUBLISH_PROBLEMS.nothing:
       return {
@@ -309,7 +309,18 @@ export function publishFailureOf(error: unknown): PublishFailure {
       break;
   }
   if (error instanceof ApiError && error.status === 400) {
-    return { kind: 'invalid', message: problem?.detail || 'The message was not accepted.' };
+    const field = problem?.errors?.find((item) => item.path === 'message') ?? problem?.errors?.[0];
+    return {
+      kind: 'invalid',
+      message: field?.message || problem?.detail || 'The message was not accepted.',
+    };
+  }
+  if (unanswered(error)) {
+    return {
+      kind: 'failed',
+      message:
+        'No answer arrived, or the server failed, and the publish may still have gone through to the Git host. The Draft was read again. If it is empty or the Repository moved on, your changes are probably already there.',
+    };
   }
   return {
     kind: 'other',
@@ -339,7 +350,18 @@ export function usePublishDraft() {
     onError: async (error) => {
       if (error instanceof ApiError && error.status === 409) {
         await queryClient.invalidateQueries({ queryKey: DRAFT_KEY, exact: true });
+      } else if (unanswered(error)) {
+        // The push may have reached the Git host: read what the page shows again.
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: DRAFT_KEY, exact: true }),
+          reloadEditor(),
+        ]);
       }
     },
   });
+}
+
+/** No answer, or a server failure the API has no name for: the publish may have happened. */
+function unanswered(error: unknown): boolean {
+  return error instanceof ApiError && (error.status === 0 || error.status >= 500);
 }
