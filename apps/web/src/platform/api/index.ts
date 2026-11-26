@@ -33,6 +33,8 @@ import type {
   PreviewRefusedProblem,
   PreviewsListOutput,
   ProviderListOutput,
+  PublishAgentDraftRequest,
+  PublishAgentDraftResultOutput,
   RefreshPullRequestRequest,
   RepositoryOutput,
   ReviewCommentsOutput,
@@ -109,6 +111,8 @@ export type {
   PreviewsListOutput,
   ProviderAvailabilityOutput,
   ProviderListOutput,
+  PublishAgentDraftRequest,
+  PublishAgentDraftResultOutput,
   RefreshPullRequestRequest,
   RepositoryFailureCodeOutput,
   RepositoryOutput,
@@ -305,6 +309,8 @@ export const api = {
   deleteAgentDraftFile: (path: string): Promise<AgentDraftOutput> =>
     unwrap(sdk.deleteAgentDraftFile({ query: { path } })),
   discardAgentDraft: (): Promise<AgentDraftOutput> => unwrap(sdk.discardAgentDraft()),
+  publishAgentDraft: (body: PublishAgentDraftRequest): Promise<PublishAgentDraftResultOutput> =>
+    unwrap(sdk.publishAgentDraft({ body })),
   getProject: (id: string): Promise<ProjectDetailOutput> =>
     unwrap(sdk.getProject({ path: { id } })),
   getRepository: (projectId: string): Promise<RepositoryOutput> =>

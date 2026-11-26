@@ -94,6 +94,20 @@ export function pathError(
   return undefined;
 }
 
+/** The longest commit message the API takes. */
+export const PUBLISH_MESSAGE_MAX = 2000;
+
+/** Why a commit message is refused, or undefined when it is not; the API applies the same rules. */
+export function publishMessageError(message: string): string | undefined {
+  if (message.length === 0 || message.length > PUBLISH_MESSAGE_MAX) {
+    return `Enter a message of 1 to ${PUBLISH_MESSAGE_MAX.toLocaleString('en-US')} characters.`;
+  }
+  if (message.includes('\0')) return 'The message must not contain a NUL character.';
+  const subject = message.split('\n', 1)[0] ?? '';
+  if (subject.trim() === '') return 'The first line of the message is its subject: write one.';
+  return undefined;
+}
+
 /** One problem to show in the list and in the file, from any of its sources. */
 export interface ListedProblem {
   agent: string;

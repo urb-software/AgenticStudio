@@ -1409,6 +1409,7 @@ test(RUN_TEST, async ({ page }, testInfo) => {
 // The agent editor's API, answered in the browser, so the tests need no definitions Repository.
 // `draft` is the Draft the page has written: each saved file's text by path.
 const EDITOR_SHA = '0123456789abcdef0123456789abcdef01234567';
+const EDITOR_PUBLISHED_SHA = 'fedcba9876543210fedcba9876543210fedcba98';
 const EDITOR_AGENT_MD = [
   '---',
   'name: reviewer',
@@ -1434,9 +1435,10 @@ async function mockEditorApi(page: Page) {
     'agents/reviewer/AGENT.md': EDITOR_AGENT_MD.join('\n'),
   };
   const draft = { version: 0, files: new Map<string, string>() };
+  const state = { commit: EDITOR_SHA, published: [] as unknown[] };
   const draftBody = () => ({
-    baseCommit: draft.files.size > 0 ? EDITOR_SHA : null,
-    currentCommit: EDITOR_SHA,
+    baseCommit: draft.files.size > 0 ? state.commit : null,
+    currentCommit: state.commit,
     version: draft.version,
     files: [...draft.files].map(([path, text]) => ({
       path,
@@ -1452,7 +1454,7 @@ async function mockEditorApi(page: Page) {
     route.fulfill({
       ...json,
       body: JSON.stringify({
-        commit: EDITOR_SHA,
+        commit: state.commit,
         repository,
         truncated: false,
         baseRules: { version: 'e2e', text: 'Rules.' },
@@ -1481,7 +1483,7 @@ async function mockEditorApi(page: Page) {
     route.fulfill({
       ...json,
       body: JSON.stringify({
-        commit: EDITOR_SHA,
+        commit: state.commit,
         repository,
         truncated: false,
         entries: [
@@ -1497,7 +1499,7 @@ async function mockEditorApi(page: Page) {
     return route.fulfill({
       ...json,
       body: JSON.stringify({
-        commit: EDITOR_SHA,
+        commit: state.commit,
         path,
         kind: 'text',
         content: base[path] ?? EDITOR_AGENT_MD.join('\n'),
@@ -1518,14 +1520,23 @@ async function mockEditorApi(page: Page) {
     return route.fulfill({
       ...json,
       body: JSON.stringify({
-        commit: EDITOR_SHA,
+        commit: state.commit,
         path,
         kind: 'text',
         content: draft.files.get(path) ?? base[path] ?? '',
       }),
     });
   });
-  return { draft };
+  // A publish makes the Draft one commit: the files become the base and the Draft is empty.
+  await page.route('**/api/agents/definitions-repository/draft/publish', (route) => {
+    state.published.push(route.request().postDataJSON());
+    for (const [path, text] of draft.files) base[path] = text;
+    draft.files.clear();
+    draft.version += 1;
+    state.commit = EDITOR_PUBLISHED_SHA;
+    return route.fulfill({ ...json, body: JSON.stringify({ commit: state.commit }) });
+  });
+  return { draft, state };
 }
 
 /** Records every request that leaves the Studio origin. */
@@ -1666,4 +1677,46 @@ test('the agent editor edits into a Draft, shows a problem while typing and the 
   await expect(diff).toContainText('description: Reviews a change');
   await expectInBothThemes(page, editor);
   expect(foreign, 'a request left the Studio origin').toEqual([]);
+});
+
+// A saved change is published from a dialog that shows the changes once more; the page then
+// reads the new commit and the Draft is empty.
+test('the agent editor publishes a saved Draft and reads the new commit', async ({ page }) => {
+  const { draft, state } = await mockEditorApi(page);
+  await signIn(page);
+  await page.goto('/agents/editor?path=agents%2Freviewer%2FAGENT.md');
+  const editor = page.locator('.monaco-editor');
+  await expect(editor.locator('.view-lines')).toContainText('provider: nope');
+
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await editor.locator('.view-lines').click();
+  await page.keyboard.press('ControlOrMeta+A');
+  await page.keyboard.insertText(
+    '---\nname: reviewer\ndescription: Reviews a change\nprovider: claude_code\n---\nReview.',
+  );
+  await expect(page.getByRole('button', { name: 'Publish', exact: true })).toBeDisabled();
+  await expect(page.getByText('Save or discard your unsaved edits first.')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(() => draft.files.size).toBe(1);
+  const publish = page.getByRole('button', { name: 'Publish', exact: true });
+  await expect(publish).toBeEnabled();
+  await expectInBothThemes(page, publish);
+  await publish.click();
+
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('navigation', { name: 'Changed files' })).toContainText('Modified');
+  await expect(dialog.locator('.monaco-diff-editor')).toBeVisible();
+  await dialog.getByLabel('Commit message').fill('Describe the reviewer');
+  await dialog.getByRole('button', { name: 'Publish', exact: true }).click();
+
+  await expect(dialog).toContainText(`Published as commit ${EDITOR_PUBLISHED_SHA.slice(0, 7)}`);
+  expect(state.published).toEqual([
+    { message: 'Describe the reviewer', baseCommit: EDITOR_SHA, version: 1 },
+  ]);
+  await dialog.getByRole('button', { name: 'Close', exact: true }).first().click();
+  await expect(page.getByRole('button', { name: /^Changes \(0\)/ })).toBeVisible();
+  await expect(
+    page.getByText(EDITOR_PUBLISHED_SHA.slice(0, 7), { exact: true }).first(),
+  ).toBeVisible();
 });

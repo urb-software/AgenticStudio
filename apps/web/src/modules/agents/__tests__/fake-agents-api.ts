@@ -116,7 +116,15 @@ export function fakeAgentsApi(
   const listFailures: { status: number; body: unknown }[] = [];
   const detailFailures: { status: number; body: unknown }[] = [];
   const providerFailures: { status: number; body: unknown }[] = [];
-  const gates: { list?: Promise<void>; detail?: Promise<void> } = {};
+  const gates: { list?: Promise<void>; detail?: Promise<void>; publish?: Promise<void> } = {};
+  let published:
+    | {
+        commit: string;
+        files?: { tree: AgentFilesOutput; contents?: Record<string, AgentFileOutput> };
+        list?: AgentListOutput;
+        draft?: Partial<AgentDraftOutput>;
+      }
+    | undefined;
   let draft: AgentDraftOutput = {
     baseCommit: null,
     currentCommit: agents.files?.tree.commit ?? null,
@@ -188,6 +196,23 @@ export function fakeAgentsApi(
         }
         const found = files?.contents?.[path];
         return found ? json(200, found) : json(404, problem(404, 'No such file'));
+      }
+      if (draftPath === '/publish' && request.method === 'POST') {
+        await gates.publish;
+        const result = published ?? { commit: draft.currentCommit ?? '' };
+        if (result.files) files = result.files;
+        if (result.list) list = result.list;
+        draftTexts.clear();
+        draft = {
+          baseCommit: null,
+          currentCommit: result.commit,
+          version: draft.version + 1,
+          files: [],
+          problems: [],
+          movedUpstream: [],
+          ...result.draft,
+        };
+        return json(200, { commit: result.commit });
       }
       if (draftPath === '/files' && request.method === 'PUT') {
         const { path, text, contentBase64 } = body as {
@@ -305,7 +330,7 @@ export function fakeAgentsApi(
       detailFailures.push({ status, body });
     },
     /** Holds the answers of the list or of an agent until the returned function is called. */
-    hold(what: 'list' | 'detail'): () => void {
+    hold(what: 'list' | 'detail' | 'publish'): () => void {
       let release: () => void = () => undefined;
       gates[what] = new Promise<void>((resolve) => {
         release = () => {
@@ -314,6 +339,17 @@ export function fakeAgentsApi(
         };
       });
       return release;
+    },
+    /** What a successful publish leaves: the new commit and the tree read at it. */
+    willPublish(
+      commit: string,
+      after?: {
+        files?: { tree: AgentFilesOutput; contents?: Record<string, AgentFileOutput> };
+        list?: AgentListOutput;
+        draft?: Partial<AgentDraftOutput>;
+      },
+    ) {
+      published = { commit, ...after };
     },
     /** The files the next reads answer, as after a fetch brought new commits. */
     setFiles(next: { tree: AgentFilesOutput; contents?: Record<string, AgentFileOutput> }) {
