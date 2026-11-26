@@ -67,11 +67,14 @@ import { EditorPane, type PaneState } from './editor-pane';
 import { agentState, FileTree } from './file-tree';
 import {
   agentsNaming,
+  fromBaseSkill,
+  fromDraftSkill,
   namingAgentProblems,
   newSkillFile,
   NOT_JUDGED_TEXT,
   skillOfPath,
   skillStandings,
+  unheldMarkdownProblems,
   validateSkillLive,
 } from './skill-model';
 import { PublishDialog } from './publish-dialog';
@@ -161,6 +164,7 @@ function EditorBody() {
   const [stale, setStale] = useState(false);
   const [storageFailed, setStorageFailed] = useState(false);
   const chooserId = useId();
+  const pathRef = useRef<string | undefined>(initial);
 
   const dirty = Object.keys(buffers).length > 0;
   const guard = useLeaveGuard(dirty);
@@ -308,6 +312,7 @@ function EditorBody() {
     touchedSkills.size > 0 || skillEntryPath !== null || skillOpen !== null
       ? draftAgentEntries
       : [],
+    draft?.version ?? 0,
   );
 
   const sizes = useMemo(
@@ -330,15 +335,26 @@ function EditorBody() {
   );
   if (liveSkillProblems && skillOpen !== null) touchedSkills.add(skillOpen);
   const skillsWithProblems = new Set((draft?.skillProblems ?? []).map((item) => item.skill));
+  // What the browser cannot judge in the open skill stays as the API has it.
+  let keptSkillProblems: ReturnType<typeof unheldMarkdownProblems> = [];
   if (liveSkillProblems && skillOpen !== null) {
+    const apiProblems = touchedSkillsByDraft.has(skillOpen)
+      ? (draft?.skillProblems ?? []).filter((item) => item.skill === skillOpen).map(fromDraftSkill)
+      : (skillMarks.data?.skills ?? [])
+          .filter((item) => item.name === skillOpen)
+          .flatMap(fromBaseSkill);
+    keptSkillProblems = unheldMarkdownProblems(apiProblems, knownTexts);
     skillsWithProblems.delete(skillOpen);
-    if (liveSkillProblems.length > 0) skillsWithProblems.add(skillOpen);
+    if (liveSkillProblems.length > 0 || keptSkillProblems.length > 0) {
+      skillsWithProblems.add(skillOpen);
+    }
   }
   const standings = skillStandings(
     entries,
     skillMarks.data?.skills ?? [],
     skillsWithProblems,
     touchedSkills,
+    skillMarks.data?.truncated ?? false,
   );
   const live = useMemo(
     () =>
@@ -362,6 +378,10 @@ function EditorBody() {
   if (live && agentOpen !== null) touched.add(agentOpen);
   // The agents the Draft leaves alone that name a skill it changes are judged with the Draft.
   const named = new Set<string>();
+  // Every agent the API judged for the Draft counts, whether or not the editor's list holds it.
+  for (const item of draft?.problems ?? []) {
+    if (!touched.has(item.agent)) named.add(item.agent);
+  }
   for (const skill of touchedSkills) {
     for (const agent of agentsNaming(skill, marks.data?.agents ?? [], entries, draftAgentTexts)) {
       if (!touched.has(agent)) named.add(agent);
@@ -372,6 +392,7 @@ function EditorBody() {
       ? {
           skill: skillOpen,
           problems: liveSkillProblems,
+          kept: keptSkillProblems,
           naming: namingAgentProblems(skillOpen, marks.data?.agents ?? [], touched, standings),
         }
       : undefined;
@@ -389,6 +410,8 @@ function EditorBody() {
 
   const states = new Map<string, string>();
   for (const item of entries) {
+    // A folder the Draft has emptied has no state.
+    if (item.change === 'deleted') continue;
     if (item.agent !== null && !states.has(`agents/${item.agent}`)) {
       const count = problems.filter((problem) => problem.agent === item.agent).length;
       states.set(
@@ -413,6 +436,7 @@ function EditorBody() {
   const value = path !== undefined ? (buffers[path] ?? savedText) : undefined;
 
   function open(next: string, target?: ProblemTarget) {
+    pathRef.current = next;
     setView('files');
     setPath(next);
     setReveal(target ? { target, token: (reveal?.token ?? 0) + 1 } : undefined);
@@ -570,7 +594,9 @@ function EditorBody() {
     entries.flatMap((candidate) => (candidate.agent === null ? [] : [candidate.agent])),
   );
   const takenSkills = new Set(
-    entries.flatMap((candidate) => (candidate.skill === null ? [] : [candidate.skill])),
+    entries.flatMap((candidate) =>
+      candidate.skill === null || candidate.change === 'deleted' ? [] : [candidate.skill],
+    ),
   );
   // Taking the entry file of a skill away makes the agents that name it invalid.
   const skillUsers =
@@ -651,7 +677,15 @@ function EditorBody() {
                 ? 'The Draft has no base commit to publish onto.'
                 : undefined;
   const openFileKind = pane.kind === 'file' ? pane.file.kind : undefined;
-  const closeDialog = () => setDialog(undefined);
+  const closeDialog = () => {
+    setDialog(undefined);
+    // The Skills view's link must not reopen the step after it was cancelled.
+    if (params.get('new') === 'skill') {
+      router.replace(pathRef.current ? editorUrl(pathRef.current) : '/agents/editor', {
+        scroll: false,
+      });
+    }
+  };
 
   return (
     <Card aria-labelledby={TITLE_ID}>

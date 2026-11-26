@@ -71,7 +71,7 @@ export function overlayDraft(
 export function newAgentFile(name: string, provider: string): string {
   return [
     '---',
-    `name: ${name}`,
+    `name: "${name}"`,
     'description: Describe what this agent is for.',
     `provider: ${provider}`,
     `model: ${MODEL_DEFAULT}`,
@@ -126,7 +126,10 @@ export function publishMessageError(message: string): string | undefined {
 }
 
 function fromDraft(problem: AgentDraftProblemOutput): ListedProblem {
-  const target: ProblemTarget = { path: problem.path };
+  const folder = `agents/${problem.agent}`;
+  const target: ProblemTarget = {
+    path: problem.path === folder ? `${folder}/${AGENT_ENTRY_FILE}` : problem.path,
+  };
   const key = placedKey(problem.code, problem.key);
   if (key) target.key = key;
   return {
@@ -203,6 +206,8 @@ export interface ProblemSources {
     skill: string;
     problems: readonly ListedProblem[];
     naming: ReadonlyMap<string, readonly ListedProblem[]>;
+    /** The API's problems in files of the skill the browser holds no text of. */
+    kept?: readonly ListedProblem[];
   };
 }
 
@@ -250,7 +255,7 @@ export function listProblems({
     if (problem.skill !== liveSkill?.skill) listed.push(fromDraftSkill(problem));
   }
   if (liveSkill) {
-    listed.push(...liveSkill.problems);
+    listed.push(...liveSkill.problems, ...(liveSkill.kept ?? []));
     for (const problems of liveSkill.naming.values()) listed.push(...problems);
   }
   return listed;

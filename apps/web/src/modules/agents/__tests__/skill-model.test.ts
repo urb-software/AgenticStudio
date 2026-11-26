@@ -1,10 +1,15 @@
-import { MAX_FILE_BYTES, validateSkillFolder } from '@agentic-studio/agent-definitions';
+import {
+  MAX_FILE_BYTES,
+  validateAgentFolder,
+  validateSkillFolder,
+} from '@agentic-studio/agent-definitions';
 import { describe, expect, it } from 'vitest';
 import type { AgentSummaryOutput } from '../../../platform/api';
-import { listProblems } from '../features/agent-editor/draft-model';
+import { listProblems, newAgentFile } from '../features/agent-editor/draft-model';
 import type { EditorEntry } from '../features/agent-editor/editor-model';
 import {
   agentsNaming,
+  fromDraftSkill,
   namingAgentProblems,
   newSkillFile,
   skillNameError,
@@ -46,6 +51,25 @@ describe('newSkillFile and skillNameError', () => {
       ]).ok,
     ).toBe(true);
   });
+
+  it.each(['123', 'true', 'null', '1e5', '0x1f', '0o7', 'false'])(
+    'makes entry files that pass the validation for the name %s',
+    (name) => {
+      const skill = newSkillFile(name);
+      const agent = newAgentFile(name, 'codex');
+
+      expect(
+        validateSkillFolder(name, [
+          { path: 'SKILL.md', kind: 'file', size: skill.length, content: skill },
+        ]).ok,
+      ).toBe(true);
+      expect(
+        validateAgentFolder(name, [
+          { path: 'AGENT.md', kind: 'file', size: agent.length, content: agent },
+        ]).ok,
+      ).toBe(true);
+    },
+  );
 
   it('refuses an empty name, a bad name and a taken one', () => {
     expect(skillNameError('', new Set())).toMatch(/Enter a name/);
@@ -119,6 +143,18 @@ const agent = (name: string, skills: string[], extra: Partial<AgentSummaryOutput
   }) as AgentSummaryOutput;
 
 describe('the agents a skill touches', () => {
+  it('leaves out an agent whose entry file the Draft deletes or moves away', () => {
+    const entries = [
+      entry('agents/gone/AGENT.md', { agent: 'gone', change: 'deleted' }),
+      entry('agents/old/AGENT.md', { agent: 'old', change: 'deleted' }),
+      entry('agents/new/AGENT.md', { agent: 'new', change: 'added' }),
+    ];
+    const base = [agent('gone', ['lint']), agent('old', ['lint'])];
+    const texts = new Map([['agents/new/AGENT.md', '---\nname: new\nskills:\n  - lint\n---\n']]);
+
+    expect(agentsNaming('lint', base, entries, texts)).toEqual(['new']);
+  });
+
   it('finds the agents that name a skill, from the base and from the Draft’s own entry files', () => {
     const entries = [
       entry('agents/a/AGENT.md', { agent: 'a' }),
@@ -152,7 +188,32 @@ describe('the agents a skill touches', () => {
   });
 });
 
+describe('fromDraftSkill', () => {
+  it('sends a folder-level problem to the entry file, as the other sources do', () => {
+    const listed = fromDraftSkill({
+      skill: 'lint',
+      code: 'too_many_files',
+      path: 'skills/lint',
+      key: null,
+      message: 'Too many files.',
+    });
+
+    expect(listed.target.path).toBe('skills/lint/SKILL.md');
+  });
+});
+
 describe('skillStandings', () => {
+  it('gives no verdict on a skill the list does not hold when the list was cut', () => {
+    const entries = [entry('skills/unlisted/SKILL.md')];
+
+    expect(skillStandings(entries, [], new Set(), new Set(), true).get('unlisted')).toEqual({
+      valid: true,
+    });
+    expect(skillStandings(entries, [], new Set(), new Set(), false).get('unlisted')).toEqual({
+      valid: false,
+    });
+  });
+
   it('takes untouched skills from the list and touched ones from their problems', () => {
     const entries = [
       entry('skills/a/SKILL.md'),

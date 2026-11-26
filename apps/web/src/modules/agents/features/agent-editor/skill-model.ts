@@ -34,7 +34,7 @@ export function skillOfPath(path: string): string | null {
 export function newSkillFile(name: string): string {
   return [
     '---',
-    `name: ${name}`,
+    `name: "${name}"`,
     'description: Describe what this skill is for.',
     '---',
     '',
@@ -83,7 +83,10 @@ export function fromBaseSkill(skill: SkillSummaryOutput): ListedProblem[] {
 
 /** A skill problem as listed: from the Draft answer (paths from the Repository root). */
 export function fromDraftSkill(problem: AgentDraftSkillProblemOutput): ListedProblem {
-  const target: ProblemTarget = { path: problem.path };
+  const folder = `skills/${problem.skill}`;
+  const target: ProblemTarget = {
+    path: problem.path === folder ? `${folder}/${SKILL_ENTRY_FILE}` : problem.path,
+  };
   const key = placedKey(problem.code, problem.key);
   if (key) target.key = key;
   return {
@@ -159,12 +162,16 @@ export function validateSkillLive(
     }));
 }
 
-/** Whether each skill folder of the Draft's state is valid: absent means it does not exist. */
+/**
+ * Whether each skill folder of the Draft's state is valid: absent means it does not exist. A skill
+ * the list does not hold gets no verdict of the browser's when the list was cut: the API decides.
+ */
 export function skillStandings(
   entries: readonly EditorEntry[],
   base: readonly SkillSummaryOutput[],
   withProblems: ReadonlySet<string>,
   touched: ReadonlySet<string>,
+  listCut = false,
 ): Map<string, { valid: boolean }> {
   const baseValid = new Map(base.map((skill) => [skill.name, skill.valid]));
   const standings = new Map<string, { valid: boolean }>();
@@ -172,10 +179,23 @@ export function skillStandings(
     if (item.skill === null || item.change === 'deleted' || standings.has(item.skill)) continue;
     const valid = touched.has(item.skill)
       ? !withProblems.has(item.skill)
-      : (baseValid.get(item.skill) ?? false);
+      : (baseValid.get(item.skill) ?? listCut);
     standings.set(item.skill, { valid });
   }
   return standings;
+}
+
+/**
+ * The API's problems of the open skill in Markdown files the browser holds no text of, which the
+ * browser cannot judge: they stay, while the browser's own replace those of the files it holds.
+ */
+export function unheldMarkdownProblems(
+  api: readonly ListedProblem[],
+  held: ReadonlyMap<string, string>,
+): ListedProblem[] {
+  return api.filter(
+    (problem) => MARKDOWN_FILE.test(problem.target.path) && !held.has(problem.target.path),
+  );
 }
 
 const SKILL_CHECK_CODES = new Set(['skill_missing', 'skill_invalid']);
@@ -221,11 +241,14 @@ export function agentsNaming(
       .filter((item) => item.change === 'added' || item.change === 'modified')
       .map((item) => item.path),
   );
+  const deleted = new Set(
+    entries.filter((item) => item.change === 'deleted').map((item) => item.path),
+  );
   const names = new Set<string>();
   for (const agent of baseAgents) {
     if (agent.source !== 'definitions') continue;
     const path = `agents/${agent.name}/${AGENT_ENTRY_FILE}`;
-    if (written.has(path)) continue;
+    if (written.has(path) || deleted.has(path)) continue;
     if (agent.skills.includes(skill)) names.add(agent.name);
   }
   for (const item of entries) {

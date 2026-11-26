@@ -202,18 +202,20 @@ export function SkillList() {
       <Card aria-labelledby={TITLE_ID}>
         <CardHeader>
           <CardTitle id={TITLE_ID}>Skills</CardTitle>
-          <NewSkillLink />
-          <span className="text-small text-text-muted">
-            {data.commit ? (
-              <>
-                Read at commit{' '}
-                <code className="text-code" title={data.commit}>
-                  {shortSha(data.commit)}
-                </code>
-              </>
-            ) : (
-              'No commit read'
-            )}
+          <span className="flex flex-wrap items-center gap-3">
+            <span className="text-small text-text-muted">
+              {data.commit ? (
+                <>
+                  Read at commit{' '}
+                  <code className="text-code" title={data.commit}>
+                    {shortSha(data.commit)}
+                  </code>
+                </>
+              ) : (
+                'No commit read'
+              )}
+            </span>
+            <NewSkillLink />
           </span>
         </CardHeader>
         <CardContent flush>

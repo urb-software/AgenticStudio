@@ -228,6 +228,70 @@ describe('skills in the editor: the tree and the problems', () => {
     expect(publish().disabled).toBe(true);
   });
 
+  it('keeps the API’s problem of a skill file the browser does not hold while the skill is open', async () => {
+    setup({
+      path: SKILL_PATH,
+      draft: {
+        ...TOUCHED_DRAFT,
+        skillProblems: [
+          {
+            skill: 'lint',
+            code: 'shell_line',
+            path: 'skills/lint/notes.md',
+            key: null,
+            message: 'The file has a shell line.',
+          },
+        ],
+      },
+    });
+    await screen.findByTestId('monaco');
+
+    const list = await screen.findByRole('region', { name: 'Problems' });
+    expect(within(list).getByText('skills/lint/notes.md')).toBeTruthy();
+    expect(publish().disabled).toBe(true);
+    const lint = within(treeNav()).getByRole('button', { name: /^lint/ });
+    expect(within(lint).getByText('1 problem')).toBeTruthy();
+  });
+
+  it('counts and lists once an agent the API judged that the editor’s lists do not hold', async () => {
+    setup({
+      draft: {
+        ...TOUCHED_DRAFT,
+        problems: [
+          {
+            agent: 'ghost',
+            code: 'skill_invalid',
+            path: 'agents/ghost/AGENT.md',
+            key: 'lint',
+            message: 'The skill "lint" is not valid.',
+          },
+        ],
+      },
+    });
+
+    const list = await screen.findByRole('region', { name: 'Problems' });
+    expect(within(list).getAllByText('agents/ghost/AGENT.md')).toHaveLength(1);
+    expect(publish().disabled).toBe(true);
+    expect(screen.getByText('Fix the 1 problem of the Draft first.')).toBeTruthy();
+  });
+
+  it('shows no state for a skill folder the Draft has emptied', async () => {
+    setup({
+      path: 'skills/rotten/SKILL.md',
+      draft: {
+        baseCommit: SHA,
+        currentCommit: SHA,
+        version: 2,
+        files: [{ path: SKILL_PATH, change: 'deleted', size: 0, movedFrom: null, skill: 'lint' }],
+      },
+    });
+    await screen.findByTestId('monaco');
+
+    const lint = within(treeNav()).getByRole('button', { name: /^lint/ });
+    expect(within(lint).queryByText('Valid')).toBeNull();
+    expect(within(lint).queryByText(/problem/)).toBeNull();
+  });
+
   it('says a Draft that was not judged cannot be published, with the reason', async () => {
     setup({
       path: SKILL_PATH,
@@ -238,6 +302,7 @@ describe('skills in the editor: the tree and the problems', () => {
     expect(publish().disabled).toBe(true);
     expect((await screen.findAllByText(/Split the changes into smaller Drafts/)).length).toBe(2);
     expect(screen.getByText('The Draft was not checked')).toBeTruthy();
+    await expect(document.body).toHaveNoAxeViolations();
   });
 
   it('says so when the Clone could not be read to check the Draft', async () => {
@@ -249,6 +314,7 @@ describe('skills in the editor: the tree and the problems', () => {
 
     expect(publish().disabled).toBe(true);
     expect((await screen.findAllByText(/could not be checked now/)).length).toBe(2);
+    await expect(document.body).toHaveNoAxeViolations();
   });
 });
 
@@ -349,6 +415,49 @@ describe('skills in the editor: New skill', () => {
     await expect(dialog).toHaveNoAxeViolations();
   });
 
+  it('drops ?new=skill from the address when the step is cancelled', async () => {
+    setup({ query: 'new=skill' });
+    const user = userEvent.setup();
+    const dialog = await screen.findByRole('dialog', { name: 'New skill' });
+
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/agents/editor', { scroll: false }));
+  });
+
+  it('lets a skill the Draft deletes be made again', async () => {
+    const { api } = setup({
+      path: SKILL_PATH,
+      draft: {
+        baseCommit: SHA,
+        currentCommit: SHA,
+        version: 2,
+        files: [
+          {
+            path: 'skills/rotten/SKILL.md',
+            change: 'deleted',
+            size: 0,
+            movedFrom: null,
+            skill: 'rotten',
+          },
+        ],
+      },
+    });
+    const user = userEvent.setup();
+    await screen.findByTestId('monaco');
+
+    await user.click(screen.getByRole('button', { name: 'New skill' }));
+    const dialog = await screen.findByRole('dialog', { name: 'New skill' });
+    await user.type(within(dialog).getByRole('textbox', { name: 'Name' }), 'rotten');
+    await user.click(within(dialog).getByRole('button', { name: 'Create skill' }));
+
+    await waitFor(() =>
+      expect(api.calls().find((call) => call.method === 'PUT')?.body).toMatchObject({
+        path: 'skills/rotten/SKILL.md',
+      }),
+    );
+  });
+
   it('opens on the New skill step when the Skills view sends the operator here', async () => {
     setup({ query: 'new=skill' });
 
@@ -397,6 +506,7 @@ describe('skills in the editor: deleting or renaming a skill', () => {
     const dialog = await screen.findByRole('dialog');
 
     expect(within(dialog).getByText(/would become invalid: reviewer\./)).toBeTruthy();
+    await expect(dialog).toHaveNoAxeViolations();
   });
 
   it('shows no warning for a skill no agent names', async () => {
