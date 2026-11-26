@@ -4,6 +4,7 @@ import { ProblemException } from '../../../../../platform/http/problem-details.j
 /** Problem `type` URIs of the agents API (RFC 9457). */
 export const AGENTS_PROBLEM_TYPES = {
   agentNotFound: 'urn:agentic-studio:problem:agent-not-found',
+  skillNotFound: 'urn:agentic-studio:problem:skill-not-found',
   agentFileNotFound: 'urn:agentic-studio:problem:agent-file-not-found',
   agentCommitNotFound: 'urn:agentic-studio:problem:agent-commit-not-found',
   agentFilesUnreadable: 'urn:agentic-studio:problem:agent-files-unreadable',
@@ -54,6 +55,15 @@ export function agentNotFound(): ProblemException {
     type: AGENTS_PROBLEM_TYPES.agentNotFound,
     title: 'Agent not found',
     detail: 'No agent has this name.',
+  });
+}
+
+/** 404 for a name that is no valid skill name or no skill folder at the last fetched commit. */
+export function skillNotFound(): ProblemException {
+  return new ProblemException(HttpStatus.NOT_FOUND, {
+    type: AGENTS_PROBLEM_TYPES.skillNotFound,
+    title: 'Skill not found',
+    detail: 'No skill has this name.',
   });
 }
 

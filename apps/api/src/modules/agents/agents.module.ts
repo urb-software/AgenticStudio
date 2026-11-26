@@ -19,6 +19,7 @@ import { PublishAgentDraftEndpoint } from './entry-points/http/operator/publish-
 import { ReadAgentDraftFileHandler } from './application/features/read-agent-draft-file/handler.js';
 import { SaveAgentDraftFileHandler } from './application/features/save-agent-draft-file/handler.js';
 import { ReadAgentFileHandler } from './application/features/read-agent-file/handler.js';
+import { ReadSkillsHandler } from './application/features/read-skills/handler.js';
 import { ReadAgentsHandler } from './application/features/read-agents/handler.js';
 import { ReadAgentFolderHandler } from './application/features/read-agent-folder/handler.js';
 import { ReadAgentFolderAgentFolders } from './entry-points/contracts/agent-folders.js';
@@ -39,6 +40,8 @@ import { PrismaAgentDraftRepository } from './infrastructure/repositories/prisma
 import { GetAgentEndpoint } from './entry-points/http/operator/get-agent/endpoint.js';
 import { GetDefinitionsRepositoryEndpoint } from './entry-points/http/operator/get-definitions-repository/endpoint.js';
 import { ListAgentFilesEndpoint } from './entry-points/http/operator/list-agent-files/endpoint.js';
+import { GetSkillEndpoint } from './entry-points/http/operator/get-skill/endpoint.js';
+import { ListSkillsEndpoint } from './entry-points/http/operator/list-skills/endpoint.js';
 import { ListAgentsEndpoint } from './entry-points/http/operator/list-agents/endpoint.js';
 
 /**
@@ -68,10 +71,13 @@ export class AgentsModule {
         ListAgentsEndpoint,
         GetAgentEndpoint,
         ListRunAgentsEndpoint,
+        ListSkillsEndpoint,
+        GetSkillEndpoint,
       ],
       providers: [
         GetDefinitionsRepositoryHandler,
         ReadAgentsHandler,
+        ReadSkillsHandler,
         ReadAgentFolderHandler,
         ListAgentFilesHandler,
         ReadAgentFileHandler,

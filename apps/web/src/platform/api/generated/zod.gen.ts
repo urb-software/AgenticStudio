@@ -373,6 +373,69 @@ export const zRunAgentListOutput = z.object({
     preselectedReason: z.string().nullable()
 });
 
+export const zSkillProblemOutput = z.object({
+    code: z.enum([
+        'entry_missing',
+        'entry_unreadable',
+        'front_matter_missing',
+        'front_matter_malformed',
+        'front_matter_too_large',
+        'key_missing',
+        'key_invalid',
+        'provider_unknown',
+        'model_unknown',
+        'name_invalid',
+        'name_mismatch',
+        'name_reserved',
+        'unknown_key',
+        'forbidden_key',
+        'instructions_too_large',
+        'too_many_files',
+        'file_too_large',
+        'folder_too_large',
+        'path_outside_folder',
+        'nested_git',
+        'symlink_refused',
+        'kind_refused',
+        'duplicate_path',
+        'size_invalid',
+        'cli_config_path',
+        'short_name',
+        'shell_line'
+    ]),
+    path: z.string(),
+    key: z.string().nullable(),
+    message: z.string()
+});
+
+export const zSkillSummaryOutput = z.object({
+    name: z.string(),
+    description: z.string().nullable(),
+    valid: z.boolean(),
+    problems: z.array(zSkillProblemOutput)
+});
+
+export const zSkillListOutput = z.object({
+    commit: z.string().nullable(),
+    repository: zAgentsRepositoryOutput.nullable(),
+    truncated: z.boolean(),
+    skills: z.array(zSkillSummaryOutput)
+});
+
+export const zSkillDetailOutput = z.object({
+    commit: z.string().nullable(),
+    repository: zAgentsRepositoryOutput.nullable(),
+    name: z.string(),
+    description: z.string().nullable(),
+    valid: z.boolean(),
+    problems: z.array(zSkillProblemOutput),
+    instructions: z.string(),
+    files: z.array(z.object({
+        path: z.string(),
+        size: z.int().gte(0).lte(9007199254740991)
+    }))
+});
+
 export const zStartRunRequest = z.object({
     task: z.string().min(1).max(20000),
     agent: z.string().min(1).max(64).optional(),
@@ -1656,6 +1719,14 @@ export const zListRunAgentsPath = z.object({
 });
 
 export const zListRunAgentsResponse = zRunAgentListOutput;
+
+export const zListSkillsResponse = zSkillListOutput;
+
+export const zGetSkillPath = z.object({
+    name: z.string()
+});
+
+export const zGetSkillResponse = zSkillDetailOutput;
 
 export const zListProjectRunsPath = z.object({
     id: z.string()

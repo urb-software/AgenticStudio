@@ -342,10 +342,13 @@ export interface DefinitionsFiles {
   snapshot(): Promise<DefinitionsSnapshot | null>;
 
   /**
-   * Everything tracked under `agents/` at `commit`, or with `whole` the whole tree, at most
-   * {@link DEFINITIONS_TREE_MAX_ENTRIES}.
+   * Everything tracked under `agents/` at `commit`, under another top-level `directory`, or with
+   * `whole` the whole tree, at most {@link DEFINITIONS_TREE_MAX_ENTRIES}.
    */
-  listTree(commit: string, options?: { whole?: boolean }): Promise<DefinitionsTreeResult>;
+  listTree(
+    commit: string,
+    options?: { whole?: boolean; directory?: string },
+  ): Promise<DefinitionsTreeResult>;
 
   /** The text of each regular file, in the order of `paths`; no file is read past `maxBytes`. */
   readFiles(

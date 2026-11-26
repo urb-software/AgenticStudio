@@ -83,6 +83,20 @@ describe('ListDefinitionsTreeHandler', () => {
     );
   });
 
+  it('lists another top-level folder when asked, within the same bound', async () => {
+    await connected();
+    git.listTreeAtCommit.mockResolvedValueOnce({ entries: [], truncated: false });
+
+    await handler.execute({ commit: HEAD, directory: 'skills' });
+
+    expect(git.listTreeAtCommit).toHaveBeenCalledWith(
+      DEFINITIONS,
+      HEAD,
+      'skills',
+      DEFINITIONS_TREE_MAX_ENTRIES,
+    );
+  });
+
   it('is not ready without a definitions Project or without a Repository', async () => {
     projects.addProject(CODE, 'Shop');
     await expect(handler.execute({ commit: HEAD })).resolves.toEqual({
