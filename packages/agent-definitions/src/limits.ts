@@ -45,8 +45,11 @@ export const MAX_FILE_BYTES = 1024 * 1024;
 /** Largest total size of all files in one agent folder, in bytes. */
 export const MAX_FOLDER_BYTES = 5 * 1024 * 1024;
 
-/** The keys an entry file may carry. `model` is optional. */
-export const KNOWN_KEYS = ['name', 'description', 'provider', 'model'] as const;
+/** The keys an entry file may carry. `model` and `skills` are optional. */
+export const KNOWN_KEYS = ['name', 'description', 'provider', 'model', 'skills'] as const;
+
+/** An agent names at most this many skills. */
+export const MAX_AGENT_SKILLS = 20;
 
 /**
  * Keys that ask for tools, permissions, hooks, MCP servers, memory or isolation. A definition

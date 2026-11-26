@@ -30,6 +30,12 @@ export const agentSummarySchema = z
       .enum(['built_in', 'definitions'])
       .describe('A built-in Default agent, or a folder of the definitions Repository.'),
     usable: z.boolean().describe('False while the definition has problems.'),
+    skills: z
+      .array(z.string())
+      .describe(
+        'The skill names the definition lists, as written; empty when none and for a front ' +
+          'matter that cannot be read.',
+      ),
     problems: z.array(problemSchema),
   })
   .meta({ id: 'AgentSummary' });
@@ -60,6 +66,7 @@ export function toAgentSummary(agent: AgentView) {
     model: agent.model,
     source: agent.source,
     usable: agent.usable,
+    skills: agent.skills,
     problems: agent.problems.map((problem) => ({
       code: problem.code,
       path: problem.path,

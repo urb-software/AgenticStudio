@@ -264,6 +264,21 @@ describe('skills API (PostgreSQL + Redis via Testcontainers)', () => {
       expect(broken.body.problems.length).toBeGreaterThan(0);
     });
 
+    it('names the agents that list a skill, valid or not, sorted, and none for an unused skill', async () => {
+      const agent = (name: string, extra: string) =>
+        `---\nname: ${name}\ndescription: d\nprovider: codex\n${extra}---\nx\n`;
+      await connectedWith('used-by', {
+        'skills/review/SKILL.md': skillFile('review'),
+        'skills/unused/SKILL.md': skillFile('unused'),
+        'agents/zed/AGENT.md': agent('zed', 'skills: [review]\n'),
+        'agents/alpha/AGENT.md': agent('alpha', 'skills: [review]\ncolour: red\n'),
+        'agents/plain/AGENT.md': agent('plain', ''),
+      });
+
+      expect((await getSkill('review')).body.usedBy).toEqual(['alpha', 'zed']);
+      expect((await getSkill('unused')).body.usedBy).toEqual([]);
+    });
+
     it('answers a 404 problem for an unknown name and for names that are not skill names', async () => {
       await connectedWith('names', { 'skills/review/SKILL.md': skillFile('review') });
 

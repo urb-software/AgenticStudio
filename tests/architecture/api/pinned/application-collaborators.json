@@ -39,6 +39,12 @@
     },
     "agents/application/agent-draft-reader.ts": {
       "reason": "Steps 1 to 5 tried: it reads the Clone and the stored contents and runs the shared validation, so it cannot live in the domain (1); it is a sequence of several reads and a judgement, not one infrastructure capability (2); the get, save, move, delete and discard of the Draft all answer the Draft whole, and handlers never call each other, so no one use case holds it (3); the operator waits for the answer, so it is no job or event (4); copying the overlay of the Draft on the base tree, the validation of each touched folder and the blob comparison into five handlers would let them drift (5)."
+    },
+    "agents/application/agents-reader.ts": {
+      "reason": "Steps 1 to 5 tried: it reads the Clone and judges each folder by the shared validation and by the skills it names, so it cannot live in the domain (1); it is a sequence of several reads and a judgement, not one infrastructure capability (2); the agents list and the single agent, and the skill detail (which agents name a skill) all show the same judged agents, and handlers never call each other, so no one use case holds it (3); the operator waits for the answer, so it is no job or event (4); copying the reads, the judgement and the per-commit memo into two handlers would let them drift (5)."
+    },
+    "agents/application/skills-reader.ts": {
+      "reason": "Steps 1 to 5 tried: it reads the Clone and runs the shared validation within a read budget, so it cannot live in the domain (1); it is a sequence of several reads and a judgement, not one infrastructure capability (2); the skills list and detail show the judged skills and the agents judge the skills they name, and handlers never call each other, so no one use case holds it (3); the operator waits for the answer, so it is no job or event (4); copying the reads, the budget and the per-commit memo into the skills and agents handlers would let them drift (5)."
     }
   }
 }

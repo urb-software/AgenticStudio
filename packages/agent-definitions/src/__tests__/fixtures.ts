@@ -199,6 +199,53 @@ export const FAILING: Record<string, Fixture> = {
     entries: [valid('Model: opus')],
     expected: ['unknown_key@AGENT.md'],
   },
+  'skills_invalid (text)': {
+    folder: 'reviewer',
+    entries: [valid('skills: helper')],
+    expected: ['skills_invalid@AGENT.md'],
+  },
+  'skills_invalid (a mapping)': {
+    folder: 'reviewer',
+    entries: [valid('skills: {helper: x}')],
+    expected: ['skills_invalid@AGENT.md'],
+  },
+  'skills_invalid (a number in the list)': {
+    folder: 'reviewer',
+    entries: [valid('skills: [helper, 5]')],
+    expected: ['skills_invalid@AGENT.md'],
+  },
+  'skills_invalid (a nested list)': {
+    folder: 'reviewer',
+    entries: [valid('skills: [[helper]]')],
+    expected: ['skills_invalid@AGENT.md'],
+  },
+  'skill_name_invalid (upper case)': {
+    folder: 'reviewer',
+    entries: [valid('skills: [Helper]')],
+    expected: ['skill_name_invalid@AGENT.md'],
+  },
+  'skill_name_invalid (a path)': {
+    folder: 'reviewer',
+    entries: [valid('skills: ["../helper"]')],
+    expected: ['skill_name_invalid@AGENT.md'],
+  },
+  'skill_name_invalid (empty)': {
+    folder: 'reviewer',
+    entries: [valid('skills: [""]')],
+    expected: ['skill_name_invalid@AGENT.md'],
+  },
+  skill_listed_twice: {
+    folder: 'reviewer',
+    entries: [valid('skills: [helper, other, helper]')],
+    expected: ['skill_listed_twice@AGENT.md'],
+  },
+  too_many_skills: {
+    folder: 'reviewer',
+    entries: [
+      valid(`skills: [${Array.from({ length: 21 }, (_, index) => `s${index}`).join(', ')}]`),
+    ],
+    expected: ['too_many_skills@AGENT.md'],
+  },
   forbidden_key: {
     folder: 'reviewer',
     entries: [valid('tools: [Bash]')],

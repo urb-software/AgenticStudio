@@ -263,7 +263,7 @@ export type AgentDraftProblemOutput = {
      * The agent folder the problem is in.
      */
     agent: string;
-    code: 'entry_missing' | 'entry_unreadable' | 'front_matter_missing' | 'front_matter_malformed' | 'front_matter_too_large' | 'key_missing' | 'key_invalid' | 'provider_unknown' | 'model_unknown' | 'name_invalid' | 'name_mismatch' | 'name_reserved' | 'unknown_key' | 'forbidden_key' | 'instructions_too_large' | 'too_many_files' | 'file_too_large' | 'folder_too_large' | 'path_outside_folder' | 'nested_git' | 'symlink_refused' | 'kind_refused' | 'duplicate_path' | 'size_invalid' | 'cli_config_path' | 'short_name';
+    code: 'entry_missing' | 'entry_unreadable' | 'front_matter_missing' | 'front_matter_malformed' | 'front_matter_too_large' | 'key_missing' | 'key_invalid' | 'provider_unknown' | 'model_unknown' | 'name_invalid' | 'name_mismatch' | 'name_reserved' | 'unknown_key' | 'forbidden_key' | 'instructions_too_large' | 'too_many_files' | 'file_too_large' | 'folder_too_large' | 'path_outside_folder' | 'nested_git' | 'symlink_refused' | 'kind_refused' | 'duplicate_path' | 'size_invalid' | 'cli_config_path' | 'short_name' | 'skills_invalid' | 'skill_name_invalid' | 'skill_listed_twice' | 'too_many_skills' | 'skill_missing' | 'skill_invalid';
     /**
      * The file or folder the problem is about, relative to the Repository root.
      */
@@ -382,11 +382,15 @@ export type AgentSummaryOutput = {
      * False while the definition has problems.
      */
     usable: boolean;
+    /**
+     * The skill names the definition lists, as written; empty when none and for a front matter that cannot be read.
+     */
+    skills: Array<string>;
     problems: Array<AgentProblemOutput>;
 };
 
 export type AgentProblemOutput = {
-    code: 'entry_missing' | 'entry_unreadable' | 'front_matter_missing' | 'front_matter_malformed' | 'front_matter_too_large' | 'key_missing' | 'key_invalid' | 'provider_unknown' | 'model_unknown' | 'name_invalid' | 'name_mismatch' | 'name_reserved' | 'unknown_key' | 'forbidden_key' | 'instructions_too_large' | 'too_many_files' | 'file_too_large' | 'folder_too_large' | 'path_outside_folder' | 'nested_git' | 'symlink_refused' | 'kind_refused' | 'duplicate_path' | 'size_invalid' | 'cli_config_path' | 'short_name';
+    code: 'entry_missing' | 'entry_unreadable' | 'front_matter_missing' | 'front_matter_malformed' | 'front_matter_too_large' | 'key_missing' | 'key_invalid' | 'provider_unknown' | 'model_unknown' | 'name_invalid' | 'name_mismatch' | 'name_reserved' | 'unknown_key' | 'forbidden_key' | 'instructions_too_large' | 'too_many_files' | 'file_too_large' | 'folder_too_large' | 'path_outside_folder' | 'nested_git' | 'symlink_refused' | 'kind_refused' | 'duplicate_path' | 'size_invalid' | 'cli_config_path' | 'short_name' | 'skills_invalid' | 'skill_name_invalid' | 'skill_listed_twice' | 'too_many_skills' | 'skill_missing' | 'skill_invalid';
     /**
      * The file or folder the problem is about, relative to the agent folder.
      */
@@ -452,6 +456,10 @@ export type AgentDetailAgentOutput = {
      * False while the definition has problems.
      */
     usable: boolean;
+    /**
+     * The skill names the definition lists, as written; empty when none and for a front matter that cannot be read.
+     */
+    skills: Array<string>;
     problems: Array<AgentProblemOutput>;
     /**
      * Plain text, never Markdown or HTML to render; empty for a built-in agent.
@@ -588,6 +596,10 @@ export type SkillDetailOutput = {
         path: string;
         size: number;
     }>;
+    /**
+     * The names of the agents at the same commit whose definition lists this skill, valid or not, sorted.
+     */
+    usedBy: Array<string>;
 };
 
 export type StartRunRequest = {

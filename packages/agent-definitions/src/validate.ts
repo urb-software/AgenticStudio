@@ -12,6 +12,7 @@ import {
   DESCRIPTION_MAX_LENGTH,
   FORBIDDEN_KEYS,
   KNOWN_KEYS,
+  MAX_AGENT_SKILLS,
   MAX_FILE_BYTES,
   MAX_FILES,
   MAX_FOLDER_BYTES,
@@ -36,6 +37,7 @@ import {
   SKILL_SUBJECT,
   type Problem,
   type ProblemCode,
+  type SharedProblemCode,
   type SkillProblemCode,
   type Subject,
 } from './problems.js';
@@ -63,6 +65,8 @@ export interface AgentDefinition {
   description: string;
   provider: Provider;
   model: string;
+  /** The skills the agent names, in the order written; empty when the key is absent. */
+  skills: string[];
   /**
    * The Markdown after the front matter. Consumers hand a CLI only this and the other parsed
    * fields, never the raw AGENT.md: a CLI's own parser may cut the front matter elsewhere.
@@ -180,14 +184,18 @@ function pathProblem(path: string, kind: Kind): PathCode | undefined {
 
 /** The files of a folder, as kept after the path, kind and duplicate checks. */
 interface JudgedEntries {
-  problems: Problem[];
+  problems: Problem<SharedProblemCode>[];
   fileEntries: AgentEntry[];
 }
 
 function judgeEntries(entries: readonly AgentEntry[], kind: Kind): JudgedEntries {
-  const problem = (code: ProblemCode, path: string, key?: string): Problem =>
-    makeProblem(code, path, key, kind.subject);
-  const problems: Problem[] = [];
+  const problem = (
+    code: SharedProblemCode,
+    path: string,
+    key?: string,
+  ): Problem<SharedProblemCode> =>
+    makeProblem(code, path, key, kind.subject) as Problem<SharedProblemCode>;
+  const problems: Problem<SharedProblemCode>[] = [];
   const fileEntries: AgentEntry[] = [];
   const seen = new Set<string>();
 
@@ -246,7 +254,9 @@ export function validateAgentFolder(
   folderName: string,
   entries: readonly AgentEntry[],
 ): AgentFolderResult {
-  const { problems, fileEntries } = judgeEntries(entries, AGENT_KIND);
+  const judged = judgeEntries(entries, AGENT_KIND);
+  const { fileEntries } = judged;
+  const problems: Problem[] = [...judged.problems];
 
   if (!AGENT_NAME_PATTERN.test(folderName)) problems.push(problem('name_invalid', ''));
   else if ((RESERVED_AGENT_NAMES as readonly string[]).includes(folderName)) {
@@ -275,7 +285,7 @@ export function validateAgentFolder(
   };
 }
 
-type Add = (code: ProblemCode, key?: string) => void;
+type Add = (code: SharedProblemCode, key?: string) => void;
 type ParsedEntry = Extract<ReturnType<typeof parseEntry>, { status: 'ok' }>;
 
 /**
@@ -331,6 +341,7 @@ function judgeEntry(
 
   const before = problems.length;
   const { values, instructions } = parsed;
+  const addAgent = (code: ProblemCode, key?: string) => problems.push(problem(code, path, key));
 
   for (const key of Object.keys(values)) {
     if (FORBIDDEN.has(normalise(key))) problems.push(problem('forbidden_key', path, key));
@@ -378,10 +389,35 @@ function judgeEntry(
     }
   }
 
+  const skills = judgeSkillNames(values['skills'], addAgent);
+
   if (problems.length > before || name === undefined || description === undefined || !provider) {
     return undefined;
   }
-  return { name, description, provider, model, instructions };
+  return { name, description, provider, model, skills, instructions };
+}
+
+/** The names of a `skills` value, reporting what is wrong with the list or its names. */
+function judgeSkillNames(value: unknown, add: (code: ProblemCode, key?: string) => void): string[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
+    add('skills_invalid', 'skills');
+    return [];
+  }
+  const names = value as string[];
+  if (names.length > MAX_AGENT_SKILLS) add('too_many_skills');
+  // Past the limit the rest is not judged, so a long list cannot flood the problems.
+  const seen = new Set<string>();
+  const repeated = new Set<string>();
+  for (const name of names.slice(0, MAX_AGENT_SKILLS)) {
+    if (!AGENT_NAME_PATTERN.test(name)) add('skill_name_invalid', name);
+    else if (seen.has(name) && !repeated.has(name)) {
+      repeated.add(name);
+      add('skill_listed_twice', name);
+    }
+    seen.add(name);
+  }
+  return names;
 }
 
 /** True when the text is missing, is not UTF-8 or holds a NUL: it cannot be judged as text. */

@@ -163,6 +163,7 @@ describe('listProblems', () => {
     model: null,
     source: 'definitions',
     usable: false,
+    skills: [],
     problems: [{ code: 'key_missing', path: 'AGENT.md', key, message: `${name} problem` }],
   });
   const draftProblem = (agent: string): AgentDraftProblemOutput => ({

@@ -20,7 +20,8 @@ export class GetSkillEndpoint {
     description:
       'One skill with its instructions (plain text) and the files of its folder with their ' +
       'sizes, read at the last fetched commit of the definitions Repository. A name that is not ' +
-      'a valid skill name is unknown. The Draft is never read.',
+      'a valid skill name is unknown. `usedBy` names the agents at that commit that list the ' +
+      'skill. The Draft is never read.',
   })
   @ZodResponse({ status: 200, type: SkillDetailResponseDto })
   @ApiProblemResponses({ 404: `Unknown skill (${AGENTS_PROBLEM_TYPES.skillNotFound})` })
@@ -35,6 +36,7 @@ export class GetSkillEndpoint {
       ...toSkillSummary(skill),
       instructions: skill.instructions,
       files: skill.files,
+      usedBy: result.usedBy,
     };
   }
 }

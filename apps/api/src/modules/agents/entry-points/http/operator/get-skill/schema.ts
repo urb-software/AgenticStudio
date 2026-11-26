@@ -19,6 +19,12 @@ export const skillDetailResponseSchema = z
     files: z
       .array(z.object({ path: z.string(), size: z.number().int().min(0) }))
       .describe('Every file of the skill folder with its size in bytes.'),
+    usedBy: z
+      .array(z.string())
+      .describe(
+        'The names of the agents at the same commit whose definition lists this skill, valid ' +
+          'or not, sorted.',
+      ),
   })
   .meta({ id: 'SkillDetail' });
 

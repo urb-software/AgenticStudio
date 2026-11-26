@@ -1,7 +1,7 @@
-import { MAX_QUOTED_LENGTH } from './limits.js';
+import { MAX_AGENT_SKILLS, MAX_QUOTED_LENGTH } from './limits.js';
 
-/** Every reason an agent folder is refused. */
-export const PROBLEM_CODES = [
+/** The reasons both an agent folder and a skill folder can be refused for. */
+export const SHARED_PROBLEM_CODES = [
   'entry_missing',
   'entry_unreadable',
   'front_matter_missing',
@@ -30,13 +30,30 @@ export const PROBLEM_CODES = [
   'short_name',
 ] as const;
 
+export type SharedProblemCode = (typeof SHARED_PROBLEM_CODES)[number];
+
+/** The reasons the skills an agent names refuse it: judged against the skills, not the folder. */
+export const AGENT_SKILL_CHECK_CODES = ['skill_missing', 'skill_invalid'] as const;
+
+/** The reasons only an agent folder can be refused for. */
+export const AGENT_ONLY_PROBLEM_CODES = [
+  'skills_invalid',
+  'skill_name_invalid',
+  'skill_listed_twice',
+  'too_many_skills',
+  ...AGENT_SKILL_CHECK_CODES,
+] as const;
+
+/** Every reason an agent folder is refused. */
+export const PROBLEM_CODES = [...SHARED_PROBLEM_CODES, ...AGENT_ONLY_PROBLEM_CODES] as const;
+
 export type ProblemCode = (typeof PROBLEM_CODES)[number];
 
-/** The reasons only a skill folder can be refused for; PROBLEM_CODES stays the agent list. */
+/** The reasons only a skill folder can be refused for. */
 export const SKILL_ONLY_PROBLEM_CODES = ['shell_line'] as const;
 
 /** Every reason a skill folder is refused: the shared ones and those only a skill has. */
-export const SKILL_PROBLEM_CODES = [...PROBLEM_CODES, ...SKILL_ONLY_PROBLEM_CODES] as const;
+export const SKILL_PROBLEM_CODES = [...SHARED_PROBLEM_CODES, ...SKILL_ONLY_PROBLEM_CODES] as const;
 
 export type SkillProblemCode = (typeof SKILL_PROBLEM_CODES)[number];
 
@@ -64,7 +81,10 @@ export interface Subject {
 export const AGENT_SUBJECT: Subject = { noun: 'agent', entry: 'AGENT.md' };
 export const SKILL_SUBJECT: Subject = { noun: 'skill', entry: 'SKILL.md' };
 
-const MESSAGES: Record<SkillProblemCode, (place: string, subject: Subject) => string> = {
+const MESSAGES: Record<
+  ProblemCode | SkillProblemCode,
+  (place: string, subject: Subject) => string
+> = {
   entry_missing: (_, s) => `The ${s.noun} folder has no ${s.entry} entry file.`,
   entry_unreadable: (place, s) =>
     s.noun === 'agent'
@@ -109,9 +129,17 @@ const MESSAGES: Record<SkillProblemCode, (place: string, subject: Subject) => st
     `${s.noun === 'agent' ? 'an agent CLI' : 'a CLI'} reads settings, skills or memory from, ` +
     'which a definition cannot carry.',
   shell_line: (path) => `The file ${path} holds an inline shell line, which a skill cannot carry.`,
+  skills_invalid: () => 'The key skills must be a list of skill names.',
+  skill_name_invalid: (name) =>
+    `The skill name ${name} must be 1 to 64 characters: lower-case letters, digits and "-", ` +
+    'starting with a letter or digit.',
+  skill_listed_twice: (name) => `The skill ${name} is listed more than once.`,
+  too_many_skills: () => `An agent names at most ${MAX_AGENT_SKILLS} skills.`,
+  skill_missing: (name) => `The skill ${name} does not exist.`,
+  skill_invalid: (name) => `The skill ${name} is not valid.`,
 };
 
-function build<Code extends SkillProblemCode>(
+function build<Code extends ProblemCode | SkillProblemCode>(
   code: Code,
   path: string,
   key: string | undefined,

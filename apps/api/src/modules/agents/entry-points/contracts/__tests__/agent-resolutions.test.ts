@@ -9,6 +9,8 @@ import type {
   DefinitionsTreeResult,
 } from '../../../../projects/contracts/index.js';
 import { ReadAgentsHandler } from '../../../application/features/read-agents/handler.js';
+import { AgentsReader } from '../../../application/agents-reader.js';
+import { SkillsReader } from '../../../application/skills-reader.js';
 import { ReadAgentsAgentResolutions } from '../agent-resolutions.js';
 
 const COMMIT = 'a'.repeat(40);
@@ -57,7 +59,9 @@ function resolutions(files: Record<string, string>, snapshot: DefinitionsSnapsho
   const defaults: ProjectDefaultAgents = {
     forProject: () => Promise.resolve({ status: 'project_not_found' }),
   };
-  return new ReadAgentsAgentResolutions(new ReadAgentsHandler(fake, defaults));
+  return new ReadAgentsAgentResolutions(
+    new ReadAgentsHandler(new AgentsReader(fake, new SkillsReader(fake)), defaults),
+  );
 }
 
 const READY = { state: 'ready', commit: COMMIT } as const;

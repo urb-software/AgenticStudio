@@ -10,6 +10,8 @@ import type {
   DefinitionsTreeEntry,
   DefinitionsTreeResult,
 } from '../../../../../projects/contracts/index.js';
+import { AgentsReader } from '../../../agents-reader.js';
+import { SkillsReader } from '../../../skills-reader.js';
 import { MAX_LISTED_AGENTS, ReadAgentsHandler } from '../handler.js';
 
 const COMMIT = 'a'.repeat(40);
@@ -66,7 +68,8 @@ function scripted(script: Scripted) {
     forProject: () =>
       Promise.resolve(script.project ?? { status: 'found', kind: 'code', agent: null }),
   };
-  return { fake, handler: new ReadAgentsHandler(fake, defaults) };
+  const reader = new AgentsReader(fake, new SkillsReader(fake));
+  return { fake, handler: new ReadAgentsHandler(reader, defaults), reader };
 }
 
 const file = (path: string, size = 10): DefinitionsTreeEntry => ({
@@ -98,6 +101,7 @@ describe('ReadAgentsHandler', () => {
           source: 'built_in',
           usable: true,
           problems: [],
+          skills: [],
           instructions: '',
           files: [],
         },
@@ -150,6 +154,7 @@ describe('ReadAgentsHandler', () => {
         source: 'definitions',
         usable: true,
         problems: [],
+        skills: [],
         instructions: 'Instructions of reviewer.\n',
         files: [
           { path: 'AGENT.md', size: 120 },
@@ -517,6 +522,173 @@ describe('ReadAgentsHandler', () => {
       const { handler } = scripted(repository);
 
       expect(await handler.execute()).not.toHaveProperty('forRun');
+    });
+  });
+});
+
+describe('the skills an agent names', () => {
+  const SKILL = (name: string) =>
+    `---\nname: ${name}\ndescription: Does ${name}\n---\nHow to ${name}.\n`;
+  const agentFiles = (name: string, skills: string) => ({
+    [`agents/${name}/AGENT.md`]: VALID(name, `skills: ${skills}\n`),
+  });
+  const entries = (...names: string[]) => names.map((name) => file(`agents/${name}/AGENT.md`));
+  const skillEntries = (...names: string[]) => names.map((name) => file(`skills/${name}/SKILL.md`));
+
+  it('answers skills: [] for the built-in agents and an agent without the key', async () => {
+    const { handler, fake } = scripted({
+      tree: listed(...entries('plain')),
+      files: { 'agents/plain/AGENT.md': VALID('plain') },
+    });
+
+    const { agents } = await handler.execute();
+
+    expect(agents.map((agent) => [agent.name, agent.skills, agent.usable])).toEqual([
+      ['default-claude-code', [], true],
+      ['default-codex', [], true],
+      ['plain', [], true],
+    ]);
+    // No skill was looked at: the agent is judged exactly as before.
+    expect(fake.listTree).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps an agent usable when every skill it names exists and is valid', async () => {
+    const { handler } = scripted({
+      tree: listed(...entries('worker'), ...skillEntries('review', 'test')),
+      files: {
+        ...agentFiles('worker', '[review, test]'),
+        'skills/review/SKILL.md': SKILL('review'),
+        'skills/test/SKILL.md': SKILL('test'),
+      },
+    });
+
+    const { agents } = await handler.execute({ name: 'worker' });
+
+    expect(agents[0]).toMatchObject({ usable: true, skills: ['review', 'test'], problems: [] });
+  });
+
+  it('makes an agent invalid when a named skill does not exist, naming the skill', async () => {
+    const { handler } = scripted({
+      tree: listed(...entries('worker'), ...skillEntries('review')),
+      files: {
+        ...agentFiles('worker', '[review, gone]'),
+        'skills/review/SKILL.md': SKILL('review'),
+      },
+    });
+
+    const { agents } = await handler.execute({ name: 'worker' });
+
+    expect(agents[0]).toMatchObject({
+      usable: false,
+      description: null,
+      skills: ['review', 'gone'],
+      problems: [{ code: 'skill_missing', path: 'AGENT.md', key: 'gone' }],
+    });
+  });
+
+  it('makes an agent invalid when a named skill is invalid, and compares names exactly', async () => {
+    const { handler } = scripted({
+      tree: listed(...entries('worker'), ...skillEntries('review', 'Other')),
+      files: {
+        ...agentFiles('worker', '[review, other]'),
+        'skills/review/SKILL.md': '---\nname: review\n---\nno description\n',
+        'skills/Other/SKILL.md': SKILL('Other'),
+      },
+    });
+
+    const { agents } = await handler.execute({ name: 'worker' });
+
+    expect(agents[0]?.problems.map((item) => [item.code, item.key])).toEqual([
+      ['skill_invalid', 'review'],
+      ['skill_missing', 'other'],
+    ]);
+  });
+
+  it('lists the skills of an agent invalid for another reason, and none for a broken front matter', async () => {
+    const { handler } = scripted({
+      tree: listed(...entries('odd', 'broken')),
+      files: {
+        'agents/odd/AGENT.md': VALID('odd', 'skills: [review]\ncolour: red\n'),
+        'agents/broken/AGENT.md': '---\nname: [x\n---\n',
+      },
+    });
+
+    const { agents } = await handler.execute();
+
+    expect(
+      agents.filter((agent) => agent.source === 'definitions').map((a) => [a.name, a.skills]),
+    ).toEqual([
+      ['odd', ['review']],
+      ['broken', []],
+    ]);
+  });
+
+  it('never counts a skill as missing because the skills list was cut', async () => {
+    const names = Array.from({ length: 205 }, (_, i) => `skill-${String(i).padStart(3, '0')}`);
+    const { handler } = scripted({
+      tree: listed(...entries('worker'), ...skillEntries(...names)),
+      files: {
+        ...agentFiles('worker', '[skill-204, skill-000]'),
+        ...Object.fromEntries(names.map((name) => [`skills/${name}/SKILL.md`, SKILL(name)])),
+      },
+    });
+
+    const { agents } = await handler.execute({ name: 'worker' });
+
+    expect(agents[0]).toMatchObject({ usable: true, problems: [] });
+  });
+
+  it('fails closed with skill_invalid when a named skill cannot be read, and does not keep that answer', async () => {
+    const { handler, fake } = scripted({
+      tree: listed(...entries('worker'), ...skillEntries('review')),
+      files: { ...agentFiles('worker', '[review]'), 'skills/review/SKILL.md': SKILL('review') },
+    });
+    const real = fake.readFiles.getMockImplementation()!;
+    fake.readFiles.mockImplementation((commit: string, paths: readonly string[]) =>
+      paths.some((path) => path.startsWith('skills/'))
+        ? Promise.resolve({ status: 'failed' as const })
+        : real(commit, paths),
+    );
+
+    const first = await handler.execute({ name: 'worker' });
+    fake.readFiles.mockImplementation(real);
+    const second = await handler.execute({ name: 'worker' });
+
+    expect(first.agents[0]).toMatchObject({
+      usable: false,
+      problems: [{ code: 'skill_invalid', key: 'review' }],
+    });
+    expect(second.agents[0]).toMatchObject({ usable: true, problems: [] });
+  });
+
+  it('says who uses a skill: the agents of the commit that list it, valid or not, sorted', async () => {
+    const { reader } = scripted({
+      tree: listed(...entries('zed', 'alpha', 'other'), ...skillEntries('review')),
+      files: {
+        'agents/zed/AGENT.md': VALID('zed', 'skills: [review]\n'),
+        'agents/alpha/AGENT.md': VALID('alpha', 'skills: [review]\ncolour: red\n'),
+        'agents/other/AGENT.md': VALID('other'),
+        'skills/review/SKILL.md': SKILL('review'),
+      },
+    });
+
+    await expect(reader.skillUsers(COMMIT, 'review')).resolves.toEqual(['alpha', 'zed']);
+    await expect(reader.skillUsers(COMMIT, 'unused')).resolves.toEqual([]);
+  });
+
+  it('offers the Default agent with the reason when the default agent lost its skill', async () => {
+    const { handler } = scripted({
+      tree: listed(...entries('worker')),
+      files: agentFiles('worker', '[gone]'),
+      project: { status: 'found', kind: 'code', agent: 'worker' },
+    });
+
+    const { forRun } = await handler.execute({ projectId: 'p' });
+
+    expect(forRun).toMatchObject({
+      status: 'offered',
+      preselected: 'default-claude-code',
+      reason: expect.stringContaining('worker') as string,
     });
   });
 });

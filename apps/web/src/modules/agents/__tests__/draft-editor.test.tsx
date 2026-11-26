@@ -71,6 +71,7 @@ const GOOD: AgentSummaryOutput = {
   model: 'default',
   source: 'definitions',
   usable: true,
+  skills: [],
   problems: [],
 };
 
