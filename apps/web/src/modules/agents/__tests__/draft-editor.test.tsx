@@ -500,7 +500,7 @@ describe('Draft editing: new agent', () => {
     await waitFor(() => expect(writes(api)).toHaveLength(1));
     const body = writes(api)[0]?.body as { path: string; text: string };
     expect(body.path).toBe('agents/helper/AGENT.md');
-    expect(body.text).toContain('name: helper');
+    expect(body.text).toContain('name: "helper"');
     expect(body.text).toContain('provider: codex');
     expect(await screen.findByTestId('monaco')).toBeTruthy();
     expect(screen.queryByRole('region', { name: 'Problems' })).toBeNull();

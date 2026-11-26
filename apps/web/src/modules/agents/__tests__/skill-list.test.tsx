@@ -117,8 +117,28 @@ describe('Skills page: the list', () => {
     expect(within(card()).getByText('<b>a b</b>')).toBeTruthy();
     expect(container.querySelector('b')).toBeNull();
     expect(within(card()).queryByRole('button')).toBeNull();
-    expect(within(card()).queryByRole('link')).toBeNull();
+    expect(within(card()).queryByRole('link', { name: /Open in editor/ })).toBeNull();
     await expect(container).toHaveNoAxeViolations();
+  });
+
+  it('offers New skill, which opens the editor on its New skill step', async () => {
+    fakeSkillsApi(skillList({ skills: [REVIEW] }));
+    renderSkills();
+
+    await screen.findByRole('region', { name: 'Skills' });
+
+    expect(screen.getByRole('link', { name: 'New skill' }).getAttribute('href')).toBe(
+      '/agents/editor?new=skill',
+    );
+  });
+
+  it('offers New skill when there are no skills yet', async () => {
+    fakeSkillsApi(skillList({ skills: [] }));
+    renderSkills();
+
+    expect((await screen.findByRole('link', { name: 'New skill' })).getAttribute('href')).toBe(
+      '/agents/editor?new=skill',
+    );
   });
 
   it('says more skill folders exist when the list is cut', async () => {
@@ -197,6 +217,8 @@ describe('Skills page: the list', () => {
     renderSkills();
 
     await screen.findByRole('region', { name: 'Skills' });
+    await userEvent.tab();
+    expect(document.activeElement).toBe(screen.getByRole('link', { name: 'New skill' }));
     await userEvent.tab();
     expect(document.activeElement).toBe(screen.getByRole('link', { name: /^Open in editor/ }));
     await userEvent.tab();

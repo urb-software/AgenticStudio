@@ -23,6 +23,39 @@ export function useAgentDraftFile(path: string | undefined) {
   });
 }
 
+const NO_TEXTS: ReadonlyMap<string, string> = new Map();
+
+/**
+ * The text of each of these Draft files that is text, by path, read through the cache of one
+ * file's query; `version` is the Draft's, so a write reads them again.
+ */
+export function useAgentDraftTexts(
+  paths: readonly string[],
+  version: number,
+): ReadonlyMap<string, string> {
+  const queryClient = useQueryClient();
+  const { data } = useQuery({
+    queryKey: [...DRAFT_FILE_KEY, 'texts', version, paths.join('\n')] as const,
+    queryFn: async () => {
+      const texts = new Map<string, string>();
+      await Promise.all(
+        paths.map(async (path) => {
+          const file = await queryClient.fetchQuery({
+            queryKey: [...DRAFT_FILE_KEY, path] as const,
+            queryFn: () => api.getAgentDraftFile(path),
+            ...SNAPSHOT,
+          });
+          if (file.kind === 'text') texts.set(path, file.content);
+        }),
+      );
+      return texts;
+    },
+    enabled: paths.length > 0,
+    ...SNAPSHOT,
+  });
+  return data ?? NO_TEXTS;
+}
+
 /** Reads the Draft and its files again, after it changed elsewhere. */
 export function useReloadDraft() {
   const queryClient = useQueryClient();

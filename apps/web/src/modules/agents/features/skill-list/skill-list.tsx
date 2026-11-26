@@ -33,6 +33,15 @@ function repositoryReason(list: SkillListOutput): string | null {
 
 const TRUNCATED = 'More skill folders exist than are listed here.';
 
+/** Opens the editor on its "New skill" step: the new entry file opens once it is made. */
+function NewSkillLink() {
+  return (
+    <Button asChild size="sm">
+      <Link href="/agents/editor?new=skill">New skill</Link>
+    </Button>
+  );
+}
+
 function SkillRow({
   skill,
   commit,
@@ -175,9 +184,12 @@ export function SkillList() {
             'A skill is a folder skills/<name>/ with a SKILL.md file. Add one to the definitions Repository, push it, and fetch the Repository on the Agents page.'
           }
           action={
-            <Button asChild>
-              <Link href="/agents">Go to Agents</Link>
-            </Button>
+            <span className="flex flex-wrap items-center justify-center gap-2">
+              <NewSkillLink />
+              <Button asChild>
+                <Link href="/agents">Go to Agents</Link>
+              </Button>
+            </span>
           }
         />
         {data.truncated ? <Banner tone="warning">{TRUNCATED}</Banner> : null}
@@ -190,17 +202,20 @@ export function SkillList() {
       <Card aria-labelledby={TITLE_ID}>
         <CardHeader>
           <CardTitle id={TITLE_ID}>Skills</CardTitle>
-          <span className="text-small text-text-muted">
-            {data.commit ? (
-              <>
-                Read at commit{' '}
-                <code className="text-code" title={data.commit}>
-                  {shortSha(data.commit)}
-                </code>
-              </>
-            ) : (
-              'No commit read'
-            )}
+          <span className="flex flex-wrap items-center gap-3">
+            <span className="text-small text-text-muted">
+              {data.commit ? (
+                <>
+                  Read at commit{' '}
+                  <code className="text-code" title={data.commit}>
+                    {shortSha(data.commit)}
+                  </code>
+                </>
+              ) : (
+                'No commit read'
+              )}
+            </span>
+            <NewSkillLink />
           </span>
         </CardHeader>
         <CardContent flush>

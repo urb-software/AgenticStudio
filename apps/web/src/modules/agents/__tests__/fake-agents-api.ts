@@ -8,10 +8,12 @@ import type {
   AgentListOutput,
   AgentSummaryOutput,
   ProblemDetails,
+  SkillListOutput,
   ProviderAvailabilityOutput,
   ProjectOutput,
   RepositoryOutput,
 } from '../../../platform/api';
+import { skillList } from './fake-skills-api';
 
 /** What `GET /api/providers` answers: each Provider with the models an agent may name. */
 export const PROVIDERS: ProviderAvailabilityOutput[] = [
@@ -105,6 +107,8 @@ export function fakeAgentsApi(
     files?: { tree: AgentFilesOutput; contents?: Record<string, AgentFileOutput> };
     /** The Draft the server starts with. */
     draft?: Partial<AgentDraftOutput>;
+    /** The skills as `GET /api/skills` lists them. */
+    skills?: SkillListOutput;
   } = {},
 ) {
   let list = agents.list ?? agentList();
@@ -165,6 +169,9 @@ export function fakeAgentsApi(
     const response = request.method === 'GET' ? scripted.shift() : undefined;
     if (response) return json(response.status, response.body);
 
+    if (pathname === '/api/skills' && request.method === 'GET') {
+      return json(200, agents.skills ?? skillList());
+    }
     if (pathname === '/api/agents' && request.method === 'GET') {
       await gates.list;
       const failure = listFailures.shift();

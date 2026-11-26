@@ -73,6 +73,7 @@ import {
 export type {
   SkillDetailOutput,
   SkillListOutput,
+  AgentDraftSkillProblemOutput,
   SkillProblemOutput,
   SkillSummaryOutput,
   AgentDetailOutput,
