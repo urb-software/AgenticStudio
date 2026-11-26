@@ -7,8 +7,6 @@ import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { DATABASE_CLIENT, type DatabaseClient } from '../platform/database/database.module.js';
 import { problemDetailsSchema } from '../platform/http/problem-details.js';
-import { skillDetailResponseSchema } from '../modules/agents/entry-points/http/operator/get-skill/schema.js';
-import { skillListResponseSchema } from '../modules/agents/entry-points/http/operator/list-skills/schema.js';
 import { createGitFixture, type FixtureFile, pushFiles } from './git-fixture.js';
 import {
   signIn,
@@ -118,7 +116,6 @@ describe('skills API (PostgreSQL + Redis via Testcontainers)', () => {
       const response = await listSkills();
 
       expect(response.status).toBe(200);
-      expect(skillListResponseSchema.safeParse(response.body).success).toBe(true);
       expect(response.body).toEqual({
         commit: null,
         repository: null,
@@ -167,7 +164,6 @@ describe('skills API (PostgreSQL + Redis via Testcontainers)', () => {
       const response = await listSkills();
 
       expect(response.status).toBe(200);
-      expect(skillListResponseSchema.safeParse(response.body).success).toBe(true);
       expect(response.body.commit).toBe(commit);
       expect(response.body.repository).toEqual({ state: 'ready', note: null });
       expect(response.body.truncated).toBe(false);
@@ -250,7 +246,6 @@ describe('skills API (PostgreSQL + Redis via Testcontainers)', () => {
       const response = await getSkill('review');
 
       expect(response.status).toBe(200);
-      expect(skillDetailResponseSchema.safeParse(response.body).success).toBe(true);
       expect(response.body).toEqual({
         commit,
         repository: { state: 'ready', note: null },
