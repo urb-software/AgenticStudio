@@ -26,7 +26,15 @@ const shortSha = (sha: string) => sha.slice(0, 7);
  * The result of a publish. Focus moves here when it appears, and the live region is filled one
  * render after it exists, so a screen reader announces the text.
  */
-function PublishedStatus({ commit, keptFiles }: { commit: string; keptFiles: number }) {
+function PublishedStatus({
+  commit,
+  keptFiles,
+  onDiscard,
+}: {
+  commit: string;
+  keptFiles: number;
+  onDiscard: () => void;
+}) {
   const box = useRef<HTMLDivElement>(null);
   const [announced, setAnnounced] = useState(false);
   useEffect(() => {
@@ -35,20 +43,36 @@ function PublishedStatus({ commit, keptFiles }: { commit: string; keptFiles: num
     return () => clearTimeout(timer);
   }, []);
   return (
-    <div ref={box} tabIndex={-1} className="outline-none">
-      <p className="m-0" role="status">
+    <div ref={box} tabIndex={-1} className="flex flex-col gap-3 outline-none">
+      <div role="status" className="flex flex-col gap-2">
         {announced ? (
           <>
-            Published as commit{' '}
-            <code className="text-code" title={commit}>
-              {shortSha(commit)}
-            </code>
-            {keptFiles === 0
-              ? '. The Draft is empty, and the editor now reads that commit.'
-              : '. The editor now reads that commit.'}
+            <p className="m-0">
+              Published as commit{' '}
+              <code className="text-code" title={commit}>
+                {shortSha(commit)}
+              </code>
+              {keptFiles === 0
+                ? '. The Draft is empty, and the editor now reads that commit.'
+                : '. The editor now reads that commit.'}
+            </p>
+            {keptFiles > 0 ? (
+              <p className="m-0 text-run-failed">
+                Changes were saved to the Draft while it was being published. They are kept on the
+                old commit and cannot be published. Copy what you need, then discard the Draft and
+                make those changes again.
+              </p>
+            ) : null}
           </>
         ) : null}
-      </p>
+      </div>
+      {keptFiles > 0 ? (
+        <div>
+          <Button size="sm" variant="danger" onClick={onDiscard}>
+            Discard the Draft
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -97,10 +121,10 @@ export function PublishDialog({
   const [failure, setFailure] = useState<PublishFailure>();
   const [reverting, setReverting] = useState(false);
   const [commit, setCommit] = useState<string>();
-  const failureBox = useRef<HTMLDivElement>(null);
-  // A result replaces what had focus (a button that is now busy or disabled): focus follows it.
+  const form = useRef<HTMLFormElement>(null);
+  // The busy button lost focus: it goes to the message field. The alert announces itself, once.
   useEffect(() => {
-    if (failure) failureBox.current?.focus();
+    if (failure) form.current?.querySelector('textarea')?.focus();
   }, [failure]);
   const pending = publish.isPending || reverting;
   const problem = publishMessageError(message);
@@ -150,21 +174,7 @@ export function PublishDialog({
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
-            <PublishedStatus commit={commit} keptFiles={files.length} />
-            {files.length > 0 ? (
-              <Banner
-                tone="warning"
-                action={
-                  <Button size="sm" variant="danger" onClick={onDiscard}>
-                    Discard the Draft
-                  </Button>
-                }
-              >
-                The commit was published, but changes were saved to the Draft while it was being
-                published. They are kept on the old commit and cannot be published. Copy what you
-                need, then discard the Draft and make those changes again.
-              </Banner>
-            ) : null}
+            <PublishedStatus commit={commit} keptFiles={files.length} onDiscard={onDiscard} />
           </DialogBody>
           <DialogFooter>
             <DialogClose asChild>
@@ -180,7 +190,12 @@ export function PublishDialog({
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
       <DialogContent className="md:max-w-4xl">
-        <form onSubmit={(event) => void submit(event)} noValidate className="flex min-h-0 flex-col">
+        <form
+          ref={form}
+          onSubmit={(event) => void submit(event)}
+          noValidate
+          className="flex min-h-0 flex-col"
+        >
           <DialogHeader>
             <DialogTitle>Publish the Draft</DialogTitle>
             <DialogDescription>
@@ -190,11 +205,11 @@ export function PublishDialog({
           </DialogHeader>
           <DialogBody>
             {failure ? (
-              <div ref={failureBox} tabIndex={-1} className="outline-none">
+              <div>
                 <Banner
                   tone="danger"
                   action={
-                    failure.kind === 'conflict' ? (
+                    failure.kind === 'conflict' || failure.kind === 'failed' ? (
                       <Button
                         size="sm"
                         onClick={() => {

@@ -471,6 +471,31 @@ describe('Publish: each refusal has its own message', () => {
     await expect(dialog).toHaveNoAxeViolations();
   });
 
+  it('treats a network error like a failed push and offers to reload the Draft', async () => {
+    const { api } = setup({ draft: MODIFIED });
+    const real = globalThis.fetch;
+    vi.stubGlobal('fetch', (request: Request) =>
+      request.url.endsWith('/draft/publish')
+        ? Promise.reject(new TypeError('network down'))
+        : real(request),
+    );
+    const user = userEvent.setup();
+    const dialog = await openDialog(user);
+    await submit(user, dialog);
+    await within(dialog).findByText(/may still have gone through/);
+    expect(within(dialog).getByRole('button', { name: 'Reload the Draft' })).toBeTruthy();
+    await waitFor(() =>
+      expect(
+        api
+          .calls()
+          .filter(
+            (call) => call.method === 'GET' && call.path.endsWith('/definitions-repository/files'),
+          ),
+      ).toHaveLength(2),
+    );
+    await expect(dialog).toHaveNoAxeViolations();
+  });
+
   it('reads the Draft and the tree again after an answer the API has no name for', async () => {
     const { api, dialog } = await refused(500, fail(500, 'unknown-server-failure'));
     await within(dialog).findByText(/may still have gone through/);
@@ -518,6 +543,6 @@ describe('Publish: a Draft kept through the publish', () => {
     await submit(user, dialog);
     const status = await within(dialog).findByText(/The Draft is empty/);
     expect(dialog.contains(document.activeElement)).toBe(true);
-    expect(status.closest('div')).toBe(document.activeElement);
+    expect(status.closest('[tabindex="-1"]')).toBe(document.activeElement);
   });
 });

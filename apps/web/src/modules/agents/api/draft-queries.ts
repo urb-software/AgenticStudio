@@ -319,7 +319,7 @@ export function publishFailureOf(error: unknown): PublishFailure {
     return {
       kind: 'failed',
       message:
-        'No answer arrived, or the server failed, and the publish may still have gone through to the Git host. The Draft was read again. If it is empty or the Repository moved on, your changes are probably already there.',
+        'No answer arrived, or the server failed, and the publish may still have gone through to the Git host. Reload the Draft to see whether it is now empty or the Repository moved on: your changes are then probably already there.',
     };
   }
   return {
