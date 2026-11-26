@@ -258,6 +258,7 @@ describe('skills API (PostgreSQL + Redis via Testcontainers)', () => {
           { path: 'SKILL.md', size: Buffer.byteLength(skillFile('review', '', instructions)) },
           { path: 'references/guide.md', size: 8 },
         ],
+        usedBy: [],
       });
       const broken = await getSkill('broken');
       expect(broken.body).toMatchObject({ valid: false, instructions: '', description: null });
