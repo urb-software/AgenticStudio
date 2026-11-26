@@ -9,6 +9,7 @@ import type {
   AgentFileEntryOutput,
   AgentFileOutput,
   AgentSummaryOutput,
+  SkillListOutput,
   SkillSummaryOutput,
 } from '../../../platform/api';
 import { agentList, BUILT_INS, fakeAgentsApi } from './fake-agents-api';
@@ -118,7 +119,16 @@ const CONTENTS: Record<string, AgentFileOutput> = {
   'skills/rotten/SKILL.md': text('skills/rotten/SKILL.md', 'no front matter'),
 };
 
-function setup(options: { path?: string; query?: string; draft?: Partial<AgentDraftOutput> } = {}) {
+function setup(
+  options: {
+    path?: string;
+    query?: string;
+    draft?: Partial<AgentDraftOutput>;
+    entries?: AgentFileEntryOutput[];
+    contents?: Record<string, AgentFileOutput>;
+    skills?: Partial<SkillListOutput>;
+  } = {},
+) {
   search = options.query ?? (options.path ? `path=${encodeURIComponent(options.path)}` : '');
   const api = fakeAgentsApi(
     { repository: null },
@@ -129,10 +139,15 @@ function setup(options: { path?: string; query?: string; draft?: Partial<AgentDr
         agents: [...BUILT_INS, REVIEWER],
       }),
       files: {
-        tree: { commit: SHA, repository: REPOSITORY, truncated: false, entries: ENTRIES },
-        contents: CONTENTS,
+        tree: {
+          commit: SHA,
+          repository: REPOSITORY,
+          truncated: false,
+          entries: options.entries ?? ENTRIES,
+        },
+        contents: options.contents ?? CONTENTS,
       },
-      skills: skillList({ commit: SHA, skills: [LINT, ROTTEN] }),
+      skills: skillList({ commit: SHA, skills: [LINT, ROTTEN], ...options.skills }),
       draft: options.draft,
     },
   );
@@ -251,6 +266,48 @@ describe('skills in the editor: the tree and the problems', () => {
     expect(publish().disabled).toBe(true);
     const lint = within(treeNav()).getByRole('button', { name: /^lint/ });
     expect(within(lint).getByText('1 problem')).toBeTruthy();
+  });
+
+  it('keeps the API’s skill check of an agent for a skill the cut list does not hold', async () => {
+    const agentText = AGENT_MD.replace('  - lint', '  - far');
+    setup({
+      path: 'agents/reviewer/AGENT.md',
+      entries: [...ENTRIES, entry('skills/far/SKILL.md', { skill: 'far' })],
+      contents: {
+        ...CONTENTS,
+        'agents/reviewer/AGENT.md': text('agents/reviewer/AGENT.md', agentText),
+      },
+      skills: { truncated: true },
+      draft: {
+        baseCommit: SHA,
+        currentCommit: SHA,
+        version: 2,
+        files: [
+          {
+            path: 'agents/reviewer/AGENT.md',
+            change: 'modified',
+            size: 90,
+            movedFrom: null,
+            skill: null,
+          },
+        ],
+        problems: [
+          {
+            agent: 'reviewer',
+            code: 'skill_invalid',
+            path: 'agents/reviewer/AGENT.md',
+            key: 'far',
+            message: 'The skill "far" is not valid.',
+          },
+        ],
+      },
+    });
+    await screen.findByTestId('monaco');
+
+    const list = await screen.findByRole('region', { name: 'Problems' });
+    expect(within(list).getAllByText(/is not valid/)).toHaveLength(1);
+    expect(publish().disabled).toBe(true);
+    expect(screen.getByText('Fix the 1 problem of the Draft first.')).toBeTruthy();
   });
 
   it('counts and lists once an agent the API judged that the editor’s lists do not hold', async () => {

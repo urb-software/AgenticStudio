@@ -184,6 +184,26 @@ export function validateAgentLive(
   }));
 }
 
+/**
+ * The API's skill checks of agents the browser judges itself, for skills the browser has no
+ * verdict on (`unjudged`: the list was cut): they stay, since the browser's check skips them.
+ */
+export function keptSkillCheckProblems(
+  draft: readonly AgentDraftProblemOutput[],
+  agents: ReadonlySet<string>,
+  unjudged: (skill: string) => boolean,
+): ListedProblem[] {
+  return draft
+    .filter(
+      (problem) =>
+        agents.has(problem.agent) &&
+        (problem.code === 'skill_missing' || problem.code === 'skill_invalid') &&
+        problem.key !== null &&
+        unjudged(problem.key),
+    )
+    .map(fromDraft);
+}
+
 export interface ProblemSources {
   /** The agents as listed at the commit the editor reads. */
   base: readonly AgentSummaryOutput[];
@@ -201,6 +221,8 @@ export interface ProblemSources {
   named?: ReadonlySet<string>;
   /** The validation of the open agent run in the browser, which is newer than the API's. */
   live?: { agent: string; problems: readonly ListedProblem[] };
+  /** Problems the browser keeps from the API beside its own (see `keptSkillCheckProblems`). */
+  kept?: readonly ListedProblem[];
   /** The same for the open skill, with the agents that name it judged against it. */
   liveSkill?: {
     skill: string;
@@ -223,6 +245,7 @@ export function listProblems({
   touched,
   touchedSkills = new Set(),
   named = new Set(),
+  kept = [],
   live,
   liveSkill,
 }: ProblemSources): ListedProblem[] {
@@ -247,6 +270,7 @@ export function listProblems({
     listed.push(indirect ? { ...item, note: NAMES_TOUCHED_SKILL } : item);
   }
   if (live) listed.push(...live.problems);
+  listed.push(...kept);
   for (const skill of baseSkills) {
     if (touchedSkills.has(skill.name)) continue;
     listed.push(...fromBaseSkill(skill));

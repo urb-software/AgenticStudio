@@ -15,6 +15,7 @@ import {
   skillNameError,
   skillOfPath,
   skillStandings,
+  unheldMarkdownProblems,
   validateSkillLive,
 } from '../features/agent-editor/skill-model';
 
@@ -185,6 +186,36 @@ describe('the agents a skill touches', () => {
     expect(problems.get('a')?.map((p) => [p.code, p.target.path])).toEqual([
       ['skill_invalid', 'agents/a/AGENT.md'],
     ]);
+  });
+});
+
+describe('unheldMarkdownProblems', () => {
+  const problem = (path: string, code = 'shell_line') =>
+    ({ agent: null, skill: 'lint', code, message: code, target: { path } }) as const;
+
+  it('keeps the problems of other Markdown files and not those of the entry file', () => {
+    const kept = unheldMarkdownProblems(
+      [
+        problem('skills/lint/notes.md'),
+        problem('skills/lint/SKILL.md', 'entry_missing'),
+        problem('skills/lint/SKILL.md', 'file_too_large'),
+        problem('skills/lint/big.bin', 'file_too_large'),
+      ],
+      new Map(),
+      'skills/lint/SKILL.md',
+    );
+
+    expect(kept.map((p) => p.target.path)).toEqual(['skills/lint/notes.md']);
+  });
+
+  it('leaves out a Markdown file whose text the browser holds', () => {
+    const kept = unheldMarkdownProblems(
+      [problem('skills/lint/notes.md')],
+      new Map([['skills/lint/notes.md', 'text']]),
+      'skills/lint/SKILL.md',
+    );
+
+    expect(kept).toEqual([]);
   });
 });
 

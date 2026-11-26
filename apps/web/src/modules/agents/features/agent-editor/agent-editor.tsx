@@ -50,6 +50,7 @@ import {
 } from './draft-dialogs';
 import {
   agentOfPath,
+  keptSkillCheckProblems,
   listProblems,
   newAgentFile,
   overlayDraft,
@@ -343,7 +344,11 @@ function EditorBody() {
       : (skillMarks.data?.skills ?? [])
           .filter((item) => item.name === skillOpen)
           .flatMap(fromBaseSkill);
-    keptSkillProblems = unheldMarkdownProblems(apiProblems, knownTexts);
+    keptSkillProblems = unheldMarkdownProblems(
+      apiProblems,
+      knownTexts,
+      `skills/${skillOpen}/SKILL.md`,
+    );
     skillsWithProblems.delete(skillOpen);
     if (liveSkillProblems.length > 0 || keptSkillProblems.length > 0) {
       skillsWithProblems.add(skillOpen);
@@ -396,6 +401,20 @@ function EditorBody() {
           naming: namingAgentProblems(skillOpen, marks.data?.agents ?? [], touched, standings),
         }
       : undefined;
+  // With the skills list cut, the API decides on the skills it does not hold.
+  const listedSkills = new Set((skillMarks.data?.skills ?? []).map((item) => item.name));
+  const keptChecks = keptSkillCheckProblems(
+    draft?.problems ?? [],
+    new Set([
+      ...(live && agentOpen !== null ? [agentOpen] : []),
+      ...(liveSkill ? liveSkill.naming.keys() : []),
+    ]),
+    (skill) =>
+      skillMarks.data?.truncated === true &&
+      standings.has(skill) &&
+      !listedSkills.has(skill) &&
+      !touchedSkills.has(skill),
+  );
   const problems = listProblems({
     base: marks.data?.agents ?? [],
     baseSkills: skillMarks.data?.skills ?? [],
@@ -404,6 +423,7 @@ function EditorBody() {
     touched,
     touchedSkills,
     named,
+    kept: keptChecks,
     live: live && agentOpen !== null ? { agent: agentOpen, problems: live } : undefined,
     liveSkill,
   });

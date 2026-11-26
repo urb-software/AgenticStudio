@@ -192,9 +192,13 @@ export function skillStandings(
 export function unheldMarkdownProblems(
   api: readonly ListedProblem[],
   held: ReadonlyMap<string, string>,
+  entryPath: string,
 ): ListedProblem[] {
   return api.filter(
-    (problem) => MARKDOWN_FILE.test(problem.target.path) && !held.has(problem.target.path),
+    (problem) =>
+      problem.target.path !== entryPath &&
+      MARKDOWN_FILE.test(problem.target.path) &&
+      !held.has(problem.target.path),
   );
 }
 
