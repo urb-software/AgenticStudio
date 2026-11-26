@@ -7,12 +7,28 @@ import {
   validateAgentFolder,
   type AgentEntry,
 } from '@agentic-studio/agent-definitions';
+import {
+  fromBaseSkill,
+  fromDraftSkill,
+  NAMES_TOUCHED_SKILL,
+  skillCheckProblems,
+} from './skill-model';
 import type {
   AgentDraftFileOutput,
   AgentDraftProblemOutput,
+  AgentDraftSkillProblemOutput,
   AgentSummaryOutput,
+  SkillSummaryOutput,
 } from '../../../../platform/api';
-import { placedKey, problemTarget, type EditorEntry, type ProblemTarget } from './editor-model';
+import {
+  placedKey,
+  problemTarget,
+  type EditorEntry,
+  type ListedProblem,
+  type ProblemTarget,
+} from './editor-model';
+
+export type { ListedProblem };
 
 const AGENT_PATH = /^agents\/([^/]+)\//;
 
@@ -88,8 +104,8 @@ export function pathError(
   if (path === '') return 'Enter the path of the file.';
   const [refusal] = validateAgentFiles([{ path, kind: 'file', size: 0 }]);
   if (refusal) return refusal.message;
-  if (!/^agents\/[^/]+\/.+/.test(path)) {
-    return 'Files live under agents/<name>/: publishing refuses any other path.';
+  if (!/^(agents|skills)\/[^/]+\/.+/.test(path)) {
+    return 'Files live under agents/<name>/ or skills/<name>/: publishing refuses any other path.';
   }
   if (existing.has(path) && !deleted.has(path)) return 'A file is already at this path.';
   return undefined;
@@ -109,19 +125,17 @@ export function publishMessageError(message: string): string | undefined {
   return undefined;
 }
 
-/** One problem to show in the list and in the file, from any of its sources. */
-export interface ListedProblem {
-  agent: string;
-  code: string;
-  message: string;
-  target: ProblemTarget;
-}
-
 function fromDraft(problem: AgentDraftProblemOutput): ListedProblem {
   const target: ProblemTarget = { path: problem.path };
   const key = placedKey(problem.code, problem.key);
   if (key) target.key = key;
-  return { agent: problem.agent, code: problem.code, message: problem.message, target };
+  return {
+    agent: problem.agent,
+    skill: null,
+    code: problem.code,
+    message: problem.message,
+    target,
+  };
 }
 
 /**
@@ -134,6 +148,7 @@ export function validateAgentLive(
   entries: readonly EditorEntry[],
   entryText: string | undefined,
   sizes: ReadonlyMap<string, number>,
+  standings?: ReadonlyMap<string, { valid: boolean }>,
 ): ListedProblem[] | undefined {
   const prefix = `agents/${agent}/`;
   const folder: AgentEntry[] = [];
@@ -149,9 +164,12 @@ export function validateAgentLive(
     }
   }
   const result = validateAgentFolder(agent, folder);
-  if (result.ok) return [];
+  if (result.ok) {
+    return standings ? skillCheckProblems(agent, result.definition.skills, standings) : [];
+  }
   return result.problems.map((problem) => ({
     agent,
+    skill: null,
     code: problem.code,
     message: problem.message,
     target: problemTarget(agent, {
@@ -166,22 +184,51 @@ export function validateAgentLive(
 export interface ProblemSources {
   /** The agents as listed at the commit the editor reads. */
   base: readonly AgentSummaryOutput[];
-  /** What the API found in the agent folders the Draft touches. */
+  /** The skills as listed at that commit. */
+  baseSkills?: readonly SkillSummaryOutput[];
+  /** What the API found in the agent folders the Draft touches and in agents naming a touched skill. */
   draft: readonly AgentDraftProblemOutput[];
+  /** What the API found in the skill folders the Draft touches. */
+  draftSkills?: readonly AgentDraftSkillProblemOutput[];
   /** The agent folders the Draft touches. */
   touched: ReadonlySet<string>;
+  /** The skill folders the Draft touches. */
+  touchedSkills?: ReadonlySet<string>;
+  /** The agents the Draft does not touch that name a touched skill: judged with the Draft. */
+  named?: ReadonlySet<string>;
   /** The validation of the open agent run in the browser, which is newer than the API's. */
   live?: { agent: string; problems: readonly ListedProblem[] };
+  /** The same for the open skill, with the agents that name it judged against it. */
+  liveSkill?: {
+    skill: string;
+    problems: readonly ListedProblem[];
+    naming: ReadonlyMap<string, readonly ListedProblem[]>;
+  };
 }
 
-/** The problems to show: the base's for untouched agents, the Draft's for touched ones. */
-export function listProblems({ base, draft, touched, live }: ProblemSources): ListedProblem[] {
+/**
+ * The problems to show, for the set the API judges: the base's for what the Draft leaves alone,
+ * the Draft's for the skills and agents it touches and the agents naming a touched skill.
+ */
+export function listProblems({
+  base,
+  baseSkills = [],
+  draft,
+  draftSkills = [],
+  touched,
+  touchedSkills = new Set(),
+  named = new Set(),
+  live,
+  liveSkill,
+}: ProblemSources): ListedProblem[] {
   const listed: ListedProblem[] = [];
   for (const agent of base) {
-    if (agent.source !== 'definitions' || touched.has(agent.name)) continue;
+    if (agent.source !== 'definitions' || touched.has(agent.name) || named.has(agent.name))
+      continue;
     for (const problem of agent.problems) {
       listed.push({
         agent: agent.name,
+        skill: null,
         code: problem.code,
         message: problem.message,
         target: problemTarget(agent.name, problem),
@@ -189,8 +236,22 @@ export function listProblems({ base, draft, touched, live }: ProblemSources): Li
     }
   }
   for (const problem of draft) {
-    if (problem.agent !== live?.agent) listed.push(fromDraft(problem));
+    if (problem.agent === live?.agent || liveSkill?.naming.has(problem.agent)) continue;
+    const item = fromDraft(problem);
+    const indirect = named.has(problem.agent) && !touched.has(problem.agent);
+    listed.push(indirect ? { ...item, note: NAMES_TOUCHED_SKILL } : item);
   }
   if (live) listed.push(...live.problems);
+  for (const skill of baseSkills) {
+    if (touchedSkills.has(skill.name)) continue;
+    listed.push(...fromBaseSkill(skill));
+  }
+  for (const problem of draftSkills) {
+    if (problem.skill !== liveSkill?.skill) listed.push(fromDraftSkill(problem));
+  }
+  if (liveSkill) {
+    listed.push(...liveSkill.problems);
+    for (const problems of liveSkill.naming.values()) listed.push(...problems);
+  }
   return listed;
 }

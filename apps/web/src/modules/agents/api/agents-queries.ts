@@ -93,6 +93,7 @@ export function useRefreshAgents() {
  */
 const FILES_KEY = ['agents', 'editor', 'files'] as const;
 const EDITOR_AGENTS_KEY = ['agents', 'editor', 'agents'] as const;
+const EDITOR_SKILLS_KEY = ['agents', 'editor', 'skills'] as const;
 const FILE_KEY = ['agents', 'editor', 'file'] as const;
 
 export const SNAPSHOT = { staleTime: Infinity, refetchOnWindowFocus: false } as const;
@@ -105,6 +106,11 @@ export function useAgentFiles() {
 /** The agents, with their problems, as of the editor's last (re)load: the tree's marks. */
 export function useEditorAgents() {
   return useQuery({ queryKey: EDITOR_AGENTS_KEY, queryFn: api.listAgents, ...SNAPSHOT });
+}
+
+/** The skills, with their problems, as of the editor's last (re)load: the tree's marks. */
+export function useEditorSkills() {
+  return useQuery({ queryKey: EDITOR_SKILLS_KEY, queryFn: api.listSkills, ...SNAPSHOT });
 }
 
 /** One file at `commit`, the commit the editor shows. */
@@ -125,6 +131,7 @@ export function useReloadEditor() {
       Promise.all([
         queryClient.invalidateQueries({ queryKey: FILES_KEY, exact: true }),
         queryClient.invalidateQueries({ queryKey: EDITOR_AGENTS_KEY, exact: true }),
+        queryClient.invalidateQueries({ queryKey: EDITOR_SKILLS_KEY, exact: true }),
       ]),
     [queryClient],
   );

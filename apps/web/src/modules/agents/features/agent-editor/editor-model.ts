@@ -68,7 +68,7 @@ export interface ProblemTarget {
   key?: string;
 }
 
-const SKILL_NAME_CODES: readonly AgentProblemOutput['code'][] = [
+const SKILL_NAME_CODES: readonly string[] = [
   'skill_name_invalid',
   'skill_listed_twice',
   'skill_missing',
@@ -76,10 +76,7 @@ const SKILL_NAME_CODES: readonly AgentProblemOutput['code'][] = [
 ];
 
 /** The front matter key to find: for the skill-name reasons the key is a name, so the `skills` line. */
-export function placedKey(
-  code: AgentProblemOutput['code'],
-  key: string | null | undefined,
-): string | undefined {
+export function placedKey(code: string, key: string | null | undefined): string | undefined {
   if (SKILL_NAME_CODES.includes(code)) return 'skills';
   return key || undefined;
 }
@@ -91,6 +88,19 @@ export function problemTarget(agent: string, problem: AgentProblemOutput): Probl
   return key ? { path, key } : { path };
 }
 
+/** One problem to show in the list and in the file, from any of its sources. */
+export interface ListedProblem {
+  /** The agent folder the problem is in; null for a skill's. */
+  agent: string | null;
+  /** The skill folder the problem is in; null for an agent's. */
+  skill: string | null;
+  code: string;
+  message: string;
+  target: ProblemTarget;
+  /** Why an agent the Draft does not change is listed. */
+  note?: string;
+}
+
 export type TreeNode =
   | {
       kind: 'folder';
@@ -98,6 +108,8 @@ export type TreeNode =
       path: string;
       /** The agent a folder is the folder of; null for any other folder. */
       agent: string | null;
+      /** The skill a folder is the folder of; null for any other folder. */
+      skill: string | null;
       children: TreeNode[];
     }
   | { kind: 'file'; name: string; path: string; entry: EditorEntry };
@@ -113,7 +125,7 @@ function sortTree(nodes: TreeNode[]): TreeNode[] {
   return [...folders, ...files];
 }
 
-/** The flat entries as a tree, folders first. A folder is an agent's when `agents/<name>`. */
+/** The flat entries as a tree, folders first. A folder is an agent's when `agents/<name>`, a skill's when `skills/<name>`. */
 export function buildTree(entries: readonly EditorEntry[]): TreeNode[] {
   const root: TreeNode[] = [];
   const folders = new Map<string, Extract<TreeNode, { kind: 'folder' }>>();
@@ -124,11 +136,19 @@ export function buildTree(entries: readonly EditorEntry[]): TreeNode[] {
       const path = parts.slice(0, depth + 1).join('/');
       let folder = folders.get(path);
       if (!folder) {
-        folder = { kind: 'folder', name: parts[depth]!, path, agent: null, children: [] };
+        folder = {
+          kind: 'folder',
+          name: parts[depth]!,
+          path,
+          agent: null,
+          skill: null,
+          children: [],
+        };
         folders.set(path, folder);
         siblings.push(folder);
       }
       if (entry.agent !== null && path === `agents/${entry.agent}`) folder.agent = entry.agent;
+      if (entry.skill !== null && path === `skills/${entry.skill}`) folder.skill = entry.skill;
       siblings = folder.children;
     }
     siblings.push({ kind: 'file', name: parts[parts.length - 1]!, path: entry.path, entry });

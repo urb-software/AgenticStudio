@@ -1421,12 +1421,13 @@ const EDITOR_AGENT_MD = [
 
 async function mockEditorApi(page: Page) {
   const repository = { state: 'ready', note: null };
-  const entry = (path: string, agent: string | null) => ({
+  const entry = (path: string, agent: string | null, skill: string | null = null) => ({
     path,
     kind: 'file',
     size: 40,
     openable: true,
     agent,
+    skill,
   });
   const json = { contentType: 'application/json' };
   const base: Record<string, string> = {
@@ -1445,8 +1446,12 @@ async function mockEditorApi(page: Page) {
       change: path in base ? 'modified' : 'added',
       size: text.length,
       movedFrom: null,
+      skill: /^skills\/([^/]+)\//.exec(path)?.[1] ?? null,
     })),
     problems: [],
+    skillProblems: [],
+    judged: true,
+    notJudgedReason: null,
     movedUpstream: [],
   });
 
@@ -1466,6 +1471,7 @@ async function mockEditorApi(page: Page) {
             model: null,
             source: 'definitions',
             usable: false,
+            skills: [],
             problems: [
               {
                 code: 'provider_unknown',
@@ -1477,6 +1483,12 @@ async function mockEditorApi(page: Page) {
           },
         ],
       }),
+    }),
+  );
+  await page.route('**/api/skills', (route) =>
+    route.fulfill({
+      ...json,
+      body: JSON.stringify({ commit: state.commit, repository, truncated: false, skills: [] }),
     }),
   );
   await page.route('**/api/agents/definitions-repository/files', (route) =>
@@ -1719,6 +1731,29 @@ test('the agent editor publishes a saved Draft and reads the new commit', async 
   await expect(
     page.getByText(EDITOR_PUBLISHED_SHA.slice(0, 7), { exact: true }).first(),
   ).toBeVisible();
+});
+
+// "New skill" makes skills/<name>/SKILL.md in the Draft from a template and opens it; the browser
+// validates the skill while the operator types.
+test('the skill editor creates a skill and flags a forbidden key while typing', async ({
+  page,
+}) => {
+  const { draft } = await mockEditorApi(page);
+  await signIn(page);
+  await page.goto('/agents/editor?new=skill');
+
+  const dialog = page.getByRole('dialog', { name: 'New skill' });
+  await dialog.getByLabel('Name').fill('fresh');
+  await dialog.getByRole('button', { name: 'Create skill' }).click();
+  const editor = page.locator('.monaco-editor');
+  await expect(editor.locator('.view-lines')).toContainText('Describe what this skill is for.');
+  expect(draft.files.get('skills/fresh/SKILL.md')).toContain('name: fresh');
+
+  await editor.locator('.view-lines').click();
+  await page.keyboard.press('ControlOrMeta+A');
+  await page.keyboard.insertText('---\nname: fresh\ndescription: Fresh\nhooks: x\n---\nSteps.');
+  await expect(page.getByRole('region', { name: 'Problems' })).toContainText('hooks');
+  await expectInBothThemes(page, editor);
 });
 
 test('the skills view lists skills with their state, opens a detail, in both themes', async ({

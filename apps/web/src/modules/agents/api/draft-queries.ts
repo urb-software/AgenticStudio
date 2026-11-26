@@ -1,6 +1,6 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback } from 'react';
 import { api, ApiError, type AgentDraftOutput } from '../../../platform/api';
 import { SNAPSHOT, useRefreshAgents, useReloadEditor } from './agents-queries';
@@ -20,6 +20,23 @@ export function useAgentDraftFile(path: string | undefined) {
     queryFn: () => api.getAgentDraftFile(path ?? ''),
     enabled: path !== undefined,
     ...SNAPSHOT,
+  });
+}
+
+/** The text of each of these Draft files that is text, by path; the same cache as one file's. */
+export function useAgentDraftTexts(paths: readonly string[]): ReadonlyMap<string, string> {
+  return useQueries({
+    queries: paths.map((path) => ({
+      queryKey: [...DRAFT_FILE_KEY, path] as const,
+      queryFn: () => api.getAgentDraftFile(path),
+      ...SNAPSHOT,
+    })),
+    combine: (results) =>
+      new Map(
+        results.flatMap((result, index) =>
+          result.data?.kind === 'text' ? [[paths[index]!, result.data.content] as const] : [],
+        ),
+      ),
   });
 }
 

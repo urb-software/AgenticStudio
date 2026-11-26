@@ -21,6 +21,7 @@ import type { ProviderAvailabilityOutput } from '../../../../platform/api';
 import { draftFailureOf, type DraftFailure } from '../../api/draft-queries';
 import { formatSize } from '../../components/format-size';
 import { agentNameError, pathError } from './draft-model';
+import { skillNameError } from './skill-model';
 
 /** The file content a dialog hands on: text, or bytes as base64. */
 export type FileContent = { text: string } | { contentBase64: string };
@@ -154,6 +155,8 @@ interface FileDialogProps extends DialogShellProps {
   deleted: ReadonlySet<string>;
   /** `content` is undefined for a rename. */
   action: (path: string, content: FileContent | undefined) => Promise<void>;
+  /** What the change does to others, shown before it is confirmed. */
+  warning?: string;
 }
 
 /** Add (with an optional upload), rename and replace-with-an-upload share one form. */
@@ -166,6 +169,7 @@ export function FileDialog({
   existing,
   deleted,
   action,
+  warning,
 }: FileDialogProps) {
   const { pending, errorBanner, run, changeOpen } = useDialogAction(onOpenChange, onReload);
   const [path, setPath] = useState(initialPath);
@@ -206,6 +210,7 @@ export function FileDialog({
           </DialogHeader>
           <DialogBody>
             {errorBanner}
+            {warning ? <Banner tone="warning">{warning}</Banner> : null}
             <TextField
               label="Path"
               mono
@@ -338,6 +343,71 @@ export function NewAgentDialog({
             </DialogClose>
             <Button type="submit" variant="primary" loading={pending}>
               Create agent
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+interface NewSkillDialogProps extends DialogShellProps {
+  /** The names of the skill folders that exist, in the Repository or the Draft. */
+  taken: ReadonlySet<string>;
+  action: (name: string) => Promise<void>;
+}
+
+/** Asks for a name; the new `SKILL.md` comes from a template that validates. */
+export function NewSkillDialog({
+  open,
+  onOpenChange,
+  onReload,
+  taken,
+  action,
+}: NewSkillDialogProps) {
+  const { pending, errorBanner, run, changeOpen } = useDialogAction(onOpenChange, onReload);
+  const [name, setName] = useState('');
+  const [touched, setTouched] = useState(false);
+  const nameProblem = skillNameError(name, taken);
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    setTouched(true);
+    if (nameProblem) return;
+    void run(() => action(name));
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={changeOpen}>
+      <DialogContent>
+        <form onSubmit={submit} noValidate>
+          <DialogHeader>
+            <DialogTitle>New skill</DialogTitle>
+            <DialogDescription>
+              Creates <code className="text-code">skills/&lt;name&gt;/SKILL.md</code> in the Draft.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody>
+            {errorBanner}
+            <TextField
+              label="Name"
+              mono
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              error={touched ? nameProblem : undefined}
+              help="Lower-case letters, digits and hyphens."
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </DialogBody>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="ghost" disabled={pending}>
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button type="submit" variant="primary" loading={pending}>
+              Create skill
             </Button>
           </DialogFooter>
         </form>
