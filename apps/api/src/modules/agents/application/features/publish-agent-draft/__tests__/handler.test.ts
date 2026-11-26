@@ -12,8 +12,9 @@ import {
 import {
   NothingToPublishError,
   PublishFailedError,
+  PublishNotJudgedError,
   PublishNotConfiguredError,
-  PublishPathOutsideAgentsError,
+  PublishPathOutsideDefinitionsError,
   PublishProblemsError,
   PublishRunningError,
   RepositoryMovedError,
@@ -36,8 +37,11 @@ const NOW = new Date('2026-11-25T10:00:00.000Z');
 const PUBLISHED = 'c'.repeat(40);
 const IDENTITY = { name: 'Studio Publisher', email: 'studio@example.test' };
 
-const agentFile = (name: string) =>
-  `---\nname: ${name}\ndescription: Does the ${name} work\nprovider: codex\n---\nWork as ${name}.\n`;
+const agentFile = (name: string, extra = '') =>
+  `---\nname: ${name}\ndescription: Does the ${name} work\nprovider: codex\n${extra}---\nWork as ${name}.\n`;
+
+const skillFile = (name: string, extra = '') =>
+  `---\nname: ${name}\ndescription: Does the ${name} thing\n${extra}---\nSteps.\n`;
 
 const BASE_FILES: Record<string, FakeCommitFile> = {
   'README.md': 'top\n',
@@ -47,6 +51,9 @@ const BASE_FILES: Record<string, FakeCommitFile> = {
   'agents/broken/AGENT.md': 'no front matter at all\n',
   'docs/a.md': 'a\n',
   'agents/reviewer/old.txt': 'old\n',
+  'skills/lint/SKILL.md': skillFile('lint'),
+  'skills/rotten/SKILL.md': 'no front matter\n',
+  'agents/user/AGENT.md': agentFile('user', 'skills:\n  - lint\n'),
 };
 
 /** An in-process lock that is taken without waiting, like the database's. */
@@ -250,6 +257,104 @@ describe('PublishAgentDraftHandler', () => {
     expect(repository.stored.files).toHaveLength(2);
   });
 
+  describe('skills', () => {
+    const put = (path: string, text: string) =>
+      draftWith(
+        (draft, f) => {
+          draft.put({ ...f, path, size: text.length });
+        },
+        { [path]: text },
+      );
+
+    it('publishes a new skill and the new agent that names it together', async () => {
+      const version = await draftWith(
+        (draft, f) => {
+          draft.put({ ...f, path: 'skills/fresh/SKILL.md', size: 1 });
+          draft.put({ ...f, path: 'agents/fresh/AGENT.md', size: 1 });
+        },
+        {
+          'skills/fresh/SKILL.md': skillFile('fresh'),
+          'agents/fresh/AGENT.md': agentFile('fresh', 'skills:\n  - fresh\n'),
+        },
+      );
+
+      await expect(handler.execute(request(version))).resolves.toEqual({ commit: PUBLISHED });
+
+      const sent = publisher.publish.mock.calls[0]![0] as DefinitionsPublishInput;
+      expect(sent.changes.map((change) => change.path)).toEqual([
+        'agents/fresh/AGENT.md',
+        'skills/fresh/SKILL.md',
+      ]);
+    });
+
+    it('refuses a skill with a forbidden key, naming it, and publishes nothing', async () => {
+      const version = await put('skills/lint/SKILL.md', skillFile('lint', 'tools: Bash\n'));
+
+      const error = await handler.execute(request(version)).catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(PublishProblemsError);
+      expect((error as PublishProblemsError).skillProblems.map((p) => [p.skill, p.code])).toEqual([
+        ['lint', 'forbidden_key'],
+      ]);
+      // The agent that names it is made invalid by it.
+      expect((error as PublishProblemsError).problems.map((p) => [p.agent, p.code])).toEqual([
+        ['user', 'skill_invalid'],
+      ]);
+      expect(publisher.publish).not.toHaveBeenCalled();
+      expect(repository.stored.files).toHaveLength(1);
+    });
+
+    it('refuses a Draft that deletes a skill an agent names', async () => {
+      const version = await draftWith((draft, f) => {
+        draft.delete({ ...f, path: 'skills/lint/SKILL.md' });
+      });
+
+      const error = await handler.execute(request(version)).catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(PublishProblemsError);
+      expect((error as PublishProblemsError).problems.map((p) => [p.agent, p.code, p.key])).toEqual(
+        [['user', 'skill_missing', 'lint']],
+      );
+      expect(publisher.publish).not.toHaveBeenCalled();
+    });
+
+    it('refuses a new agent that names a skill the Draft does not have', async () => {
+      const version = await put('agents/new/AGENT.md', agentFile('new', 'skills:\n  - nope\n'));
+
+      await expect(handler.execute(request(version))).rejects.toBeInstanceOf(PublishProblemsError);
+    });
+
+    it('does not let a skill already invalid at the base block a Draft that leaves it alone', async () => {
+      const version = await put('skills/lint/extra.txt', 'x');
+
+      await expect(handler.execute(request(version))).resolves.toEqual({ commit: PUBLISHED });
+    });
+
+    it('refuses with its own reason a Draft over the limits of one judgement, pushing nothing', async () => {
+      const many = { ...BASE_FILES } as Record<string, FakeCommitFile>;
+      for (let index = 0; index < 501; index += 1) {
+        many[`agents/a${index}/AGENT.md`] = agentFile(`a${index}`);
+      }
+      definitions.commit(BASE_COMMIT, many);
+      const version = await put('skills/solo/SKILL.md', skillFile('solo'));
+
+      await expect(handler.execute(request(version))).rejects.toBeInstanceOf(PublishNotJudgedError);
+
+      expect(publisher.publish).not.toHaveBeenCalled();
+      expect(repository.stored.files).toHaveLength(1);
+    });
+
+    it('refuses a Draft whose skills it could not judge', async () => {
+      const version = await put('skills/lint/SKILL.md', skillFile('lint'));
+      definitions.readFilesFails = true;
+
+      const error = await handler.execute(request(version)).catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(PublishFailedError);
+      expect(publisher.publish).not.toHaveBeenCalled();
+    });
+  });
+
   it('refuses a Draft it cannot judge: a Clone it cannot read, or a base commit that is gone', async () => {
     const version = await realisticDraft();
     definitions.unavailable = 'failed';
@@ -392,7 +497,7 @@ describe('PublishAgentDraftHandler', () => {
     expect(repository.stored.files).toHaveLength(4);
   });
 
-  it('refuses any changed path outside agents/, listing them, and publishes nothing', async () => {
+  it('refuses any changed path outside agents/ and skills/, listing them, and publishes nothing', async () => {
     const version = await draftWith(
       (draft, f) => {
         draft.put({ ...f, path: 'agents/new/AGENT.md', size: agentFile('new').length });
@@ -404,11 +509,29 @@ describe('PublishAgentDraftHandler', () => {
 
     const error = await handler.execute(request(version)).catch((caught: unknown) => caught);
 
-    expect(error).toBeInstanceOf(PublishPathOutsideAgentsError);
-    expect((error as PublishPathOutsideAgentsError).paths).toEqual([
+    expect(error).toBeInstanceOf(PublishPathOutsideDefinitionsError);
+    expect((error as PublishPathOutsideDefinitionsError).paths).toEqual([
       '.github/workflows/ci.yml',
       'docs/a.md',
     ]);
+    expect(publisher.publish).not.toHaveBeenCalled();
+  });
+
+  it('keeps the path rule to agents/ and skills/ exactly: no prefix, no other case', async () => {
+    const paths = ['skills-evil/x.md', 'Skills/x.md', 'agentsX/y.md', 'Agents/z.md'];
+    const version = await draftWith(
+      (draft, f) => {
+        for (const path of paths) draft.put({ ...f, path, size: 1 });
+      },
+      Object.fromEntries(paths.map((path) => [path, 'x'])),
+    );
+
+    const error = await handler.execute(request(version)).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(PublishPathOutsideDefinitionsError);
+    expect([...(error as PublishPathOutsideDefinitionsError).paths].sort()).toEqual(
+      [...paths].sort(),
+    );
     expect(publisher.publish).not.toHaveBeenCalled();
   });
 });

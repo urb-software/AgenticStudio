@@ -223,7 +223,7 @@ export function PublishDialog({
                       <Button size="sm" variant="danger" onClick={onDiscard}>
                         Discard the Draft
                       </Button>
-                    ) : failure.kind === 'outside-agents' ? (
+                    ) : failure.kind === 'outside-definitions' ? (
                       <Button
                         size="sm"
                         loading={reverting}
@@ -258,9 +258,9 @@ export function PublishDialog({
                 ))}
               </ul>
             ) : null}
-            {failure?.kind === 'outside-agents' ? (
+            {failure?.kind === 'outside-definitions' ? (
               <ul
-                aria-label="Paths outside agents/"
+                aria-label="Paths outside agents/ and skills/"
                 className="m-0 flex list-none flex-col gap-1 p-0 text-small"
               >
                 {failure.paths.map((path) => (

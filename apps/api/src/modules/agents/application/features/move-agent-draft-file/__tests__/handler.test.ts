@@ -40,8 +40,8 @@ describe('MoveAgentDraftFileHandler', () => {
 
     expect(view).toMatchObject({ baseCommit: BASE_COMMIT, version: 1 });
     expect(view.files).toEqual([
-      { path: 'README.md', change: 'deleted', size: 0, movedFrom: null },
-      { path: 'docs/README.md', change: 'added', size: 4, movedFrom: 'README.md' },
+      { path: 'README.md', change: 'deleted', size: 0, movedFrom: null, skill: null },
+      { path: 'docs/README.md', change: 'added', size: 4, movedFrom: 'README.md', skill: null },
     ]);
     expect(text(repository.contents.get('docs/README.md'))).toBe('top\n');
     expect(repository.contents.has('README.md')).toBe(false);
@@ -60,7 +60,9 @@ describe('MoveAgentDraftFileHandler', () => {
 
     const view = await handler.execute({ from: 'new.md', to: 'other.md' });
 
-    expect(view.files).toEqual([{ path: 'other.md', change: 'added', size: 6, movedFrom: null }]);
+    expect(view.files).toEqual([
+      { path: 'other.md', change: 'added', size: 6, movedFrom: null, skill: null },
+    ]);
     expect(text(repository.contents.get('other.md'))).toBe('drafty');
     expect(repository.contents.has('new.md')).toBe(false);
   });
@@ -90,6 +92,7 @@ describe('MoveAgentDraftFileHandler', () => {
       change: 'added',
       size: 3,
       movedFrom: 'blob.bin',
+      skill: null,
     });
     expect(repository.contents.get('assets/blob.bin')).toEqual(new Uint8Array([0, 1, 2]));
   });

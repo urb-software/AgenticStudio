@@ -27,7 +27,8 @@ export const AGENTS_PROBLEM_TYPES = {
   writeRefused: 'urn:agentic-studio:problem:write-refused',
   publishProblems: 'urn:agentic-studio:problem:publish-problems',
   publishFailed: 'urn:agentic-studio:problem:publish-failed',
-  publishPathOutsideAgents: 'urn:agentic-studio:problem:publish-path-outside-agents',
+  draftNotJudged: 'urn:agentic-studio:problem:draft-not-judged',
+  publishPathOutsideDefinitions: 'urn:agentic-studio:problem:publish-path-outside-definitions',
 } as const;
 
 /** 404 for a project id that names no project (also one that is not a UUID). */
@@ -236,7 +237,7 @@ export function writeRefused(): ProblemException {
   });
 }
 
-/** 422 while the Draft has any problem: each one is listed. */
+/** 422 while the Draft has any problem of a skill or agent it touches: each one is listed. */
 export function publishProblems(
   problems: readonly {
     agent: string;
@@ -245,6 +246,13 @@ export function publishProblems(
     key: string | null;
     message: string;
   }[],
+  skillProblems: readonly {
+    skill: string;
+    code: string;
+    path: string;
+    key: string | null;
+    message: string;
+  }[] = [],
 ): ProblemException {
   return new ProblemException(HttpStatus.UNPROCESSABLE_ENTITY, {
     type: AGENTS_PROBLEM_TYPES.publishProblems,
@@ -258,7 +266,24 @@ export function publishProblems(
         key,
         message,
       })),
+      skillProblems: skillProblems.map(({ skill, code, path, key, message }) => ({
+        skill,
+        code,
+        path,
+        key,
+        message,
+      })),
     },
+  });
+}
+
+/** 503 when the Draft is over the limits of one judgement: it is never published unchecked. */
+export function draftNotJudged(): ProblemException {
+  return new ProblemException(HttpStatus.SERVICE_UNAVAILABLE, {
+    type: AGENTS_PROBLEM_TYPES.draftNotJudged,
+    title: 'The Draft cannot be checked',
+    detail:
+      'The Draft touches more skills and agents than one check can read, so Studio cannot tell whether it is valid and will not publish it. Split the changes into smaller Drafts.',
   });
 }
 
@@ -271,13 +296,13 @@ export function publishFailed(): ProblemException {
   });
 }
 
-/** 422 when the Draft changes paths outside `agents/`; the paths are listed. */
-export function publishPathOutsideAgents(paths: readonly string[]): ProblemException {
+/** 422 when the Draft changes paths outside `agents/` and `skills/`; the paths are listed. */
+export function publishPathOutsideDefinitions(paths: readonly string[]): ProblemException {
   return new ProblemException(HttpStatus.UNPROCESSABLE_ENTITY, {
-    type: AGENTS_PROBLEM_TYPES.publishPathOutsideAgents,
-    title: 'Paths outside agents/',
+    type: AGENTS_PROBLEM_TYPES.publishPathOutsideDefinitions,
+    title: 'Paths outside agents/ and skills/',
     detail:
-      'Publishing writes only below agents/. Revert the changes outside it, or make them with your own Git.',
+      'Publishing writes only below agents/ and skills/. Revert the changes outside them, or make them with your own Git.',
     extensions: { paths },
   });
 }

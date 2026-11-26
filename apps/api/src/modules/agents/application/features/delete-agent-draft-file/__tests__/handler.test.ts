@@ -49,7 +49,7 @@ describe('DeleteAgentDraftFileHandler', () => {
     expect(view).toMatchObject({
       baseCommit: BASE_COMMIT,
       version: 1,
-      files: [{ path: 'README.md', change: 'deleted', size: 0, movedFrom: null }],
+      files: [{ path: 'README.md', change: 'deleted', size: 0, movedFrom: null, skill: null }],
     });
     expect(repository.contents.has('README.md')).toBe(false);
   });
@@ -77,7 +77,7 @@ describe('DeleteAgentDraftFileHandler', () => {
     const view = await handler.execute({ path: 'README.md' });
 
     expect(view.files).toEqual([
-      { path: 'README.md', change: 'deleted', size: 0, movedFrom: null },
+      { path: 'README.md', change: 'deleted', size: 0, movedFrom: null, skill: null },
     ]);
     expect(view.version).toBe(2);
     expect(repository.contents.has('README.md')).toBe(false);

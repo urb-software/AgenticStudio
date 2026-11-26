@@ -189,6 +189,10 @@ export type AgentFileEntryOutput = {
      * The agent folder the entry is in; null for any other part of the Repository.
      */
     agent: string | null;
+    /**
+     * The skill folder the entry is in; null for any other part of the Repository.
+     */
+    skill: string | null;
 };
 
 export type AgentFilesOutput = {
@@ -256,6 +260,10 @@ export type AgentDraftFileOutput = {
      * For display: the path this file was moved from; null for any other file.
      */
     movedFrom: string | null;
+    /**
+     * The skill folder the path is in (`skills/<name>/...`); null for any other path.
+     */
+    skill: string | null;
 };
 
 export type AgentDraftProblemOutput = {
@@ -278,6 +286,26 @@ export type AgentDraftProblemOutput = {
     message: string;
 };
 
+export type AgentDraftSkillProblemOutput = {
+    /**
+     * The skill folder the problem is in.
+     */
+    skill: string;
+    code: 'entry_missing' | 'entry_unreadable' | 'front_matter_missing' | 'front_matter_malformed' | 'front_matter_too_large' | 'key_missing' | 'key_invalid' | 'provider_unknown' | 'model_unknown' | 'name_invalid' | 'name_mismatch' | 'name_reserved' | 'unknown_key' | 'forbidden_key' | 'instructions_too_large' | 'too_many_files' | 'file_too_large' | 'folder_too_large' | 'path_outside_folder' | 'nested_git' | 'symlink_refused' | 'kind_refused' | 'duplicate_path' | 'size_invalid' | 'cli_config_path' | 'short_name' | 'shell_line';
+    /**
+     * The file or folder the problem is about, relative to the Repository root.
+     */
+    path: string;
+    /**
+     * The front matter key, when the problem is about one.
+     */
+    key: string | null;
+    /**
+     * Fixed wording per code; it may quote a key or a path, never other values or file content.
+     */
+    message: string;
+};
+
 export type AgentDraftOutput = {
     /**
      * The commit the changes were made against; null while the Draft is empty.
@@ -293,9 +321,21 @@ export type AgentDraftOutput = {
     version: number;
     files: Array<AgentDraftFileOutput>;
     /**
-     * What the shared validation finds in each agent folder the Draft touches, with the Draft laid over the base tree. Empty when the Clone cannot be read.
+     * What the shared validation finds in each agent folder the Draft touches and in each agent that names a skill the Draft touches, with the Draft laid over the base tree; a skill that is missing or invalid in the Draft gives `skill_missing` or `skill_invalid`. Empty when the Clone cannot be read.
      */
     problems: Array<AgentDraftProblemOutput>;
+    /**
+     * What the shared validation finds in each skill folder the Draft touches, with the Draft laid over the base tree. Empty when the Clone cannot be read.
+     */
+    skillProblems: Array<AgentDraftSkillProblemOutput>;
+    /**
+     * False when the Draft could not be judged: `problems` and `skillProblems` are then empty without meaning that the Draft is clean, and a publish is refused.
+     */
+    judged: boolean;
+    /**
+     * Why it was not judged: the Clone could not be read now, or the Draft touches more skills and agents than one judgement reads (it stays so until the Draft shrinks); null when it was judged.
+     */
+    notJudgedReason: 'clone_unreadable' | 'over_limits' | null;
     /**
      * Paths of the Draft whose blob differs between the base commit and the current commit.
      */
@@ -2157,7 +2197,7 @@ export type PublishAgentDraftErrors = {
      */
     409: ProblemDetails;
     /**
-     * The Draft has problems; the `problems` member lists each (urn:agentic-studio:problem:publish-problems), or changes paths outside agents/, listed in `paths` (urn:agentic-studio:problem:publish-path-outside-agents)
+     * The Draft has problems; the `problems` member lists each (urn:agentic-studio:problem:publish-problems), `skillProblems` those of skills, or changes paths outside agents/ and skills/, listed in `paths` (urn:agentic-studio:problem:publish-path-outside-definitions)
      */
     422: ProblemDetails;
     /**
@@ -2165,7 +2205,7 @@ export type PublishAgentDraftErrors = {
      */
     502: ProblemDetails;
     /**
-     * The commit identity is not configured (urn:agentic-studio:problem:publish-not-configured) or the Clone cannot be read now (urn:agentic-studio:problem:agent-files-unreadable)
+     * The commit identity is not configured (urn:agentic-studio:problem:publish-not-configured), the Clone cannot be read now (urn:agentic-studio:problem:agent-files-unreadable) or the Draft is over the limits of one check (urn:agentic-studio:problem:draft-not-judged)
      */
     503: ProblemDetails;
     /**

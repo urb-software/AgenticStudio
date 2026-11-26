@@ -9,6 +9,7 @@ import { ListAgentFilesHandler } from '../features/list-agent-files/handler.js';
 import { ReadAgentFolderHandler } from '../features/read-agent-folder/handler.js';
 import { AgentsReader } from '../agents-reader.js';
 import { ReadAgentsHandler } from '../features/read-agents/handler.js';
+import { ReadSkillsHandler } from '../features/read-skills/handler.js';
 import { SkillsReader } from '../skills-reader.js';
 import { SaveAgentDraftFileHandler } from '../features/save-agent-draft-file/handler.js';
 import { BASE_COMMIT, FakeDefinitionsFiles } from './fake-definitions-files.js';
@@ -81,5 +82,81 @@ describe('a Draft reaches no agent', () => {
     expect(before.added).toEqual({ status: 'unknown' });
     expect(before.folder).toMatchObject({ status: 'found' });
     expect(before.draftedFolder).toEqual({ status: 'unavailable' });
+  });
+
+  // A skill in the Draft is no skill: the list of skills, the skills an agent names for a Run, the
+  // hand-over of an agent folder and the file tree read only the Clone.
+  it('leaves the skills list, a skill detail, a resolution for a Run and the hand-over unchanged after a skill write', async () => {
+    const skillFile = (name: string) =>
+      `---\nname: ${name}\ndescription: Does the ${name} thing\n---\nSteps.\n`;
+    const definitions = new FakeDefinitionsFiles({
+      'agents/reviewer/AGENT.md': agentFile('reviewer', 'Review the change.').replace(
+        'provider: codex\n',
+        'provider: codex\nskills:\n  - lint\n',
+      ),
+      'agents/consumer/AGENT.md': agentFile('consumer', 'Use the drafted skill.').replace(
+        'provider: codex\n',
+        'provider: codex\nskills:\n  - drafted\n',
+      ),
+      'skills/lint/SKILL.md': skillFile('lint'),
+      'skills/lint/notes.md': 'notes\n',
+    });
+    const repository = new InMemoryAgentDraftRepository();
+    const reader = new AgentDraftReader(definitions, repository);
+    const base = new AgentDraftBaseReader(definitions);
+    const skills = new SkillsReader(definitions);
+    const agents = new AgentsReader(definitions, skills);
+    const list = new ReadAgentsHandler(agents, {
+      forProject: () => Promise.resolve({ status: 'found', kind: 'code', agent: null }),
+    });
+    const skillList = new ReadSkillsHandler(skills, agents);
+    const resolutions = new ReadAgentsAgentResolutions(list);
+    const folders = new ReadAgentFolderAgentFolders(new ReadAgentFolderHandler(definitions));
+    const files = new ListAgentFilesHandler(definitions);
+    const save = new SaveAgentDraftFileHandler(repository, base, reader);
+    const remove = new DeleteAgentDraftFileHandler(repository, base, reader);
+    const before = {
+      skills: await skillList.execute(),
+      lint: await skillList.execute({ name: 'lint' }),
+      drafted: await skillList.execute({ name: 'drafted' }),
+      agents: await list.execute(),
+      resolved: await resolutions.resolveForRun('reviewer'),
+      consumer: await resolutions.resolveForRun('consumer'),
+      folder: await folders.folderAt('reviewer', BASE_COMMIT),
+      tree: await files.execute(),
+    };
+
+    await save.execute({
+      path: 'skills/lint/SKILL.md',
+      content: bytes(`${skillFile('lint')}Changed in the Draft.\n`),
+    });
+    await save.execute({ path: 'skills/drafted/SKILL.md', content: bytes(skillFile('drafted')) });
+    await remove.execute({ path: 'skills/lint/notes.md' });
+
+    await expect(skillList.execute()).resolves.toEqual(before.skills);
+    await expect(skillList.execute({ name: 'lint' })).resolves.toEqual(before.lint);
+    await expect(skillList.execute({ name: 'drafted' })).resolves.toEqual(before.drafted);
+    await expect(list.execute()).resolves.toEqual(before.agents);
+    await expect(resolutions.resolveForRun('reviewer')).resolves.toEqual(before.resolved);
+    await expect(folders.folderAt('reviewer', BASE_COMMIT)).resolves.toEqual(before.folder);
+    await expect(files.execute()).resolves.toEqual(before.tree);
+    // Readers built after the writes hold no memo of the first read.
+    const freshSkills = new SkillsReader(definitions);
+    const freshAgents = new AgentsReader(definitions, freshSkills);
+    const freshList = new ReadAgentsHandler(freshAgents, {
+      forProject: () => Promise.resolve({ status: 'found', kind: 'code', agent: null }),
+    });
+    await expect(new ReadSkillsHandler(freshSkills, freshAgents).execute()).resolves.toEqual(
+      before.skills,
+    );
+    await expect(
+      new ReadAgentsAgentResolutions(freshList).resolveForRun('consumer'),
+    ).resolves.toEqual(before.consumer);
+    // An agent at the base that names a skill only the Draft adds stays unusable.
+    expect(before.consumer).toEqual({ status: 'not_usable' });
+    expect(before.skills.skills.map((skill) => skill.name)).toEqual(['lint']);
+    expect(before.drafted.skills).toEqual([]);
+    expect(before.resolved).toMatchObject({ status: 'resolved' });
+    expect(before.folder).toMatchObject({ status: 'found' });
   });
 });

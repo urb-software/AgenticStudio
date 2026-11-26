@@ -13,14 +13,15 @@ import {
 import {
   NothingToPublishError,
   PublishFailedError,
+  PublishNotJudgedError,
   PublishNotConfiguredError,
-  PublishPathOutsideAgentsError,
+  PublishPathOutsideDefinitionsError,
   PublishProblemsError,
   PublishRunningError,
   RepositoryMovedError,
   WriteRefusedError,
 } from '../../../domain/errors/agent-publish-errors.js';
-import { AGENTS_DIRECTORY } from '@agentic-studio/agent-definitions';
+import { AGENTS_DIRECTORY, SKILLS_DIRECTORY } from '@agentic-studio/agent-definitions';
 import type { AgentDraft } from '../../../domain/entities/agent-draft.js';
 import {
   AGENT_DRAFT_REPOSITORY,
@@ -51,8 +52,8 @@ export interface PublishAgentDraftResult {
 
 /**
  * Publishes the Draft as one commit on the Integration branch, one publish at a time. The page's
- * view must still be the stored Draft, the Repository must hold its base, and no problem may stand.
- * A refused publish leaves the Draft as it was; `agents` never touches Git.
+ * view must still be the stored Draft, the Repository must hold its base, and no problem of a
+ * skill or agent it touches may stand. A refusal leaves the Draft as it was; `agents` never touches Git.
  */
 @Injectable()
 export class PublishAgentDraftHandler {
@@ -91,17 +92,25 @@ export class PublishAgentDraftHandler {
     if (baseCommit === null || baseCommit !== input.baseCommit) {
       throw new DraftChangedConcurrentlyError();
     }
-    // Studio writes nothing but agent definitions to the Git host (no CI workflow, no dot-file).
+    // Studio writes nothing but agents and skills to the Git host (no CI workflow, no dot-file).
     const outside = draft.files
       .map((file) => file.path)
-      .filter((path) => !path.startsWith(`${AGENTS_DIRECTORY}/`));
-    if (outside.length > 0) throw new PublishPathOutsideAgentsError(outside);
+      .filter(
+        (path) =>
+          !path.startsWith(`${AGENTS_DIRECTORY}/`) && !path.startsWith(`${SKILLS_DIRECTORY}/`),
+      );
+    if (outside.length > 0) throw new PublishPathOutsideDefinitionsError(outside);
     const base = await this.base.read(baseCommit);
     if (base.currentCommit !== baseCommit) throw new RepositoryMovedError();
-    const problems = await this.reader.judge(draft);
+    const judged = await this.reader.judge(draft);
     // Not judged is not "no problem": a Clone that cannot be read blocks the publish.
-    if (problems === null) throw new PublishFailedError('repository_not_ready');
-    if (problems.length > 0) throw new PublishProblemsError(problems);
+    if (!judged.judged) {
+      if (judged.reason === 'over_limits') throw new PublishNotJudgedError();
+      throw new PublishFailedError('repository_not_ready');
+    }
+    if (judged.agents.length > 0 || judged.skills.length > 0) {
+      throw new PublishProblemsError(judged.agents, judged.skills);
+    }
 
     const changes = await this.changesOf(draft, baseCommit, input.version);
     const result = await this.publisher.publish({

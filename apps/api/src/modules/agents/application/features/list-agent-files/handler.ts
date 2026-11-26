@@ -1,4 +1,9 @@
-import { AGENTS_DIRECTORY, findAgentFolders } from '@agentic-studio/agent-definitions';
+import {
+  AGENTS_DIRECTORY,
+  findAgentFolders,
+  findSkillFolders,
+  SKILLS_DIRECTORY,
+} from '@agentic-studio/agent-definitions';
 import { Inject, Injectable } from '@nestjs/common';
 import {
   DEFINITIONS_FILES,
@@ -35,6 +40,8 @@ export interface AgentFileEntry {
   size: number;
   /** The agent folder the entry belongs to, or `null` for any other part of the Repository. */
   agent: string | null;
+  /** The skill folder the entry belongs to, or `null` for any other part of the Repository. */
+  skill: string | null;
 }
 
 export interface ListAgentFilesResult {
@@ -48,8 +55,8 @@ export interface ListAgentFilesResult {
 
 /**
  * The whole definitions Repository as a tree, at its last fetched commit, from the Clone's object
- * store. It names which entries belong to an agent folder and judges nothing; the validation of
- * an agent is the agent list's.
+ * store. It names which entries belong to an agent or a skill folder and judges nothing; the
+ * validation of an agent is the agent list, that of a skill the skill list.
  */
 @Injectable()
 export class ListAgentFilesHandler {
@@ -73,17 +80,34 @@ export class ListAgentFilesHandler {
     const tree = await this.definitions.listTree(snapshot.commit, { whole: true });
     if (tree.status !== 'listed') return unread(UNAVAILABLE_NOTES[tree.status]);
 
-    const agents = new Set(findAgentFolders(tree.entries).map((folder) => folder.name));
-    const prefix = `${AGENTS_DIRECTORY}/`;
-    const agentOf = (path: string): string | null => {
-      if (!path.startsWith(prefix)) return null;
-      const name = path.slice(prefix.length).split('/')[0]!;
-      return agents.has(name) ? name : null;
-    };
+    const folderOf =
+      (directory: string, names: Set<string>) =>
+      (path: string): string | null => {
+        const prefix = `${directory}/`;
+        if (!path.startsWith(prefix)) return null;
+        const name = path.slice(prefix.length).split('/')[0]!;
+        return names.has(name) ? name : null;
+      };
+    const agentOf = folderOf(
+      AGENTS_DIRECTORY,
+      new Set(findAgentFolders(tree.entries).map((folder) => folder.name)),
+    );
+    const skillOf = folderOf(
+      SKILLS_DIRECTORY,
+      new Set(findSkillFolders(tree.entries).map((folder) => folder.name)),
+    );
     const entries = tree.entries.flatMap((entry): AgentFileEntry[] =>
       entry.kind === 'other'
         ? []
-        : [{ path: entry.path, kind: entry.kind, size: entry.size, agent: agentOf(entry.path) }],
+        : [
+            {
+              path: entry.path,
+              kind: entry.kind,
+              size: entry.size,
+              agent: agentOf(entry.path),
+              skill: skillOf(entry.path),
+            },
+          ],
     );
     return {
       commit: snapshot.commit,

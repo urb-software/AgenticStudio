@@ -7,8 +7,9 @@ import { DraftChangedConcurrentlyError } from '../../../../domain/errors/agent-d
 import {
   NothingToPublishError,
   PublishFailedError,
+  PublishNotJudgedError,
   PublishNotConfiguredError,
-  PublishPathOutsideAgentsError,
+  PublishPathOutsideDefinitionsError,
   PublishProblemsError,
   PublishRunningError,
   RepositoryMovedError,
@@ -32,10 +33,11 @@ describe('toPublishHttpError', () => {
     [new RepositoryMovedError(), 409, AGENTS_PROBLEM_TYPES.repositoryMoved],
     [new WriteRefusedError(), 409, AGENTS_PROBLEM_TYPES.writeRefused],
     [
-      new PublishPathOutsideAgentsError(['.github/ci.yml']),
+      new PublishPathOutsideDefinitionsError(['.github/ci.yml']),
       422,
-      AGENTS_PROBLEM_TYPES.publishPathOutsideAgents,
+      AGENTS_PROBLEM_TYPES.publishPathOutsideDefinitions,
     ],
+    [new PublishNotJudgedError(), 503, AGENTS_PROBLEM_TYPES.draftNotJudged],
     [new PublishFailedError('failed'), 502, AGENTS_PROBLEM_TYPES.publishFailed],
     [
       new PublishFailedError('repository_not_ready'),
@@ -59,9 +61,9 @@ describe('toPublishHttpError', () => {
     expect(detail).toMatch(/write access/i);
   });
 
-  it('lists the paths outside agents/ in the answer', () => {
+  it('lists the paths outside agents/ and skills/ in the answer', () => {
     const problem = problemOf(
-      toPublishHttpError(new PublishPathOutsideAgentsError(['.github/ci.yml', 'README.md'])),
+      toPublishHttpError(new PublishPathOutsideDefinitionsError(['.github/ci.yml', 'README.md'])),
     );
 
     expect(problem.extensions).toEqual({ paths: ['.github/ci.yml', 'README.md'] });
@@ -81,7 +83,24 @@ describe('toPublishHttpError', () => {
     const problem = problemOf(toPublishHttpError(new PublishProblemsError(problems)));
 
     expect(problem).toMatchObject({ status: 422, type: AGENTS_PROBLEM_TYPES.publishProblems });
-    expect(problem.extensions).toEqual({ problems });
+    expect(problem.extensions).toEqual({ problems, skillProblems: [] });
+  });
+
+  it('lists the problems of the skills beside those of the agents', () => {
+    const skillProblems = [
+      {
+        skill: 'lint',
+        code: 'forbidden_key' as const,
+        path: 'skills/lint/SKILL.md',
+        key: 'tools',
+        message: 'The key "tools" is not allowed.',
+      },
+    ];
+
+    const problem = problemOf(toPublishHttpError(new PublishProblemsError([], skillProblems)));
+
+    expect(problem).toMatchObject({ status: 422, type: AGENTS_PROBLEM_TYPES.publishProblems });
+    expect(problem.extensions).toEqual({ problems: [], skillProblems });
   });
 
   it('answers a bad message as a field error on the message', () => {

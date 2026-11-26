@@ -64,6 +64,7 @@ const entry = (path: string, agent: string | null = null): AgentFileEntryOutput 
   size: 120,
   openable: true,
   agent,
+  skill: null,
 });
 
 const ENTRIES = [
@@ -90,9 +91,9 @@ const MODIFIED: Partial<AgentDraftOutput> = {
   currentCommit: SHA,
   version: 3,
   files: [
-    { path: 'agents/reviewer/run.sh', change: 'modified', size: 7, movedFrom: null },
-    { path: 'agents/reviewer/notes.md', change: 'added', size: 3, movedFrom: null },
-    { path: 'agents/reviewer/old.txt', change: 'deleted', size: 0, movedFrom: null },
+    { path: 'agents/reviewer/run.sh', change: 'modified', size: 7, movedFrom: null, skill: null },
+    { path: 'agents/reviewer/notes.md', change: 'added', size: 3, movedFrom: null, skill: null },
+    { path: 'agents/reviewer/old.txt', change: 'deleted', size: 0, movedFrom: null, skill: null },
   ],
 };
 
@@ -369,20 +370,50 @@ describe('Publish: each refusal has its own message', () => {
     await expect(dialog).toHaveNoAxeViolations();
   });
 
-  it('publish-path-outside-agents lists the paths and reverts them on request', async () => {
+  it('draft-not-judged says the Draft is too large to be checked', async () => {
+    const { dialog } = await refused(503, fail(503, 'draft-not-judged', {}));
+    const message = await within(dialog).findByText(/Split the changes into smaller Drafts/);
+    expect(message.textContent).toContain('cannot tell whether it is valid');
+    await expect(dialog).toHaveNoAxeViolations();
+  });
+
+  it('publish-problems lists the problems of skills beside those of agents', async () => {
+    const { dialog } = await refused(
+      422,
+      fail(422, 'publish-problems', {
+        problems: [],
+        skillProblems: [
+          {
+            skill: 'lint',
+            code: 'forbidden_key',
+            path: 'skills/lint/SKILL.md',
+            key: 'tools',
+            message: 'The key "tools" is not allowed.',
+          },
+        ],
+      }),
+    );
+    const list = await within(dialog).findByRole('list', { name: 'Problems of the Draft' });
+    expect(within(list).getByText(/is not allowed/)).toBeTruthy();
+    expect(within(list).getByText('skills/lint/SKILL.md')).toBeTruthy();
+  });
+
+  it('publish-path-outside-definitions lists the paths and reverts them on request', async () => {
     const { api, user, dialog } = await refused(
       422,
-      fail(422, 'publish-path-outside-agents', { paths: ['README.md', 'config.json'] }),
+      fail(422, 'publish-path-outside-definitions', { paths: ['README.md', 'config.json'] }),
       {
         ...MODIFIED,
         files: [
           ...(MODIFIED.files ?? []),
-          { path: 'README.md', change: 'modified', size: 3, movedFrom: null },
-          { path: 'config.json', change: 'added', size: 3, movedFrom: null },
+          { path: 'README.md', change: 'modified', size: 3, movedFrom: null, skill: null },
+          { path: 'config.json', change: 'added', size: 3, movedFrom: null, skill: null },
         ],
       },
     );
-    const list = await within(dialog).findByRole('list', { name: 'Paths outside agents/' });
+    const list = await within(dialog).findByRole('list', {
+      name: 'Paths outside agents/ and skills/',
+    });
     expect(within(list).getByText('README.md')).toBeTruthy();
     expect(within(list).getByText('config.json')).toBeTruthy();
     await expect(dialog).toHaveNoAxeViolations();
@@ -459,12 +490,12 @@ describe('Publish: each refusal has its own message', () => {
     expect(await within(dialog).findByText('Too long for the host.')).toBeTruthy();
   });
 
-  it('says so when reverting the paths outside agents/ is refused, and stays open', async () => {
+  it('says so when reverting the paths outside agents/ and skills/ is refused, and stays open', async () => {
     const { api, user, dialog } = await refused(
       422,
-      fail(422, 'publish-path-outside-agents', { paths: ['README.md'] }),
+      fail(422, 'publish-path-outside-definitions', { paths: ['README.md'] }),
     );
-    await within(dialog).findByRole('list', { name: 'Paths outside agents/' });
+    await within(dialog).findByRole('list', { name: 'Paths outside agents/ and skills/' });
     api.failNextDraftWrite(500, problem(500, 'Broken'));
     await user.click(within(dialog).getByRole('button', { name: 'Revert these files' }));
     expect(await within(dialog).findByText(/Broken \(test\)/)).toBeTruthy();
@@ -519,7 +550,15 @@ describe('Publish: a Draft kept through the publish', () => {
       draft: {
         baseCommit: SHA,
         version: 9,
-        files: [{ path: 'agents/reviewer/late.md', change: 'added', size: 3, movedFrom: null }],
+        files: [
+          {
+            path: 'agents/reviewer/late.md',
+            change: 'added',
+            size: 3,
+            movedFrom: null,
+            skill: null,
+          },
+        ],
       },
     });
     const user = userEvent.setup();

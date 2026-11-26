@@ -1,4 +1,4 @@
-import { PROBLEM_CODES } from '@agentic-studio/agent-definitions';
+import { PROBLEM_CODES, SKILL_PROBLEM_CODES } from '@agentic-studio/agent-definitions';
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 import type { AgentDraftView } from '../../../application/agent-draft-reader.js';
@@ -13,6 +13,10 @@ const draftFileSchema = z
       .string()
       .nullable()
       .describe('For display: the path this file was moved from; null for any other file.'),
+    skill: z
+      .string()
+      .nullable()
+      .describe('The skill folder the path is in (`skills/<name>/...`); null for any other path.'),
   })
   .meta({ id: 'AgentDraftFile' });
 
@@ -37,6 +41,22 @@ const draftProblemSchema = z
   })
   .meta({ id: 'AgentDraftProblem' });
 
+const draftSkillProblemSchema = z
+  .object({
+    skill: z.string().describe('The skill folder the problem is in.'),
+    code: z.enum(SKILL_PROBLEM_CODES),
+    path: z
+      .string()
+      .describe('The file or folder the problem is about, relative to the Repository root.'),
+    key: z.string().nullable().describe('The front matter key, when the problem is about one.'),
+    message: z
+      .string()
+      .describe(
+        'Fixed wording per code; it may quote a key or a path, never other values or file content.',
+      ),
+  })
+  .meta({ id: 'AgentDraftSkillProblem' });
+
 /** The Draft and what it would make of the agents; every write answers it too. */
 export const agentDraftResponseSchema = z
   .object({
@@ -59,8 +79,30 @@ export const agentDraftResponseSchema = z
     problems: z
       .array(draftProblemSchema)
       .describe(
-        'What the shared validation finds in each agent folder the Draft touches, with the ' +
+        'What the shared validation finds in each agent folder the Draft touches and in each ' +
+          'agent that names a skill the Draft touches, with the Draft laid over the base tree; ' +
+          'a skill that is missing or invalid in the Draft gives `skill_missing` or ' +
+          '`skill_invalid`. Empty when the Clone cannot be read.',
+      ),
+    skillProblems: z
+      .array(draftSkillProblemSchema)
+      .describe(
+        'What the shared validation finds in each skill folder the Draft touches, with the ' +
           'Draft laid over the base tree. Empty when the Clone cannot be read.',
+      ),
+    judged: z
+      .boolean()
+      .describe(
+        'False when the Draft could not be judged: `problems` and `skillProblems` are then ' +
+          'empty without meaning that the Draft is clean, and a publish is refused.',
+      ),
+    notJudgedReason: z
+      .enum(['clone_unreadable', 'over_limits'])
+      .nullable()
+      .describe(
+        'Why it was not judged: the Clone could not be read now, or the Draft touches more ' +
+          'skills and agents than one judgement reads (it stays so until the Draft shrinks); ' +
+          'null when it was judged.',
       ),
     movedUpstream: z
       .array(z.string())
@@ -77,11 +119,12 @@ export function toAgentDraftResponse(view: AgentDraftView) {
     baseCommit: view.baseCommit,
     currentCommit: view.currentCommit,
     version: view.version,
-    files: view.files.map(({ path, change, size, movedFrom }) => ({
+    files: view.files.map(({ path, change, size, movedFrom, skill }) => ({
       path,
       change,
       size,
       movedFrom,
+      skill,
     })),
     problems: view.problems.map(({ agent, code, path, key, message }) => ({
       agent,
@@ -90,6 +133,15 @@ export function toAgentDraftResponse(view: AgentDraftView) {
       key,
       message,
     })),
+    skillProblems: view.skillProblems.map(({ skill, code, path, key, message }) => ({
+      skill,
+      code,
+      path,
+      key,
+      message,
+    })),
+    judged: view.judged,
+    notJudgedReason: view.notJudgedReason,
     movedUpstream: view.movedUpstream,
   };
 }

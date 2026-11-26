@@ -37,6 +37,9 @@ describe('DiscardAgentDraftHandler', () => {
       version: 2,
       files: [],
       problems: [],
+      skillProblems: [],
+      judged: true,
+      notJudgedReason: null,
       movedUpstream: [],
     });
     expect(repository.contents.size).toBe(0);
