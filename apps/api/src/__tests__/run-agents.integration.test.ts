@@ -56,6 +56,7 @@ const DEFAULT_CLAUDE = {
   commit: null,
   provider: 'claude_code',
   model: 'default',
+  skills: [],
   instructions: '',
 };
 
@@ -418,8 +419,12 @@ describe('choosing an agent for a Run (PostgreSQL + Redis via Testcontainers)', 
           commit: definitions.commit,
           provider: 'claude_code',
           model: 'opus',
+          skills: [],
           instructions: REVIEWER_INSTRUCTIONS,
         };
+        // The claim hands the agent out without the skill names: they travel as `skills`.
+        const { skills: _skills, ...claimed } = recorded;
+        void _skills;
         expect(definitions.commit).toMatch(SHA);
         expect((await getRun(created.body.id)).body).toMatchObject({
           provider: 'claude_code',
@@ -436,7 +441,8 @@ describe('choosing an agent for a Run (PostgreSQL + Redis via Testcontainers)', 
           runId: created.body.id,
           kind: 'start',
           baseRules: { version: BASE_RULES.version, text: BASE_RULES.text },
-          agent: recorded,
+          agent: claimed,
+          skills: [],
         });
 
         // The definition changes and then goes away: the Run keeps the copy it recorded.
@@ -489,7 +495,7 @@ describe('choosing an agent for a Run (PostgreSQL + Redis via Testcontainers)', 
           kind: 'resume',
           resumeReason: 'answer',
           baseRules: { version: BASE_RULES.version, text: BASE_RULES.text },
-          agent: recorded,
+          agent: claimed,
         });
       },
     );
