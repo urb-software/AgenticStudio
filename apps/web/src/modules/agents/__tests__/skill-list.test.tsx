@@ -2,7 +2,7 @@ import { focusManager, QueryClient, QueryClientProvider } from '@tanstack/react-
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { SkillList } from '..';
+import { SkillList } from '../features/skill-list/skill-list';
 import type { SkillSummaryOutput } from '../../../platform/api';
 import { fakeSkillsApi, SKILLS_COMMIT, skillDetail, skillList } from './fake-skills-api';
 
@@ -82,13 +82,14 @@ describe('Skills page: the list', () => {
       problems: [{ code: 'entry_missing', path: 'SKILL.md', key: null, message: 'No entry.' }],
     };
     fakeSkillsApi(skillList({ skills: [REVIEW, noEntry] }));
-    renderSkills();
+    const { container } = renderSkills();
 
     await screen.findByRole('region', { name: 'Skills' });
     const links = within(card()).getAllByRole('link', { name: /^Open in editor/ });
     expect(links.map((link) => link.getAttribute('href'))).toEqual([
       '/agents/editor?path=skills%2Freview%2FSKILL.md',
     ]);
+    await expect(container).toHaveNoAxeViolations();
   });
 
   it('shows a name that needs escaping as text, with no detail or editor link', async () => {
@@ -106,14 +107,16 @@ describe('Skills page: the list', () => {
     expect(container.querySelector('b')).toBeNull();
     expect(within(card()).queryByRole('button')).toBeNull();
     expect(within(card()).queryByRole('link')).toBeNull();
+    await expect(container).toHaveNoAxeViolations();
   });
 
   it('says more skill folders exist when the list is cut', async () => {
     fakeSkillsApi(skillList({ skills: [REVIEW], truncated: true }));
-    renderSkills();
+    const { container } = renderSkills();
 
     await screen.findByRole('region', { name: 'Skills' });
     expect(within(card()).getByText('More skill folders exist than are listed here.')).toBeTruthy();
+    await expect(container).toHaveNoAxeViolations();
   });
 
   it('says what to do with no definitions Repository connected', async () => {
@@ -128,9 +131,10 @@ describe('Skills page: the list', () => {
 
   it('says what to do before anything was fetched', async () => {
     fakeSkillsApi(skillList({ commit: null }));
-    renderSkills();
+    const { container } = renderSkills();
 
     expect(await screen.findByText(/Nothing has been fetched/)).toBeTruthy();
+    await expect(container).toHaveNoAxeViolations();
   });
 
   it('says what to do when the Repository holds no skill', async () => {
@@ -149,10 +153,11 @@ describe('Skills page: the list', () => {
         skills: [REVIEW],
       }),
     );
-    renderSkills();
+    const { container } = renderSkills();
 
     await screen.findByRole('region', { name: 'Skills' });
     expect(within(card()).getByText('A fetch of the Repository is running.')).toBeTruthy();
+    await expect(container).toHaveNoAxeViolations();
   });
 
   it('says the skills cannot be loaded, and Retry reads them again', async () => {
@@ -174,7 +179,7 @@ describe('Skills page: the list', () => {
     expect(await screen.findByRole('region', { name: 'Skills' })).toBeTruthy();
   });
 
-  it('is reachable by keyboard: the Show button opens the detail on Enter', async () => {
+  it('is reachable by keyboard: Tab reaches the link, then Show, and Enter opens the detail', async () => {
     fakeSkillsApi(skillList({ skills: [REVIEW] }), {
       review: skillDetail(REVIEW, { instructions: 'Do it.' }),
     });
@@ -182,9 +187,10 @@ describe('Skills page: the list', () => {
 
     await screen.findByRole('region', { name: 'Skills' });
     await userEvent.tab();
+    expect(document.activeElement).toBe(screen.getByRole('link', { name: /^Open in editor/ }));
     await userEvent.tab();
     const show = screen.getByRole('button', { name: 'Show review' });
-    show.focus();
+    expect(document.activeElement).toBe(show);
     await userEvent.keyboard('{Enter}');
 
     expect(await screen.findByText('Do it.')).toBeTruthy();
@@ -233,12 +239,13 @@ describe('Skills page: the detail', () => {
 
   it('says a skill is no longer in the Repository for a 404', async () => {
     fakeSkillsApi(skillList({ skills: [REVIEW] }), {});
-    renderSkills();
+    const { container } = renderSkills();
 
     await userEvent.click(await screen.findByRole('button', { name: 'Show review' }));
 
     expect(await screen.findByText('This skill is no longer in the Repository')).toBeTruthy();
     expect(screen.getByText('GET /api/skills/review')).toBeTruthy();
+    await expect(container).toHaveNoAxeViolations();
   });
 
   it('does not read the detail again on window focus, and keeps it when closed and reopened', async () => {
@@ -260,5 +267,26 @@ describe('Skills page: the detail', () => {
 
     expect(await screen.findByText('Do it.')).toBeTruthy();
     expect(api.count('/api/skills/review')).toBe(1);
+  });
+
+  it('reads the detail again under a new commit, which the list brings on focus', async () => {
+    const api = fakeSkillsApi(skillList({ skills: [REVIEW] }), {
+      review: skillDetail(REVIEW, { instructions: 'First text.' }),
+    });
+    renderSkills();
+    await userEvent.click(await screen.findByRole('button', { name: 'Show review' }));
+    await screen.findByText('First text.');
+    const next = 'fedcba9876543210fedcba9876543210fedcba98';
+    api.serve(skillList({ commit: next, skills: [REVIEW] }), {
+      review: { ...skillDetail(REVIEW, { instructions: 'Second text.' }), commit: next },
+    });
+
+    act(() => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+    });
+
+    expect(await screen.findByText('Second text.')).toBeTruthy();
+    expect(api.count('/api/skills/review')).toBe(2);
   });
 });

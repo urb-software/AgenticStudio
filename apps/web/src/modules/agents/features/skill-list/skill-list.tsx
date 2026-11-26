@@ -1,5 +1,6 @@
 'use client';
 
+import { AGENT_NAME_PATTERN } from '@agentic-studio/agent-definitions';
 import { useId, useState } from 'react';
 import { RefreshCwIcon, SparklesIcon, TriangleAlertIcon } from 'lucide-react';
 import Link from 'next/link';
@@ -8,31 +9,14 @@ import { EmptyState } from '@/shared/components/empty-state';
 import { Button } from '@/shared/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card';
 import { Skeleton } from '@/shared/ui/skeleton';
-import { ApiError, type SkillListOutput, type SkillSummaryOutput } from '../../../../platform/api';
+import { type SkillListOutput, type SkillSummaryOutput } from '../../../../platform/api';
 import { useSkills } from '../../api/skills-queries';
+import { editorHref, readRequestOf, shortSha } from '../../components/definitions-view';
 import { Problems } from '../../components/problems';
 import { SkillDetail } from '../skill-detail/skill-detail';
 
 const READ_REQUEST = 'GET /api/skills';
 const TITLE_ID = 'skills-title';
-
-/** The rule for a skill name; the API answers 404 for any other name, so none is opened. */
-const SKILL_NAME = /^[a-z0-9][a-z0-9-]{0,63}$/;
-
-function readRequestOf(error: unknown): string {
-  if (!(error instanceof ApiError) || error.status === 0) return READ_REQUEST;
-  const status = [error.status, error.problem?.title].filter(Boolean).join(' ');
-  return `${READ_REQUEST} · ${status}`;
-}
-
-/** The editor on the skill's entry file. */
-function editorHref(name: string): string {
-  return `/agents/editor?${new URLSearchParams({ path: `skills/${name}/SKILL.md` })}`;
-}
-
-function shortSha(sha: string): string {
-  return sha.slice(0, 7);
-}
 
 /** Why no (or only the last known) skills can be read, or null when all is well. */
 function repositoryReason(list: SkillListOutput): string | null {
@@ -60,7 +44,7 @@ function SkillRow({
   onToggle: () => void;
 }) {
   const detailId = useId();
-  const openable = SKILL_NAME.test(skill.name);
+  const openable = AGENT_NAME_PATTERN.test(skill.name);
   const hasEntry = openable && !skill.problems.some((problem) => problem.code === 'entry_missing');
   return (
     <li className="flex flex-col gap-2 border-b border-border px-4 py-3 last:border-b-0">
@@ -77,7 +61,7 @@ function SkillRow({
         )}
         {hasEntry ? (
           <Button asChild className="ml-auto">
-            <Link href={editorHref(skill.name)}>
+            <Link href={editorHref(`skills/${skill.name}/SKILL.md`)}>
               Open in editor<span className="sr-only"> ({skill.name})</span>
             </Link>
           </Button>
@@ -150,7 +134,9 @@ export function SkillList() {
           tone="error"
           icon={TriangleAlertIcon}
           title="Couldn't load the skills"
-          description={<span className="font-mono text-small">{readRequestOf(error)}</span>}
+          description={
+            <span className="font-mono text-small">{readRequestOf(READ_REQUEST, error)}</span>
+          }
           action={
             <Button icon={RefreshCwIcon} loading={isRefetching} onClick={() => void refetch()}>
               Retry

@@ -38,9 +38,10 @@ function json(status: number, body: unknown): Response {
 
 /** The skills API behind `fetch`: the list, and each detail by name (404 for any other). */
 export function fakeSkillsApi(
-  list: SkillListOutput,
+  initial: SkillListOutput,
   details: Record<string, SkillDetailOutput> = {},
 ) {
+  let list = initial;
   const calls: string[] = [];
   const listFailures: { status: number; body: unknown }[] = [];
   const fetch = vi.fn((request: Request): Promise<Response> => {
@@ -67,6 +68,11 @@ export function fakeSkillsApi(
   vi.stubGlobal('fetch', fetch);
   return {
     calls,
+    /** What the next reads of the list and of the skills answer. */
+    serve(next: SkillListOutput, nextDetails: Record<string, SkillDetailOutput> = details) {
+      list = next;
+      Object.assign(details, nextDetails);
+    },
     failNextList(status: number, body: unknown) {
       listFailures.push({ status, body });
     },
