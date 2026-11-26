@@ -19,6 +19,8 @@ import { PublishAgentDraftEndpoint } from './entry-points/http/operator/publish-
 import { ReadAgentDraftFileHandler } from './application/features/read-agent-draft-file/handler.js';
 import { SaveAgentDraftFileHandler } from './application/features/save-agent-draft-file/handler.js';
 import { ReadAgentFileHandler } from './application/features/read-agent-file/handler.js';
+import { AgentsReader } from './application/agents-reader.js';
+import { SkillsReader } from './application/skills-reader.js';
 import { ReadSkillsHandler } from './application/features/read-skills/handler.js';
 import { ReadAgentsHandler } from './application/features/read-agents/handler.js';
 import { ReadAgentFolderHandler } from './application/features/read-agent-folder/handler.js';
@@ -76,6 +78,8 @@ export class AgentsModule {
       ],
       providers: [
         GetDefinitionsRepositoryHandler,
+        AgentsReader,
+        SkillsReader,
         ReadAgentsHandler,
         ReadSkillsHandler,
         ReadAgentFolderHandler,

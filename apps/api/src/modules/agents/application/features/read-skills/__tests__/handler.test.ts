@@ -7,6 +7,8 @@ import type {
   DefinitionsTreeEntry,
   DefinitionsTreeResult,
 } from '../../../../../projects/contracts/index.js';
+import { AgentsReader } from '../../../agents-reader.js';
+import { SkillsReader } from '../../../skills-reader.js';
 import {
   MAX_LISTED_SKILLS,
   MAX_READ_BYTES,
@@ -60,7 +62,8 @@ function scripted(script: Scripted) {
     readBlobs: vi.fn(() => Promise.reject(new Error('not used'))),
     blobIds: vi.fn(() => Promise.reject(new Error('not used'))),
   } satisfies DefinitionsFiles;
-  return { fake, handler: new ReadSkillsHandler(fake) };
+  const skills = new SkillsReader(fake);
+  return { fake, handler: new ReadSkillsHandler(skills, new AgentsReader(fake, skills)) };
 }
 
 const file = (path: string, size = 10): DefinitionsTreeEntry => ({
@@ -84,6 +87,8 @@ describe('ReadSkillsHandler', () => {
       repository: null,
       truncated: false,
       skills: [],
+      usedBy: [],
+      usedByTruncated: false,
     });
     expect(fake.listTree).not.toHaveBeenCalled();
   });
@@ -460,8 +465,10 @@ describe('ReadSkillsHandler', () => {
 
       expect(again).toEqual(first);
       expect(detail.skills.map((skill) => skill.name)).toEqual(['a']);
-      expect(fake.listTree).toHaveBeenCalledTimes(1);
-      expect(fake.readFiles).toHaveBeenCalledTimes(1);
+      // The detail also reads the agents of the commit, once; the skills only once.
+      const calls = fake.listTree.mock.calls as unknown as [string, { directory?: string }?][];
+      const skillTrees = calls.filter(([, options]) => options?.directory);
+      expect(skillTrees).toHaveLength(1);
     });
 
     it('reads a new commit afresh', async () => {
@@ -502,5 +509,31 @@ describe('ReadSkillsHandler', () => {
 
       expect(fake.listTree).toHaveBeenCalledTimes(2);
     });
+  });
+});
+
+describe('ReadSkillsHandler usedBy', () => {
+  const agent = (name: string, extra: string) =>
+    `---\nname: ${name}\ndescription: d\nprovider: codex\n${extra}---\nx\n`;
+
+  it('names the agents of the commit that list the skill, only for one skill by name', async () => {
+    const { handler } = scripted({
+      tree: listed(
+        file('skills/review/SKILL.md'),
+        file('agents/zed/AGENT.md'),
+        file('agents/alpha/AGENT.md'),
+        file('agents/plain/AGENT.md'),
+      ),
+      files: {
+        'skills/review/SKILL.md': VALID('review'),
+        'agents/zed/AGENT.md': agent('zed', 'skills: [review]\n'),
+        'agents/alpha/AGENT.md': agent('alpha', 'skills: [review]\ncolour: red\n'),
+        'agents/plain/AGENT.md': agent('plain', ''),
+      },
+    });
+
+    expect((await handler.execute({ name: 'review' })).usedBy).toEqual(['alpha', 'zed']);
+    expect((await handler.execute()).usedBy).toEqual([]);
+    expect((await handler.execute({ name: 'review' })).usedByTruncated).toBe(false);
   });
 });

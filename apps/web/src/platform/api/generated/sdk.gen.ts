@@ -229,7 +229,7 @@ export const listRunAgents = <ThrowOnError extends boolean = false>(options: Opt
 export const listSkills = <ThrowOnError extends boolean = false>(options?: Options<ListSkillsData, ThrowOnError>): RequestResult<ListSkillsResponses, ListSkillsErrors, ThrowOnError> => (options?.client ?? client).get<ListSkillsResponses, ListSkillsErrors, ThrowOnError>({ url: '/api/skills', ...options });
 
 /**
- * One skill with its instructions (plain text) and the files of its folder with their sizes, read at the last fetched commit of the definitions Repository. A name that is not a valid skill name is unknown. The Draft is never read.
+ * One skill with its instructions (plain text) and the files of its folder with their sizes, read at the last fetched commit of the definitions Repository. A name that is not a valid skill name is unknown. `usedBy` names the agents at that commit that list the skill. The Draft is never read.
  */
 export const getSkill = <ThrowOnError extends boolean = false>(options: Options<GetSkillData, ThrowOnError>): RequestResult<GetSkillResponses, GetSkillErrors, ThrowOnError> => (options.client ?? client).get<GetSkillResponses, GetSkillErrors, ThrowOnError>({ url: '/api/skills/{name}', ...options });
 

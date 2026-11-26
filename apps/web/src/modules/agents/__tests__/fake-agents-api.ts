@@ -40,6 +40,7 @@ export const BUILT_INS: AgentSummaryOutput[] = ['default-claude-code', 'default-
     model: 'default',
     source: 'built_in',
     usable: true,
+    skills: [],
     problems: [],
   }),
 );

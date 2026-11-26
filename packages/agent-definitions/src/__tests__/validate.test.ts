@@ -5,6 +5,7 @@ import {
   MAX_FILES,
   MAX_FOLDER_BYTES,
   MAX_INSTRUCTIONS_BYTES,
+  AGENT_SKILL_CHECK_CODES,
   PROBLEM_CODES,
   validateAgentFolder,
 } from '../index.js';
@@ -27,7 +28,11 @@ describe('failing fixtures', () => {
         fixture.expected.map((item) => item.split('@')[0]),
       ),
     );
-    expect([...PROBLEM_CODES].filter((code) => !covered.has(code))).toEqual([]);
+    // The two skill cross-check reasons are judged by checkAgentSkills, not by the folder.
+    const folderCodes = PROBLEM_CODES.filter(
+      (code) => !AGENT_SKILL_CHECK_CODES.some((c) => c === code),
+    );
+    expect(folderCodes.filter((code) => !covered.has(code))).toEqual([]);
   });
 
   it('reports the offending key on key problems', () => {

@@ -7,7 +7,9 @@ import { AgentDraftReader } from '../agent-draft-reader.js';
 import { DeleteAgentDraftFileHandler } from '../features/delete-agent-draft-file/handler.js';
 import { ListAgentFilesHandler } from '../features/list-agent-files/handler.js';
 import { ReadAgentFolderHandler } from '../features/read-agent-folder/handler.js';
+import { AgentsReader } from '../agents-reader.js';
 import { ReadAgentsHandler } from '../features/read-agents/handler.js';
+import { SkillsReader } from '../skills-reader.js';
 import { SaveAgentDraftFileHandler } from '../features/save-agent-draft-file/handler.js';
 import { BASE_COMMIT, FakeDefinitionsFiles } from './fake-definitions-files.js';
 
@@ -28,9 +30,12 @@ describe('a Draft reaches no agent', () => {
     const repository = new InMemoryAgentDraftRepository();
     const reader = new AgentDraftReader(definitions, repository);
     const base = new AgentDraftBaseReader(definitions);
-    const list = new ReadAgentsHandler(definitions, {
-      forProject: () => Promise.resolve({ status: 'found', kind: 'code', agent: null }),
-    });
+    const list = new ReadAgentsHandler(
+      new AgentsReader(definitions, new SkillsReader(definitions)),
+      {
+        forProject: () => Promise.resolve({ status: 'found', kind: 'code', agent: null }),
+      },
+    );
     return {
       repository,
       list,

@@ -601,6 +601,141 @@ describe('choosing an agent for a Run (PostgreSQL + Redis via Testcontainers)', 
     );
   });
 
+  describe('the skills an agent names', () => {
+    const skillFile = (name: string, extra = '') =>
+      `---\nname: ${name}\ndescription: Does the ${name} work\n${extra}---\nDo the ${name} work.\n`;
+    const workerAgent = (skills: string) =>
+      agentFile('worker', 'claude_code', `skills: ${skills}\n`);
+
+    it.runIf(linux)(
+      'starts a Run with an agent whose skills exist and are valid, and offers it',
+      async () => {
+        await definitionsWith({
+          'agents/worker/AGENT.md': workerAgent('[review, test]'),
+          'skills/review/SKILL.md': skillFile('review'),
+          'skills/test/SKILL.md': skillFile('test'),
+        });
+        const project = await readyProject('Shop');
+
+        expect(names((await runAgents(project.id)).body)).toContain('worker');
+        expect((await startRun(project.id, { task: 'x', agent: 'worker' })).status).toBe(201);
+      },
+    );
+
+    it.runIf(linux)(
+      'refuses with 409 agent_not_usable an agent that names a missing skill or an invalid one',
+      async () => {
+        await definitionsWith({
+          'agents/missing/AGENT.md': agentFile('missing', 'codex', 'skills: [gone]\n'),
+          'agents/invalid/AGENT.md': agentFile('invalid', 'codex', 'skills: [broken]\n'),
+          'agents/cased/AGENT.md': agentFile('cased', 'codex', 'skills: [Review]\n'),
+          'skills/broken/SKILL.md': skillFile('broken', 'hooks: x\n'),
+          'skills/review/SKILL.md': skillFile('review'),
+        });
+        const project = await readyProject('Shop');
+
+        for (const agent of ['missing', 'invalid', 'cased']) {
+          const refused = await startRun(project.id, { task: 'x', agent });
+          expectProblem(refused, 409, PROBLEM.agentNotUsable);
+          expect(refused.body.reason).toBe('agent_not_usable');
+        }
+        expect(names((await runAgents(project.id)).body)).not.toContain('missing');
+        const listed = await asOperator(http().get('/api/agents'));
+        const byName = new Map(
+          (listed.body.agents as { name: string; usable: boolean; problems: unknown[] }[]).map(
+            (a) => [a.name, a],
+          ),
+        );
+        expect(byName.get('missing')).toMatchObject({
+          usable: false,
+          skills: ['gone'],
+          problems: [{ code: 'skill_missing', key: 'gone' }],
+        });
+        expect(byName.get('invalid')).toMatchObject({
+          problems: [{ code: 'skill_invalid', key: 'broken' }],
+        });
+      },
+    );
+
+    it.runIf(linux)(
+      'preselects the Default agent with the reason when the default agent lost its skill',
+      async () => {
+        const definitions = await definitionsWith({
+          'agents/worker/AGENT.md': workerAgent('[review]'),
+          'skills/review/SKILL.md': skillFile('review'),
+        });
+        const project = await readyProject('Shop');
+        expect((await setDefault(project.id, { agent: 'worker' })).status).toBe(200);
+        expect((await runAgents(project.id)).body.preselected).toBe('worker');
+
+        await changeDefinitions(definitions, definitions.fixture.commits.dev!, {
+          'agents/worker/AGENT.md': workerAgent('[review]'),
+        });
+        const response = await runAgents(project.id);
+
+        expect(response.body.preselected).toBe('default-claude-code');
+        expect(response.body.preselectedReason).toContain('worker');
+      },
+    );
+
+    it.runIf(linux)(
+      'keeps the recorded commit for a Follow-up after a skill the agent names was removed',
+      async () => {
+        const definitions = await definitionsWith({
+          'agents/worker/AGENT.md': workerAgent('[review]'),
+          'skills/review/SKILL.md': skillFile('review'),
+        });
+        const project = await readyProject('Shop');
+        const created = await startRun(project.id, { task: 'Do it', agent: 'worker' });
+        expect(created.status).toBe(201);
+        expect((await claim()).body.kind).toBe('start');
+        await report(created.body.id, { state: 'running' });
+        const step = await worker(`${created.body.id}/steps`, {
+          workerId: W1,
+          index: 1,
+          kind: 'start',
+          result: { outcome: 'done', summary: 'Done.', sessionRef: 'session-9' },
+          workingCopy: {
+            runBranch: 'agent/do-it-r0b8e5c2d',
+            commits: [{ id: 'c'.repeat(40), subject: 'Do' }],
+            hasUncommittedChanges: false,
+          },
+        });
+        expect(step.status).toBe(204);
+        expect(
+          (
+            await report(created.body.id, {
+              state: 'succeeded',
+              delivery: {
+                outcome: 'delivered',
+                pullRequest: { url: 'https://github.com/acme/shop/pull/8', number: 8 },
+                pushedCommit: 'c'.repeat(40),
+              },
+            })
+          ).status,
+        ).toBe(204);
+
+        await changeDefinitions(definitions, definitions.fixture.commits.dev!, {
+          'agents/worker/AGENT.md': workerAgent('[review]'),
+        });
+        expect(
+          (await asOperator(http().get('/api/agents/worker'))).body.agent.problems,
+        ).toMatchObject([{ code: 'skill_missing', key: 'review' }]);
+        const sent = await asOperator(http().post(`/api/runs/${created.body.id}/follow-up`)).send({
+          text: 'Also check the docs.',
+        });
+        expect(sent.status).toBe(202);
+
+        const resumed = await claim();
+        expect(resumed.body).toMatchObject({
+          runId: created.body.id,
+          kind: 'resume',
+          agent: { name: 'worker', source: 'definitions', commit: definitions.commit },
+        });
+      },
+    );
+  });
+
   describe("the agent's folder handed to the worker", () => {
     const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0x00, 0xfe]);
     const SCRIPT = '#!/bin/sh\necho checks\n';

@@ -242,7 +242,13 @@ export const zAgentDraftProblemOutput = z.object({
         'duplicate_path',
         'size_invalid',
         'cli_config_path',
-        'short_name'
+        'short_name',
+        'skills_invalid',
+        'skill_name_invalid',
+        'skill_listed_twice',
+        'too_many_skills',
+        'skill_missing',
+        'skill_invalid'
     ]),
     path: z.string(),
     key: z.string().nullable(),
@@ -310,7 +316,13 @@ export const zAgentProblemOutput = z.object({
         'duplicate_path',
         'size_invalid',
         'cli_config_path',
-        'short_name'
+        'short_name',
+        'skills_invalid',
+        'skill_name_invalid',
+        'skill_listed_twice',
+        'too_many_skills',
+        'skill_missing',
+        'skill_invalid'
     ]),
     path: z.string(),
     key: z.string().nullable(),
@@ -324,6 +336,7 @@ export const zAgentSummaryOutput = z.object({
     model: z.string().nullable(),
     source: z.enum(['built_in', 'definitions']),
     usable: z.boolean(),
+    skills: z.array(z.string()),
     problems: z.array(zAgentProblemOutput)
 });
 
@@ -345,6 +358,7 @@ export const zAgentDetailAgentOutput = z.object({
     model: z.string().nullable(),
     source: z.enum(['built_in', 'definitions']),
     usable: z.boolean(),
+    skills: z.array(z.string()),
     problems: z.array(zAgentProblemOutput),
     instructions: z.string(),
     files: z.array(z.object({
@@ -433,7 +447,9 @@ export const zSkillDetailOutput = z.object({
     files: z.array(z.object({
         path: z.string(),
         size: z.int().gte(0).lte(9007199254740991)
-    }))
+    })),
+    usedBy: z.array(z.string()),
+    usedByTruncated: z.boolean()
 });
 
 export const zStartRunRequest = z.object({

@@ -27,6 +27,7 @@ const REVIEWER: AgentSummaryOutput = {
   model: 'opus',
   source: 'definitions',
   usable: true,
+  skills: [],
   problems: [],
 };
 const BROKEN: AgentSummaryOutput = {
@@ -36,6 +37,7 @@ const BROKEN: AgentSummaryOutput = {
   model: null,
   source: 'definitions',
   usable: false,
+  skills: [],
   problems: [
     {
       code: 'file_too_large',

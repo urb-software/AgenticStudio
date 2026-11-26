@@ -143,6 +143,7 @@ describe('agents API (PostgreSQL + Redis via Testcontainers)', () => {
             source: 'built_in',
             usable: true,
             problems: [],
+            skills: [],
           },
           {
             name: 'default-codex',
@@ -152,6 +153,7 @@ describe('agents API (PostgreSQL + Redis via Testcontainers)', () => {
             source: 'built_in',
             usable: true,
             problems: [],
+            skills: [],
           },
         ],
       });

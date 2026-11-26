@@ -23,8 +23,17 @@ const draftProblemSchema = z
     path: z
       .string()
       .describe('The file or folder the problem is about, relative to the Repository root.'),
-    key: z.string().nullable().describe('The front matter key, when the problem is about one.'),
-    message: z.string().describe('Fixed wording per code; never a value or file content.'),
+    key: z
+      .string()
+      .nullable()
+      .describe(
+        'The front matter key, when the problem is about one; for the skill reasons, the skill name.',
+      ),
+    message: z
+      .string()
+      .describe(
+        'Fixed wording per code; it may quote a key, a path or a skill name, never other values or file content.',
+      ),
   })
   .meta({ id: 'AgentDraftProblem' });
 

@@ -28,6 +28,8 @@ export function skillDetail(
     ...skill,
     instructions: extras.instructions ?? '',
     files: extras.files ?? [],
+    usedBy: [],
+    usedByTruncated: false,
   };
 }
 

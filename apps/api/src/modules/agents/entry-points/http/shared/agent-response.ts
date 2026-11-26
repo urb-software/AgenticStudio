@@ -12,8 +12,17 @@ const problemSchema = z
     path: z
       .string()
       .describe('The file or folder the problem is about, relative to the agent folder.'),
-    key: z.string().nullable().describe('The front matter key, when the problem is about one.'),
-    message: z.string().describe('Fixed wording per code; never a value or file content.'),
+    key: z
+      .string()
+      .nullable()
+      .describe(
+        'The front matter key, when the problem is about one; for the skill reasons, the skill name.',
+      ),
+    message: z
+      .string()
+      .describe(
+        'Fixed wording per code; it may quote a key, a path or a skill name, never other values or file content.',
+      ),
   })
   .meta({ id: 'AgentProblem' });
 
@@ -30,6 +39,12 @@ export const agentSummarySchema = z
       .enum(['built_in', 'definitions'])
       .describe('A built-in Default agent, or a folder of the definitions Repository.'),
     usable: z.boolean().describe('False while the definition has problems.'),
+    skills: z
+      .array(z.string())
+      .describe(
+        'The skill names the definition lists, as written; empty when none and for a front ' +
+          'matter that cannot be read.',
+      ),
     problems: z.array(problemSchema),
   })
   .meta({ id: 'AgentSummary' });
@@ -60,6 +75,7 @@ export function toAgentSummary(agent: AgentView) {
     model: agent.model,
     source: agent.source,
     usable: agent.usable,
+    skills: agent.skills,
     problems: agent.problems.map((problem) => ({
       code: problem.code,
       path: problem.path,
