@@ -7,7 +7,10 @@ import { AgentsOverview } from '..';
 import type { AgentSummaryOutput, RepositoryOutput } from '../../../platform/api';
 import { agentDetail, agentList, BUILT_INS, fakeAgentsApi, problem } from './fake-agents-api';
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}));
 
 const SHA = '0123456789abcdef0123456789abcdef01234567';
 const READY: RepositoryOutput = {

@@ -20,7 +20,12 @@ export function skillList(overrides: Partial<SkillListOutput> = {}): SkillListOu
 
 export function skillDetail(
   skill: SkillSummaryOutput,
-  extras: { instructions?: string; files?: { path: string; size: number }[] } = {},
+  extras: {
+    instructions?: string;
+    files?: { path: string; size: number }[];
+    usedBy?: string[];
+    usedByTruncated?: boolean;
+  } = {},
 ): SkillDetailOutput {
   return {
     commit: SKILLS_COMMIT,
@@ -28,8 +33,8 @@ export function skillDetail(
     ...skill,
     instructions: extras.instructions ?? '',
     files: extras.files ?? [],
-    usedBy: [],
-    usedByTruncated: false,
+    usedBy: extras.usedBy ?? [],
+    usedByTruncated: extras.usedByTruncated ?? false,
   };
 }
 

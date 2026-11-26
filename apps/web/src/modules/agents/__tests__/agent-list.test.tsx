@@ -1,7 +1,7 @@
 import { focusManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Toaster, toast } from '@/shared/ui/sonner';
 import { AgentsOverview } from '..';
 import type { AgentSummaryOutput, RepositoryOutput } from '../../../platform/api';
@@ -14,7 +14,11 @@ import {
   problem,
 } from './fake-agents-api';
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
+const search = vi.hoisted(() => ({ value: '' }));
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(search.value),
+}));
 
 const SHA = '0123456789abcdef0123456789abcdef01234567';
 const NEW_SHA = 'fedcba9876543210fedcba9876543210fedcba98';
@@ -74,7 +78,13 @@ function renderAgents() {
 
 const agentsCard = () => screen.getByRole('region', { name: 'Agents' });
 
+beforeEach(() => {
+  // jsdom has no scrollIntoView.
+  Element.prototype.scrollIntoView = vi.fn();
+});
+
 afterEach(() => {
+  search.value = '';
   act(() => {
     focusManager.setFocused(undefined);
     toast.dismiss();
@@ -398,5 +408,166 @@ describe('Agents page: refetching', () => {
 
     expect(await screen.findByText('reviewer', undefined, { timeout: 4000 })).toBeTruthy();
     expect(listReads()).toBeGreaterThan(before);
+  });
+});
+
+describe('Agents page: the skills of an agent', () => {
+  const WORKER: AgentSummaryOutput = { ...REVIEWER, name: 'worker', skills: ['review', 'test'] };
+  const open = async (agent: AgentSummaryOutput, detail = agentDetail(agent)) => {
+    fakeAgentsApi(
+      { repository: READY },
+      {
+        list: agentList({ commit: SHA, repository: REPOSITORY, agents: [...BUILT_INS, agent] }),
+        details: { [agent.name]: detail },
+      },
+    );
+    const view = renderAgents();
+    await userEvent.click(await screen.findByRole('button', { name: `Show ${agent.name}` }));
+    return view;
+  };
+
+  it('lists the skills of an agent, each linking to the skill, without axe violations', async () => {
+    const { container } = await open(
+      WORKER,
+      agentDetail(WORKER, { instructions: 'Work.', files: [{ path: 'AGENT.md', size: 10 }] }),
+    );
+
+    const region = await screen.findByRole('region', { name: 'Skills of this agent' });
+    const links = within(region).getAllByRole('link');
+    expect(links.map((link) => link.textContent)).toEqual(['review', 'test']);
+    expect(links.map((link) => link.getAttribute('href'))).toEqual([
+      '/agents/skills?open=review',
+      '/agents/skills?open=test',
+    ]);
+    await expect(container).toHaveNoAxeViolations();
+  });
+
+  it('says nothing about skills for an agent that names none', async () => {
+    await open(REVIEWER, agentDetail(REVIEWER, { instructions: 'Work.' }));
+
+    await screen.findByText('Work.');
+    expect(screen.queryByRole('region', { name: 'Skills of this agent' })).toBeNull();
+  });
+
+  it('shows the skills of an agent that is not usable, with the reasons as for other problems', async () => {
+    const refused: AgentSummaryOutput = {
+      ...WORKER,
+      description: null,
+      provider: null,
+      model: null,
+      usable: false,
+      problems: [
+        {
+          code: 'skill_missing',
+          path: 'AGENT.md',
+          key: 'test',
+          message: 'The skill "test" does not exist.',
+        },
+      ],
+    };
+    const { container } = await open(refused, agentDetail(refused));
+
+    expect((await screen.findAllByText(/does not exist/)).length).toBeGreaterThan(0);
+    const region = screen.getByRole('region', { name: 'Skills of this agent' });
+    expect(
+      within(region)
+        .getAllByRole('link')
+        .map((link) => link.textContent),
+    ).toEqual(['review']);
+    expect(within(region).getByText('test')).toBeTruthy();
+    await expect(container).toHaveNoAxeViolations();
+  });
+
+  it('opens the agent named in the address', async () => {
+    search.value = 'open=worker';
+    fakeAgentsApi(
+      { repository: READY },
+      {
+        list: agentList({ commit: SHA, repository: REPOSITORY, agents: [...BUILT_INS, WORKER] }),
+        details: { worker: agentDetail(WORKER, { instructions: 'Work.' }) },
+      },
+    );
+    renderAgents();
+
+    expect(await screen.findByText('Work.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Hide worker' })).toBeTruthy();
+  });
+
+  it('brings the opened agent into view once, without moving focus', async () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    search.value = 'open=worker';
+    fakeAgentsApi(
+      { repository: READY },
+      {
+        list: agentList({ commit: SHA, repository: REPOSITORY, agents: [...BUILT_INS, WORKER] }),
+        details: { worker: agentDetail(WORKER, { instructions: 'Work.' }) },
+      },
+    );
+    renderAgents();
+
+    await screen.findByText('Work.');
+    expect(scroll).toHaveBeenCalledTimes(1);
+    expect(scroll).toHaveBeenCalledWith({ block: 'nearest' });
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it('lists a skill named twice without a duplicate key warning', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const twice: AgentSummaryOutput = {
+      ...WORKER,
+      usable: false,
+      skills: ['review', 'review'],
+      problems: [
+        {
+          code: 'skill_listed_twice',
+          path: 'AGENT.md',
+          key: 'review',
+          message: 'The skill "review" is listed more than once.',
+        },
+      ],
+    };
+    await open(twice, agentDetail(twice));
+
+    const region = await screen.findByRole('region', { name: 'Skills of this agent' });
+    expect(within(region).getAllByRole('link')).toHaveLength(2);
+    expect(error.mock.calls.map((call) => String(call[0])).join('\n')).not.toMatch(/same key/);
+    error.mockRestore();
+  });
+
+  it('shows a skill that is missing or has an invalid name as text, not as a link', async () => {
+    const refused: AgentSummaryOutput = {
+      ...WORKER,
+      description: null,
+      provider: null,
+      model: null,
+      usable: false,
+      skills: ['review', 'gone', 'Bad!'],
+      problems: [
+        {
+          code: 'skill_missing',
+          path: 'AGENT.md',
+          key: 'gone',
+          message: 'The skill "gone" does not exist.',
+        },
+        {
+          code: 'skill_name_invalid',
+          path: 'AGENT.md',
+          key: 'Bad!',
+          message: 'The skill name "Bad!" is not valid.',
+        },
+      ],
+    };
+    const { container } = await open(refused, agentDetail(refused));
+
+    const region = await screen.findByRole('region', { name: 'Skills of this agent' });
+    expect(
+      within(region)
+        .getAllByRole('link')
+        .map((link) => link.textContent),
+    ).toEqual(['review']);
+    expect(within(region).getByText('gone')).toBeTruthy();
+    expect(within(region).getByText('Bad!')).toBeTruthy();
+    await expect(container).toHaveNoAxeViolations();
   });
 });
