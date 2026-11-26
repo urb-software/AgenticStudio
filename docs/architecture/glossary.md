@@ -57,7 +57,7 @@ A folder in the Definitions Repository that tells an agent how to work: an entry
 _Avoid_: Agent (alone), prompt, profile
 
 **Skill definition**:
-A folder in the Definitions Repository holding reusable know-how that agents can share: an entry file with front matter (name, description) and instructions in Markdown, and beside it its scripts and assets. It belongs to no Provider. An Agent definition names the skills it uses, and a Run gets exactly those. An invalid or missing skill makes the agent that names it invalid. A skill is not the repository's own skills, which stay as they are.
+A folder in the Definitions Repository holding reusable know-how that agents can share: an entry file with front matter (name, description) and instructions in Markdown, and beside it its scripts and assets. It belongs to no Provider. An Agent definition names the skills it uses, and a Run gets exactly those. An invalid or missing skill makes the agent that names it invalid. Not to be confused with the repository's own skills, which belong to the Repository a Run works on.
 _Avoid_: Plugin, command, tool
 
 **Definitions Repository**:

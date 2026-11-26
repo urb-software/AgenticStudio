@@ -5,7 +5,7 @@ date: 2026-11-26
 
 # Studio's own skills are files that an agent names
 
-Decided by the operator in the refinement of Epic #326, 2026-11-26. This completes step 2 of the end-to-end outcome in [MVP](../../product/mvp.md) §2 for skills; [ADR 0005](0005-agent-definitions-in-git.md) did it for agents, and this decision uses the same storage, versions, delivery and editor. [ADR 0002](0002-agent-run-isolation.md) still decides the isolation of Runs.
+Decided in the refinement of Epic #326, 2026-11-26. The operator decided that an agent names its skills and that both Providers get them the same way; the rest was settled in the refinement as technical decisions. This completes step 2 of the end-to-end outcome in [MVP](../../product/mvp.md) §2 for skills; [ADR 0005](0005-agent-definitions-in-git.md) did it for agents, and this decision uses the same storage, versions, delivery and editor. [ADR 0002](0002-agent-run-isolation.md) still decides the isolation of Runs.
 
 Until now an agent could be told only what its instructions say. A **Skill definition** is reusable know-how that several agents can share: a folder with an entry file (name, description, instructions in Markdown) and, beside it, its scripts and assets. The agent reads a skill when the task fits.
 
@@ -23,11 +23,11 @@ Until now an agent could be told only what its instructions say. A **Skill defin
 - **A skill belongs to no Provider.** Agents of both Providers can name it.
 - **An agent names its skills.** The agent's entry file lists them, and a Run gets exactly those. The built-in Default agents get none of Studio's skills, so a Run with a Default agent is unchanged, byte for byte.
 - **A missing or invalid skill makes the agent that names it invalid.** The agent is listed with the reason and cannot be chosen.
-- **Both Providers get skills the same way.** The agent worker writes the named skills beside the Run, in a place outside everything a CLI discovers by itself, and the instructions list each skill's name, description and path. The agent reads a skill when the task fits. Scripts and assets follow the rule for an agent's files: allowed in what the operator published, never run by themselves, and rebuilt from Studio's copy before every Run step.
+- **Both Providers get skills the same way.** The agent worker writes the named skills beside the Run, in a place outside everything a CLI discovers by itself, and the instructions list each skill's name, description and path. The agent reads a skill when the task fits. Scripts and assets follow the rule for an agent's files: allowed in what the operator published, never run by themselves, rebuilt from Studio's copy before every Run step, and never committed or pushed.
 - **No CLI command changes.** Nothing is added to the options either CLI is started with, so neither [Provider compliance record](../../engineering/provider-compliance/README.md) is amended: the approved mode, options and credentials stay exactly as recorded. The skills are plain files read through the agent's normal file tools, the same as the files of an agent's folder (ADR 0005), which needed no amendment either.
 - **A Run's record gains the names of its skills** at the commit it already records, and its Follow-ups use the same ones.
 - **The repository's own skills stay as they are.** How they reach a Run (ADR 0002) is unchanged.
-- **Ranking of instruction sources**, the same in ADR 0002, ADR 0005 and here: Studio's base rules (fixed), then the chosen agent, then Studio's skills, then the repository's skills.
+- **Ranking of instruction sources**, word for word the same in ADR 0002, ADR 0005 and here. Sources rank: Studio's base rules (fixed), then the chosen Agent definition, then Studio's own skills, then the repository's `repo:` skills and subagents, then skills synced from the operator's account.
 - **Ownership.** The `agents` module owns skills as a model distinct from the Agent definition, with its own validation and list. The editor, Draft and Publish of ADR 0005 cover skill files with no new mechanism.
 
 ## Considered Options

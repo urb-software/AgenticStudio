@@ -83,7 +83,7 @@ CODEX_CLI_ENABLED=false
 
 **Current status:** Claude Code CLI: record [2026-11-14-claude-code-cli.md](provider-compliance/2026-11-14-claude-code-cli.md) is `Approved` (subscription login), decided 2026-11-14; `CLAUDE_CODE_ENABLED` stays `false` until the operator enables it. Codex CLI: record [2026-11-14-codex-cli.md](provider-compliance/2026-11-14-codex-cli.md) is `Approved` (ChatGPT plan login), decided 2026-11-15; `CODEX_CLI_ENABLED` stays `false` until the operator enables it.
 
-### Agent definitions (Epic #298)
+### Agent and skill definitions
 
 Decided in the refinement of Epic #298, 2026-11-25 ([ADR 0005](../architecture/adr/0005-agent-definitions-in-git.md)). An Agent definition is the text and files an agent is given. It is more powerful than any repository content, so these rules hold:
 
