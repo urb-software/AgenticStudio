@@ -476,6 +476,7 @@ describe('agents API (PostgreSQL + Redis via Testcontainers)', () => {
               kind: string;
               size: number;
               agent: string | null;
+              skill: string | null;
             }[]
           ).map((entry) => [entry.path, entry]),
         );
@@ -484,6 +485,7 @@ describe('agents API (PostgreSQL + Redis via Testcontainers)', () => {
           kind: 'file',
           size: 9,
           agent: null,
+          skill: null,
           openable: true,
         });
         expect(byPath.get('agents/reviewer/notes/style.md')).toEqual({
@@ -491,10 +493,12 @@ describe('agents API (PostgreSQL + Redis via Testcontainers)', () => {
           kind: 'file',
           size: 8,
           agent: 'reviewer',
+          skill: null,
           openable: true,
         });
         expect(byPath.get('agents/broken/AGENT.md')?.agent).toBe('broken');
         expect(byPath.get('skills/helper/SKILL.md')?.agent).toBeNull();
+        expect(byPath.get('skills/helper/SKILL.md')?.skill).toBe('helper');
         expect(byPath.get('docs/my notes "q" é.txt')?.size).toBe(3);
       });
 
@@ -669,6 +673,7 @@ describe('agents API (PostgreSQL + Redis via Testcontainers)', () => {
           version: 0,
           files: [],
           problems: [],
+          skillProblems: [],
           movedUpstream: [],
         });
         const refused = await put({ path: 'agents/a/AGENT.md', text: 'x' });
@@ -786,8 +791,9 @@ describe('agents API (PostgreSQL + Redis via Testcontainers)', () => {
           baseCommit: commit,
           currentCommit: commit,
           version: 1,
-          files: [{ path: 'README.md', change: 'modified', size: 9, movedFrom: null }],
+          files: [{ path: 'README.md', change: 'modified', size: 9, movedFrom: null, skill: null }],
           problems: [],
+          skillProblems: [],
           movedUpstream: [],
         });
         expect(second.body.version).toBe(2);
@@ -815,7 +821,7 @@ describe('agents API (PostgreSQL + Redis via Testcontainers)', () => {
         const second = await put({ path: 'docs/new.md', text: 'second, longer' });
 
         expect(second.body.files).toEqual([
-          { path: 'docs/new.md', change: 'added', size: 14, movedFrom: null },
+          { path: 'docs/new.md', change: 'added', size: 14, movedFrom: null, skill: null },
         ]);
         expect((await draftContent('docs/new.md')).body.content).toBe('second, longer');
       });
@@ -881,8 +887,14 @@ describe('agents API (PostgreSQL + Redis via Testcontainers)', () => {
         expect(moved.status).toBe(200);
         expect(moved.body.baseCommit).toBe(commit);
         expect(moved.body.files).toEqual([
-          { path: 'docs/guide.md', change: 'deleted', size: 0, movedFrom: null },
-          { path: 'docs/handbook.md', change: 'added', size: 6, movedFrom: 'docs/guide.md' },
+          { path: 'docs/guide.md', change: 'deleted', size: 0, movedFrom: null, skill: null },
+          {
+            path: 'docs/handbook.md',
+            change: 'added',
+            size: 6,
+            movedFrom: 'docs/guide.md',
+            skill: null,
+          },
         ]);
         expect((await draftContent('docs/handbook.md')).body.content).toBe('guide\n');
         expect((await draftContent('docs/guide.md')).status).toBe(404);
@@ -1029,7 +1041,7 @@ describe('agents API (PostgreSQL + Redis via Testcontainers)', () => {
 
         expect(uploaded.status).toBe(200);
         expect(uploaded.body.files).toEqual([
-          { path: 'assets/icon.bin', change: 'added', size: 4, movedFrom: null },
+          { path: 'assets/icon.bin', change: 'added', size: 4, movedFrom: null, skill: null },
         ]);
         const read = await draftContent('assets/icon.bin');
         expect(read.body).toMatchObject({ kind: 'binary', size: 4 });
@@ -1040,6 +1052,7 @@ describe('agents API (PostgreSQL + Redis via Testcontainers)', () => {
           change: 'added',
           size: 3,
           movedFrom: 'blob.bin',
+          skill: null,
         });
         expect((await draftContent('assets/blob.bin')).body).toMatchObject({
           kind: 'binary',
