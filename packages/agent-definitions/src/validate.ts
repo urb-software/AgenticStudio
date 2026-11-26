@@ -15,10 +15,33 @@ import {
   MAX_FILE_BYTES,
   MAX_FILES,
   MAX_FOLDER_BYTES,
+  MARKDOWN_FILE,
   MAX_INSTRUCTIONS_BYTES,
   RESERVED_AGENT_NAMES,
+  SHELL_LINE,
+  SKILL_CLI_DISCOVERED_FILES,
+  SKILL_DESCRIPTION_MAX_LENGTH,
+  SKILL_ENTRY_FILE,
+  SKILL_FORBIDDEN_KEYS,
+  SKILL_KNOWN_KEYS,
+  SKILL_METADATA_MAX_ENTRIES,
+  SKILL_METADATA_MAX_KEY_LENGTH,
+  SKILL_METADATA_MAX_VALUE_LENGTH,
+  SKILL_TEXT_MAX_LENGTH,
 } from './limits.js';
-import { problem, type Problem } from './problems.js';
+import {
+  AGENT_SUBJECT,
+  problem as makeProblem,
+  skillProblem,
+  SKILL_SUBJECT,
+  type Problem,
+  type ProblemCode,
+  type SkillProblemCode,
+  type Subject,
+} from './problems.js';
+
+const problem = (code: ProblemCode, path: string, key?: string): Problem =>
+  makeProblem(code, path, key, AGENT_SUBJECT);
 
 /** One item of a folder, as a caller read it: no file system is touched here. */
 export interface AgentEntry {
@@ -28,7 +51,10 @@ export interface AgentEntry {
   kind: string;
   /** Size in bytes (0 for a folder). */
   size: number;
-  /** The text of a file, when the caller read it as UTF-8. Only the entry file needs it. */
+  /**
+   * The text of a file, when the caller read it as UTF-8. An agent needs it for the entry
+   * file; a skill for the entry file and every Markdown file.
+   */
   content?: string;
 }
 
@@ -46,12 +72,40 @@ export interface AgentDefinition {
   files: { path: string; size: number }[];
 }
 
+type SkillProblem = Problem<SkillProblemCode>;
+
+export interface SkillDefinition {
+  name: string;
+  description: string;
+  license?: string;
+  compatibility?: string;
+  metadata?: Record<string, string>;
+  /** The Markdown after the front matter; consumers never hand a CLI the raw SKILL.md. */
+  instructions: string;
+  /** Every file of the folder, the entry file included. */
+  files: { path: string; size: number }[];
+}
+
+export type SkillFolderResult =
+  { ok: true; definition: SkillDefinition } | { ok: false; problems: SkillProblem[] };
+
+/** What differs between judging an agent folder and a skill folder. */
+interface Kind {
+  subject: Subject;
+  entryFile: string;
+  cliFiles: ReadonlySet<string>;
+  /** Measure every file that has text by it, not only the entry file. */
+  measureAllText: boolean;
+}
+
 export type AgentFolderResult =
   { ok: true; definition: AgentDefinition } | { ok: false; problems: Problem[] };
 
 const normalise = (key: string): string =>
   key.toLowerCase().replaceAll('-', '').replaceAll('_', '');
 const FORBIDDEN = new Set(FORBIDDEN_KEYS.map(normalise));
+const SKILL_FORBIDDEN = new Set([...FORBIDDEN_KEYS, ...SKILL_FORBIDDEN_KEYS].map(normalise));
+const SKILL_KNOWN = new Set<string>(SKILL_KNOWN_KEYS);
 const KNOWN = new Set<string>(KNOWN_KEYS);
 // Controls, NEL and the Unicode line and paragraph separators: no second line, no escape codes.
 const DESCRIPTION_FORBIDDEN = /[\p{Cc}\u0085\u2028\u2029]/u;
@@ -63,7 +117,20 @@ const CONTROL = /[\u0000-\u001f\u007f]/;
 // bidirectional mark), so `.g<ZWNJ>it` is `.git` there.
 const IGNORED_IN_NAMES = /[\u200c-\u200f\u202a-\u202e\u206a-\u206f\ufeff]/g;
 const SHORT_NAME = /^[^.~]{1,6}~\d+(\.[^.]{0,3})?$/i;
-const CLI_FILES = new Set(CLI_DISCOVERED_FILES.map((name) => name.toLowerCase()));
+const lower = (names: readonly string[]): Set<string> => new Set(names.map((n) => n.toLowerCase()));
+const CLI_FILES = lower(CLI_DISCOVERED_FILES);
+const SKILL_KIND: Kind = {
+  subject: SKILL_SUBJECT,
+  entryFile: SKILL_ENTRY_FILE,
+  cliFiles: lower(SKILL_CLI_DISCOVERED_FILES),
+  measureAllText: true,
+};
+const AGENT_KIND: Kind = {
+  subject: AGENT_SUBJECT,
+  entryFile: AGENT_ENTRY_FILE,
+  cliFiles: CLI_FILES,
+  measureAllText: false,
+};
 
 /** The text without its trailing dots and spaces, cut by a scan, not a pattern that can backtrack. */
 function trimTrailingDotsAndSpaces(text: string): string {
@@ -86,7 +153,7 @@ function isGitName(segment: string): boolean {
 type PathCode = 'path_outside_folder' | 'nested_git' | 'cli_config_path' | 'short_name';
 
 /** The first reason a path is refused, or undefined when it is a plain relative path. */
-function pathProblem(path: string): PathCode | undefined {
+function pathProblem(path: string, kind: Kind): PathCode | undefined {
   const segments = path.split('/');
   if (
     path.startsWith('/') ||
@@ -103,7 +170,9 @@ function pathProblem(path: string): PathCode | undefined {
   const plain = segments.map(plainName);
   const base = plain[plain.length - 1] as string;
   const hidden = (segment: string) => segment.startsWith('.');
-  if (segments.some(hidden) || plain.some(hidden) || CLI_FILES.has(base)) {
+  // The entry file at the folder root is the one place its own name is allowed.
+  const isEntry = path === kind.entryFile;
+  if (segments.some(hidden) || plain.some(hidden) || (!isEntry && kind.cliFiles.has(base))) {
     return 'cli_config_path';
   }
   return undefined;
@@ -115,14 +184,16 @@ interface JudgedEntries {
   fileEntries: AgentEntry[];
 }
 
-function judgeEntries(entries: readonly AgentEntry[]): JudgedEntries {
+function judgeEntries(entries: readonly AgentEntry[], kind: Kind): JudgedEntries {
+  const problem = (code: ProblemCode, path: string, key?: string): Problem =>
+    makeProblem(code, path, key, kind.subject);
   const problems: Problem[] = [];
   const fileEntries: AgentEntry[] = [];
   const seen = new Set<string>();
 
   for (const entry of entries) {
     if (entry.path === '' && entry.kind === 'directory') continue;
-    const bad = pathProblem(entry.path);
+    const bad = pathProblem(entry.path, kind);
     if (bad) {
       problems.push(problem(bad, entry.path));
       continue;
@@ -150,9 +221,9 @@ function judgeEntries(entries: readonly AgentEntry[]): JudgedEntries {
       problems.push(problem('size_invalid', entry.path));
       continue;
     }
-    // The entry file is also measured by its text, so a declared size cannot hide a large file.
+    // A file whose text is used is also measured by it, so a declared size cannot hide it.
     const size =
-      entry.path === AGENT_ENTRY_FILE && entry.content !== undefined
+      (kind.measureAllText || entry.path === kind.entryFile) && entry.content !== undefined
         ? Math.max(entry.size, utf8Length(entry.content))
         : entry.size;
     total += size;
@@ -167,7 +238,7 @@ function judgeEntries(entries: readonly AgentEntry[]): JudgedEntries {
  * and no name are needed. What the agent worker checks again before it writes a hand-over.
  */
 export function validateAgentFiles(entries: readonly AgentEntry[]): Problem[] {
-  return judgeEntries(entries).problems;
+  return judgeEntries(entries, AGENT_KIND).problems;
 }
 
 /** Judges the entries of one agent folder. Pure: reads nothing, starts nothing. */
@@ -175,7 +246,7 @@ export function validateAgentFolder(
   folderName: string,
   entries: readonly AgentEntry[],
 ): AgentFolderResult {
-  const { problems, fileEntries } = judgeEntries(entries);
+  const { problems, fileEntries } = judgeEntries(entries, AGENT_KIND);
 
   if (!AGENT_NAME_PATTERN.test(folderName)) problems.push(problem('name_invalid', ''));
   else if ((RESERVED_AGENT_NAMES as readonly string[]).includes(folderName)) {
@@ -204,29 +275,59 @@ export function validateAgentFolder(
   };
 }
 
-function judgeEntry(
-  folderName: string,
-  entry: AgentEntry,
-  problems: Problem[],
-): Omit<AgentDefinition, 'files'> | undefined {
-  const path = AGENT_ENTRY_FILE;
-  const text = entry.content;
-  if (text === undefined || text.includes('�') || text.includes('\u0000')) {
-    // An entry file over the size limit is never read: the size problem already says it.
-    const tooLarge = problems.some((item) => item.code === 'file_too_large' && item.path === path);
-    if (!tooLarge) problems.push(problem('entry_unreadable', path));
+type Add = (code: ProblemCode, key?: string) => void;
+type ParsedEntry = Extract<ReturnType<typeof parseEntry>, { status: 'ok' }>;
+
+/**
+ * Reads the entry file's text and splits its front matter, or reports why it cannot. An entry
+ * file over the size limit is never read: the size problem already says it.
+ */
+function readEntry(
+  text: string | undefined,
+  sizeRefused: boolean,
+  add: Add,
+): ParsedEntry | undefined {
+  if (unreadable(text)) {
+    if (!sizeRefused) add('entry_unreadable');
     return undefined;
   }
-  const parsed = parseEntry(text);
+  const parsed = parseEntry(text as string);
   if (parsed.status !== 'ok') {
     const code = {
       missing: 'front_matter_missing',
       malformed: 'front_matter_malformed',
       too_large: 'front_matter_too_large',
     } as const;
-    problems.push(problem(code[parsed.status], path));
+    add(code[parsed.status]);
     return undefined;
   }
+  return parsed;
+}
+
+/** A required key that holds text, or undefined after reporting it missing or of the wrong kind. */
+function requiredText(values: Record<string, unknown>, key: string, add: Add): string | undefined {
+  const value = values[key];
+  if (value === undefined || value === null) {
+    add('key_missing', key);
+    return undefined;
+  }
+  if (typeof value !== 'string') {
+    add('key_invalid', key);
+    return undefined;
+  }
+  return value;
+}
+
+function judgeEntry(
+  folderName: string,
+  entry: AgentEntry,
+  problems: Problem[],
+): Omit<AgentDefinition, 'files'> | undefined {
+  const path = AGENT_ENTRY_FILE;
+  const add: Add = (code, key) => problems.push(problem(code, path, key));
+  const tooLarge = problems.some((item) => item.code === 'file_too_large' && item.path === path);
+  const parsed = readEntry(entry.content, tooLarge, add);
+  if (!parsed) return undefined;
 
   const before = problems.length;
   const { values, instructions } = parsed;
@@ -239,18 +340,7 @@ function judgeEntry(
     problems.push(problem('instructions_too_large', path));
   }
 
-  const required = (key: string): string | undefined => {
-    const value = values[key];
-    if (value === undefined || value === null) {
-      problems.push(problem('key_missing', path, key));
-      return undefined;
-    }
-    if (typeof value !== 'string') {
-      problems.push(problem('key_invalid', path, key));
-      return undefined;
-    }
-    return value;
-  };
+  const required = (key: string) => requiredText(values, key, add);
 
   const name = required('name');
   if (name !== undefined) {
@@ -292,4 +382,158 @@ function judgeEntry(
     return undefined;
   }
   return { name, description, provider, model, instructions };
+}
+
+/** True when the text is missing, is not UTF-8 or holds a NUL: it cannot be judged as text. */
+function unreadable(text: string | undefined): boolean {
+  return text === undefined || text.includes('�') || text.includes('\u0000');
+}
+
+/** Judges the entries of one skill folder. Pure: reads nothing, starts nothing. */
+export function validateSkillFolder(
+  folderName: string,
+  entries: readonly AgentEntry[],
+): SkillFolderResult {
+  const { problems: shared, fileEntries } = judgeEntries(entries, SKILL_KIND);
+  const problems: SkillProblem[] = [...shared];
+  const tooLarge = (path: string) =>
+    problems.some((item) => item.code === 'file_too_large' && item.path === path);
+
+  if (!AGENT_NAME_PATTERN.test(folderName)) problems.push(skillProblem('name_invalid', ''));
+
+  // Every Markdown file is read for shell lines; one that cannot be read cannot be trusted.
+  for (const entry of fileEntries) {
+    if (entry.path === SKILL_ENTRY_FILE || !MARKDOWN_FILE.test(entry.path)) continue;
+    if (unreadable(entry.content)) {
+      if (!tooLarge(entry.path)) problems.push(skillProblem('entry_unreadable', entry.path));
+    } else if (SHELL_LINE.test(entry.content as string)) {
+      problems.push(skillProblem('shell_line', entry.path));
+    }
+  }
+
+  const entryFile = fileEntries.find((entry) => entry.path === SKILL_ENTRY_FILE);
+  let definition: Omit<SkillDefinition, 'files'> | undefined;
+  if (entryFile) {
+    definition = judgeSkillEntry(folderName, entryFile, problems, tooLarge(SKILL_ENTRY_FILE));
+  } else if (!problems.some((item) => item.path === SKILL_ENTRY_FILE)) {
+    problems.push(skillProblem('entry_missing', SKILL_ENTRY_FILE));
+  }
+
+  // A refusal always carries a reason.
+  if (problems.length === 0 && !definition) {
+    problems.push(skillProblem('entry_missing', SKILL_ENTRY_FILE));
+  }
+  if (problems.length > 0 || !definition) return { ok: false, problems };
+  return {
+    ok: true,
+    definition: { ...definition, files: fileEntries.map(({ path, size }) => ({ path, size })) },
+  };
+}
+
+/** One line of 1 to `max` characters, with no control character. */
+function oneLine(value: string, max: number): boolean {
+  return value.trim() !== '' && value.length <= max && !DESCRIPTION_FORBIDDEN.test(value);
+}
+
+function judgeSkillEntry(
+  folderName: string,
+  entry: AgentEntry,
+  problems: SkillProblem[],
+  sizeRefused: boolean,
+): Omit<SkillDefinition, 'files'> | undefined {
+  const path = SKILL_ENTRY_FILE;
+  const add: (code: SkillProblemCode, key?: string) => void = (code, key) =>
+    problems.push(skillProblem(code, path, key));
+  const parsed = readEntry(entry.content, sizeRefused, add);
+  if (!parsed) return undefined;
+  const rawShell = SHELL_LINE.test(entry.content as string);
+  if (rawShell) add('shell_line');
+
+  const before = problems.length;
+  const { values, instructions } = parsed;
+
+  for (const key of Object.keys(values)) {
+    if (SKILL_FORBIDDEN.has(normalise(key))) {
+      problems.push(skillProblem('forbidden_key', path, key));
+    } else if (!SKILL_KNOWN.has(key)) {
+      problems.push(skillProblem('unknown_key', path, key));
+    }
+  }
+  if (utf8Length(instructions) > MAX_INSTRUCTIONS_BYTES) {
+    problems.push(skillProblem('instructions_too_large', path));
+  }
+
+  const present = (key: string): unknown => {
+    const value = values[key];
+    return value === null ? undefined : value;
+  };
+  const boundedText = (key: string, max: number, required = false): string | undefined => {
+    const value = present(key);
+    if (value === undefined) {
+      if (required) add('key_missing', key);
+      return undefined;
+    }
+    if (typeof value !== 'string' || !oneLine(value, max)) {
+      add('key_invalid', key);
+      return undefined;
+    }
+    return value;
+  };
+
+  const name = requiredText(values, 'name', add);
+  if (name !== undefined) {
+    if (!AGENT_NAME_PATTERN.test(name)) problems.push(skillProblem('name_invalid', path));
+    else if (name !== folderName) problems.push(skillProblem('name_mismatch', path));
+  }
+  const description = boundedText('description', SKILL_DESCRIPTION_MAX_LENGTH, true);
+  const license = boundedText('license', SKILL_TEXT_MAX_LENGTH);
+  const compatibility = boundedText('compatibility', SKILL_TEXT_MAX_LENGTH);
+
+  let metadata: Record<string, string> | undefined;
+  const rawMetadata = present('metadata');
+  if (rawMetadata !== undefined) {
+    const items =
+      typeof rawMetadata === 'object' && !Array.isArray(rawMetadata)
+        ? Object.entries(rawMetadata as Record<string, unknown>)
+        : undefined;
+    const good =
+      items !== undefined &&
+      items.length <= SKILL_METADATA_MAX_ENTRIES &&
+      items.every(
+        ([key, value]) =>
+          key.length >= 1 &&
+          key.length <= SKILL_METADATA_MAX_KEY_LENGTH &&
+          !DESCRIPTION_FORBIDDEN.test(key) &&
+          typeof value === 'string' &&
+          value.length <= SKILL_METADATA_MAX_VALUE_LENGTH &&
+          !DESCRIPTION_FORBIDDEN.test(value),
+      );
+    if (good) metadata = Object.fromEntries(items as [string, string][]);
+    else problems.push(skillProblem('key_invalid', path, 'metadata'));
+  }
+
+  // A YAML escape can write a shell line that the raw text does not show: test what was decoded.
+  const carried = [
+    values['description'],
+    values['license'],
+    values['compatibility'],
+    ...(typeof rawMetadata === 'object' && rawMetadata !== null
+      ? Object.entries(rawMetadata).flat()
+      : []),
+  ];
+  if (!rawShell && carried.some((item) => typeof item === 'string' && SHELL_LINE.test(item))) {
+    add('shell_line');
+  }
+
+  if (problems.length > before || name === undefined || description === undefined) {
+    return undefined;
+  }
+  return {
+    name,
+    description,
+    ...(license === undefined ? {} : { license }),
+    ...(compatibility === undefined ? {} : { compatibility }),
+    ...(metadata === undefined ? {} : { metadata }),
+    instructions,
+  };
 }

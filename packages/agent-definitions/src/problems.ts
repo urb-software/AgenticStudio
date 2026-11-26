@@ -32,8 +32,16 @@ export const PROBLEM_CODES = [
 
 export type ProblemCode = (typeof PROBLEM_CODES)[number];
 
-export interface Problem {
-  code: ProblemCode;
+/** The reasons only a skill folder can be refused for; PROBLEM_CODES stays the agent list. */
+export const SKILL_ONLY_PROBLEM_CODES = ['shell_line'] as const;
+
+/** Every reason a skill folder is refused: the shared ones and those only a skill has. */
+export const SKILL_PROBLEM_CODES = [...PROBLEM_CODES, ...SKILL_ONLY_PROBLEM_CODES] as const;
+
+export type SkillProblemCode = (typeof SKILL_PROBLEM_CODES)[number];
+
+export interface Problem<Code extends string = ProblemCode> {
+  code: Code;
   /** The file or folder the problem is about; empty for the folder itself. */
   path: string;
   /** The offending front matter key, when the problem is about one. */
@@ -48,11 +56,22 @@ function quote(text: string): string {
   return `"${shown}"`;
 }
 
-const MESSAGES: Record<ProblemCode, (place: string) => string> = {
-  entry_missing: () => 'The agent folder has no AGENT.md entry file.',
-  entry_unreadable: () => 'The AGENT.md entry file cannot be read as UTF-8 text.',
-  front_matter_missing: () =>
-    'AGENT.md must start with front matter between two "---" lines, then the instructions.',
+/** What a message calls the folder and its entry file. */
+export interface Subject {
+  noun: 'agent' | 'skill';
+  entry: string;
+}
+export const AGENT_SUBJECT: Subject = { noun: 'agent', entry: 'AGENT.md' };
+export const SKILL_SUBJECT: Subject = { noun: 'skill', entry: 'SKILL.md' };
+
+const MESSAGES: Record<SkillProblemCode, (place: string, subject: Subject) => string> = {
+  entry_missing: (_, s) => `The ${s.noun} folder has no ${s.entry} entry file.`,
+  entry_unreadable: (place, s) =>
+    s.noun === 'agent'
+      ? 'The AGENT.md entry file cannot be read as UTF-8 text.'
+      : `The file ${place} cannot be read as UTF-8 text.`,
+  front_matter_missing: (_, s) =>
+    `${s.entry} must start with front matter between two "---" lines, then the instructions.`,
   front_matter_malformed: () =>
     'The front matter is not one YAML mapping of plain keys and values (no list as the root, ' +
     'duplicate keys, aliases or tags).',
@@ -65,15 +84,15 @@ const MESSAGES: Record<ProblemCode, (place: string) => string> = {
     'The name must be 1 to 64 characters: lower-case letters, digits and "-", starting with a ' +
     'letter or digit.',
   name_reserved: () => 'The name is reserved by Studio.',
-  name_mismatch: () => "The name differs from the agent folder's name.",
+  name_mismatch: (_, s) => `The name differs from the ${s.noun} folder's name.`,
   unknown_key: (key) => `The key ${key} is not known.`,
   forbidden_key: (key) =>
     `The key ${key} asks for tools, permissions, hooks, MCP servers, memory or isolation, ` +
     'which a definition cannot set.',
   instructions_too_large: () => 'The instructions are larger than the size limit.',
-  too_many_files: () => 'The agent folder holds more files than the limit.',
+  too_many_files: (_, s) => `The ${s.noun} folder holds more files than the limit.`,
   file_too_large: (path) => `The file ${path} is larger than the size limit.`,
-  folder_too_large: () => 'The agent folder is larger in total than the size limit.',
+  folder_too_large: (_, s) => `The ${s.noun} folder is larger in total than the size limit.`,
   path_outside_folder: (path) =>
     `The path ${path} is absolute, leaves the folder, or is not a plain relative path.`,
   nested_git: (path) => `The path ${path} is inside a Git directory.`,
@@ -85,18 +104,43 @@ const MESSAGES: Record<ProblemCode, (place: string) => string> = {
   short_name: (path) =>
     `The path ${path} holds an 8.3 short name (such as PROGRA~1), which another file system ` +
     'may read as a different name.',
-  cli_config_path: (path) =>
-    `The path ${path} is a hidden file or folder, or a file an agent CLI reads settings, ` +
-    'skills or memory from, which a definition cannot carry.',
+  cli_config_path: (path, s) =>
+    `The path ${path} is a hidden file or folder, or a file ` +
+    `${s.noun === 'agent' ? 'an agent CLI' : 'a CLI'} reads settings, skills or memory from, ` +
+    'which a definition cannot carry.',
+  shell_line: (path) => `The file ${path} holds an inline shell line, which a skill cannot carry.`,
 };
 
-/** Builds a problem; the message quotes only the key (when given) or the path. */
-export function problem(code: ProblemCode, path: string, key?: string): Problem {
+function build<Code extends SkillProblemCode>(
+  code: Code,
+  path: string,
+  key: string | undefined,
+  subject: Subject,
+): Problem<Code> {
   const place = quote(key === undefined ? path : key);
   return {
     code,
     path,
     ...(key === undefined ? {} : { key: key.slice(0, MAX_QUOTED_LENGTH) }),
-    message: MESSAGES[code](place),
+    message: MESSAGES[code](place, subject),
   };
+}
+
+/** Builds a problem; the message quotes only the key (when given) or the path. */
+export function problem(
+  code: ProblemCode,
+  path: string,
+  key?: string,
+  subject: Subject = AGENT_SUBJECT,
+): Problem {
+  return build(code, path, key, subject);
+}
+
+/** The same for a skill folder, which has the reasons of PROBLEM_CODES and more. */
+export function skillProblem(
+  code: SkillProblemCode,
+  path: string,
+  key?: string,
+): Problem<SkillProblemCode> {
+  return build(code, path, key, SKILL_SUBJECT);
 }

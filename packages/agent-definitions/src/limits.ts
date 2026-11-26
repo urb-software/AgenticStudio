@@ -7,8 +7,11 @@ export const AGENTS_DIRECTORY = 'agents';
 /** The entry file of an agent folder, relative to it. */
 export const AGENT_ENTRY_FILE = 'AGENT.md';
 
-/** A sibling place reserved for skills. It is ignored for now, like anything else at the top. */
-export const RESERVED_SKILLS_DIRECTORY = 'skills';
+/** The top-level folder holding one folder per skill: `skills/<name>/`. */
+export const SKILLS_DIRECTORY = 'skills';
+
+/** The entry file of a skill folder, relative to it. */
+export const SKILL_ENTRY_FILE = 'SKILL.md';
 
 /** A usable name: lower-case letters, digits and `-`, up to 64 characters, the same rule as skill names. */
 export const AGENT_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
@@ -82,3 +85,44 @@ export const CLI_DISCOVERED_FILES = [
   'AGENTS.override.md',
   'SKILL.md',
 ] as const;
+
+/** The keys a skill's entry file may carry: the common skill format's harmless descriptive ones. */
+export const SKILL_KNOWN_KEYS = [
+  'name',
+  'description',
+  'license',
+  'compatibility',
+  'metadata',
+] as const;
+
+/**
+ * Keys that ask a skill to run apart from the agent (a fork, another agent). They are refused for
+ * skills in addition to FORBIDDEN_KEYS, with the same reason; agents are judged by FORBIDDEN_KEYS.
+ */
+export const SKILL_FORBIDDEN_KEYS = ['context', 'agent'] as const;
+
+/** A skill's description is one line of 1 to this many characters, the common format's limit. */
+export const SKILL_DESCRIPTION_MAX_LENGTH = 1024;
+
+/** The longest `license` or `compatibility` value, in characters. */
+export const SKILL_TEXT_MAX_LENGTH = 500;
+
+/** `metadata` holds at most this many entries, with keys and values up to these lengths. */
+export const SKILL_METADATA_MAX_ENTRIES = 20;
+export const SKILL_METADATA_MAX_KEY_LENGTH = 64;
+export const SKILL_METADATA_MAX_VALUE_LENGTH = 256;
+
+/**
+ * Files an agent CLI discovers inside a skill folder: those of an agent folder, plus the entry
+ * file of an agent. Only the skill's own entry file at the folder root is allowed.
+ */
+export const SKILL_CLI_DISCOVERED_FILES = [...CLI_DISCOVERED_FILES, 'AGENT.md'] as const;
+
+/** Markdown file names (any case) that are read for shell lines. */
+export const MARKDOWN_FILE = /\.(md|markdown)$/i;
+
+/**
+ * A CLI runs shell for an inline `!` plus backtick and for a fence opened with three backticks
+ * and `!`; the `$` forms are refused too, as the start of syntax built from arguments at run time.
+ */
+export const SHELL_LINE = /!`|```!|~~~!|```\$|~~~\$|!\$/;
