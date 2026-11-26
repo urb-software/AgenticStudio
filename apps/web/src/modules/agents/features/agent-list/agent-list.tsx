@@ -9,8 +9,9 @@ import { EmptyState } from '@/shared/components/empty-state';
 import { Button } from '@/shared/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card';
 import { Skeleton } from '@/shared/ui/skeleton';
-import { ApiError, type AgentListOutput, type AgentSummaryOutput } from '../../../../platform/api';
+import { type AgentListOutput, type AgentSummaryOutput } from '../../../../platform/api';
 import { useAgents } from '../../api/agents-queries';
+import { editorHref, readRequestOf, shortSha } from '../../components/definitions-view';
 import { Problems } from '../../components/problems';
 import { AgentDetail } from '../agent-detail/agent-detail';
 import { BaseRules } from '../base-rules/base-rules';
@@ -23,21 +24,6 @@ const PROVIDER_LABEL = { claude_code: 'Claude Code', codex: 'Codex' } as const;
 
 /** Rows are unique by source and name: a built-in and a refused folder can share a name. */
 const rowKey = (agent: AgentSummaryOutput) => `${agent.source}:${agent.name}`;
-
-function readRequestOf(error: unknown): string {
-  if (!(error instanceof ApiError) || error.status === 0) return READ_REQUEST;
-  const status = [error.status, error.problem?.title].filter(Boolean).join(' ');
-  return `${READ_REQUEST} · ${status}`;
-}
-
-/** The editor on the agent's entry file. */
-function editorHref(name: string): string {
-  return `/agents/editor?${new URLSearchParams({ path: `agents/${name}/AGENT.md` })}`;
-}
-
-function shortSha(sha: string): string {
-  return sha.slice(0, 7);
-}
 
 /** Why no (or only the last known) definitions agents can be read, or null when all is well. */
 function repositoryReason(list: AgentListOutput): string | null {
@@ -75,7 +61,7 @@ function AgentRow({
         {/* A reserved name is judged here only: the API answers another route for it. */}
         {openable && agent.source === 'definitions' ? (
           <Button asChild className="ml-auto">
-            <Link href={editorHref(agent.name)}>
+            <Link href={editorHref(`agents/${agent.name}/AGENT.md`)}>
               Open in editor<span className="sr-only"> ({agent.name})</span>
             </Link>
           </Button>
@@ -150,7 +136,9 @@ export function AgentList() {
           tone="error"
           icon={TriangleAlertIcon}
           title="Couldn't load the agents"
-          description={<span className="font-mono text-small">{readRequestOf(error)}</span>}
+          description={
+            <span className="font-mono text-small">{readRequestOf(READ_REQUEST, error)}</span>
+          }
           action={
             <Button icon={RefreshCwIcon} loading={isRefetching} onClick={() => void refetch()}>
               Retry
