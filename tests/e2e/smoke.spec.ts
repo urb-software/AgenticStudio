@@ -1747,7 +1747,7 @@ test('the skill editor creates a skill and flags a forbidden key while typing', 
   await dialog.getByRole('button', { name: 'Create skill' }).click();
   const editor = page.locator('.monaco-editor');
   await expect(editor.locator('.view-lines')).toContainText('Describe what this skill is for.');
-  expect(draft.files.get('skills/fresh/SKILL.md')).toContain('name: fresh');
+  expect(draft.files.get('skills/fresh/SKILL.md')).toContain('name: "fresh"');
 
   await editor.locator('.view-lines').click();
   await page.keyboard.press('ControlOrMeta+A');
