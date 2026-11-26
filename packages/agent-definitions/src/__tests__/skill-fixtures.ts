@@ -63,7 +63,7 @@ export const SKILL_FAILING: Record<string, Fixture> = {
     ['key_invalid@SKILL.md'],
   ),
   'key_invalid (description too long)': fixture(
-    [skillFile(`name: helper\ndescription: ${'d'.repeat(501)}`)],
+    [skillFile(`name: helper\ndescription: ${'d'.repeat(1025)}`)],
     ['key_invalid@SKILL.md'],
   ),
   'key_invalid (description on two lines)': fixture(
@@ -186,6 +186,40 @@ export const SKILL_FAILING: Record<string, Fixture> = {
   'shell_line (another Markdown file)': fixture(
     [valid(), file('docs/guide.md', 'text\n```!\nls\n```\n')],
     ['shell_line@docs/guide.md'],
+  ),
+  'shell_line (a YAML escape in the description)': fixture(
+    [skillFile('name: helper\ndescription: "Run \\x21\\x60ls\\x60 now"')],
+    ['shell_line@SKILL.md'],
+  ),
+  'shell_line (a YAML escape in license)': fixture(
+    [valid('license: "\\x21\\x60ls\\x60"')],
+    ['shell_line@SKILL.md'],
+  ),
+  'shell_line (a YAML escape in compatibility)': fixture(
+    [valid('compatibility: "\\x60\\x60\\x60\\x21"')],
+    ['shell_line@SKILL.md'],
+  ),
+  'shell_line (a YAML escape in a metadata value)': fixture(
+    [valid('metadata:\n  note: "\\x21\\x24HOME"')],
+    ['shell_line@SKILL.md'],
+  ),
+  'shell_line (a YAML escape in a metadata key)': fixture(
+    [valid('metadata:\n  "\\x21\\x60ls\\x60": v')],
+    ['shell_line@SKILL.md'],
+  ),
+  'file_too_large (a Markdown file declared small)': fixture(
+    [valid(), { ...file('docs/guide.md', 'x'.repeat(1024 * 1024 + 1)), size: 1 }],
+    ['file_too_large@docs/guide.md'],
+  ),
+  'folder_too_large (Markdown files declared small)': fixture(
+    [
+      valid(),
+      ...Array.from({ length: 6 }, (_, index) => ({
+        ...file(`docs/part${index}.md`, 'x'.repeat(1024 * 1024)),
+        size: 1,
+      })),
+    ],
+    ['folder_too_large@'],
   ),
   'shell_line (front matter)': fixture([valid('license: "!`ls`"')], ['shell_line@SKILL.md']),
 };

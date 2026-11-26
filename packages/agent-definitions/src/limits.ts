@@ -101,8 +101,8 @@ export const SKILL_KNOWN_KEYS = [
  */
 export const SKILL_FORBIDDEN_KEYS = ['context', 'agent'] as const;
 
-/** A skill's description is one line of 1 to this many characters (the stricter of both formats). */
-export const SKILL_DESCRIPTION_MAX_LENGTH = Math.min(1024, DESCRIPTION_MAX_LENGTH);
+/** A skill's description is one line of 1 to this many characters, the common format's limit. */
+export const SKILL_DESCRIPTION_MAX_LENGTH = 1024;
 
 /** The longest `license` or `compatibility` value, in characters. */
 export const SKILL_TEXT_MAX_LENGTH = 500;

@@ -4,6 +4,7 @@ import {
   PROBLEM_CODES,
   SKILL_PROBLEM_CODES,
   SHELL_LINE,
+  SKILL_DESCRIPTION_MAX_LENGTH,
   SKILL_ENTRY_FILE,
   SKILL_FORBIDDEN_KEYS,
   SKILL_KNOWN_KEYS,
@@ -82,7 +83,7 @@ describe('passing skill fixtures', () => {
       `---\r\n${SKILL_FRONT.replaceAll('\n', '\r\n')}\r\n---\r\nBody\r\n`,
     );
     expect(validateSkillFolder('helper', [crlf]).ok).toBe(true);
-    const longest = skillFile(`name: helper\ndescription: ${'d'.repeat(500)}`);
+    const longest = skillFile(`name: helper\ndescription: ${'d'.repeat(1024)}`);
     expect(validateSkillFolder('helper', [longest]).ok).toBe(true);
   });
 
@@ -118,6 +119,10 @@ describe('the key lists', () => {
       expect(result.problems.map((item) => item.code)).toEqual(['forbidden_key']);
     },
   );
+
+  it('takes the common format description limit', () => {
+    expect(SKILL_DESCRIPTION_MAX_LENGTH).toBe(1024);
+  });
 
   it('names the folder and entry file', () => {
     expect(SKILLS_DIRECTORY).toBe('skills');

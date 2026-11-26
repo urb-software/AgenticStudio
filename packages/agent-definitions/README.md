@@ -15,10 +15,10 @@ The format of an Agent definition and of a Skill definition, and their validatio
 ## Skill format
 
 - A skill is the folder `skills/<name>/`; the entry file is `SKILL.md` at its root. Same layout as an agent: front matter, then Markdown instructions.
-- Keys: `name` (matches `AGENT_NAME_PATTERN` and equals the folder name) and `description` (one line, 1 to `SKILL_DESCRIPTION_MAX_LENGTH`, the stricter of the common format's 1024 and an agent's 500) are required. Optional: `license` and `compatibility` (one line, up to 500 characters) and `metadata` (a flat mapping of at most 20 short text keys to text values). `SKILL_KNOWN_KEYS` lists them; any other key is `unknown_key`.
+- Keys: `name` (matches `AGENT_NAME_PATTERN` and equals the folder name) and `description` (one line, 1 to `SKILL_DESCRIPTION_MAX_LENGTH`, the common format's 1024) are required. Optional: `license` and `compatibility` (one line, up to 500 characters) and `metadata` (a flat mapping of at most 20 short text keys to text values). `SKILL_KNOWN_KEYS` lists them; any other key is `unknown_key`.
 - `forbidden_key` covers `FORBIDDEN_KEYS` and also `SKILL_FORBIDDEN_KEYS` (`context`, `agent`, which ask for a fork). Agents are judged by `FORBIDDEN_KEYS` alone.
-- The path, kind, size and count rules and the limits are those of an agent folder. `SKILL.md` is allowed only at the folder root; `SKILL.md`, `AGENT.md`, `AGENTS.md`, `CLAUDE.md` elsewhere, and any dot segment, are `cli_config_path` (`SKILL_CLI_DISCOVERED_FILES`).
-- `shell_line`: a `SKILL.md`, or any other Markdown file (`.md`, `.markdown`), that matches `SHELL_LINE` (an inline `!` plus backtick, a fence opened with `!` or `$`, or `!$`) is refused. The caller must read the text of every Markdown file; one without text is `entry_unreadable`.
+- The path, kind, size and count rules and the limits are those of an agent folder. `SKILL.md` is allowed only at the folder root; every name of `SKILL_CLI_DISCOVERED_FILES` (those of an agent folder plus `AGENT.md`, any case) anywhere else, and any dot segment, are `cli_config_path`.
+- `shell_line`: a `SKILL.md`, or any other Markdown file (`.md`, `.markdown`), that matches `SHELL_LINE` (also in any decoded front matter value, so a YAML escape cannot hide it) (an inline `!` plus backtick, a fence opened with `!` or `$`, or `!$`) is refused. The caller must read the text of every Markdown file; one without text is `entry_unreadable`. In a skill folder a file with text is measured by it as well as by its declared size.
 
 ## Use
 
