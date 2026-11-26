@@ -1,5 +1,11 @@
-import { AGENT_NAME_PATTERN } from '@agentic-studio/agent-definitions/limits';
 import Link from 'next/link';
+
+/**
+ * A valid skill name. A copy of the definitions package's rule, which the package index cannot
+ * be imported for here (it would add its YAML parser to every route's first load); a test pins
+ * the two together.
+ */
+export const SKILL_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 /**
  * The names of the skills the Run's agent had when it started, in the order recorded. A name that
@@ -11,7 +17,7 @@ export function RunSkills({ skills }: { skills: readonly string[] }) {
     <ul className="m-0 flex list-none flex-wrap gap-x-4 gap-y-1 p-0">
       {skills.map((name, index) => (
         <li key={`${index}:${name}`} className="font-mono text-code break-all">
-          {AGENT_NAME_PATTERN.test(name) ? (
+          {SKILL_NAME_PATTERN.test(name) ? (
             <Link href={`/agents/skills?${new URLSearchParams({ open: name })}`}>{name}</Link>
           ) : (
             name
