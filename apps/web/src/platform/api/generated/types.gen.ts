@@ -507,6 +507,89 @@ export type RunAgentListOutput = {
     preselectedReason: string | null;
 };
 
+export type SkillSummaryOutput = {
+    /**
+     * The name of the skill folder, as found; it may not be a valid name.
+     */
+    name: string;
+    /**
+     * Null for a skill that is not valid.
+     */
+    description: string | null;
+    /**
+     * False while the skill has problems.
+     */
+    valid: boolean;
+    problems: Array<SkillProblemOutput>;
+};
+
+export type SkillProblemOutput = {
+    code: 'entry_missing' | 'entry_unreadable' | 'front_matter_missing' | 'front_matter_malformed' | 'front_matter_too_large' | 'key_missing' | 'key_invalid' | 'provider_unknown' | 'model_unknown' | 'name_invalid' | 'name_mismatch' | 'name_reserved' | 'unknown_key' | 'forbidden_key' | 'instructions_too_large' | 'too_many_files' | 'file_too_large' | 'folder_too_large' | 'path_outside_folder' | 'nested_git' | 'symlink_refused' | 'kind_refused' | 'duplicate_path' | 'size_invalid' | 'cli_config_path' | 'short_name' | 'shell_line';
+    /**
+     * The file or folder the problem is about, relative to the skill folder.
+     */
+    path: string;
+    /**
+     * The front matter key, when the problem is about one.
+     */
+    key: string | null;
+    /**
+     * Fixed wording per code; never a value or file content.
+     */
+    message: string;
+};
+
+export type SkillListOutput = {
+    /**
+     * The commit of the definitions Repository the agents were read at; null when none was.
+     */
+    commit: string | null;
+    /**
+     * Null when no definitions Repository is connected.
+     */
+    repository: AgentsRepositoryOutput | null;
+    /**
+     * True when more skill folders exist than are listed.
+     */
+    truncated: boolean;
+    skills: Array<SkillSummaryOutput>;
+};
+
+export type SkillDetailOutput = {
+    /**
+     * The commit of the definitions Repository the agents were read at; null when none was.
+     */
+    commit: string | null;
+    /**
+     * Null when no definitions Repository is connected.
+     */
+    repository: AgentsRepositoryOutput | null;
+    /**
+     * The name of the skill folder, as found; it may not be a valid name.
+     */
+    name: string;
+    /**
+     * Null for a skill that is not valid.
+     */
+    description: string | null;
+    /**
+     * False while the skill has problems.
+     */
+    valid: boolean;
+    problems: Array<SkillProblemOutput>;
+    /**
+     * Plain text, never Markdown or HTML to render; empty for an invalid skill.
+     */
+    instructions: string;
+    /**
+     * Every file of the skill folder with its size in bytes.
+     */
+    files: Array<{
+        path: string;
+        size: number;
+    }>;
+};
+
 export type StartRunRequest = {
     task: string;
     /**
@@ -2164,6 +2247,56 @@ export type ListRunAgentsResponses = {
 };
 
 export type ListRunAgentsResponse = ListRunAgentsResponses[keyof ListRunAgentsResponses];
+
+export type ListSkillsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/skills';
+};
+
+export type ListSkillsErrors = {
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type ListSkillsError = ListSkillsErrors[keyof ListSkillsErrors];
+
+export type ListSkillsResponses = {
+    200: SkillListOutput;
+};
+
+export type ListSkillsResponse = ListSkillsResponses[keyof ListSkillsResponses];
+
+export type GetSkillData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/skills/{name}';
+};
+
+export type GetSkillErrors = {
+    /**
+     * Unknown skill (urn:agentic-studio:problem:skill-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type GetSkillError = GetSkillErrors[keyof GetSkillErrors];
+
+export type GetSkillResponses = {
+    200: SkillDetailOutput;
+};
+
+export type GetSkillResponse = GetSkillResponses[keyof GetSkillResponses];
 
 export type ListProjectRunsData = {
     body?: never;

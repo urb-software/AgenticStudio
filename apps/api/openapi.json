@@ -1890,6 +1890,91 @@
         ]
       }
     },
+    "/api/skills": {
+      "get": {
+        "description": "The skill folders of the definitions Repository at its last fetched commit, each with its problems and whether it is valid. At most 200 are listed. The Draft is never read.",
+        "operationId": "listSkills",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillList_Output"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/api/skills/{name}": {
+      "get": {
+        "description": "One skill with its instructions (plain text) and the files of its folder with their sizes, read at the last fetched commit of the definitions Repository. A name that is not a valid skill name is unknown. The Draft is never read.",
+        "operationId": "getSkill",
+        "parameters": [
+          {
+            "name": "name",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDetail_Output"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown skill (urn:agentic-studio:problem:skill-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
     "/api/projects/{id}/runs": {
       "post": {
         "operationId": "startRun",
@@ -5536,6 +5621,219 @@
           "agents",
           "preselected",
           "preselectedReason"
+        ],
+        "additionalProperties": false
+      },
+      "SkillSummary_Output": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The name of the skill folder, as found; it may not be a valid name."
+          },
+          "description": {
+            "description": "Null for a skill that is not valid.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "valid": {
+            "type": "boolean",
+            "description": "False while the skill has problems."
+          },
+          "problems": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillProblem_Output"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "valid",
+          "problems"
+        ],
+        "additionalProperties": false
+      },
+      "SkillProblem_Output": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "entry_missing",
+              "entry_unreadable",
+              "front_matter_missing",
+              "front_matter_malformed",
+              "front_matter_too_large",
+              "key_missing",
+              "key_invalid",
+              "provider_unknown",
+              "model_unknown",
+              "name_invalid",
+              "name_mismatch",
+              "name_reserved",
+              "unknown_key",
+              "forbidden_key",
+              "instructions_too_large",
+              "too_many_files",
+              "file_too_large",
+              "folder_too_large",
+              "path_outside_folder",
+              "nested_git",
+              "symlink_refused",
+              "kind_refused",
+              "duplicate_path",
+              "size_invalid",
+              "cli_config_path",
+              "short_name",
+              "shell_line"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "description": "The file or folder the problem is about, relative to the skill folder."
+          },
+          "key": {
+            "description": "The front matter key, when the problem is about one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "Fixed wording per code; never a value or file content."
+          }
+        },
+        "required": [
+          "code",
+          "path",
+          "key",
+          "message"
+        ],
+        "additionalProperties": false
+      },
+      "SkillList_Output": {
+        "type": "object",
+        "properties": {
+          "commit": {
+            "description": "The commit of the definitions Repository the agents were read at; null when none was.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repository": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentsRepository_Output"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null when no definitions Repository is connected."
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True when more skill folders exist than are listed."
+          },
+          "skills": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillSummary_Output"
+            }
+          }
+        },
+        "required": [
+          "commit",
+          "repository",
+          "truncated",
+          "skills"
+        ],
+        "additionalProperties": false
+      },
+      "SkillDetail_Output": {
+        "type": "object",
+        "properties": {
+          "commit": {
+            "description": "The commit of the definitions Repository the agents were read at; null when none was.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repository": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentsRepository_Output"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null when no definitions Repository is connected."
+          },
+          "name": {
+            "type": "string",
+            "description": "The name of the skill folder, as found; it may not be a valid name."
+          },
+          "description": {
+            "description": "Null for a skill that is not valid.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "valid": {
+            "type": "boolean",
+            "description": "False while the skill has problems."
+          },
+          "problems": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillProblem_Output"
+            }
+          },
+          "instructions": {
+            "type": "string",
+            "description": "Plain text, never Markdown or HTML to render; empty for an invalid skill."
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "path",
+                "size"
+              ],
+              "additionalProperties": false
+            },
+            "description": "Every file of the skill folder with its size in bytes."
+          }
+        },
+        "required": [
+          "commit",
+          "repository",
+          "name",
+          "description",
+          "valid",
+          "problems",
+          "instructions",
+          "files"
         ],
         "additionalProperties": false
       },
