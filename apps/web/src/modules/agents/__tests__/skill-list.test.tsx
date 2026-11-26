@@ -1,10 +1,15 @@
 import { focusManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SkillList } from '../features/skill-list/skill-list';
 import type { SkillSummaryOutput } from '../../../platform/api';
 import { fakeSkillsApi, SKILLS_COMMIT, skillDetail, skillList } from './fake-skills-api';
+
+const search = vi.hoisted(() => ({ value: '' }));
+vi.mock('next/navigation', () => ({
+  useSearchParams: () => new URLSearchParams(search.value),
+}));
 
 const REVIEW: SkillSummaryOutput = {
   name: 'review',
@@ -39,7 +44,13 @@ function renderSkills() {
 
 const card = () => screen.getByRole('region', { name: 'Skills' });
 
+beforeEach(() => {
+  // jsdom has no scrollIntoView.
+  Element.prototype.scrollIntoView = vi.fn();
+});
+
 afterEach(() => {
+  search.value = '';
   act(() => focusManager.setFocused(undefined));
   vi.unstubAllGlobals();
 });
@@ -288,5 +299,99 @@ describe('Skills page: the detail', () => {
 
     expect(await screen.findByText('Second text.')).toBeTruthy();
     expect(api.count('/api/skills/review')).toBe(2);
+  });
+});
+
+describe('Skills page: the agents that name a skill', () => {
+  const show = async (extras: Parameters<typeof skillDetail>[1]) => {
+    fakeSkillsApi(skillList({ skills: [REVIEW] }), { review: skillDetail(REVIEW, extras) });
+    const view = renderSkills();
+    await userEvent.click(await screen.findByRole('button', { name: 'Show review' }));
+    return view;
+  };
+
+  it('lists them, each linking to the agent, without axe violations', async () => {
+    const { container } = await show({ instructions: 'Do it.', usedBy: ['alpha', 'zed'] });
+
+    const region = await screen.findByRole('region', { name: 'Agents that use this skill' });
+    const links = within(region).getAllByRole('link');
+    expect(links.map((link) => link.textContent)).toEqual(['alpha', 'zed']);
+    expect(links.map((link) => link.getAttribute('href'))).toEqual([
+      '/agents?open=alpha',
+      '/agents?open=zed',
+    ]);
+    expect(within(region).queryByText(/may be incomplete/)).toBeNull();
+    await expect(container).toHaveNoAxeViolations();
+  });
+
+  it('says no agent names the skill', async () => {
+    const { container } = await show({ instructions: 'Do it.' });
+
+    const region = await screen.findByRole('region', { name: 'Agents that use this skill' });
+    expect(within(region).getByText('No agent names this skill.')).toBeTruthy();
+    await expect(container).toHaveNoAxeViolations();
+  });
+
+  it('says the list may be incomplete when agents beyond the listed ones were not checked', async () => {
+    const { container } = await show({
+      instructions: 'Do it.',
+      usedBy: ['alpha'],
+      usedByTruncated: true,
+    });
+
+    const region = await screen.findByRole('region', { name: 'Agents that use this skill' });
+    expect(within(region).getByText(/may be incomplete/)).toBeTruthy();
+    await expect(container).toHaveNoAxeViolations();
+  });
+
+  it('shows the agents of an invalid skill too', async () => {
+    fakeSkillsApi(skillList({ skills: [BROKEN] }), {
+      broken: skillDetail(BROKEN, { usedBy: ['alpha'] }),
+    });
+    const { container } = renderSkills();
+    await userEvent.click(await screen.findByRole('button', { name: 'Show broken' }));
+
+    const region = await screen.findByRole('region', { name: 'Agents that use this skill' });
+    expect(within(region).getByRole('link', { name: 'alpha' })).toBeTruthy();
+    await expect(container).toHaveNoAxeViolations();
+  });
+
+  it('opens the skill named in the address', async () => {
+    search.value = 'open=review';
+    fakeSkillsApi(skillList({ skills: [REVIEW] }), {
+      review: skillDetail(REVIEW, { instructions: 'Do it.', usedBy: ['alpha'] }),
+    });
+    renderSkills();
+
+    expect(await screen.findByText('Do it.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Hide review' })).toBeTruthy();
+  });
+
+  it('brings the opened skill into view once, without moving focus, and not on a later toggle', async () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    search.value = 'open=review';
+    fakeSkillsApi(skillList({ skills: [REVIEW] }), {
+      review: skillDetail(REVIEW, { instructions: 'Do it.' }),
+    });
+    renderSkills();
+
+    await screen.findByText('Do it.');
+    expect(scroll).toHaveBeenCalledTimes(1);
+    expect(scroll).toHaveBeenCalledWith({ block: 'nearest' });
+    expect(document.activeElement).toBe(document.body);
+    await userEvent.click(screen.getByRole('button', { name: 'Hide review' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Show review' }));
+    expect(scroll).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not scroll when no skill is named in the address', async () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    fakeSkillsApi(skillList({ skills: [REVIEW] }));
+    renderSkills();
+
+    await screen.findByRole('region', { name: 'Skills' });
+    expect(scroll).not.toHaveBeenCalled();
   });
 });

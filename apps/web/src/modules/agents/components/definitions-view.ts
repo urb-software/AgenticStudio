@@ -12,6 +12,16 @@ export function editorHref(path: string): string {
   return `/agents/editor?${new URLSearchParams({ path })}`;
 }
 
+/** The Skills page with one skill open. */
+export function skillHref(name: string): string {
+  return `/agents/skills?${new URLSearchParams({ open: name })}`;
+}
+
+/** The Agents page with one definitions agent open. */
+export function agentHref(name: string): string {
+  return `/agents?${new URLSearchParams({ open: name })}`;
+}
+
 export function shortSha(sha: string): string {
   return sha.slice(0, 7);
 }

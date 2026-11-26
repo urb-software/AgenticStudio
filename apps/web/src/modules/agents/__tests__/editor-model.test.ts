@@ -90,6 +90,15 @@ describe('problemTarget', () => {
     });
   });
 
+  it.each(['skill_name_invalid', 'skill_listed_twice', 'skill_missing', 'skill_invalid'] as const)(
+    'places %s on the skills line, since its key is a skill name',
+    (code) => {
+      expect(
+        problemTarget('reviewer', { code, path: 'AGENT.md', key: 'review', message: 'm' }),
+      ).toEqual({ path: 'agents/reviewer/AGENT.md', key: 'skills' });
+    },
+  );
+
   it('carries the front matter key, to find its line', () => {
     expect(problemTarget('reviewer', problem('AGENT.md', 'provider'))).toEqual({
       path: 'agents/reviewer/AGENT.md',
