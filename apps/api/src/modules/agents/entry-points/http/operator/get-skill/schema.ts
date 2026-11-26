@@ -25,6 +25,11 @@ export const skillDetailResponseSchema = z
         'The names of the agents at the same commit whose definition lists this skill, valid ' +
           'or not, sorted.',
       ),
+    usedByTruncated: z
+      .boolean()
+      .describe(
+        'True when agents beyond the listed ones were not checked: `usedBy` may be incomplete.',
+      ),
   })
   .meta({ id: 'SkillDetail' });
 

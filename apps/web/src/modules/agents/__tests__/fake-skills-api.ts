@@ -29,6 +29,7 @@ export function skillDetail(
     instructions: extras.instructions ?? '',
     files: extras.files ?? [],
     usedBy: [],
+    usedByTruncated: false,
   };
 }
 

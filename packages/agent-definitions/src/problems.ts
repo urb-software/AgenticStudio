@@ -61,9 +61,9 @@ export interface Problem<Code extends string = ProblemCode> {
   code: Code;
   /** The file or folder the problem is about; empty for the folder itself. */
   path: string;
-  /** The offending front matter key, when the problem is about one. */
+  /** The offending front matter key; for the four skill-name reasons, the skill name. */
   key?: string;
-  /** Fixed wording per code, quoting at most the key or path. Never a value or file content. */
+  /** Fixed wording per code, quoting at most the key, a skill name or the path; no other value. */
   message: string;
 }
 

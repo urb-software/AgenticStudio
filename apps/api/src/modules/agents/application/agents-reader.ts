@@ -106,13 +106,17 @@ export class AgentsReader {
   ) {}
 
   /** The names of the agents at the commit whose front matter lists the skill, valid or not. */
-  async skillUsers(commit: string, skill: string): Promise<string[]> {
+  async skillUsers(
+    commit: string,
+    skill: string,
+  ): Promise<{ users: string[]; truncated: boolean }> {
     const read = await this.readMemoised(commit, undefined);
-    if (read.status !== 'read') return [];
-    return read.agents
+    if (read.status !== 'read') return { users: [], truncated: true };
+    const users = read.agents
       .filter((agent) => agent.source === 'definitions' && agent.skills.includes(skill))
       .map((agent) => agent.name)
       .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    return { users, truncated: read.truncated };
   }
 
   async read(name: string | undefined): Promise<AgentsRead> {

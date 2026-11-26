@@ -88,6 +88,7 @@ describe('ReadSkillsHandler', () => {
       truncated: false,
       skills: [],
       usedBy: [],
+      usedByTruncated: false,
     });
     expect(fake.listTree).not.toHaveBeenCalled();
   });
@@ -533,5 +534,6 @@ describe('ReadSkillsHandler usedBy', () => {
 
     expect((await handler.execute({ name: 'review' })).usedBy).toEqual(['alpha', 'zed']);
     expect((await handler.execute()).usedBy).toEqual([]);
+    expect((await handler.execute({ name: 'review' })).usedByTruncated).toBe(false);
   });
 });

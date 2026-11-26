@@ -5075,7 +5075,7 @@
             "description": "The file or folder the problem is about, relative to the Repository root."
           },
           "key": {
-            "description": "The front matter key, when the problem is about one.",
+            "description": "The front matter key, when the problem is about one; for the skill reasons, the skill name.",
             "type": [
               "string",
               "null"
@@ -5370,7 +5370,7 @@
             "description": "The file or folder the problem is about, relative to the agent folder."
           },
           "key": {
-            "description": "The front matter key, when the problem is about one.",
+            "description": "The front matter key, when the problem is about one; for the skill reasons, the skill name.",
             "type": [
               "string",
               "null"
@@ -5858,6 +5858,10 @@
               "type": "string"
             },
             "description": "The names of the agents at the same commit whose definition lists this skill, valid or not, sorted."
+          },
+          "usedByTruncated": {
+            "type": "boolean",
+            "description": "True when agents beyond the listed ones were not checked: `usedBy` may be incomplete."
           }
         },
         "required": [
@@ -5869,7 +5873,8 @@
           "problems",
           "instructions",
           "files",
-          "usedBy"
+          "usedBy",
+          "usedByTruncated"
         ],
         "additionalProperties": false
       },

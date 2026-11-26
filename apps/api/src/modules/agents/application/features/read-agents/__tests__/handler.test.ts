@@ -11,7 +11,7 @@ import type {
   DefinitionsTreeResult,
 } from '../../../../../projects/contracts/index.js';
 import { AgentsReader } from '../../../agents-reader.js';
-import { SkillsReader } from '../../../skills-reader.js';
+import { MAX_ON_DEMAND_SKILLS, SkillsReader } from '../../../skills-reader.js';
 import { MAX_LISTED_AGENTS, ReadAgentsHandler } from '../handler.js';
 
 const COMMIT = 'a'.repeat(40);
@@ -672,8 +672,14 @@ describe('the skills an agent names', () => {
       },
     });
 
-    await expect(reader.skillUsers(COMMIT, 'review')).resolves.toEqual(['alpha', 'zed']);
-    await expect(reader.skillUsers(COMMIT, 'unused')).resolves.toEqual([]);
+    await expect(reader.skillUsers(COMMIT, 'review')).resolves.toEqual({
+      users: ['alpha', 'zed'],
+      truncated: false,
+    });
+    await expect(reader.skillUsers(COMMIT, 'unused')).resolves.toEqual({
+      users: [],
+      truncated: false,
+    });
   });
 
   it('offers the Default agent with the reason when the default agent lost its skill', async () => {
@@ -689,6 +695,158 @@ describe('the skills an agent names', () => {
       status: 'offered',
       preselected: 'default-claude-code',
       reason: expect.stringContaining('worker') as string,
+    });
+  });
+});
+
+describe('the skills an agent names, when the skills list is cut', () => {
+  const SKILL = (name: string) =>
+    `---\nname: ${name}\ndescription: Does ${name}\n---\nHow to ${name}.\n`;
+  const skillName = (index: number) => `skill-${String(index).padStart(4, '0')}`;
+  const manySkills = (count: number) => Array.from({ length: count }, (_, i) => skillName(i));
+  const skillEntries = (names: string[]) => names.map((n) => file(`skills/${n}/SKILL.md`));
+  const skillFiles = (names: string[]) =>
+    Object.fromEntries(names.map((n) => [`skills/${n}/SKILL.md`, SKILL(n)]));
+  const agent = (name: string, skills: string[]) => ({
+    [`agents/${name}/AGENT.md`]: VALID(name, `skills: [${skills.join(', ')}]\n`),
+  });
+  const calls = (fake: ReturnType<typeof scripted>['fake']) =>
+    fake.listTree.mock.calls.length + fake.readFiles.mock.calls.length;
+
+  it('reads a named skill beyond the cut once per commit, for every agent and every request', async () => {
+    const names = manySkills(205);
+    const { handler, fake } = scripted({
+      tree: listed(
+        file('agents/one/AGENT.md'),
+        file('agents/two/AGENT.md'),
+        ...skillEntries(names),
+      ),
+      files: {
+        ...agent('one', [skillName(204)]),
+        ...agent('two', [skillName(204), skillName(203)]),
+        ...skillFiles(names),
+      },
+    });
+
+    const first = await handler.execute();
+    const afterFirst = calls(fake);
+    const second = await handler.execute();
+
+    expect(first.agents.filter((a) => a.source === 'definitions').map((a) => a.usable)).toEqual([
+      true,
+      true,
+    ]);
+    expect(second.agents).toEqual(first.agents);
+    expect(calls(fake)).toBe(afterFirst);
+    const skillReads = fake.readFiles.mock.calls.filter(([, paths]) =>
+      paths.some((path) => path.startsWith('skills/skill-0204')),
+    );
+    expect(skillReads).toHaveLength(1);
+  });
+
+  it('lists skills/ once for all the names beyond the cut', async () => {
+    const names = manySkills(210);
+    const { handler, fake } = scripted({
+      tree: listed(file('agents/one/AGENT.md'), ...skillEntries(names)),
+      files: {
+        ...agent('one', [skillName(205), skillName(206), skillName(207)]),
+        ...skillFiles(names),
+      },
+    });
+
+    await handler.execute();
+
+    const skillTrees = fake.listTree.mock.calls as unknown as [string, { directory?: string }?][];
+    // One for the cut list, one for the named folders.
+    expect(skillTrees.filter(([, options]) => options?.directory === 'skills')).toHaveLength(2);
+  });
+
+  it('fails closed, the same on every request, for names past the budget, and no agent depends on another', async () => {
+    const names = manySkills(200 + MAX_ON_DEMAND_SKILLS + 20);
+    const beyond = names.slice(200);
+    const agentNames = Array.from({ length: 12 }, (_, index) => `agent-${index}`);
+    const files: Record<string, string> = { ...skillFiles(names) };
+    agentNames.forEach((name, index) => {
+      Object.assign(files, agent(name, beyond.slice(index * 20, index * 20 + 20)));
+    });
+    const { handler, fake } = scripted({
+      tree: listed(...agentNames.map((n) => file(`agents/${n}/AGENT.md`)), ...skillEntries(names)),
+      files,
+    });
+
+    const first = await handler.execute();
+    const afterFirst = calls(fake);
+    const second = await handler.execute();
+    const alone = await handler.execute({ name: 'agent-11' });
+
+    const refused = first.agents.filter((a) => a.source === 'definitions' && !a.usable);
+    expect(refused.length).toBeGreaterThan(0);
+    expect(refused.every((a) => a.problems.every((p) => p.code === 'skill_invalid'))).toBe(true);
+    expect(second.agents).toEqual(first.agents);
+    expect(alone.agents[0]).toEqual(first.agents.find((a) => a.name === 'agent-11'));
+    expect(calls(fake)).toBe(afterFirst);
+  });
+
+  it('fails closed, and keeps that answer, when the listing of skills/ is itself cut', async () => {
+    const { handler, fake } = scripted({
+      tree: {
+        status: 'listed',
+        entries: [
+          file('agents/worker/AGENT.md'),
+          file('agents/zz/AGENT.md'),
+          file('skills/a/SKILL.md'),
+          file('skills/b/SKILL.md'),
+        ],
+        truncated: true,
+      },
+      files: { ...agent('worker', ['b']), ...skillFiles(['a', 'b']) },
+    });
+
+    const first = await handler.execute({ name: 'worker' });
+    const afterFirst = calls(fake);
+    const second = await handler.execute({ name: 'worker' });
+
+    expect(first.agents[0]).toMatchObject({
+      usable: false,
+      problems: [{ code: 'skill_invalid', key: 'b' }],
+    });
+    expect(second.agents).toEqual(first.agents);
+    expect(calls(fake)).toBe(afterFirst);
+  });
+
+  it('keeps nothing of a transient failure while reading the named folders', async () => {
+    const names = manySkills(205);
+    const { handler, fake } = scripted({
+      tree: listed(file('agents/one/AGENT.md'), ...skillEntries(names)),
+      files: { ...agent('one', [skillName(204)]), ...skillFiles(names) },
+    });
+    const real = fake.readFiles.getMockImplementation()!;
+    fake.readFiles.mockImplementation((commit: string, paths: readonly string[]) =>
+      paths.includes(`skills/${skillName(204)}/SKILL.md`)
+        ? Promise.resolve({ status: 'failed' as const })
+        : real(commit, paths),
+    );
+
+    const first = await handler.execute({ name: 'one' });
+    fake.readFiles.mockImplementation(real);
+    const second = await handler.execute({ name: 'one' });
+
+    expect(first.agents[0]).toMatchObject({
+      usable: false,
+      problems: [{ code: 'skill_invalid', key: skillName(204) }],
+    });
+    expect(second.agents[0]).toMatchObject({ usable: true, problems: [] });
+  });
+
+  it('says whether the agents beyond the cut were not checked for the users of a skill', async () => {
+    const { reader } = scripted({
+      tree: { status: 'listed', entries: [file('agents/a/AGENT.md')], truncated: true },
+      files: agent('a', ['review']),
+    });
+
+    await expect(reader.skillUsers(COMMIT, 'review')).resolves.toEqual({
+      users: [],
+      truncated: true,
     });
   });
 });

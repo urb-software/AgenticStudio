@@ -76,15 +76,22 @@ export const MAX_READ_BYTES = 16 * 1024 * 1024;
 /** Commits whose judged list is kept. */
 const MEMOISED_COMMITS = 4;
 
-/** Named skills that may be read by themselves after the list was cut, per commit read. */
-export const MAX_ON_DEMAND_SKILLS = 50;
+/**
+ * Unique skill names per commit that may be read by themselves after the list was cut. One read of
+ * a folder is at most 5 MiB and 100 files, so 200 names stay inside MAX_READ_PATHS for the usual
+ * one-file skill and are read in one go; the rest fail closed, the same on every request.
+ */
+export const MAX_ON_DEMAND_SKILLS = 200;
 
 export interface SkillStandings {
   /** A skill that exists, whether it is valid; a name that does not exist is absent. */
   standings: Map<string, { valid: boolean }>;
-  /** False when a skill could not be judged: the answer must not be kept for the commit. */
+  /** False only after a transient read failure: the answer must not be kept for the commit. */
   settled: boolean;
 }
+
+/** What a named skill turned out to be at a commit; a skill that cannot be judged is invalid. */
+type Outcome = 'missing' | { valid: boolean };
 
 const unjudged = (names: readonly string[]): SkillStandings => ({
   standings: new Map(names.map((name) => [name, { valid: false }])),
@@ -102,6 +109,7 @@ type Read = ReadOk | { status: DefinitionsUnavailable };
 @Injectable()
 export class SkillsReader {
   private readonly memo = new Map<string, ReadOk>();
+  private readonly outcomes = new Map<string, Map<string, Outcome>>();
 
   constructor(@Inject(DEFINITIONS_FILES) private readonly definitions: DefinitionsFiles) {}
 
@@ -135,33 +143,93 @@ export class SkillsReader {
 
   /**
    * Whether each named skill exists and is valid; a missing one is absent from the result. One that
-   * cannot be judged counts as invalid, not missing, and `settled` is false so nothing is kept.
+   * cannot be judged counts as invalid, not missing. What a name turned out to be is kept per
+   * commit; only a transient read failure leaves `settled` false, so that nothing is kept.
    */
   async standings(commit: string, names: readonly string[]): Promise<SkillStandings> {
     const listed = await this.readMemoised(commit, undefined);
     if (listed.status !== 'read') return unjudged(names);
+    const known = new Map(listed.skills.map((skill) => [skill.name, skill.valid]));
+    const kept = this.outcomesOf(commit);
+    const unique = [...new Set(names)].sort();
+    const pending = listed.truncated
+      ? unique.filter((name) => !known.has(name) && !kept.has(name))
+      : [];
+    const settled = pending.length === 0 || (await this.resolve(commit, pending, kept));
     const standings = new Map<string, { valid: boolean }>();
-    let settled = true;
-    let onDemand = 0;
-    for (const name of new Set(names)) {
-      const found = listed.skills.find((skill) => skill.name === name);
-      if (found) {
-        standings.set(name, { valid: found.valid });
-        continue;
-      }
-      if (!listed.truncated) continue;
-      onDemand += 1;
-      const alone =
-        onDemand > MAX_ON_DEMAND_SKILLS ? undefined : await this.readDefinitions(commit, name);
-      const view = alone?.status === 'read' ? alone.skills[0] : undefined;
-      if (view) standings.set(name, { valid: view.valid });
-      else if (alone?.status === 'read' && !alone.truncated) continue;
-      else {
-        standings.set(name, { valid: false });
-        settled = false;
-      }
+    for (const name of unique) {
+      const valid = known.get(name);
+      const outcome = valid === undefined ? kept.get(name) : { valid };
+      if (outcome === undefined) {
+        // Not kept after a failed read: it counts as invalid, never as missing.
+        if (listed.truncated) standings.set(name, { valid: false });
+      } else if (outcome !== 'missing') standings.set(name, outcome);
     }
     return { standings, settled };
+  }
+
+  private outcomesOf(commit: string): Map<string, Outcome> {
+    let kept = this.outcomes.get(commit);
+    if (!kept) {
+      kept = new Map();
+      this.outcomes.set(commit, kept);
+      while (this.outcomes.size > MEMOISED_COMMITS) {
+        this.outcomes.delete(this.outcomes.keys().next().value!);
+      }
+    }
+    return kept;
+  }
+
+  /** Reads the named folders beyond the cut list in one listing and one read; false on failure. */
+  private async resolve(
+    commit: string,
+    names: string[],
+    kept: Map<string, Outcome>,
+  ): Promise<boolean> {
+    const tree = await this.definitions.listTree(commit, { directory: SKILLS_DIRECTORY });
+    if (tree.status !== 'listed') return false;
+    let folders = findSkillFolders(tree.entries);
+    // A cut listing ends inside its last folder: that one may be partial, so it is not judged.
+    if (tree.truncated) folders = folders.slice(0, -1);
+    const byName = new Map(folders.map((folder) => [folder.name, folder]));
+
+    const decided = new Map<string, Outcome>();
+    const chosen: { folder: SkillFolder; wanted: AgentEntry[] }[] = [];
+    let paths = 0;
+    let bytes = 0;
+    let slots = MAX_ON_DEMAND_SKILLS - kept.size;
+    for (const name of names) {
+      const folder = byName.get(name);
+      slots -= 1;
+      if (slots < 0) decided.set(name, { valid: false });
+      else if (!folder) decided.set(name, tree.truncated ? { valid: false } : 'missing');
+      else {
+        const wanted = toRead(folder);
+        const size = wanted.reduce((sum, item) => sum + item.size, 0);
+        if (paths + wanted.length > MAX_READ_PATHS || bytes + size > MAX_READ_BYTES) {
+          decided.set(name, { valid: false });
+        } else {
+          paths += wanted.length;
+          bytes += size;
+          chosen.push({ folder, wanted });
+        }
+      }
+    }
+
+    const contents = new Map<string, DefinitionsFileRead>();
+    const toFetch = chosen.flatMap(({ folder, wanted }) =>
+      wanted.map((item) => `${SKILLS_DIRECTORY}/${folder.name}/${item.path}`),
+    );
+    if (toFetch.length > 0) {
+      const files = await this.definitions.readFiles(commit, toFetch, MAX_FILE_BYTES);
+      if (files.status !== 'read') return false;
+      for (const file of files.files) contents.set(file.path, file);
+    }
+    for (const { folder, wanted } of chosen) {
+      decided.set(folder.name, { valid: judgeFolder(folder, wanted, contents).valid });
+    }
+    for (const [name, outcome] of decided) kept.set(name, outcome);
+    return true;
   }
 
   /**
@@ -220,9 +288,8 @@ export class SkillsReader {
       chosen.push({ folder, wanted });
     }
 
-    const pathOf = (folder: string, path: string) => `${SKILLS_DIRECTORY}/${folder}/${path}`;
     const toFetch = chosen.flatMap(({ folder, wanted }) =>
-      wanted.map((item) => pathOf(folder.name, item.path)),
+      wanted.map((item) => `${SKILLS_DIRECTORY}/${folder.name}/${item.path}`),
     );
     const contents = new Map<string, DefinitionsFileRead>();
     if (toFetch.length > 0) {
@@ -231,42 +298,50 @@ export class SkillsReader {
       for (const file of files.files) contents.set(file.path, file);
     }
 
-    const skills = chosen.map(({ folder, wanted }): SkillView => {
-      const judged = validateSkillFolder(
-        folder.name,
-        folder.entries.map((item) => {
-          const read = contents.get(pathOf(folder.name, item.path));
-          return read?.status === 'found' && !read.binary ? { ...item, content: read.text } : item;
-        }),
-      );
-      if (judged.ok) {
-        const { definition } = judged;
-        return {
-          name: definition.name,
-          description: definition.description,
-          valid: true,
-          problems: [],
-          instructions: definition.instructions,
-          files: definition.files,
-        };
-      }
-      // A folder refused by its declared sizes was not read: it has no "cannot be read" reasons.
-      const unread = wanted.length === 0 && isRefusedBySize(folder);
-      return {
-        name: folder.name,
-        description: null,
-        valid: false,
-        problems: unread
-          ? judged.problems.filter((item) => item.code !== 'entry_unreadable')
-          : judged.problems,
-        instructions: '',
-        files: folder.entries
-          .filter((item) => item.kind === 'file')
-          .map(({ path, size }) => ({ path, size })),
-      };
-    });
+    const skills = chosen.map(({ folder, wanted }) => judgeFolder(folder, wanted, contents));
     return { status: 'read', skills, truncated };
   }
+}
+
+/** The view of one skill folder, judged from the files read of it. */
+function judgeFolder(
+  folder: SkillFolder,
+  wanted: AgentEntry[],
+  contents: Map<string, DefinitionsFileRead>,
+): SkillView {
+  const pathOf = (path: string) => `${SKILLS_DIRECTORY}/${folder.name}/${path}`;
+  const judged = validateSkillFolder(
+    folder.name,
+    folder.entries.map((item) => {
+      const read = contents.get(pathOf(item.path));
+      return read?.status === 'found' && !read.binary ? { ...item, content: read.text } : item;
+    }),
+  );
+  if (judged.ok) {
+    const { definition } = judged;
+    return {
+      name: definition.name,
+      description: definition.description,
+      valid: true,
+      problems: [],
+      instructions: definition.instructions,
+      files: definition.files,
+    };
+  }
+  // A folder refused by its declared sizes was not read: it has no "cannot be read" reasons.
+  const unread = wanted.length === 0 && isRefusedBySize(folder);
+  return {
+    name: folder.name,
+    description: null,
+    valid: false,
+    problems: unread
+      ? judged.problems.filter((item) => item.code !== 'entry_unreadable')
+      : judged.problems,
+    instructions: '',
+    files: folder.entries
+      .filter((item) => item.kind === 'file')
+      .map(({ path, size }) => ({ path, size })),
+  };
 }
 
 const filesOf = (folder: SkillFolder) => folder.entries.filter((item) => item.kind === 'file');

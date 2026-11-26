@@ -37,6 +37,7 @@ export class GetSkillEndpoint {
       instructions: skill.instructions,
       files: skill.files,
       usedBy: result.usedBy,
+      usedByTruncated: result.usedByTruncated,
     };
   }
 }

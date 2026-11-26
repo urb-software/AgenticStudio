@@ -22,7 +22,14 @@ const skill = {
 
 const endpointFor = (skills: unknown[], usedBy: string[] = []) => {
   const execute = vi.fn(() =>
-    Promise.resolve({ commit: COMMIT, repository, truncated: false, skills, usedBy }),
+    Promise.resolve({
+      commit: COMMIT,
+      repository,
+      truncated: false,
+      skills,
+      usedBy,
+      usedByTruncated: true,
+    }),
   );
   return { execute, endpoint: new GetSkillEndpoint({ execute } as unknown as ReadSkillsHandler) };
 };
@@ -51,6 +58,7 @@ describe('GetSkillEndpoint', () => {
       instructions: '<b>Body</b> [x](http://e)',
       files: skill.files,
       usedBy: ['alpha', 'zed'],
+      usedByTruncated: true,
     });
     expect(execute).toHaveBeenCalledWith({ name: 'review' });
   });

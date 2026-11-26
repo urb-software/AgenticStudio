@@ -259,6 +259,7 @@ describe('skills API (PostgreSQL + Redis via Testcontainers)', () => {
           { path: 'references/guide.md', size: 8 },
         ],
         usedBy: [],
+        usedByTruncated: false,
       });
       const broken = await getSkill('broken');
       expect(broken.body).toMatchObject({ valid: false, instructions: '', description: null });

@@ -12,7 +12,12 @@ const problemSchema = z
     path: z
       .string()
       .describe('The file or folder the problem is about, relative to the agent folder.'),
-    key: z.string().nullable().describe('The front matter key, when the problem is about one.'),
+    key: z
+      .string()
+      .nullable()
+      .describe(
+        'The front matter key, when the problem is about one; for the skill reasons, the skill name.',
+      ),
     message: z.string().describe('Fixed wording per code; never a value or file content.'),
   })
   .meta({ id: 'AgentProblem' });

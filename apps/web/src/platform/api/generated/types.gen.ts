@@ -269,7 +269,7 @@ export type AgentDraftProblemOutput = {
      */
     path: string;
     /**
-     * The front matter key, when the problem is about one.
+     * The front matter key, when the problem is about one; for the skill reasons, the skill name.
      */
     key: string | null;
     /**
@@ -396,7 +396,7 @@ export type AgentProblemOutput = {
      */
     path: string;
     /**
-     * The front matter key, when the problem is about one.
+     * The front matter key, when the problem is about one; for the skill reasons, the skill name.
      */
     key: string | null;
     /**
@@ -600,6 +600,10 @@ export type SkillDetailOutput = {
      * The names of the agents at the same commit whose definition lists this skill, valid or not, sorted.
      */
     usedBy: Array<string>;
+    /**
+     * True when agents beyond the listed ones were not checked: `usedBy` may be incomplete.
+     */
+    usedByTruncated: boolean;
 };
 
 export type StartRunRequest = {

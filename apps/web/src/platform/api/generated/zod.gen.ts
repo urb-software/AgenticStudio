@@ -448,7 +448,8 @@ export const zSkillDetailOutput = z.object({
         path: z.string(),
         size: z.int().gte(0).lte(9007199254740991)
     })),
-    usedBy: z.array(z.string())
+    usedBy: z.array(z.string()),
+    usedByTruncated: z.boolean()
 });
 
 export const zStartRunRequest = z.object({
