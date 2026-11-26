@@ -168,6 +168,32 @@ export class SkillsReader {
     return { standings, settled };
   }
 
+  /**
+   * The judged views of the named skills at one commit (the Run's recorded one, not the last
+   * fetched), by name; a skill the commit does not hold is absent. Nothing is read for no names.
+   */
+  async viewsAt(
+    commit: string,
+    names: readonly string[],
+  ): Promise<
+    { status: 'read'; skills: Map<string, SkillView> } | { status: DefinitionsUnavailable }
+  > {
+    const skills = new Map<string, SkillView>();
+    if (names.length === 0) return { status: 'read', skills };
+    const listed = await this.readMemoised(commit, undefined);
+    if (listed.status !== 'read') return listed;
+    for (const skill of listed.skills) skills.set(skill.name, skill);
+    // Beyond a cut list, a skill is read by itself.
+    for (const name of new Set(names)) {
+      if (skills.has(name) || !listed.truncated) continue;
+      const alone = await this.readMemoised(commit, name);
+      if (alone.status !== 'read') return alone;
+      const found = alone.skills[0];
+      if (found) skills.set(name, found);
+    }
+    return { status: 'read', skills };
+  }
+
   private outcomesOf(commit: string): Map<string, Outcome> {
     let kept = this.outcomes.get(commit);
     if (!kept) {

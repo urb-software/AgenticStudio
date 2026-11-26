@@ -14,6 +14,8 @@ export interface RunAgentData {
   model: string;
   /** A copy of the definition's instructions; empty for a built-in agent. */
   instructions: string;
+  /** The names of the agent's skills at `commit`, in the definition's order; empty when none. */
+  skills: string[];
 }
 
 /**
@@ -27,6 +29,7 @@ export class RunAgent {
   readonly provider: Provider;
   readonly model: string;
   readonly instructions: string;
+  readonly skills: readonly string[];
 
   private constructor(data: RunAgentData) {
     this.name = data.name;
@@ -35,6 +38,7 @@ export class RunAgent {
     this.provider = data.provider;
     this.model = data.model;
     this.instructions = data.instructions;
+    this.skills = [...data.skills];
   }
 
   /** Throws {@link TypeError} for a record the store should never hold. */
@@ -49,6 +53,9 @@ export class RunAgent {
     if ((data.source === 'definitions') !== (data.commit !== null)) {
       throw new TypeError('A definitions agent records a commit, a built-in agent none.');
     }
+    if (data.source === 'built_in' && data.skills.length > 0) {
+      throw new TypeError('A built-in agent has no skills.');
+    }
     return new RunAgent(data);
   }
 
@@ -60,6 +67,7 @@ export class RunAgent {
       provider: this.provider,
       model: this.model,
       instructions: this.instructions,
+      skills: [...this.skills],
     };
   }
 }

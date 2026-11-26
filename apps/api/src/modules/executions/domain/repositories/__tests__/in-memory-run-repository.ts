@@ -94,6 +94,7 @@ export const defaultAgentOf = (provider: Provider): RunAgentData => ({
   provider,
   model: 'default',
   instructions: '',
+  skills: [],
 });
 
 const isClaimed = (state: RunState) => (CLAIMED_RUN_STATES as readonly RunState[]).includes(state);

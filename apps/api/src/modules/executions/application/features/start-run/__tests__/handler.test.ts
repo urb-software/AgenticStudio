@@ -35,6 +35,7 @@ const BUILT_IN = (provider: 'claude_code' | 'codex'): ResolvedAgent => ({
   provider,
   model: 'default',
   instructions: '',
+  skills: [] as string[],
 });
 const REVIEWER: ResolvedAgent = {
   name: 'reviewer',
@@ -43,6 +44,7 @@ const REVIEWER: ResolvedAgent = {
   provider: 'claude_code',
   model: 'opus',
   instructions: 'Review carefully.',
+  skills: [] as string[],
 };
 
 class InMemoryWorkerStatusStore implements WorkerStatusStore {
@@ -174,6 +176,19 @@ describe('StartRunHandler', () => {
 
       expect(run.agent.toData()).toEqual(REVIEWER);
       expect(run.provider).toBe('claude_code');
+    });
+
+    it('records the names of the skills the agent lists, in its order, and none for a built-in agent', async () => {
+      known['reviewer'] = {
+        status: 'resolved',
+        agent: { ...REVIEWER, skills: ['notes', 'lint'] },
+      };
+
+      const named = (await runs.findById((await startWith({ agent: 'reviewer' })).id))!;
+      const builtIn = (await runs.findById((await startWith({ provider: 'codex' })).id))!;
+
+      expect(named.agent.toData().skills).toEqual(['notes', 'lint']);
+      expect(builtIn.agent.toData().skills).toEqual([]);
     });
 
     it('takes the Provider from the agent and accepts the same Provider beside it', async () => {

@@ -8,6 +8,7 @@ const BUILT_IN: RunAgentData = {
   provider: 'codex',
   model: 'default',
   instructions: '',
+  skills: [] as string[],
 };
 const DEFINITIONS: RunAgentData = {
   name: 'reviewer',
@@ -16,6 +17,7 @@ const DEFINITIONS: RunAgentData = {
   provider: 'claude_code',
   model: 'opus',
   instructions: 'Review carefully.',
+  skills: [] as string[],
 };
 
 describe('RunAgent', () => {
@@ -40,6 +42,21 @@ describe('RunAgent', () => {
   it('records a commit for a definitions agent and none for a built-in agent', () => {
     expect(() => RunAgent.restore({ ...DEFINITIONS, commit: null })).toThrow(TypeError);
     expect(() => RunAgent.restore({ ...BUILT_IN, commit: 'c'.repeat(40) })).toThrow(TypeError);
+  });
+
+  it('records the skill names in the order given, as a copy', () => {
+    const names = ['notes', 'lint'];
+    const agent = RunAgent.restore({ ...DEFINITIONS, skills: names });
+    names.push('later');
+    const given = agent.toData();
+    given.skills.push('other');
+
+    expect(agent.skills).toEqual(['notes', 'lint']);
+    expect(agent.toData().skills).toEqual(['notes', 'lint']);
+  });
+
+  it('refuses skills on a built-in agent', () => {
+    expect(() => RunAgent.restore({ ...BUILT_IN, skills: ['lint'] })).toThrow(TypeError);
   });
 
   it('refuses a source and a provider it does not know, and an empty name', () => {

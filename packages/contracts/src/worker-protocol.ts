@@ -1,7 +1,12 @@
 import { z } from 'zod';
-import { AGENT_INSTRUCTIONS_MAX_BYTES, PROVIDERS, type Provider } from './providers.js';
+import {
+  AGENT_INSTRUCTIONS_MAX_BYTES,
+  PROVIDERS,
+  type Provider,
+  RUN_SKILLS_MAX_BYTES,
+} from './providers.js';
 
-export { PROVIDERS, type Provider };
+export { PROVIDERS, type Provider, RUN_SKILLS_MAX_BYTES };
 
 /**
  * The Studio/agent-worker wire protocol: the API validates every worker request, the worker every
@@ -56,6 +61,7 @@ export const RUN_FAILURE_CODES = [
   'agent_folder_invalid',
   'model_not_allowed',
   'model_refused',
+  'skills_unusable',
   'unknown',
 ] as const;
 export const runFailureCodeSchema = z.enum(RUN_FAILURE_CODES);
@@ -250,6 +256,19 @@ export const runAgentPayloadSchema = z
   });
 export type RunAgentPayload = z.infer<typeof runAgentPayloadSchema>;
 
+/** Most skills a Run records: the limit of the definitions package, repeated here for the wire. */
+export const RUN_SKILLS_MAX = 20;
+
+/** A skill name: the rule of agent names, which skill folders follow too. */
+const skillNameSchema = z.string().regex(RUN_AGENT_NAME_PATTERN);
+
+/** What a claim says of one skill of the Run: its name and the description of its entry file. */
+export const runSkillSummarySchema = z.strictObject({
+  name: skillNameSchema,
+  description: z.string().min(1).max(1024),
+});
+export type RunSkillSummary = z.infer<typeof runSkillSummarySchema>;
+
 /** An opaque reference to the agent's session, as the runner reported it. */
 const sessionRefSchema = z.string().min(1).max(SESSION_REF_MAX_LENGTH);
 
@@ -265,6 +284,11 @@ export const runPayloadSchema = z
     /** Every claim of the Run carries the base rules and the Run's recorded agent. */
     baseRules: baseRulesPayloadSchema,
     agent: runAgentPayloadSchema,
+    /**
+     * The skills the Run recorded, with the description judged at the recorded commit; absent
+     * means none. Their files come from the skills route, never from the claim.
+     */
+    skills: z.array(runSkillSummarySchema).max(RUN_SKILLS_MAX).optional(),
     task: z.string().min(1).max(TASK_MAX_LENGTH),
     /** The commit of the integration branch the Run starts from. */
     startCommit: z.string().min(1).max(64),
@@ -464,6 +488,10 @@ export const WORKER_PROBLEM_TYPES = {
   agentFolderInvalid: 'urn:agentic-studio:problem:agent-folder-invalid',
   /** 409: the listing of the definitions Repository is cut, so the folder may be partial. */
   agentFolderCut: 'urn:agentic-studio:problem:agent-folder-cut',
+  /** 409: the Clone no longer holds the commit or a skill the Run recorded. */
+  skillsUnavailable: 'urn:agentic-studio:problem:skills-unavailable',
+  /** 409: a skill of the Run at that commit fails the shared validation. */
+  skillsInvalid: 'urn:agentic-studio:problem:skills-invalid',
 } as const;
 
 /** `POST /api/worker/runs/claim` body. */
@@ -1484,3 +1512,49 @@ export const agentFolderResponseSchema = z
     message: 'A built-in agent has no files.',
   });
 export type AgentFolderResponse = z.infer<typeof agentFolderResponseSchema>;
+
+/** `GET /api/worker/runs/:runId/skills` query: the worker names neither a skill nor a commit. */
+export const runSkillsQuerySchema = z.strictObject({ workerId: workerIdSchema });
+export type RunSkillsQuery = z.infer<typeof runSkillsQuerySchema>;
+
+/** Most files in one skill folder: the validation's limit, repeated here for the wire. */
+export const RUN_SKILL_FILES_MAX = 100;
+
+/**
+ * The files of the Run's skills at the Run's recorded commit, `SKILL.md` included, in the order
+ * the Run lists them. `omitted` names the skills left out because the files of the skills before
+ * them already reached {@link RUN_SKILLS_MAX_BYTES}. The worker validates everything again.
+ */
+export const runSkillsResponseSchema = z
+  .strictObject({
+    commit: commitIdSchema.nullable(),
+    skills: z
+      .array(
+        z.strictObject({
+          name: skillNameSchema,
+          files: z
+            .array(
+              z.strictObject({
+                path: z.string().min(1).max(1024),
+                /** Git mode `100755`; every other file is `0644`. */
+                executable: z.boolean(),
+                contentBase64: z
+                  .string()
+                  .max(2 * 1024 * 1024)
+                  .regex(BASE64),
+              }),
+            )
+            .max(RUN_SKILL_FILES_MAX),
+        }),
+      )
+      .max(RUN_SKILLS_MAX),
+    omitted: z.array(skillNameSchema).max(RUN_SKILLS_MAX),
+  })
+  .refine(
+    (answer) => answer.commit !== null || answer.skills.length + answer.omitted.length === 0,
+    {
+      path: ['skills'],
+      message: 'A Run without a commit has no skills.',
+    },
+  );
+export type RunSkillsResponse = z.infer<typeof runSkillsResponseSchema>;

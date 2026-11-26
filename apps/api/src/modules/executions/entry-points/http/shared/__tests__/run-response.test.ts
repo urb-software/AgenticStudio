@@ -44,6 +44,7 @@ const run = {
     provider: 'codex' as const,
     model: 'default',
     instructions: '',
+    skills: [] as string[],
   },
   task: 'Add a store',
   state: 'waiting_for_operator' as const,
@@ -124,10 +125,22 @@ describe('Run response: conversation', () => {
     expect(toRunResponse(named).agent).toMatchObject({
       model: 'gpt-6.2-sol',
       instructions: 'Review.',
+      skills: [],
     });
     const { agent } = toRunListItem(named);
     expect(agent.model).toBe('gpt-6.2-sol');
     expect(agent).not.toHaveProperty('instructions');
+  });
+
+  it('names the skills the agent had when the Run started, on the answer and on a list item', () => {
+    const withSkills = {
+      ...run,
+      agent: { ...run.agent, source: 'definitions' as const, skills: ['notes', 'lint'] },
+    };
+
+    expect(toRunResponse(withSkills).agent.skills).toEqual(['notes', 'lint']);
+    expect(toRunListItem(withSkills).agent.skills).toEqual(['notes', 'lint']);
+    expect(toRunResponse(run).agent.skills).toEqual([]);
   });
 
   it('shows the Task alone before any question', () => {

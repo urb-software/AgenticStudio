@@ -79,6 +79,7 @@ describe('ReadAgentsAgentResolutions', () => {
         provider: 'codex',
         model: 'default',
         instructions: '',
+        skills: [],
       },
     });
   });
@@ -98,8 +99,38 @@ describe('ReadAgentsAgentResolutions', () => {
         provider: 'claude_code',
         model: 'opus',
         instructions: 'Instructions of reviewer.\n',
+        skills: [],
       },
     });
+  });
+
+  it('resolves the names of the skills the definition lists, in its order', async () => {
+    const skill = (name: string) =>
+      `---\nname: ${name}\ndescription: Does ${name}\n---\nHow to ${name}.\n`;
+    const resolved = await resolutions(
+      {
+        'agents/reviewer/AGENT.md': entry('reviewer', 'codex', 'skills:\n  - notes\n  - lint\n'),
+        'skills/lint/SKILL.md': skill('lint'),
+        'skills/notes/SKILL.md': skill('notes'),
+      },
+      READY,
+    ).resolveForRun('reviewer');
+
+    expect(resolved).toMatchObject({
+      status: 'resolved',
+      agent: { commit: COMMIT, skills: ['notes', 'lint'] },
+    });
+  });
+
+  it('records no skills for a built-in agent named like a folder that lists some', async () => {
+    const resolved = await resolutions(
+      {
+        'agents/default-codex/AGENT.md': entry('default-codex', 'codex', 'skills:\n  - lint\n'),
+      },
+      READY,
+    ).resolveForRun('default-codex');
+
+    expect(resolved).toMatchObject({ agent: { source: 'built_in', skills: [] } });
   });
 
   it('refuses a folder whose definition has problems as not usable', async () => {

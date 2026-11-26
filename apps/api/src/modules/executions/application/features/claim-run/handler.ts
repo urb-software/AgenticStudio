@@ -3,6 +3,12 @@ import {
   RUN_DIFF_REPOSITORY,
   type RunDiffRepository,
 } from '../../../domain/repositories/run-diff-repository.js';
+import {
+  AGENT_SKILLS,
+  type AgentSkills,
+  type RunSkillDescription,
+} from '../../../../agents/contracts/index.js';
+import { SkillsRefusal } from '../../../domain/value-objects/skills-refusal.js';
 import { SECRET_STORE, type SecretStore } from '../../../../../platform/secrets/index.js';
 import {
   PROJECT_KINDS,
@@ -36,6 +42,16 @@ const ENVIRONMENT_FILE_UNAVAILABLE = RunFailure.of(
     'if it keeps failing, set the Environment file again.',
 );
 
+/** What a Run's skills are described as when its recorded skills cannot be judged. */
+const SKILLS_UNAVAILABLE = RunFailure.of(
+  'skills_unusable',
+  "The agent's skills are no longer available in the definitions Repository at the commit this run recorded. Start a new run.",
+);
+const SKILLS_UNREADABLE = RunFailure.of(
+  'skills_unusable',
+  "The agent's skills could not be read from the definitions Repository right now. Start the run again to try again.",
+);
+
 /** The object ids a claimed Run's agent worker resumes its diffs from. */
 export interface ClaimedDiffState {
   resultTree: string;
@@ -52,6 +68,8 @@ export interface ClaimedRun {
   provider: Provider;
   /** The agent the Run recorded at start; every claim hands it out unchanged. */
   agent: RunAgentData;
+  /** The recorded skills with their description at the recorded commit; empty for none. */
+  skills: RunSkillDescription[];
   task: string;
   startCommit: string;
   remoteUrl: string;
@@ -83,6 +101,7 @@ type ClaimExtras = Pick<
   | 'completedSteps'
   | 'nextSeq'
   | 'diffState'
+  | 'skills'
 >;
 
 const claimedRun = (run: Run, handOut: ClaimedRun['handOut'], extras: ClaimExtras): ClaimedRun => ({
@@ -119,6 +138,7 @@ const studioPathsOf = (run: Run): string[] =>
   run.claim.environmentFilePath ? [run.claim.environmentFilePath] : [];
 
 const SNAPSHOT_FAILED = Symbol('SNAPSHOT_FAILED');
+const SKILLS_FAILED = Symbol('SKILLS_FAILED');
 
 /**
  * `null` when no Run is eligible. A resume goes only to the worker that last claimed the Run. A
@@ -139,6 +159,7 @@ export class ClaimRunHandler {
     @Inject(SECRET_STORE) private readonly secrets: SecretStore,
     @Inject(ENVIRONMENT_FILE_SNAPSHOTS) private readonly snapshots: EnvironmentFileSnapshots,
     @Inject(RUN_DIFF_REPOSITORY) private readonly diffs: RunDiffRepository,
+    @Inject(AGENT_SKILLS) private readonly agentSkills: AgentSkills,
   ) {}
 
   async execute(input: ClaimRunInput): Promise<ClaimRunResult> {
@@ -173,16 +194,24 @@ export class ClaimRunHandler {
             await this.fail(run, workerId, handOut.failure, now);
           }
           continue;
-        case 'deliver':
+        case 'deliver': {
+          // A delivery checks that no commit holds a copy of a skill file, so it needs the skills.
+          const skills = await this.describeSkills(run, workerId, now, 'delivery');
+          if (skills === SKILLS_FAILED) continue;
           return claimedRun(run, handOut, {
+            skills,
             environmentFile: null,
             replaceEnvironmentFile: false,
             studioPaths: studioPathsOf(run),
             ...(await this.progress(run)),
           });
+        }
         case 'resume': {
+          const skills = await this.describeSkills(run, workerId, now, 'step');
+          if (skills === SKILLS_FAILED) continue;
           if (!handOut.newEnvironmentFile) {
             return claimedRun(run, handOut, {
+              skills,
               environmentFile: null,
               replaceEnvironmentFile: false,
               studioPaths: studioPathsOf(run),
@@ -192,6 +221,7 @@ export class ClaimRunHandler {
           const environmentFile = await this.snapshot(run, workerId, now, true);
           if (environmentFile === SNAPSHOT_FAILED) continue;
           return claimedRun(run, handOut, {
+            skills,
             environmentFile,
             replaceEnvironmentFile: true,
             // The earlier file's path too: the worker removes it, and it is never committed.
@@ -205,9 +235,12 @@ export class ClaimRunHandler {
           });
         }
         case 'start': {
+          const skills = await this.describeSkills(run, workerId, now, 'step');
+          if (skills === SKILLS_FAILED) continue;
           const environmentFile = await this.snapshot(run, workerId, now);
           if (environmentFile === SNAPSHOT_FAILED) continue;
           return claimedRun(run, handOut, {
+            skills,
             environmentFile,
             replaceEnvironmentFile: false,
             studioPaths: environmentFile ? [environmentFile.path] : [],
@@ -217,6 +250,49 @@ export class ClaimRunHandler {
         }
       }
     }
+  }
+
+  /**
+   * The Run's recorded skills with their descriptions at the recorded commit. A skill that cannot
+   * be judged fails the Run; for a delivery retry it fails the delivery (`delivery_failed`).
+   */
+  private async describeSkills(
+    run: Run,
+    workerId: string,
+    now: Date,
+    as: 'step' | 'delivery',
+  ): Promise<RunSkillDescription[] | typeof SKILLS_FAILED> {
+    const { agent } = run;
+    if (agent.skills.length === 0 || agent.commit === null) return [];
+    let failure: RunFailure | undefined;
+    try {
+      const read = await this.agentSkills.describe(agent.skills, agent.commit);
+      if (read.status === 'found') return read.skills;
+      failure =
+        read.status === 'invalid'
+          ? RunFailure.of('skills_unusable', SkillsRefusal.of(read.problems).detail)
+          : read.status === 'unavailable'
+            ? SKILLS_UNAVAILABLE
+            : SKILLS_UNREADABLE;
+    } catch (error) {
+      this.logger.error(`The skills of run ${run.id} could not be read: ${errorName(error)}`);
+      failure = SKILLS_UNREADABLE;
+    }
+    if (as === 'delivery') {
+      await this.failDelivery(
+        run,
+        workerId,
+        RunFailure.of(
+          'delivery_failed',
+          `The delivery was not retried, because the agent's skills could not be checked before the push. ${failure.detail}`,
+        ),
+        now,
+      );
+      await this.snapshots.releaseFor(run.id);
+    } else {
+      await this.fail(run, workerId, failure, now);
+    }
+    return SKILLS_FAILED;
   }
 
   /**

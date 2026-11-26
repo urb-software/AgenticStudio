@@ -25,10 +25,12 @@ import { ReadSkillsHandler } from './application/features/read-skills/handler.js
 import { ReadAgentsHandler } from './application/features/read-agents/handler.js';
 import { ReadAgentFolderHandler } from './application/features/read-agent-folder/handler.js';
 import { ReadAgentFolderAgentFolders } from './entry-points/contracts/agent-folders.js';
+import { ReadRunSkillsHandler } from './application/features/read-run-skills/handler.js';
+import { ReadRunSkillsAgentSkills } from './entry-points/contracts/agent-skills.js';
 import { GetAgentFileEndpoint } from './entry-points/http/operator/get-agent-file/endpoint.js';
 import { ReadAgentsAgentResolutions } from './entry-points/contracts/agent-resolutions.js';
 import { ListRunAgentsEndpoint } from './entry-points/http/operator/list-run-agents/endpoint.js';
-import { AGENT_FOLDERS, AGENT_RESOLUTION } from './contracts/index.js';
+import { AGENT_FOLDERS, AGENT_RESOLUTION, AGENT_SKILLS } from './contracts/index.js';
 import { AgentDraftDisconnectStep } from './entry-points/disconnect/agent-draft-disconnect-step.js';
 import { RevertAgentDraftFileEndpoint } from './entry-points/http/operator/revert-agent-draft-file/endpoint.js';
 import { DeleteAgentDraftFileEndpoint } from './entry-points/http/operator/delete-agent-draft-file/endpoint.js';
@@ -83,6 +85,7 @@ export class AgentsModule {
         ReadAgentsHandler,
         ReadSkillsHandler,
         ReadAgentFolderHandler,
+        ReadRunSkillsHandler,
         ListAgentFilesHandler,
         ReadAgentFileHandler,
         AgentDraftBaseReader,
@@ -107,8 +110,9 @@ export class AgentsModule {
         { provide: AGENT_DRAFT_REPOSITORY, useClass: PrismaAgentDraftRepository },
         { provide: AGENT_RESOLUTION, useClass: ReadAgentsAgentResolutions },
         { provide: AGENT_FOLDERS, useClass: ReadAgentFolderAgentFolders },
+        { provide: AGENT_SKILLS, useClass: ReadRunSkillsAgentSkills },
       ],
-      exports: [AGENT_RESOLUTION, AGENT_FOLDERS],
+      exports: [AGENT_RESOLUTION, AGENT_FOLDERS, AGENT_SKILLS],
     };
   }
 }

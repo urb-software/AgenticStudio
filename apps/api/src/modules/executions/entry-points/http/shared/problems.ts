@@ -19,6 +19,9 @@ export const EXECUTIONS_PROBLEM_TYPES = {
   agentFolderInvalid: 'urn:agentic-studio:problem:agent-folder-invalid',
   agentFolderCut: 'urn:agentic-studio:problem:agent-folder-cut',
   agentFolderReadFailed: 'urn:agentic-studio:problem:agent-folder-read-failed',
+  skillsUnavailable: 'urn:agentic-studio:problem:skills-unavailable',
+  skillsInvalid: 'urn:agentic-studio:problem:skills-invalid',
+  skillsReadFailed: 'urn:agentic-studio:problem:skills-read-failed',
   tooManyLogStreams: 'urn:agentic-studio:problem:too-many-log-streams',
   illegalRunTransition: 'urn:agentic-studio:problem:illegal-run-transition',
   runAlreadyFinished: 'urn:agentic-studio:problem:run-already-finished',
@@ -446,6 +449,30 @@ export function agentFolderInvalid(detail: string): ProblemException {
     type: EXECUTIONS_PROBLEM_TYPES.agentFolderInvalid,
     title: 'Agent files invalid',
     detail,
+  });
+}
+
+export function skillsUnavailable(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: EXECUTIONS_PROBLEM_TYPES.skillsUnavailable,
+    title: 'Skills unavailable',
+    detail: "The agent's skills are no longer available in the definitions Repository.",
+  });
+}
+
+export function skillsInvalid(detail: string): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: EXECUTIONS_PROBLEM_TYPES.skillsInvalid,
+    title: 'Skills invalid',
+    detail,
+  });
+}
+
+export function skillsReadFailed(): ProblemException {
+  return new ProblemException(HttpStatus.SERVICE_UNAVAILABLE, {
+    type: EXECUTIONS_PROBLEM_TYPES.skillsReadFailed,
+    title: 'Skills not readable now',
+    detail: "The agent's skills could not be read right now. Try again.",
   });
 }
 

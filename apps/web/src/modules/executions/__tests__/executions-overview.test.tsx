@@ -60,6 +60,7 @@ describe('Executions page', () => {
       commit: 'c'.repeat(40),
       provider: 'codex' as const,
       model,
+      skills: [] as string[],
     });
     fakeRunsApi([
       aRun({ task: 'Review it', provider: 'codex', agent: agent('gpt-6.2-sol') }),

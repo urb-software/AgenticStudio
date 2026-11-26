@@ -5994,6 +5994,7 @@
                   "agent_folder_invalid",
                   "model_not_allowed",
                   "model_refused",
+                  "skills_unusable",
                   "unknown"
                 ]
               },
@@ -6172,6 +6173,13 @@
             "type": "string",
             "description": "The model the definition named; `default` is the CLI own."
           },
+          "skills": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The names of the skills the agent had when the Run started, at the recorded commit; empty for none."
+          },
           "instructions": {
             "description": "A copy of the definition instructions, plain text. Single-Run answers only; lists leave it out.",
             "type": "string"
@@ -6182,7 +6190,8 @@
           "source",
           "commit",
           "provider",
-          "model"
+          "model",
+          "skills"
         ],
         "additionalProperties": false
       },
@@ -6728,6 +6737,7 @@
               "agent_folder_invalid",
               "model_not_allowed",
               "model_refused",
+              "skills_unusable",
               "unknown"
             ]
           },

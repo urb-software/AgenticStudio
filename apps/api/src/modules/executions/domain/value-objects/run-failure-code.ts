@@ -10,6 +10,7 @@ export const RUN_FAILURE_CODES = [
   'agent_folder_invalid',
   'model_not_allowed',
   'model_refused',
+  'skills_unusable',
   'unknown',
 ] as const;
 export type RunFailureCode = (typeof RUN_FAILURE_CODES)[number];

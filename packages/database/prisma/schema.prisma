@@ -168,6 +168,9 @@ model Run {
   agentProvider                 String               @map("agent_provider") @db.VarChar(32)
   agentModel                    String               @map("agent_model") @db.VarChar(64)
   agentInstructions             String               @map("agent_instructions")
+  /// The names of the agent's skills at agent_commit, in the order the definition lists them,
+  /// recorded at start and never updated; empty for a built-in agent and for an agent with none.
+  agentSkills                   String[]             @default([]) @map("agent_skills")
   /// queued | preparing | running | waiting_for_operator | succeeded | failed | cancelled | timed_out.
   state                         String               @db.VarChar(32)
   /// The integration branch's commit when the Run was started.

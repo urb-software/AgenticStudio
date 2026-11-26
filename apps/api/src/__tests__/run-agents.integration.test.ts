@@ -868,4 +868,154 @@ describe('choosing an agent for a Run (PostgreSQL + Redis via Testcontainers)', 
       ).toBe(401);
     });
   });
+
+  describe('the skills a Run recorded', () => {
+    const skillFile = (name: string, description = `Does ${name}`) =>
+      `---\nname: ${name}\ndescription: ${description}\n---\nHow to ${name}.\n`;
+    const SCRIPT = '#!/bin/sh\necho lint\n';
+    const skillsGet = (runId: string, query: string, token: string | null = WORKER_TOKEN) =>
+      http()
+        .get(`/api/worker/runs/${runId}/skills${query}`)
+        .set(token === null ? {} : { Authorization: `Bearer ${token}` });
+    const query = (workerId = W1) => `?workerId=${workerId}`;
+
+    async function runWithSkills() {
+      const definitions = await definitionsWith({
+        'agents/reviewer/AGENT.md': agentFile(
+          'reviewer',
+          'claude_code',
+          'skills:\n  - notes\n  - lint\n',
+        ),
+        'skills/lint/SKILL.md': skillFile('lint'),
+        'skills/lint/run.sh': { executable: SCRIPT },
+        'skills/notes/SKILL.md': skillFile('notes'),
+        'skills/unused/SKILL.md': skillFile('unused'),
+      });
+      const project = await readyProject('Shop');
+      const created = await startRun(project.id, { task: 'Review the change', agent: 'reviewer' });
+      expect(created.status).toBe(201);
+      return { definitions, runId: created.body.id as string };
+    }
+
+    it.runIf(linux)(
+      'records the names at start, in the agent order, and shows them on the Run',
+      async () => {
+        const { runId } = await runWithSkills();
+
+        const run = await getRun(runId);
+
+        expect(run.body.agent.skills).toEqual(['notes', 'lint']);
+      },
+    );
+
+    it('records no skills for a built-in agent', async () => {
+      const project = await readyProject('Shop');
+      const created = await startRun(project.id, { task: 'Fix it', agent: 'default-claude-code' });
+
+      expect((await getRun(created.body.id)).body.agent.skills).toEqual([]);
+    });
+
+    it.runIf(linux)('hands the claim the name and description of each skill', async () => {
+      const { runId } = await runWithSkills();
+
+      const claimed = await claim();
+
+      expect(claimed.status).toBe(200);
+      expect(claimed.body.runId).toBe(runId);
+      expect(claimed.body.skills).toEqual([
+        { name: 'notes', description: 'Does notes' },
+        { name: 'lint', description: 'Does lint' },
+      ]);
+      expect(claimed.body.agent).not.toHaveProperty('skills');
+    });
+
+    it.runIf(linux)(
+      'answers the files of the recorded skills at the recorded commit, in the recorded order, and no other skill',
+      async () => {
+        const { definitions, runId } = await runWithSkills();
+        expect((await claim()).status).toBe(200);
+        await changeDefinitions(definitions, definitions.commit, {
+          'agents/reviewer/AGENT.md': agentFile('reviewer', 'claude_code', 'skills:\n  - lint\n'),
+          'skills/lint/SKILL.md': skillFile('lint', 'Changed'),
+        });
+
+        const response = await skillsGet(runId, query());
+
+        expect(response.status).toBe(200);
+        expect(response.body.commit).toBe(definitions.commit);
+        expect(response.body.omitted).toEqual([]);
+        expect(response.body.skills.map((skill: { name: string }) => skill.name)).toEqual([
+          'notes',
+          'lint',
+        ]);
+        const lint = response.body.skills[1].files;
+        expect(lint.map((file: { path: string }) => file.path)).toEqual(['SKILL.md', 'run.sh']);
+        expect(lint[1]).toMatchObject({
+          executable: true,
+          contentBase64: Buffer.from(SCRIPT).toString('base64'),
+        });
+        expect(Buffer.from(lint[0].contentBase64, 'base64').toString()).toBe(skillFile('lint'));
+      },
+    );
+
+    it('answers no skills for a built-in agent', async () => {
+      const project = await readyProject('Shop');
+      const created = await startRun(project.id, { task: 'Fix it', agent: 'default-claude-code' });
+      expect((await claim()).status).toBe(200);
+
+      const response = await skillsGet(created.body.id, query());
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ commit: null, skills: [], omitted: [] });
+    });
+
+    it('answers only the worker that holds the Run, with the refusals of the other worker routes', async () => {
+      const project = await readyProject('Shop');
+      const created = await startRun(project.id, { task: 'Fix it', agent: 'default-claude-code' });
+      expect((await claim()).status).toBe(200);
+
+      expectProblem(
+        await skillsGet(created.body.id, query(randomUUID())),
+        409,
+        'urn:agentic-studio:problem:run-not-held',
+      );
+      expectProblem(
+        await skillsGet(randomUUID(), query()),
+        404,
+        'urn:agentic-studio:problem:run-not-found',
+      );
+      expectProblem(
+        await skillsGet('not-a-uuid', query()),
+        404,
+        'urn:agentic-studio:problem:run-not-found',
+      );
+    });
+
+    it('takes neither a skill nor a commit from the caller', async () => {
+      const project = await readyProject('Shop');
+      const created = await startRun(project.id, { task: 'Fix it', agent: 'default-claude-code' });
+      expect((await claim()).status).toBe(200);
+
+      for (const extra of ['&skill=lint', `&commit=${'a'.repeat(40)}`, '&path=x']) {
+        expectProblem(await skillsGet(created.body.id, `${query()}${extra}`), 400);
+      }
+      expectProblem(await skillsGet(created.body.id, ''), 400);
+    });
+
+    it('needs the worker token, and no session or other token reaches it', async () => {
+      const project = await readyProject('Shop');
+      const created = await startRun(project.id, { task: 'Fix it', agent: 'default-claude-code' });
+      expect((await claim()).status).toBe(200);
+
+      expect((await skillsGet(created.body.id, query(), null)).status).toBe(401);
+      expect((await skillsGet(created.body.id, query(), 'not-the-token')).status).toBe(401);
+      expect(
+        (
+          await http()
+            .get(`/api/worker/runs/${created.body.id}/skills${query()}`)
+            .set('Cookie', cookie)
+        ).status,
+      ).toBe(401);
+    });
+  });
 });

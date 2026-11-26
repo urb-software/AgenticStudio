@@ -12,6 +12,7 @@ const REVIEWER = {
   provider: 'claude_code' as const,
   model: 'opus',
   instructions: 'Review carefully.',
+  skills: [] as string[],
 };
 const START = {
   id: '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b',
@@ -62,6 +63,7 @@ describe('the agent of a Run', () => {
       commit: null,
       model: 'default',
       instructions: '',
+      skills: [] as string[],
     });
   });
 });

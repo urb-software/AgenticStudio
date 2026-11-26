@@ -22,13 +22,17 @@ export class ClaimRunEndpoint {
       response.status(HttpStatus.NO_CONTENT);
       return undefined;
     }
+    // The recorded skill names are not the agent's payload: the skills carry their descriptions.
+    const { skills: _recordedSkills, ...agent } = run.agent;
+    void _recordedSkills;
     return runPayloadSchema.parse({
       runId: run.id,
       projectId: run.projectId,
       provider: run.provider,
       // Studio's current base rules and the Run's recorded agent: never resolved again.
       baseRules: { version: BASE_RULES.version, text: BASE_RULES.text },
-      agent: run.agent,
+      agent,
+      skills: run.skills,
       task: run.task,
       startCommit: run.startCommit,
       repository: { remoteUrl: run.remoteUrl },
