@@ -1,7 +1,7 @@
 import { focusManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Toaster, toast } from '@/shared/ui/sonner';
 import { AgentsOverview } from '..';
 import type { AgentSummaryOutput, RepositoryOutput } from '../../../platform/api';
@@ -77,6 +77,11 @@ function renderAgents() {
 }
 
 const agentsCard = () => screen.getByRole('region', { name: 'Agents' });
+
+beforeEach(() => {
+  // jsdom has no scrollIntoView.
+  Element.prototype.scrollIntoView = vi.fn();
+});
 
 afterEach(() => {
   search.value = '';
@@ -464,7 +469,12 @@ describe('Agents page: the skills of an agent', () => {
 
     expect((await screen.findAllByText(/does not exist/)).length).toBeGreaterThan(0);
     const region = screen.getByRole('region', { name: 'Skills of this agent' });
-    expect(within(region).getAllByRole('link')).toHaveLength(2);
+    expect(
+      within(region)
+        .getAllByRole('link')
+        .map((link) => link.textContent),
+    ).toEqual(['review']);
+    expect(within(region).getByText('test')).toBeTruthy();
     await expect(container).toHaveNoAxeViolations();
   });
 
@@ -481,5 +491,60 @@ describe('Agents page: the skills of an agent', () => {
 
     expect(await screen.findByText('Work.')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Hide worker' })).toBeTruthy();
+  });
+
+  it('brings the opened agent into view once, without moving focus', async () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    search.value = 'open=worker';
+    fakeAgentsApi(
+      { repository: READY },
+      {
+        list: agentList({ commit: SHA, repository: REPOSITORY, agents: [...BUILT_INS, WORKER] }),
+        details: { worker: agentDetail(WORKER, { instructions: 'Work.' }) },
+      },
+    );
+    renderAgents();
+
+    await screen.findByText('Work.');
+    expect(scroll).toHaveBeenCalledTimes(1);
+    expect(scroll).toHaveBeenCalledWith({ block: 'nearest' });
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it('shows a skill that is missing or has an invalid name as text, not as a link', async () => {
+    const refused: AgentSummaryOutput = {
+      ...WORKER,
+      description: null,
+      provider: null,
+      model: null,
+      usable: false,
+      skills: ['review', 'gone', 'Bad!'],
+      problems: [
+        {
+          code: 'skill_missing',
+          path: 'AGENT.md',
+          key: 'gone',
+          message: 'The skill "gone" does not exist.',
+        },
+        {
+          code: 'skill_name_invalid',
+          path: 'AGENT.md',
+          key: 'Bad!',
+          message: 'The skill name "Bad!" is not valid.',
+        },
+      ],
+    };
+    const { container } = await open(refused, agentDetail(refused));
+
+    const region = await screen.findByRole('region', { name: 'Skills of this agent' });
+    expect(
+      within(region)
+        .getAllByRole('link')
+        .map((link) => link.textContent),
+    ).toEqual(['review']);
+    expect(within(region).getByText('gone')).toBeTruthy();
+    expect(within(region).getByText('Bad!')).toBeTruthy();
+    await expect(container).toHaveNoAxeViolations();
   });
 });

@@ -1,7 +1,7 @@
 'use client';
 
 import { AGENT_NAME_PATTERN } from '@agentic-studio/agent-definitions';
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { RefreshCwIcon, SparklesIcon, TriangleAlertIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -37,18 +37,25 @@ function SkillRow({
   skill,
   commit,
   open,
+  arrived,
   onToggle,
 }: {
   skill: SkillSummaryOutput;
   commit: string | null;
   open: boolean;
+  arrived: boolean;
   onToggle: () => void;
 }) {
   const detailId = useId();
+  const row = useRef<HTMLLIElement>(null);
+  // A link to this skill brings its row into view once; focus stays where it is.
+  useEffect(() => {
+    if (arrived) row.current?.scrollIntoView({ block: 'nearest' });
+  }, [arrived]);
   const openable = AGENT_NAME_PATTERN.test(skill.name);
   const hasEntry = openable && !skill.problems.some((problem) => problem.code === 'entry_missing');
   return (
-    <li className="flex flex-col gap-2 border-b border-border px-4 py-3 last:border-b-0">
+    <li ref={row} className="flex flex-col gap-2 border-b border-border px-4 py-3 last:border-b-0">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-mono text-code font-semibold break-all">{skill.name}</span>
         {skill.valid ? (
@@ -103,7 +110,8 @@ export function SkillList() {
   const { data, error, isPending, isError, isRefetching, refetch } = useSkills();
   // One skill is open at a time; a link from an agent opens its skill.
   const opened = useSearchParams().get('open') ?? undefined;
-  const [openName, setOpenName] = useState<string | undefined>(opened);
+  const [arrivedName] = useState<string | undefined>(opened);
+  const [openName, setOpenName] = useState<string | undefined>(arrivedName);
 
   const heading = <h1 className="m-0 text-page-title font-semibold tracking-[-0.015em]">Skills</h1>;
   const back = (
@@ -213,6 +221,7 @@ export function SkillList() {
                 skill={skill}
                 commit={data.commit}
                 open={openName === skill.name}
+                arrived={arrivedName === skill.name}
                 onToggle={() => setOpenName(openName === skill.name ? undefined : skill.name)}
               />
             ))}

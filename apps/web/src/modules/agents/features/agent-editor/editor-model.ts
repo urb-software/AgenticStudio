@@ -68,8 +68,7 @@ export interface ProblemTarget {
   key?: string;
 }
 
-/** Where a problem of `agent` lives: its file, or the entry file for a folder-level problem. */
-const SKILL_NAME_CODES: readonly string[] = [
+const SKILL_NAME_CODES: readonly AgentProblemOutput['code'][] = [
   'skill_name_invalid',
   'skill_listed_twice',
   'skill_missing',
@@ -77,11 +76,15 @@ const SKILL_NAME_CODES: readonly string[] = [
 ];
 
 /** The front matter key to find: for the skill-name reasons the key is a name, so the `skills` line. */
-export function placedKey(code: string, key: string | null | undefined): string | undefined {
+export function placedKey(
+  code: AgentProblemOutput['code'],
+  key: string | null | undefined,
+): string | undefined {
   if (SKILL_NAME_CODES.includes(code)) return 'skills';
   return key || undefined;
 }
 
+/** Where a problem of `agent` lives: its file, or the entry file for a folder-level problem. */
 export function problemTarget(agent: string, problem: AgentProblemOutput): ProblemTarget {
   const path = `agents/${agent}/${problem.path === '' ? ENTRY_FILE : problem.path}`;
   const key = placedKey(problem.code, problem.key);

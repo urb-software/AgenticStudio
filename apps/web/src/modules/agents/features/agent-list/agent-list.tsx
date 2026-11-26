@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { RefreshCwIcon, TriangleAlertIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -41,16 +41,23 @@ function repositoryReason(list: AgentListOutput): string | null {
 function AgentRow({
   agent,
   open,
+  arrived,
   onToggle,
 }: {
   agent: AgentSummaryOutput;
   open: boolean;
+  arrived: boolean;
   onToggle: () => void;
 }) {
   const detailId = useId();
+  const row = useRef<HTMLLIElement>(null);
+  // A link to this agent brings its row into view once; focus stays where it is.
+  useEffect(() => {
+    if (arrived) row.current?.scrollIntoView({ block: 'nearest' });
+  }, [arrived]);
   const openable = !agent.problems.some((problem) => problem.code === 'name_reserved');
   return (
-    <li className="flex flex-col gap-2 border-b border-border px-4 py-3 last:border-b-0">
+    <li ref={row} className="flex flex-col gap-2 border-b border-border px-4 py-3 last:border-b-0">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-mono text-code font-semibold break-all">{agent.name}</span>
         {agent.source === 'built_in' ? <Badge>Built in</Badge> : null}
@@ -116,9 +123,10 @@ export function AgentList() {
   const { data, error, isPending, isError, isRefetching, refetch } = useAgents();
   // One agent is open at a time, keyed like the rows; a link from a skill opens its agent.
   const opened = useSearchParams().get('open');
-  const [openKey, setOpenKey] = useState<string | undefined>(
+  const [arrivedKey] = useState<string | undefined>(
     opened === null ? undefined : `definitions:${opened}`,
   );
+  const [openKey, setOpenKey] = useState<string | undefined>(arrivedKey);
 
   if (isPending) {
     return (
@@ -190,6 +198,7 @@ export function AgentList() {
                 key={rowKey(agent)}
                 agent={agent}
                 open={openKey === rowKey(agent)}
+                arrived={arrivedKey === rowKey(agent)}
                 onToggle={() => setOpenKey(openKey === rowKey(agent) ? undefined : rowKey(agent))}
               />
             ))}

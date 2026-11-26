@@ -63,6 +63,12 @@ export function AgentDetail({ agent }: { agent: AgentSummaryOutput }) {
 
   const detail = query.data?.agent;
   if (!detail) return null;
+  // A name that is missing or not a valid name leads nowhere: it is shown as text.
+  const unresolved = new Set(
+    detail.problems
+      .filter((item) => item.code === 'skill_missing' || item.code === 'skill_name_invalid')
+      .map((item) => item.key),
+  );
   if (detail.source !== agent.source) {
     return (
       <Banner tone="info">
@@ -103,9 +109,13 @@ export function AgentDetail({ agent }: { agent: AgentSummaryOutput }) {
           <ul className="m-0 flex list-none flex-wrap gap-x-4 gap-y-1 p-0 text-small">
             {detail.skills.map((skill) => (
               <li key={skill}>
-                <Link href={skillHref(skill)} className="font-mono text-code break-all">
-                  {skill}
-                </Link>
+                {unresolved.has(skill) ? (
+                  <code className="text-code break-all">{skill}</code>
+                ) : (
+                  <Link href={skillHref(skill)} className="font-mono text-code break-all">
+                    {skill}
+                  </Link>
+                )}
               </li>
             ))}
           </ul>
