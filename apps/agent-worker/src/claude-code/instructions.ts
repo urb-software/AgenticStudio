@@ -183,10 +183,9 @@ const LINE_BREAKS = /[\p{Cc}\p{Zl}\p{Zp}]+/gu;
 const bytesOf = (value: string) => new TextEncoder().encode(value).length;
 
 /**
- * Studio's section listing each placed skill: name, description, absolute path of its entry file,
- * the list in the marked untrusted block (the sentence above it is Studio's own). At most
- * {@link SKILLS_SECTION_MAX_BYTES}: descriptions are shortened (the shortest kept whole); only if
- * names and paths alone do not fit are skills left out. `notices` says so.
+ * Studio's skills section: name, description and entry file path of each skill, the list in the
+ * marked untrusted block. At most {@link SKILLS_SECTION_MAX_BYTES}: descriptions are shortened,
+ * and only if names and paths alone do not fit are skills left out; `notices` says so.
  */
 export function skillsSection(
   skills: readonly SkillEntry[],
