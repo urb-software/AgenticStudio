@@ -1720,3 +1720,64 @@ test('the agent editor publishes a saved Draft and reads the new commit', async 
     page.getByText(EDITOR_PUBLISHED_SHA.slice(0, 7), { exact: true }).first(),
   ).toBeVisible();
 });
+
+test('the skills view lists skills with their state, opens a detail, in both themes', async ({
+  page,
+}) => {
+  const valid = { name: 'review', description: 'Reviews a change', valid: true, problems: [] };
+  const broken = {
+    name: 'broken',
+    description: null,
+    valid: false,
+    problems: [
+      {
+        code: 'forbidden_key',
+        path: 'SKILL.md',
+        key: 'hooks',
+        message: 'The key "hooks" asks for tools.',
+      },
+    ],
+  };
+  const repository = { state: 'ready', note: null };
+  await page.route('**/api/skills', (route) =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        commit: EDITOR_SHA,
+        repository,
+        truncated: false,
+        skills: [broken, valid],
+      }),
+    }),
+  );
+  await page.route('**/api/skills/review', (route) =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        commit: EDITOR_SHA,
+        repository,
+        ...valid,
+        instructions: 'Review <b>carefully</b>.',
+        files: [{ path: 'SKILL.md', size: 80 }],
+      }),
+    }),
+  );
+  const foreign = watchForeignRequests(page);
+
+  await signIn(page);
+  await page.goto('/agents/skills');
+  const card = page.getByRole('region', { name: 'Skills' });
+  await expect(card.getByText('Not valid')).toBeVisible();
+  await expect(card.getByText('hooks', { exact: true })).toBeVisible();
+  await expect(card.getByRole('link', { name: /^Open in editor \(review\)/ })).toHaveAttribute(
+    'href',
+    '/agents/editor?path=skills%2Freview%2FSKILL.md',
+  );
+
+  await card.getByRole('button', { name: 'Show review' }).click();
+  await expect(card.getByRole('region', { name: 'Instructions text' })).toHaveText(
+    'Review <b>carefully</b>.',
+  );
+  await expectInBothThemes(page, page.getByRole('region', { name: 'Skills' }));
+  expect(foreign, 'a request left the Studio origin').toEqual([]);
+});

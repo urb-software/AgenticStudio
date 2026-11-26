@@ -2,6 +2,8 @@
 // rewrites them to the API, so no CORS. The session is an HttpOnly cookie: no code here reads it.
 import * as sdk from './generated';
 import type {
+  SkillDetailOutput,
+  SkillListOutput,
   AgentDetailOutput,
   AgentDraftOutput,
   AgentFileOutput,
@@ -69,6 +71,10 @@ import {
 } from './generated/zod.gen';
 
 export type {
+  SkillDetailOutput,
+  SkillListOutput,
+  SkillProblemOutput,
+  SkillSummaryOutput,
   AgentDetailOutput,
   AgentDraftFileOutput,
   AgentDraftOutput,
@@ -293,6 +299,8 @@ export const api = {
     unwrap(sdk.getDefinitionsRepository()),
   listAgents: (): Promise<AgentListOutput> => unwrap(sdk.listAgents()),
   getAgent: (name: string): Promise<AgentDetailOutput> => unwrap(sdk.getAgent({ path: { name } })),
+  listSkills: (): Promise<SkillListOutput> => unwrap(sdk.listSkills()),
+  getSkill: (name: string): Promise<SkillDetailOutput> => unwrap(sdk.getSkill({ path: { name } })),
   listAgentFiles: (): Promise<AgentFilesOutput> => unwrap(sdk.listAgentFiles()),
   getAgentFile: (path: string, commit?: string): Promise<AgentFileOutput> =>
     unwrap(sdk.getAgentFile({ query: { path, commit } })),

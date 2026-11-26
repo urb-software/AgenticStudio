@@ -1,6 +1,7 @@
 'use client';
 
 import { type FormEvent, useCallback, useState } from 'react';
+import Link from 'next/link';
 import { BotIcon, PlusIcon, RefreshCwIcon, TriangleAlertIcon } from 'lucide-react';
 import { Banner } from '@/shared/components/banner';
 import { EmptyState } from '@/shared/components/empty-state';
@@ -177,6 +178,10 @@ export function AgentsOverview() {
   return (
     <>
       <h1 className="m-0 text-page-title font-semibold tracking-[-0.015em]">Agents</h1>
+      <p className="m-0 text-small text-text-muted">
+        Skills are read from the same Repository.{' '}
+        <Link href="/agents/skills">See the skills and whether each is valid</Link>.
+      </p>
       {body}
     </>
   );
