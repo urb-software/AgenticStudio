@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { DATABASE_CLIENT, type DatabaseClient } from '../platform/database/database.module.js';
 import { problemDetailsSchema } from '../platform/http/problem-details.js';
 import { createGitFixture, pushFiles, type GitFixture } from './git-fixture.js';
@@ -876,6 +876,12 @@ describe('choosing an agent for a Run (PostgreSQL + Redis via Testcontainers)', 
   });
 
   describe('the skills a Run recorded', () => {
+    afterEach(async () => {
+      // Test isolation only: the Draft goes back to its start, also after a failed test.
+      await db().$executeRaw`DELETE FROM agent_draft_files`;
+      await db().$executeRaw`UPDATE agent_drafts SET base_commit = NULL, version = 0`;
+    });
+
     const skillFile = (name: string, description = `Does ${name}`) =>
       `---\nname: ${name}\ndescription: ${description}\n---\nHow to ${name}.\n`;
     const SCRIPT = '#!/bin/sh\necho lint\n';
@@ -961,6 +967,41 @@ describe('choosing an agent for a Run (PostgreSQL + Redis via Testcontainers)', 
           contentBase64: Buffer.from(SCRIPT).toString('base64'),
         });
         expect(Buffer.from(lint[0].contentBase64, 'base64').toString()).toBe(skillFile('lint'));
+      },
+    );
+
+    it.runIf(linux)(
+      'never hands over a Draft: with a Draft changing a skill, the route answers the committed bytes',
+      async () => {
+        const { runId } = await runWithSkills();
+        expect((await claim()).status).toBe(200);
+        const draftPath = '/api/agents/definitions-repository/draft/files';
+        for (const [path, text] of [
+          ['skills/lint/SKILL.md', skillFile('lint', 'Rewritten in the Draft')],
+          ['skills/lint/extra.md', 'Only in the Draft.'],
+          ['skills/notes/SKILL.md', skillFile('notes', 'Rewritten in the Draft')],
+        ] as const) {
+          const saved = await asOperator(http().put(draftPath)).send({ path, text });
+          expect(saved.status).toBe(200);
+        }
+
+        const response = await skillsGet(runId, query());
+
+        expect(response.status).toBe(200);
+        const files = response.body.skills.flatMap(
+          (skill: { name: string; files: { path: string; contentBase64: string }[] }) =>
+            skill.files.map((file) => [
+              `${skill.name}/${file.path}`,
+              Buffer.from(file.contentBase64, 'base64').toString(),
+            ]),
+        );
+        expect(files).toEqual([
+          ['notes/SKILL.md', skillFile('notes')],
+          ['lint/SKILL.md', skillFile('lint')],
+          ['lint/run.sh', SCRIPT],
+        ]);
+        const claimed = await http().get(`/api/runs/${runId}`).set('Cookie', cookie);
+        expect(claimed.body.agent.skills).toEqual(['notes', 'lint']);
       },
     );
 

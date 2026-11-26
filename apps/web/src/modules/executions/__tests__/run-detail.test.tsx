@@ -2,7 +2,9 @@ import { focusManager, QueryClient, QueryClientProvider } from '@tanstack/react-
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AGENT_NAME_PATTERN } from '@agentic-studio/agent-definitions';
 import { RunDetail } from '..';
+import { SKILL_NAME_PATTERN } from '../features/run-detail/run-skills';
 import type { RunOutput } from '../../../platform/api';
 import { aRun, fakeRunsApi, problem, PROJECT, SHA } from './fake-runs-api';
 
@@ -497,5 +499,49 @@ describe('Run page: the agent that ran', () => {
 
     expect(container.querySelector('details[data-slot="agent-instructions"]')).toBeNull();
     expect(fact('Agent instructions').textContent).toBe('None');
+  });
+
+  it('lists the skills the Run had, each linking to its skill, in the order recorded', async () => {
+    const run = withAgent({ skills: ['notes', 'lint'] });
+    fakeRunsApi([run]);
+    const { container } = renderRun(run.id);
+    await heading();
+
+    const items = within(fact('Skills')).getAllByRole('listitem');
+    expect(items.map((item) => item.textContent)).toEqual(['notes', 'lint']);
+    const links = within(fact('Skills')).getAllByRole('link');
+    expect(links.map((link) => link.getAttribute('href'))).toEqual([
+      '/agents/skills?open=notes',
+      '/agents/skills?open=lint',
+    ]);
+    await expect(container).toHaveNoAxeViolations();
+  });
+
+  it('judges a skill name by the rule of the definitions package', () => {
+    expect(SKILL_NAME_PATTERN.source).toBe(AGENT_NAME_PATTERN.source);
+    expect(SKILL_NAME_PATTERN.flags).toBe(AGENT_NAME_PATTERN.flags);
+  });
+
+  it('shows a name that is not a valid skill name as text, never as a link', async () => {
+    const run = withAgent({ skills: ['ok-skill', '../x', 'Bad Name'] });
+    fakeRunsApi([run]);
+    const { container } = renderRun(run.id);
+    await heading();
+
+    const links = within(fact('Skills')).getAllByRole('link');
+    expect(links.map((link) => link.textContent)).toEqual(['ok-skill']);
+    expect(within(fact('Skills')).getByText('../x').closest('a')).toBeNull();
+    expect(within(fact('Skills')).getByText('Bad Name').closest('a')).toBeNull();
+    await expect(container).toHaveNoAxeViolations();
+  });
+
+  it('says None when the Run had no skills', async () => {
+    const run = aRun({ state: 'succeeded' });
+    fakeRunsApi([run]);
+    const { container } = renderRun(run.id);
+    await heading();
+
+    expect(fact('Skills').textContent).toBe('None');
+    await expect(container).toHaveNoAxeViolations();
   });
 });
