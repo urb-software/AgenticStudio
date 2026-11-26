@@ -100,6 +100,8 @@ describe('route and guard inventory', () => {
         "GET /api/runs/:runId/pull-request/review-comments [session]",
         "GET /api/runs/:runId/steps [session]",
         "GET /api/runs/summary [session]",
+        "GET /api/skills [session]",
+        "GET /api/skills/:name [session]",
         "GET /api/worker/runs/:runId/agent-folder [worker-token]",
         "POST /api/agents/definitions-repository/draft/files/move [session]",
         "POST /api/agents/definitions-repository/draft/files/revert [session]",
