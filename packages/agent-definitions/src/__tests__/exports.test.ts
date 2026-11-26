@@ -25,3 +25,11 @@ describe('RESERVED_AGENT_NAMES', () => {
     );
   });
 });
+
+describe('the skill API', () => {
+  it('exports the validation, the finder and the shell pattern', () => {
+    expect(typeof definitions.validateSkillFolder).toBe('function');
+    expect(typeof definitions.findSkillFolders).toBe('function');
+    expect(definitions.SHELL_LINE).toBeInstanceOf(RegExp);
+  });
+});

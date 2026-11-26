@@ -1,4 +1,4 @@
-import { AGENTS_DIRECTORY } from './limits.js';
+import { AGENTS_DIRECTORY, SKILLS_DIRECTORY } from './limits.js';
 import type { AgentEntry } from './validate.js';
 
 export interface AgentFolder {
@@ -8,18 +8,22 @@ export interface AgentFolder {
   entries: AgentEntry[];
 }
 
-const PREFIX = `${AGENTS_DIRECTORY}/`;
+export interface SkillFolder {
+  /** The folder's name, which is the skill's name. */
+  name: string;
+  /** The folder's entries, with paths relative to it. */
+  entries: AgentEntry[];
+}
 
-/**
- * Groups a Repository tree into agent folders (`agents/<name>/...`); `skills/` and the rest are
- * ignored. A name that is itself a symbolic link stays as a folder holding that one entry, so
- * the validation refuses it. Pure.
- */
-export function findAgentFolders(repositoryEntries: readonly AgentEntry[]): AgentFolder[] {
+function groupFolders(
+  directory: string,
+  repositoryEntries: readonly AgentEntry[],
+): { name: string; entries: AgentEntry[] }[] {
+  const prefix = `${directory}/`;
   const folders = new Map<string, AgentEntry[]>();
   for (const entry of repositoryEntries) {
-    if (!entry.path.startsWith(PREFIX)) continue;
-    const rest = entry.path.slice(PREFIX.length);
+    if (!entry.path.startsWith(prefix)) continue;
+    const rest = entry.path.slice(prefix.length);
     const slash = rest.indexOf('/');
     const name = slash === -1 ? rest : rest.slice(0, slash);
     if (name === '') continue;
@@ -36,4 +40,18 @@ export function findAgentFolders(repositoryEntries: readonly AgentEntry[]): Agen
     folders.set(name, [...(folders.get(name) ?? []), { ...entry, path: inside }]);
   }
   return [...folders].map(([name, entries]) => ({ name, entries }));
+}
+
+/**
+ * Groups a Repository tree into agent folders (`agents/<name>/...`); `skills/` and the rest are
+ * ignored. A name that is itself a symbolic link stays as a folder holding that one entry, so
+ * the validation refuses it. Pure.
+ */
+export function findAgentFolders(repositoryEntries: readonly AgentEntry[]): AgentFolder[] {
+  return groupFolders(AGENTS_DIRECTORY, repositoryEntries);
+}
+
+/** The same for skill folders (`skills/<name>/...`); `agents/` and the rest are ignored. Pure. */
+export function findSkillFolders(repositoryEntries: readonly AgentEntry[]): SkillFolder[] {
+  return groupFolders(SKILLS_DIRECTORY, repositoryEntries);
 }
