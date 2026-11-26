@@ -5,7 +5,7 @@ date: 2026-11-25
 
 # Agent definitions are files in a definitions Repository
 
-Decided by the operator in the refinement of Epic #298, 2026-11-25. This is step 2 of the end-to-end outcome in [MVP](../../product/mvp.md) §2, for agents. Studio's own skills follow in the next Epic on the same storage, delivery and editor. [ADR 0002](0002-agent-run-isolation.md) still decides the isolation of Runs; only the ranking of instruction sources there names the chosen Agent definition.
+Decided by the operator in the refinement of Epic #298, 2026-11-25. This is step 2 of the end-to-end outcome in [MVP](../../product/mvp.md) §2, for agents. Studio's own skills use the same storage, versions, delivery and editor and are decided in [ADR 0006](0006-skill-definitions.md). [ADR 0002](0002-agent-run-isolation.md) still decides the isolation of Runs; only the ranking of instruction sources there names the chosen Agent definition.
 
 Until now every Run used one built-in definition fixed in the agent worker's code, and no model could be chosen. An **Agent definition** is a folder in a **Definitions Repository**: an entry file with front matter (name, description, Provider, model) and instructions in Markdown, and beside it the agent's scripts and assets. The operator picks an agent when starting a Run, and edits the files in Studio or in their own Git.
 
@@ -37,7 +37,7 @@ Until now every Run used one built-in definition fixed in the agent worker's cod
 
 ## Consequences and accepted risks
 
-- **A published definition is trusted guidance that can carry scripts.** The operator wrote it, so it ranks above the repository's own skills; it is still bounded by the guardrails and the operating-system user, as any command is.
+- **A published definition is trusted guidance that can carry scripts.** The operator wrote it, so it ranks above the repository's own skills (base rules, the chosen agent, [Studio's skills](0006-skill-definitions.md), the repository's skills); it is still bounded by the guardrails and the operating-system user, as any command is.
 - **The write Deploy key is a new credential.** It reaches one Repository, lives on Studio's side and never reaches the agent side or a log. A leak would let someone change what agents are told.
 - **Anyone who can push to the definitions Repository changes every later Run.** Protecting that Repository on the Git host is the operator's job; Studio reads its Integration branch, and Publish writes to it with the write Deploy key, as a fast-forward only.
 - **A value the CLI or the login refuses fails the Run.** A later change to the model lists needs an amendment of the compliance records.
@@ -46,4 +46,4 @@ Until now every Run used one built-in definition fixed in the agent worker's cod
 
 ## Upgrade paths
 
-Studio's own skills, several definitions Repositories, branches other than the Integration branch and pull requests on the definitions Repository from Studio each need a separate decision.
+several definitions Repositories, branches other than the Integration branch and pull requests on the definitions Repository from Studio each need a separate decision.
