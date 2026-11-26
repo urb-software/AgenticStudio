@@ -1,4 +1,4 @@
-import { MAX_FILE_BYTES, MAX_FILES } from '@agentic-studio/agent-definitions';
+import { MAX_FILE_BYTES, MAX_FILES, MAX_FOLDER_BYTES } from '@agentic-studio/agent-definitions';
 import { describe, expect, it, vi } from 'vitest';
 import type {
   DefinitionsFiles,
@@ -7,7 +7,12 @@ import type {
   DefinitionsTreeEntry,
   DefinitionsTreeResult,
 } from '../../../../../projects/contracts/index.js';
-import { MAX_LISTED_SKILLS, ReadSkillsHandler } from '../handler.js';
+import {
+  MAX_LISTED_SKILLS,
+  MAX_READ_BYTES,
+  MAX_READ_PATHS,
+  ReadSkillsHandler,
+} from '../handler.js';
 
 const COMMIT = 'a'.repeat(40);
 
@@ -185,22 +190,28 @@ describe('ReadSkillsHandler', () => {
     expect(skill?.problems.map((problem) => problem.code)).toContain(code);
   });
 
-  it('says why a folder is refused when its entry file is over the limit', async () => {
-    const { handler } = scripted({
-      tree: listed(file('skills/big/SKILL.md', MAX_FILE_BYTES + 1)),
-      readFiles: {
-        status: 'read',
-        files: [{ path: 'skills/big/SKILL.md', status: 'too_large', size: MAX_FILE_BYTES + 1 }],
-      },
+  it('judges a folder refused by its declared sizes from the tree alone, with no read', async () => {
+    const { handler, fake } = scripted({
+      tree: listed(
+        file('skills/big/SKILL.md', MAX_FILE_BYTES + 1),
+        file('skills/big/notes.md', 5),
+        ...Array.from({ length: Math.floor(MAX_FOLDER_BYTES / MAX_FILE_BYTES) + 1 }, (_, index) =>
+          file(`skills/total/f${index}.md`, MAX_FILE_BYTES),
+        ),
+        file('skills/total/SKILL.md', 5),
+      ),
     });
 
-    const [skill] = (await handler.execute()).skills;
+    const { skills } = await handler.execute();
 
-    expect(skill?.valid).toBe(false);
-    expect(skill?.problems.map((problem) => problem.code)).toContain('file_too_large');
+    expect(fake.readFiles).not.toHaveBeenCalled();
+    expect(skills.map((skill) => skill.problems.map((problem) => problem.code))).toEqual([
+      ['file_too_large'],
+      ['folder_too_large'],
+    ]);
   });
 
-  it('does not read the files of a folder that holds more files than the limit', async () => {
+  it('judges a folder with more files than the limit from the tree alone, with exact problems', async () => {
     const entries = Array.from({ length: MAX_FILES + 1 }, (_, index) =>
       file(`skills/many/n${index}.md`),
     );
@@ -208,8 +219,91 @@ describe('ReadSkillsHandler', () => {
 
     const [skill] = (await handler.execute()).skills;
 
-    expect(skill?.problems.map((problem) => problem.code)).toContain('too_many_files');
+    expect(skill?.problems.map((problem) => problem.code)).toEqual(['too_many_files']);
     expect(fake.readFiles).not.toHaveBeenCalled();
+  });
+
+  describe('the read budget of a list', () => {
+    const folderOf = (name: string, files: number, size: number) => [
+      file(`skills/${name}/SKILL.md`, size),
+      ...Array.from({ length: files - 1 }, (_, index) => file(`skills/${name}/r${index}.md`, size)),
+    ];
+
+    it('stops at the last skill read in full within the path budget and says so', async () => {
+      const per = 50;
+      const count = Math.floor(MAX_READ_PATHS / per) + 2;
+      const entries = Array.from({ length: count }, (_, index) =>
+        folderOf(`s${String(index).padStart(2, '0')}`, per, 10),
+      ).flat();
+      const { handler, fake } = scripted({ tree: listed(...entries) });
+
+      const result = await handler.execute();
+
+      const fit = Math.floor(MAX_READ_PATHS / per);
+      expect(result.truncated).toBe(true);
+      expect(result.skills.map((skill) => skill.name)).toEqual(
+        Array.from({ length: fit }, (_, index) => `s${String(index).padStart(2, '0')}`),
+      );
+      expect(fake.readFiles.mock.calls[0]?.[1]).toHaveLength(fit * per);
+      expect(fake.readFiles.mock.calls[0]?.[1].length).toBeLessThanOrEqual(MAX_READ_PATHS);
+    });
+
+    it('stops within the byte budget', async () => {
+      const size = MAX_FILE_BYTES / 2;
+      const per = 5;
+      const fit = Math.floor(MAX_READ_BYTES / (size * per));
+      const entries = Array.from({ length: fit + 2 }, (_, index) =>
+        folderOf(`s${index}`, per, size),
+      ).flat();
+      const { handler, fake } = scripted({ tree: listed(...entries) });
+
+      const result = await handler.execute();
+
+      expect(result.truncated).toBe(true);
+      expect(result.skills).toHaveLength(fit);
+      expect(fake.readFiles.mock.calls[0]?.[1]).toHaveLength(fit * per);
+    });
+
+    it('reads in name order whatever the order of the tree', async () => {
+      const { handler } = scripted({
+        tree: listed(file('skills/b/SKILL.md'), file('skills/a/SKILL.md')),
+      });
+
+      expect((await handler.execute()).skills.map((skill) => skill.name)).toEqual(['a', 'b']);
+    });
+
+    it('still gives the detail of a skill beyond the cut, reading only its folder', async () => {
+      const per = 100;
+      const count = Math.floor(MAX_READ_PATHS / per) + 2;
+      const entries = Array.from({ length: count }, (_, index) =>
+        folderOf(`s${index}`, per, 10),
+      ).flat();
+      const last = `s${count - 1}`;
+      const { handler, fake } = scripted({
+        tree: listed(...entries),
+        files: { [`skills/${last}/SKILL.md`]: VALID(last) },
+      });
+      await handler.execute();
+      fake.readFiles.mockClear();
+
+      const { skills } = await handler.execute({ name: last });
+
+      expect(skills.map((skill) => skill.name)).toEqual([last]);
+      expect(fake.readFiles.mock.calls[0]?.[1]).toHaveLength(per);
+    });
+
+    it('reads only the folder asked for, with no list read first', async () => {
+      const { handler, fake } = scripted({
+        tree: listed(...folderOf('a', 5, 10), ...folderOf('b', 5, 10)),
+      });
+
+      await handler.execute({ name: 'b' });
+
+      expect(fake.readFiles.mock.calls[0]?.[1]).toHaveLength(5);
+      expect(fake.readFiles.mock.calls[0]?.[1].every((path) => path.startsWith('skills/b/'))).toBe(
+        true,
+      );
+    });
   });
 
   it('keeps a name that needs escaping as text and judges it invalid', async () => {

@@ -3,6 +3,7 @@ import type { ReadSkillsHandler } from '../../../../../application/features/read
 import { ProblemException } from '../../../../../../../platform/http/problem-details.js';
 import { AGENTS_PROBLEM_TYPES } from '../../../shared/problems.js';
 import { GetSkillEndpoint } from '../endpoint.js';
+import { skillDetailResponseSchema } from '../schema.js';
 
 const COMMIT = 'a'.repeat(40);
 const repository = { state: 'ready' as const, note: null };
@@ -37,7 +38,10 @@ describe('GetSkillEndpoint', () => {
   it('answers one skill with its instructions as plain text and its files', async () => {
     const { endpoint, execute } = endpointFor([skill]);
 
-    await expect(endpoint.get('review')).resolves.toEqual({
+    const answer = await endpoint.get('review');
+
+    expect(skillDetailResponseSchema.parse(answer)).toEqual(answer);
+    expect(answer).toEqual({
       commit: COMMIT,
       repository,
       name: 'review',

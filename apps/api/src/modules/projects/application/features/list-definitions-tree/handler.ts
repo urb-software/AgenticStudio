@@ -27,7 +27,7 @@ export interface ListDefinitionsTreeInput {
   /** The whole tree instead of the `agents/` folder. */
   whole?: boolean;
   /** Another folder than `agents/`, such as `skills`; ignored with `whole`. */
-  directory?: string;
+  directory?: 'agents' | 'skills';
 }
 
 export type ListDefinitionsTreeResult = DefinitionsTreeResult;

@@ -1,8 +1,11 @@
 import {
   findSkillFolders,
   MARKDOWN_FILE,
+  type AgentEntry,
   MAX_FILE_BYTES,
   MAX_FILES,
+  MAX_FOLDER_BYTES,
+  type SkillFolder,
   type Problem,
   SKILL_ENTRY_FILE,
   type SkillProblemCode,
@@ -62,6 +65,14 @@ const UNAVAILABLE_NOTES: Record<DefinitionsUnavailable, string> = {
   failed: 'The Clone of the Repository could not be read.',
 };
 
+/**
+ * Most files read for one list, and their declared bytes. Each file is one Git process inside the
+ * 10-second read budget of the Clone; 500 leave a wide margin, and 16 MiB keeps the buffered text
+ * small. A folder reads at most 100 files and 5 MiB, so the first folder always fits.
+ */
+export const MAX_READ_PATHS = 500;
+export const MAX_READ_BYTES = 16 * 1024 * 1024;
+
 /** Commits whose judged list is kept. */
 const MEMOISED_COMMITS = 4;
 
@@ -109,24 +120,28 @@ export class ReadSkillsHandler {
 
   /**
    * What a commit holds never changes, so the judged list of a commit is kept for the next
-   * requests; a new commit is a new key. The four latest commits asked for are kept.
+   * requests; a new commit is a new key. The four latest commits asked for are kept. A skill
+   * the list does not hold is read by itself and not kept.
    */
   private async readMemoised(commit: string, name: string | undefined): Promise<Read> {
     let all = this.memo.get(commit);
     if (all) {
       this.memo.delete(commit);
-    } else {
+    } else if (name === undefined) {
       const read = await this.readDefinitions(commit, undefined);
       if (read.status !== 'read') return read;
       all = read;
     }
-    this.memo.set(commit, all);
-    while (this.memo.size > MEMOISED_COMMITS) this.memo.delete(this.memo.keys().next().value!);
-    if (name === undefined) return all;
-    const found = all.skills.filter((skill) => skill.name === name);
-    // A folder beyond the listed ones is read by itself.
-    if (found.length === 0 && all.truncated) return this.readDefinitions(commit, name);
-    return { status: 'read', skills: found, truncated: all.truncated };
+    if (all) {
+      this.memo.set(commit, all);
+      while (this.memo.size > MEMOISED_COMMITS) this.memo.delete(this.memo.keys().next().value!);
+    }
+    if (name === undefined) return all as ReadOk;
+    const found = all?.skills.filter((skill) => skill.name === name) ?? [];
+    if (all && (found.length > 0 || !all.truncated)) {
+      return { status: 'read', skills: found, truncated: all.truncated };
+    }
+    return this.readDefinitions(commit, name);
   }
 
   private async readDefinitions(commit: string, name: string | undefined): Promise<Read> {
@@ -136,32 +151,41 @@ export class ReadSkillsHandler {
     let folders = findSkillFolders(tree.entries);
     // A cut listing ends inside its last folder: that one may be partial, so it is not judged.
     if (tree.truncated) folders = folders.slice(0, -1);
-    const truncated = tree.truncated || folders.length > MAX_LISTED_SKILLS;
-    const chosen = folders
-      .filter((folder) => name === undefined || folder.name === name)
-      .slice(0, MAX_LISTED_SKILLS);
+    folders.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    let truncated = tree.truncated || (name === undefined && folders.length > MAX_LISTED_SKILLS);
+    const candidates =
+      name === undefined
+        ? folders.slice(0, MAX_LISTED_SKILLS)
+        : folders.filter((folder) => folder.name === name);
 
-    // The text judged is the entry file and every Markdown file (read for shell lines).
+    // Folders are taken in name order while the paths and bytes to read stay within the budget.
+    const chosen: { folder: SkillFolder; wanted: AgentEntry[] }[] = [];
+    let paths = 0;
+    let bytes = 0;
+    for (const folder of candidates) {
+      const wanted = toRead(folder);
+      const size = wanted.reduce((sum, item) => sum + item.size, 0);
+      if (paths + wanted.length > MAX_READ_PATHS || bytes + size > MAX_READ_BYTES) {
+        truncated = true;
+        break;
+      }
+      paths += wanted.length;
+      bytes += size;
+      chosen.push({ folder, wanted });
+    }
+
     const pathOf = (folder: string, path: string) => `${SKILLS_DIRECTORY}/${folder}/${path}`;
-    const wanted = chosen.flatMap((folder) =>
-      folder.entries.filter((item) => item.kind === 'file').length > MAX_FILES
-        ? []
-        : folder.entries
-            .filter(
-              (item) =>
-                item.kind === 'file' &&
-                (item.path === SKILL_ENTRY_FILE || MARKDOWN_FILE.test(item.path)),
-            )
-            .map((item) => pathOf(folder.name, item.path)),
+    const toFetch = chosen.flatMap(({ folder, wanted }) =>
+      wanted.map((item) => pathOf(folder.name, item.path)),
     );
     const contents = new Map<string, DefinitionsFileRead>();
-    if (wanted.length > 0) {
-      const files = await this.definitions.readFiles(commit, wanted, MAX_FILE_BYTES);
+    if (toFetch.length > 0) {
+      const files = await this.definitions.readFiles(commit, toFetch, MAX_FILE_BYTES);
       if (files.status !== 'read') return files;
       for (const file of files.files) contents.set(file.path, file);
     }
 
-    const skills = chosen.map((folder): SkillView => {
+    const skills = chosen.map(({ folder, wanted }): SkillView => {
       const judged = validateSkillFolder(
         folder.name,
         folder.entries.map((item) => {
@@ -180,11 +204,15 @@ export class ReadSkillsHandler {
           files: definition.files,
         };
       }
+      // A folder refused by its declared sizes was not read: it has no "cannot be read" reasons.
+      const unread = wanted.length === 0 && isRefusedBySize(folder);
       return {
         name: folder.name,
         description: null,
         valid: false,
-        problems: judged.problems,
+        problems: unread
+          ? judged.problems.filter((item) => item.code !== 'entry_unreadable')
+          : judged.problems,
         instructions: '',
         files: folder.entries
           .filter((item) => item.kind === 'file')
@@ -193,4 +221,24 @@ export class ReadSkillsHandler {
     });
     return { status: 'read', skills, truncated };
   }
+}
+
+const filesOf = (folder: SkillFolder) => folder.entries.filter((item) => item.kind === 'file');
+
+/** A folder the validation refuses by the declared count and sizes alone. */
+function isRefusedBySize(folder: SkillFolder): boolean {
+  const files = filesOf(folder);
+  return (
+    files.length > MAX_FILES ||
+    files.some((item) => item.size > MAX_FILE_BYTES) ||
+    files.reduce((sum, item) => sum + item.size, 0) > MAX_FOLDER_BYTES
+  );
+}
+
+/** The entry file and every Markdown file (read for shell lines), none for a refused folder. */
+function toRead(folder: SkillFolder): AgentEntry[] {
+  if (isRefusedBySize(folder)) return [];
+  return filesOf(folder).filter(
+    (item) => item.path === SKILL_ENTRY_FILE || MARKDOWN_FILE.test(item.path),
+  );
 }

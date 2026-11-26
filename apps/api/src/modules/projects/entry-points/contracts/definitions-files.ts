@@ -35,7 +35,7 @@ export class ProjectDefinitionsFiles implements DefinitionsFiles {
 
   listTree(
     commit: string,
-    options?: { whole?: boolean; directory?: string },
+    options?: { whole?: boolean; directory?: 'agents' | 'skills' },
   ): Promise<DefinitionsTreeResult> {
     return this.treeHandler.execute({
       commit,
