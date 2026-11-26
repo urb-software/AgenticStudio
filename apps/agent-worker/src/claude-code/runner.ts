@@ -38,7 +38,12 @@ import {
   type VersionCheck,
 } from './cli-options.js';
 import { prepareRunSettings } from './guardrails.js';
-import { agentNotice, buildInstructions, type RepositoryFiles } from './instructions.js';
+import {
+  agentNotice,
+  skillsNotice,
+  buildInstructions,
+  type RepositoryFiles,
+} from './instructions.js';
 import {
   parseTreeListing,
   prepareRepoPlugin,
@@ -108,7 +113,7 @@ export class ClaudeCodeRunner implements Runner {
     await mkdir(files.tmpDir, { recursive: true, mode: 0o700 });
     const marker = this.options.marker?.() ?? randomBytes(6).toString('hex');
     const instructions = await buildInstructions(
-      { ...run, agentFolder: workspace.agentFolder ?? null, skills: workspace.skills ?? [] },
+      { ...run, agentFolder: workspace.agentFolder ?? null, placedSkills: workspace.skills ?? [] },
       this.repositoryFiles(workspace, run.startCommit, signal),
       marker,
     );
@@ -120,6 +125,8 @@ export class ClaudeCodeRunner implements Runner {
     );
     for (const notice of plugin.notices) yield { type: 'notice', text: notice };
     yield { type: 'notice', text: agentNotice(run) };
+    const listed = skillsNotice(instructions.listed);
+    if (listed !== null) yield { type: 'notice', text: listed };
     const guardrails = await prepareRunSettings(files.settingsFile, this.options.guardrails?.dir);
     signal.throwIfAborted();
     const args = claudeArguments({

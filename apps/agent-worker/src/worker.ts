@@ -43,6 +43,7 @@ import {
   type PlacedSkill,
   type PlacedSkills,
   skillsNotices,
+  SkillsTransientError,
   SkillsUnusableError,
 } from './run-skills.js';
 import { AgentFailedError, drainRunStep, type Runner, UsageLimitError } from './runner.js';
@@ -1029,6 +1030,7 @@ function failureOf(error: unknown): RunFailure {
     return failure('preparation_failed', error.message);
   }
   if (error instanceof SkillsUnusableError) return failure('skills_unusable', error.detail);
+  if (error instanceof SkillsTransientError) return failure('preparation_failed', error.message);
   if (error instanceof ModelNotAllowedError) return failure('model_not_allowed', error.message);
   if (error instanceof ModelRefusedError) return failure('model_refused', error.message);
   if (error instanceof AgentFailedError) return failure('agent_failed', error.message);

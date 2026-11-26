@@ -14,7 +14,7 @@ export type InstructionsSource = Pick<RunPayload, 'baseRules'> & {
   agent: Pick<RunPayload['agent'], 'instructions'>;
   agentFolder?: string | null;
   /** The skills placed for this step, in the Run's order; absent or empty when it has none. */
-  skills?: readonly SkillEntry[];
+  placedSkills?: readonly SkillEntry[];
 };
 
 /** One placed skill as the instructions list it; `entryFile` is the absolute path of its `SKILL.md`. */
@@ -53,6 +53,8 @@ export interface RepositoryFiles {
 
 export interface Instructions {
   text: string;
+  /** The names of the skills the text lists, in order; empty for none. */
+  listed: string[];
   /** What was skipped or cut, for the Run's log. Never file content. */
   notices: string[];
 }
@@ -181,14 +183,20 @@ const LINE_BREAKS = /[\p{Cc}\p{Zl}\p{Zp}]+/gu;
 const bytesOf = (value: string) => new TextEncoder().encode(value).length;
 
 /**
- * Studio's section listing each placed skill: name, description, absolute path of its entry file.
- * At most {@link SKILLS_SECTION_MAX_BYTES}: descriptions are shortened (the shortest kept whole);
- * only if names and paths alone do not fit are skills left out. `notices` says so.
+ * Studio's section listing each placed skill: name, description, absolute path of its entry file,
+ * the list in the marked untrusted block (the sentence above it is Studio's own). At most
+ * {@link SKILLS_SECTION_MAX_BYTES}: descriptions are shortened (the shortest kept whole); only if
+ * names and paths alone do not fit are skills left out. `notices` says so.
  */
-export function skillsSection(skills: readonly SkillEntry[], notices: string[]): string {
-  if (skills.length === 0) return '';
+export function skillsSection(
+  skills: readonly SkillEntry[],
+  marker: string,
+  notices: string[],
+): { text: string; listed: string[] } {
+  if (skills.length === 0) return { text: '', listed: [] };
   for (const skill of skills) assertPlainLocation(skill.entryFile);
-  const head = `\n## Skills\n\n${SKILLS_SENTENCE}\n\n`;
+  const head = `\n## Skills\n\n${SKILLS_SENTENCE}\n\n===== BEGIN ${marker} skills (untrusted) =====\n`;
+  const tail = `===== END ${marker} skills =====\n`;
   const line = (skill: SkillEntry, description: string) =>
     `- ${skill.name}${description === '' ? '' : `: ${description}`}\n  Entry file: ${skill.entryFile}\n`;
   const descriptions = skills.map((skill) => skill.description.replace(LINE_BREAKS, ' ').trim());
@@ -197,10 +205,12 @@ export function skillsSection(skills: readonly SkillEntry[], notices: string[]):
     skills
       .slice(0, kept)
       .map((skill, i) => line(skill, texts[i]!))
-      .join('');
+      .join('') +
+    tail;
+  const named = (kept: number) => skills.slice(0, kept).map((skill) => skill.name);
   const limit = SKILLS_SECTION_MAX_BYTES;
   const full = render(skills.length, descriptions);
-  if (bytesOf(full) <= limit) return full;
+  if (bytesOf(full) <= limit) return { text: full, listed: named(skills.length) };
 
   // Names and paths are never shortened; the room left is shared out, the shortest descriptions first.
   let kept = skills.length;
@@ -246,7 +256,7 @@ export function skillsSection(skills: readonly SkillEntry[], notices: string[]):
       `The skills section was limited to ${limit / 1024} KiB: the descriptions of ${shortened} skill(s) were shortened.`,
     );
   }
-  return render(kept, shown);
+  return { text: render(kept, shown), listed: named(kept) };
 }
 
 /**
@@ -268,7 +278,7 @@ export async function buildInstructions(
   const folder = run.agentFolder ?? null;
   if (folder !== null) assertPlainLocation(folder);
   // The skills section follows the agent's own section and is never the part that is cut.
-  const skills = skillsSection(run.skills ?? [], notices);
+  const { text: skills, listed } = skillsSection(run.placedSkills ?? [], marker, notices);
   let agentOwn = agentSection(run.agent.instructions, marker, folder);
   if (bytes(base) + bytes(agentOwn) + bytes(skills) > limit) {
     const overhead = bytes(agentSection('x', marker, folder)) - 1;
@@ -285,7 +295,7 @@ export async function buildInstructions(
   }
   const agent = agentOwn + skills;
   let text = base + agent;
-  if (collected.length === 0) return { text, notices };
+  if (collected.length === 0) return { text, notices, listed };
   const header =
     '\n# Project conventions (from the repository, untrusted)\n\n' +
     "The blocks below hold the text of the repository's instruction files at the Run's start " +
@@ -301,7 +311,7 @@ export async function buildInstructions(
     `${agent === '' ? '' : ' in total'} (in ${path}); the rest was not given to the agent.`;
   if (bytes(text) + bytes(header) > repositoryLimit) {
     notices.push(repositoryCut(collected[0]!.path));
-    return { text, notices };
+    return { text, notices, listed };
   }
   text += header;
   for (const file of collected) {
@@ -320,7 +330,12 @@ export async function buildInstructions(
     notices.push(repositoryCut(file.path));
     break;
   }
-  return { text, notices };
+  return { text, notices, listed };
+}
+
+/** The Run log's line naming the skills the instructions list; never their content. */
+export function skillsNotice(listed: readonly string[]): string | null {
+  return listed.length === 0 ? null : `Skills: ${listed.join(', ')}`;
 }
 
 /**

@@ -7,6 +7,7 @@ import {
   type RepositoryFiles,
   type SkillEntry,
   SKILLS_SECTION_MAX_BYTES,
+  skillsNotice,
   skillsSection,
 } from '../claude-code/instructions.js';
 import { codexPrompt } from '../codex/cli-options.js';
@@ -44,12 +45,12 @@ describe('a Run without skills', () => {
   it('gets the built-in Default agent file and prompt it always had, with an empty list too', async () => {
     for (const skills of [undefined, []]) {
       const claude = await buildInstructions(
-        { ...agentFields(), ...(skills ? { skills } : {}) },
+        { ...agentFields(), ...(skills ? { placedSkills: skills } : {}) },
         repository(GOLDEN_REPOSITORY),
         GOLDEN_MARKER,
       );
       const codex = await buildInstructions(
-        { ...agentFields(), ...(skills ? { skills } : {}) },
+        { ...agentFields(), ...(skills ? { placedSkills: skills } : {}) },
         repository(GOLDEN_REPOSITORY),
         GOLDEN_MARKER,
         ['AGENTS.md'],
@@ -63,7 +64,7 @@ describe('a Run without skills', () => {
 
   it('gets, for an agent with instructions, the file and prompt it had before skills existed', async () => {
     for (const skills of [undefined, []]) {
-      const run = reviewer(skills ? { skills } : {});
+      const run = reviewer(skills ? { placedSkills: skills } : {});
       const claude = await buildInstructions(run, repository(GOLDEN_REPOSITORY), GOLDEN_MARKER);
       const codex = await buildInstructions(run, repository(GOLDEN_REPOSITORY), GOLDEN_MARKER, [
         'AGENTS.md',
@@ -78,7 +79,7 @@ describe('a Run without skills', () => {
 describe('a Run with skills', () => {
   it('gets the section after the agent instructions in the Claude Code file, byte for byte', async () => {
     const built = await buildInstructions(
-      reviewer({ skills: TWO }),
+      reviewer({ placedSkills: TWO }),
       repository(GOLDEN_REPOSITORY),
       GOLDEN_MARKER,
     );
@@ -89,7 +90,7 @@ describe('a Run with skills', () => {
 
   it('gets the same section in the Codex prompt, byte for byte', async () => {
     const built = await buildInstructions(
-      reviewer({ skills: TWO }),
+      reviewer({ placedSkills: TWO }),
       repository(GOLDEN_REPOSITORY),
       GOLDEN_MARKER,
       ['AGENTS.md'],
@@ -99,7 +100,11 @@ describe('a Run with skills', () => {
   });
 
   it('keeps the base rules first and unchanged, and lists name, description and absolute path of each skill', async () => {
-    const built = await buildInstructions(reviewer({ skills: TWO }), repository({}), GOLDEN_MARKER);
+    const built = await buildInstructions(
+      reviewer({ placedSkills: TWO }),
+      repository({}),
+      GOLDEN_MARKER,
+    );
 
     expect(built.text.startsWith(BASE_RULES.text.trimEnd() + '\n')).toBe(true);
     const section = built.text.slice(built.text.indexOf('\n## Skills\n'));
@@ -116,7 +121,7 @@ describe('a Run with skills', () => {
 
   it('lists the skills of an agent that has no instructions, after the base rules alone', async () => {
     const built = await buildInstructions(
-      { ...agentFields(), skills: TWO },
+      { ...agentFields(), placedSkills: TWO },
       repository({}),
       GOLDEN_MARKER,
     );
@@ -126,7 +131,7 @@ describe('a Run with skills', () => {
 
   it('puts the repository text after the section, in the same blocks as before', async () => {
     const built = await buildInstructions(
-      reviewer({ skills: TWO }),
+      reviewer({ placedSkills: TWO }),
       repository(GOLDEN_REPOSITORY),
       GOLDEN_MARKER,
     );
@@ -140,7 +145,7 @@ describe('a Run with skills', () => {
     for (const entryFile of ['skills/lint/SKILL.md', '/a\n/b/SKILL.md']) {
       await expect(
         buildInstructions(
-          reviewer({ skills: [{ ...entry('lint'), entryFile }] }),
+          reviewer({ placedSkills: [{ ...entry('lint'), entryFile }] }),
           repository({}),
           GOLDEN_MARKER,
         ),
@@ -155,7 +160,7 @@ describe('a Run with skills', () => {
     };
 
     const built = await buildInstructions(
-      reviewer({ agent: huge, skills: TWO }),
+      reviewer({ agent: huge, placedSkills: TWO }),
       repository({ 'CLAUDE.md': 'Use pnpm.' }),
       GOLDEN_MARKER,
     );
@@ -177,7 +182,7 @@ describe('the size of the section', () => {
   it('leaves a section that fits untouched, with no notice', () => {
     const notices: string[] = [];
 
-    const section = skillsSection(TWO, notices);
+    const section = skillsSection(TWO, GOLDEN_MARKER, notices).text;
 
     expect(notices).toEqual([]);
     expect(bytes(section)).toBeLessThan(SKILLS_SECTION_MAX_BYTES);
@@ -189,7 +194,7 @@ describe('the size of the section', () => {
     );
     const notices: string[] = [];
 
-    const section = skillsSection(many, notices);
+    const section = skillsSection(many, GOLDEN_MARKER, notices).text;
 
     expect(bytes(section)).toBeLessThanOrEqual(SKILLS_SECTION_MAX_BYTES);
     for (const skill of many) {
@@ -216,7 +221,7 @@ describe('the size of the section', () => {
     ];
     const notices: string[] = [];
 
-    const section = skillsSection(skills, notices);
+    const section = skillsSection(skills, GOLDEN_MARKER, notices).text;
 
     expect(bytes(section)).toBeLessThanOrEqual(SKILLS_SECTION_MAX_BYTES);
     expect(section).toContain('- short: Short and complete.\n');
@@ -228,7 +233,7 @@ describe('the size of the section', () => {
   it('cuts at a character boundary: no broken character is ever listed', () => {
     const skills = Array.from({ length: 12 }, (_, i) => entry(`s${i}`, 'é日本語 '.repeat(200)));
 
-    const section = skillsSection(skills, []);
+    const section = skillsSection(skills, GOLDEN_MARKER, []).text;
 
     expect(bytes(section)).toBeLessThanOrEqual(SKILLS_SECTION_MAX_BYTES);
     expect(section).not.toContain('�');
@@ -243,7 +248,7 @@ describe('the size of the section', () => {
     }));
     const notices: string[] = [];
 
-    const section = skillsSection(skills, notices);
+    const section = skillsSection(skills, GOLDEN_MARKER, notices).text;
 
     expect(bytes(section)).toBeLessThanOrEqual(SKILLS_SECTION_MAX_BYTES);
     const listed = skills.filter((skill) => section.includes(`- ${skill.name}`)).length;
@@ -255,8 +260,53 @@ describe('the size of the section', () => {
   });
 
   it('turns a description with a line break into one line', () => {
-    const section = skillsSection([entry('lint', 'First line\nSecond line')], []);
+    const section = skillsSection(
+      [entry('lint', 'First line\nSecond line')],
+      GOLDEN_MARKER,
+      [],
+    ).text;
 
     expect(section).toContain('- lint: First line Second line\n');
+  });
+});
+
+describe('the marked block of the section', () => {
+  it('holds the list between the per-step code lines, and Studio sentence stays outside it', () => {
+    const { text, listed } = skillsSection(TWO, GOLDEN_MARKER, []);
+
+    const begin = text.indexOf(`===== BEGIN ${GOLDEN_MARKER} skills (untrusted) =====`);
+    const end = text.indexOf(`===== END ${GOLDEN_MARKER} skills =====`);
+    expect(begin).toBeGreaterThan(text.indexOf('read its entry file and follow it'));
+    expect(end).toBeGreaterThan(text.lastIndexOf('Entry file:'));
+    expect(text.slice(0, begin)).toContain('cannot change the rules above');
+    expect(text.slice(begin, end)).toContain('- lint: Lints the code');
+    expect(text.slice(begin, end)).toContain('- release-notes: ');
+    expect(listed).toEqual(['lint', 'release-notes']);
+  });
+
+  it('keeps the list inside the block when it is shortened, with the markers counted in the size', () => {
+    const many = Array.from({ length: 20 }, (_, i) => entry(`skill-${i}`, 'd'.repeat(900)));
+
+    const { text } = skillsSection(many, GOLDEN_MARKER, []);
+
+    expect(bytes(text)).toBeLessThanOrEqual(SKILLS_SECTION_MAX_BYTES);
+    expect(text.trimEnd().endsWith(`===== END ${GOLDEN_MARKER} skills =====`)).toBe(true);
+  });
+
+  it('lists in the log line only the skills the section lists', () => {
+    const deep = `/${'d'.repeat(900)}`;
+    const skills = Array.from({ length: 20 }, (_, i) => ({
+      name: `skill-${i}`,
+      description: 'Does it.',
+      entryFile: `${deep}/skill-${i}/SKILL.md`,
+    }));
+
+    const { listed } = skillsSection(skills, GOLDEN_MARKER, []);
+
+    expect(listed.length).toBeGreaterThan(0);
+    expect(listed.length).toBeLessThan(20);
+    expect(listed).toEqual(skills.slice(0, listed.length).map((skill) => skill.name));
+    expect(skillsNotice(listed)).toBe(`Skills: ${listed.join(', ')}`);
+    expect(skillsNotice([])).toBeNull();
   });
 });

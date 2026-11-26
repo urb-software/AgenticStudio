@@ -23,7 +23,13 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { type RunSkillsApi, RunSkills, SkillsUnusableError, skillsNotices } from '../run-skills.js';
+import {
+  type RunSkillsApi,
+  RunSkills,
+  SkillsTransientError,
+  SkillsUnusableError,
+  skillsNotices,
+} from '../run-skills.js';
 import { StudioApiError } from '../studio-api.js';
 import { agentFields } from './agent-fixtures.js';
 
@@ -183,7 +189,6 @@ describe('RunSkills', () => {
     await writeFile(join(dir, 'stale.txt'), 'x');
 
     await expect(place(run([]))).resolves.toBeNull();
-    await expect(place({ ...run([]), skills: undefined })).resolves.toBeNull();
     await expect(place(run([], null))).resolves.toBeNull();
 
     expect(runSkills).not.toHaveBeenCalled();
@@ -324,16 +329,12 @@ describe('RunSkills', () => {
     expect(await readFile(join(dir, 'lint', 'SKILL.md'), 'utf8')).toBe(SKILL('lint'));
   });
 
-  it('turns every refusal and failure of the route into a clear skills_unusable reason', async () => {
+  it('turns a refusal of the skills into a clear skills_unusable reason', async () => {
     const problem = (status: number, type?: string) =>
       new StudioApiError(status, '/api/worker/runs/x/skills', type);
     const reasons: [Error, RegExp][] = [
       [problem(409, WORKER_PROBLEM_TYPES.skillsUnavailable), /no longer available/],
       [problem(409, WORKER_PROBLEM_TYPES.skillsInvalid), /invalid/],
-      [problem(503), /could not be fetched.*try again/is],
-      [problem(500), /could not be fetched/],
-      [new TypeError('fetch failed'), /could not be fetched/],
-      [problem(400), /could not be fetched/],
     ];
     for (const [failure, reason] of reasons) {
       answer = failure;
@@ -341,6 +342,21 @@ describe('RunSkills', () => {
       expect(error).toBeInstanceOf(SkillsUnusableError);
       expect((error as SkillsUnusableError).detail).toMatch(reason);
     }
+  });
+
+  it('turns an outage or a failed read on the side of Studio into a transient failure, as for the agent files', async () => {
+    const problem = (status: number) => new StudioApiError(status, '/api/worker/runs/x/skills');
+    for (const failure of [problem(503), problem(500), new TypeError('fetch failed')]) {
+      answer = failure;
+      const error = await place().catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(SkillsTransientError);
+      expect(error).not.toBeInstanceOf(SkillsUnusableError);
+      expect((error as Error).message).toMatch(/try again/i);
+    }
+    // Any other answer is not an outage: it stays as it is.
+    const refused = new StudioApiError(400, '/api/worker/runs/x/skills');
+    answer = refused;
+    await expect(place()).rejects.toBe(refused);
   });
 
   it('keeps a loss of the Run as it is: the worker own loss handling decides', async () => {
@@ -409,17 +425,14 @@ describe('the log lines about skills', () => {
     entryFile: `${dir}/${name}/SKILL.md`,
   });
 
-  it('name the skills placed and those left out, never a description or a path', () => {
+  it('name the skills left out for the budget, never a description or a path', () => {
     const notices = skillsNotices({
       dir,
       skills: [skill('lint'), skill('notes')],
       omitted: ['big'],
     });
 
-    expect(notices).toEqual([
-      'Skills: lint, notes',
-      'Skills left out because their files pass 20 MiB in total: big',
-    ]);
+    expect(notices).toEqual(['Skills left out because their files pass 20 MiB in total: big']);
     expect(notices.join(' ')).not.toMatch(/Secret|\/runs\//);
   });
 

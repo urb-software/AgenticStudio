@@ -48,7 +48,7 @@ const SKILLS_UNAVAILABLE = RunFailure.of(
   "The agent's skills are no longer available in the definitions Repository at the commit this run recorded. Start a new run.",
 );
 const SKILLS_UNREADABLE = RunFailure.of(
-  'skills_unusable',
+  'preparation_failed',
   "The agent's skills could not be read from the definitions Repository right now. Start the run again to try again.",
 );
 

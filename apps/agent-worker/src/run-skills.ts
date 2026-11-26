@@ -10,7 +10,7 @@ import { chmod, mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { DIRECTORY_MODE, type PlacedFile, writeFiles } from './placed-files.js';
-import { isRunLost, StudioApiError } from './studio-api.js';
+import { isRunLost, isTransient, StudioApiError } from './studio-api.js';
 
 /** The hand-over route as the worker uses it ({@link StudioApi} in production). */
 export interface RunSkillsApi {
@@ -26,6 +26,19 @@ export class SkillsUnusableError extends Error {
   constructor(readonly detail: string) {
     super(detail);
     this.name = 'SkillsUnusableError';
+  }
+}
+
+/**
+ * Studio could not hand the skills over right now (an outage, a failed read); the Run fails
+ * `preparation_failed`, as for the agent's files, and starting it again may work.
+ */
+export class SkillsTransientError extends Error {
+  constructor() {
+    super(
+      "The agent's skills could not be fetched from Studio right now. Start the run again to try again.",
+    );
+    this.name = 'SkillsTransientError';
   }
 }
 
@@ -150,7 +163,7 @@ export class RunSkills {
 /** The claim's skills, or `null` when the Run has none to place (a built-in agent included). */
 function wantedOf(run: RunSkillsRun): Wanted | null {
   if (run.agent.source === 'built_in' || run.agent.commit === null) return null;
-  return run.skills !== undefined && run.skills.length > 0 ? run.skills : null;
+  return run.skills.length > 0 ? run.skills : null;
 }
 
 /** What the Run fails with when the route did not answer: the stop of the caller is kept. */
@@ -171,9 +184,8 @@ function refusal(error: unknown, signal: AbortSignal): unknown {
   if (error instanceof z.ZodError) {
     return new SkillsUnusableError("Studio's hand-over of the agent's skills is malformed.");
   }
-  return new SkillsUnusableError(
-    "The agent's skills could not be fetched from Studio right now. Start the run again to try again.",
-  );
+  if (isTransient(error)) return new SkillsTransientError();
+  return error;
 }
 
 /** Decodes and judges a hand-over; throws before anything is written. */
@@ -227,14 +239,11 @@ function judge(answer: RunSkillsResponse, wanted: Wanted): HandedSkill[] {
 }
 
 /**
- * The Run log's lines about a step's skills: the names placed, and the names left out for the byte
- * budget. Never a description, a path or any content.
+ * The Run log's line about the skills left out for the byte budget, by name. The skills the
+ * instructions list are named by the runner. Never a description, a path or any content.
  */
 export function skillsNotices(placed: PlacedSkills): string[] {
   const notices: string[] = [];
-  if (placed.skills.length > 0) {
-    notices.push(`Skills: ${placed.skills.map((skill) => skill.name).join(', ')}`);
-  }
   if (placed.omitted.length > 0) {
     notices.push(
       `Skills left out because their files pass ${RUN_SKILLS_MAX_BYTES / (1024 * 1024)} MiB in total: ${placed.omitted.join(', ')}`,

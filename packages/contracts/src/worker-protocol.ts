@@ -285,10 +285,10 @@ export const runPayloadSchema = z
     baseRules: baseRulesPayloadSchema,
     agent: runAgentPayloadSchema,
     /**
-     * The skills the Run recorded, with the description judged at the recorded commit; absent
+     * The skills the Run recorded, with the description judged at the recorded commit; empty
      * means none. Their files come from the skills route, never from the claim.
      */
-    skills: z.array(runSkillSummarySchema).max(RUN_SKILLS_MAX).optional(),
+    skills: z.array(runSkillSummarySchema).max(RUN_SKILLS_MAX),
     task: z.string().min(1).max(TASK_MAX_LENGTH),
     /** The commit of the integration branch the Run starts from. */
     startCommit: z.string().min(1).max(64),

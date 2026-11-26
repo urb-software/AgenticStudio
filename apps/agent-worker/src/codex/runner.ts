@@ -7,6 +7,7 @@ import { isAbsolute, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import {
   agentNotice,
+  skillsNotice,
   buildInstructions,
   type RepositoryFiles,
 } from '../claude-code/instructions.js';
@@ -159,13 +160,19 @@ export class CodexRunner implements Runner {
       // its text (read at the start commit).
       const marker = this.options.marker?.() ?? randomBytes(6).toString('hex');
       const instructions = await buildInstructions(
-        { ...run, agentFolder: workspace.agentFolder ?? null, skills: workspace.skills ?? [] },
+        {
+          ...run,
+          agentFolder: workspace.agentFolder ?? null,
+          placedSkills: workspace.skills ?? [],
+        },
         this.repositoryFiles(workspace, run.startCommit, signal),
         marker,
         CODEX_PROJECT_INSTRUCTION_FILES,
       );
       for (const notice of instructions.notices) yield { type: 'notice', text: notice };
       yield { type: 'notice', text: agentNotice(run) };
+      const listed = skillsNotice(instructions.listed);
+      if (listed !== null) yield { type: 'notice', text: listed };
       await writeFile(files.promptFile, codexPrompt(instructions.text, run.task), {
         mode: 0o600,
       });

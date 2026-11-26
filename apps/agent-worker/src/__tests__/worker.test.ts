@@ -2733,7 +2733,7 @@ describe('the skills of a Run', () => {
     expect(notices(api)).toEqual([]);
   });
 
-  it('are named in the Run log by name only, with the ones left out for the budget', async () => {
+  it('are named in the Run log by the ones left out for the budget; the runner names the rest', async () => {
     const run = withSkills(payload('Add a feature'));
     const api = new RecordingApi([run]);
     const skills = new RecordingSkills();
@@ -2742,10 +2742,7 @@ describe('the skills of a Run', () => {
 
     await until(() => api.reports().length === 3);
 
-    expect(notices(api)).toEqual([
-      'Skills: lint, notes',
-      'Skills left out because their files pass 20 MiB in total: big',
-    ]);
+    expect(notices(api)).toEqual(['Skills left out because their files pass 20 MiB in total: big']);
     expect(notices(api).join(' ')).not.toMatch(/Lints|Writes|SKILL\.md/);
   });
 
@@ -2774,7 +2771,7 @@ describe('the skills of a Run', () => {
     expect(skills.events).toEqual([`place start /data/runs/${run.runId}/skills`]);
   });
 
-  it('are fetched with the Run id only, and a failing route fails the Run', async () => {
+  it('are fetched with the Run id only, and an outage of the route fails the Run as preparation_failed', async () => {
     const run = withSkills(payload('Add a feature'));
     const api = new RecordingApi([run]);
     const asked: string[] = [];
@@ -2793,7 +2790,7 @@ describe('the skills of a Run', () => {
     expect(asked).toEqual([run.runId]);
     expect(api.reports()[0]?.[2]).toMatchObject({
       state: 'failed',
-      failure: { code: 'skills_unusable' },
+      failure: { code: 'preparation_failed' },
     });
   });
 });

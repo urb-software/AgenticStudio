@@ -210,19 +210,20 @@ describe('ClaimRunHandler', () => {
     });
 
     it.each([
-      ['unavailable', { status: 'unavailable' as const }, /no longer available/],
-      ['unreadable', { status: 'unreadable' as const }, /could not be read/],
+      ['unavailable', { status: 'unavailable' as const }, 'skills_unusable', /no longer available/],
+      ['unreadable', { status: 'unreadable' as const }, 'preparation_failed', /could not be read/],
       [
         'invalid',
         {
           status: 'invalid' as const,
           problems: [{ skill: 'lint', code: 'shell_line', path: 'SKILL.md' }],
         },
+        'skills_unusable',
         /shell_line \(lint\/SKILL\.md\)/,
       ],
     ])(
-      'fails the Run with skills_unusable when its skills are %s, and hands out the next',
-      async (_case, answer, reason) => {
+      'fails the Run, with the right code, when its skills are %s, and hands out the next',
+      async (_case, answer, code, reason) => {
         const failing = await queue(A, WITH_SKILLS);
         const next = await queue(B);
         describeSkills.mockResolvedValueOnce(answer);
@@ -233,14 +234,14 @@ describe('ClaimRunHandler', () => {
         const failed = await runs.findById(failing.id);
         expect(failed?.lifecycle).toMatchObject({
           state: 'failed',
-          failure: { code: 'skills_unusable' },
+          failure: { code },
         });
         expect(failed?.lifecycle.failure?.detail).toMatch(reason);
         expect(failed?.claim.claimedBy).toBeNull();
       },
     );
 
-    it('fails the Run with skills_unusable when reading throws, never starting without them', async () => {
+    it('fails the Run as preparation_failed when reading throws, never starting without them', async () => {
       const failing = await queue(A, WITH_SKILLS);
       describeSkills.mockRejectedValueOnce(new Error('boom'));
 
@@ -248,7 +249,7 @@ describe('ClaimRunHandler', () => {
 
       expect((await runs.findById(failing.id))?.lifecycle).toMatchObject({
         state: 'failed',
-        failure: { code: 'skills_unusable' },
+        failure: { code: 'preparation_failed' },
       });
     });
   });
