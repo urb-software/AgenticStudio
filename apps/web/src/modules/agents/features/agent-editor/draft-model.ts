@@ -12,7 +12,7 @@ import type {
   AgentDraftProblemOutput,
   AgentSummaryOutput,
 } from '../../../../platform/api';
-import { problemTarget, type EditorEntry, type ProblemTarget } from './editor-model';
+import { placedKey, problemTarget, type EditorEntry, type ProblemTarget } from './editor-model';
 
 const AGENT_PATH = /^agents\/([^/]+)\//;
 
@@ -118,7 +118,8 @@ export interface ListedProblem {
 
 function fromDraft(problem: AgentDraftProblemOutput): ListedProblem {
   const target: ProblemTarget = { path: problem.path };
-  if (problem.key) target.key = problem.key;
+  const key = placedKey(problem.code, problem.key);
+  if (key) target.key = key;
   return { agent: problem.agent, code: problem.code, message: problem.message, target };
 }
 

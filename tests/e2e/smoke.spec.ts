@@ -1759,6 +1759,8 @@ test('the skills view lists skills with their state, opens a detail, in both the
         ...valid,
         instructions: 'Review <b>carefully</b>.',
         files: [{ path: 'SKILL.md', size: 80 }],
+        usedBy: ['worker'],
+        usedByTruncated: true,
       }),
     }),
   );
@@ -1778,6 +1780,18 @@ test('the skills view lists skills with their state, opens a detail, in both the
   await expect(card.getByRole('region', { name: 'Instructions text' })).toHaveText(
     'Review <b>carefully</b>.',
   );
+  const users = card.getByRole('region', { name: 'Agents that use this skill' });
+  await expect(users.getByRole('link', { name: 'worker' })).toHaveAttribute(
+    'href',
+    '/agents?open=worker',
+  );
+  await expect(users.getByText(/may be incomplete/)).toBeVisible();
   await expectInBothThemes(page, page.getByRole('region', { name: 'Skills' }));
+
+  // A link from an agent opens its skill without a click.
+  await page.goto('/agents/skills?open=review');
+  await expect(page.getByRole('region', { name: 'Instructions text' })).toHaveText(
+    'Review <b>carefully</b>.',
+  );
   expect(foreign, 'a request left the Studio origin').toEqual([]);
 });

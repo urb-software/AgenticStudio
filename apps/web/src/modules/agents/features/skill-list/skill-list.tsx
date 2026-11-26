@@ -4,6 +4,7 @@ import { AGENT_NAME_PATTERN } from '@agentic-studio/agent-definitions';
 import { useId, useState } from 'react';
 import { RefreshCwIcon, SparklesIcon, TriangleAlertIcon } from 'lucide-react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { Banner } from '@/shared/components/banner';
 import { EmptyState } from '@/shared/components/empty-state';
 import { Button } from '@/shared/ui/button';
@@ -100,8 +101,9 @@ function SkillRow({
  */
 export function SkillList() {
   const { data, error, isPending, isError, isRefetching, refetch } = useSkills();
-  // One skill is open at a time.
-  const [openName, setOpenName] = useState<string>();
+  // One skill is open at a time; a link from an agent opens its skill.
+  const opened = useSearchParams().get('open') ?? undefined;
+  const [openName, setOpenName] = useState<string | undefined>(opened);
 
   const heading = <h1 className="m-0 text-page-title font-semibold tracking-[-0.015em]">Skills</h1>;
   const back = (

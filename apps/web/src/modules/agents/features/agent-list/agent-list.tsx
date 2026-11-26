@@ -3,6 +3,7 @@
 import { useId, useState } from 'react';
 import { RefreshCwIcon, TriangleAlertIcon } from 'lucide-react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { Badge } from '@/shared/components/badge';
 import { Banner } from '@/shared/components/banner';
 import { EmptyState } from '@/shared/components/empty-state';
@@ -113,8 +114,11 @@ function AgentRow({
  */
 export function AgentList() {
   const { data, error, isPending, isError, isRefetching, refetch } = useAgents();
-  // One agent is open at a time, keyed like the rows.
-  const [openKey, setOpenKey] = useState<string>();
+  // One agent is open at a time, keyed like the rows; a link from a skill opens its agent.
+  const opened = useSearchParams().get('open');
+  const [openKey, setOpenKey] = useState<string | undefined>(
+    opened === null ? undefined : `definitions:${opened}`,
+  );
 
   if (isPending) {
     return (

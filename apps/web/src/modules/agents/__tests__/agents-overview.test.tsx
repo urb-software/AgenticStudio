@@ -8,7 +8,10 @@ import type { RepositoryOutput } from '../../../platform/api';
 import { DEFINITIONS_PROJECT, fakeAgentsApi, problem } from './fake-agents-api';
 
 // The Repository card has no navigation of its own; the composed screens may.
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}));
 
 const URL = 'git@github.com:acme/agents.git';
 const SHA = '0123456789abcdef0123456789abcdef01234567';

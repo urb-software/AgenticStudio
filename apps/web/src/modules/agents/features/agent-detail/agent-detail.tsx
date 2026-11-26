@@ -1,12 +1,14 @@
 'use client';
 
 import { RefreshCwIcon, TriangleAlertIcon } from 'lucide-react';
+import Link from 'next/link';
 import { Banner } from '@/shared/components/banner';
 import { EmptyState } from '@/shared/components/empty-state';
 import { Button } from '@/shared/ui/button';
 import { Skeleton } from '@/shared/ui/skeleton';
 import { ApiError, type AgentSummaryOutput } from '../../../../platform/api';
 import { useAgent } from '../../api/agents-queries';
+import { skillHref } from '../../components/definitions-view';
 import { formatSize } from '../../components/format-size';
 import { Problems } from '../../components/problems';
 import { PlainText } from '../../components/plain-text';
@@ -95,6 +97,20 @@ export function AgentDetail({ agent }: { agent: AgentSummaryOutput }) {
           )}
         </div>
       )}
+      {detail.skills.length > 0 ? (
+        <section aria-label="Skills of this agent" className="flex flex-col gap-2">
+          <h3 className="m-0 text-small font-semibold">Skills</h3>
+          <ul className="m-0 flex list-none flex-wrap gap-x-4 gap-y-1 p-0 text-small">
+            {detail.skills.map((skill) => (
+              <li key={skill}>
+                <Link href={skillHref(skill)} className="font-mono text-code break-all">
+                  {skill}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
       {detail.files.length > 0 ? (
         <div className="flex flex-col gap-2">
           <h3 className="m-0 text-small font-semibold">Files</h3>

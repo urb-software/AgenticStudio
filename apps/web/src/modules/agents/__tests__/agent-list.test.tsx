@@ -14,7 +14,11 @@ import {
   problem,
 } from './fake-agents-api';
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
+const search = vi.hoisted(() => ({ value: '' }));
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(search.value),
+}));
 
 const SHA = '0123456789abcdef0123456789abcdef01234567';
 const NEW_SHA = 'fedcba9876543210fedcba9876543210fedcba98';
@@ -75,6 +79,7 @@ function renderAgents() {
 const agentsCard = () => screen.getByRole('region', { name: 'Agents' });
 
 afterEach(() => {
+  search.value = '';
   act(() => {
     focusManager.setFocused(undefined);
     toast.dismiss();
@@ -398,5 +403,83 @@ describe('Agents page: refetching', () => {
 
     expect(await screen.findByText('reviewer', undefined, { timeout: 4000 })).toBeTruthy();
     expect(listReads()).toBeGreaterThan(before);
+  });
+});
+
+describe('Agents page: the skills of an agent', () => {
+  const WORKER: AgentSummaryOutput = { ...REVIEWER, name: 'worker', skills: ['review', 'test'] };
+  const open = async (agent: AgentSummaryOutput, detail = agentDetail(agent)) => {
+    fakeAgentsApi(
+      { repository: READY },
+      {
+        list: agentList({ commit: SHA, repository: REPOSITORY, agents: [...BUILT_INS, agent] }),
+        details: { [agent.name]: detail },
+      },
+    );
+    const view = renderAgents();
+    await userEvent.click(await screen.findByRole('button', { name: `Show ${agent.name}` }));
+    return view;
+  };
+
+  it('lists the skills of an agent, each linking to the skill, without axe violations', async () => {
+    const { container } = await open(
+      WORKER,
+      agentDetail(WORKER, { instructions: 'Work.', files: [{ path: 'AGENT.md', size: 10 }] }),
+    );
+
+    const region = await screen.findByRole('region', { name: 'Skills of this agent' });
+    const links = within(region).getAllByRole('link');
+    expect(links.map((link) => link.textContent)).toEqual(['review', 'test']);
+    expect(links.map((link) => link.getAttribute('href'))).toEqual([
+      '/agents/skills?open=review',
+      '/agents/skills?open=test',
+    ]);
+    await expect(container).toHaveNoAxeViolations();
+  });
+
+  it('says nothing about skills for an agent that names none', async () => {
+    await open(REVIEWER, agentDetail(REVIEWER, { instructions: 'Work.' }));
+
+    await screen.findByText('Work.');
+    expect(screen.queryByRole('region', { name: 'Skills of this agent' })).toBeNull();
+  });
+
+  it('shows the skills of an agent that is not usable, with the reasons as for other problems', async () => {
+    const refused: AgentSummaryOutput = {
+      ...WORKER,
+      description: null,
+      provider: null,
+      model: null,
+      usable: false,
+      problems: [
+        {
+          code: 'skill_missing',
+          path: 'AGENT.md',
+          key: 'test',
+          message: 'The skill "test" does not exist.',
+        },
+      ],
+    };
+    const { container } = await open(refused, agentDetail(refused));
+
+    expect((await screen.findAllByText(/does not exist/)).length).toBeGreaterThan(0);
+    const region = screen.getByRole('region', { name: 'Skills of this agent' });
+    expect(within(region).getAllByRole('link')).toHaveLength(2);
+    await expect(container).toHaveNoAxeViolations();
+  });
+
+  it('opens the agent named in the address', async () => {
+    search.value = 'open=worker';
+    fakeAgentsApi(
+      { repository: READY },
+      {
+        list: agentList({ commit: SHA, repository: REPOSITORY, agents: [...BUILT_INS, WORKER] }),
+        details: { worker: agentDetail(WORKER, { instructions: 'Work.' }) },
+      },
+    );
+    renderAgents();
+
+    expect(await screen.findByText('Work.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Hide worker' })).toBeTruthy();
   });
 });

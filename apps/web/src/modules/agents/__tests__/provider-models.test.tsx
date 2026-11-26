@@ -5,7 +5,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AgentsOverview } from '..';
 import { fakeAgentsApi, problem } from './fake-agents-api';
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}));
 
 function renderAgents() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });

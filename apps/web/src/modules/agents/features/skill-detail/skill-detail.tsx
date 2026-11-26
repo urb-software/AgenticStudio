@@ -1,12 +1,14 @@
 'use client';
 
 import { RefreshCwIcon, TriangleAlertIcon } from 'lucide-react';
+import Link from 'next/link';
 import { Banner } from '@/shared/components/banner';
 import { EmptyState } from '@/shared/components/empty-state';
 import { Button } from '@/shared/ui/button';
 import { Skeleton } from '@/shared/ui/skeleton';
 import { ApiError } from '../../../../platform/api';
 import { useSkill } from '../../api/skills-queries';
+import { agentHref } from '../../components/definitions-view';
 import { formatSize } from '../../components/format-size';
 import { PlainText } from '../../components/plain-text';
 import { Problems } from '../../components/problems';
@@ -76,6 +78,29 @@ export function SkillDetail({ name, commit }: { name: string; commit: string | n
           <Problems problems={detail.problems} subject="skill" />
         </div>
       )}
+      <section aria-label="Agents that use this skill" className="flex flex-col gap-2">
+        <h3 className="m-0 text-small font-semibold">Used by</h3>
+        <div className="flex flex-col gap-1">
+          {detail.usedBy.length === 0 ? (
+            <p className="m-0 text-small text-text-muted">No agent names this skill.</p>
+          ) : (
+            <ul className="m-0 flex list-none flex-wrap gap-x-4 gap-y-1 p-0 text-small">
+              {detail.usedBy.map((agent) => (
+                <li key={agent}>
+                  <Link href={agentHref(agent)} className="font-mono text-code break-all">
+                    {agent}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+          {detail.usedByTruncated ? (
+            <p className="m-0 text-small text-text-muted">
+              More agent folders exist than were checked, so this list may be incomplete.
+            </p>
+          ) : null}
+        </div>
+      </section>
       {detail.files.length > 0 ? (
         <div className="flex flex-col gap-2">
           <h3 className="m-0 text-small font-semibold">Files</h3>
