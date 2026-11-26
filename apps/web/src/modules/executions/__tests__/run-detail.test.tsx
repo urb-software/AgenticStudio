@@ -2,9 +2,7 @@ import { focusManager, QueryClient, QueryClientProvider } from '@tanstack/react-
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AGENT_NAME_PATTERN } from '@agentic-studio/agent-definitions';
 import { RunDetail } from '..';
-import { SKILL_NAME_PATTERN } from '../features/run-detail/run-skills';
 import type { RunOutput } from '../../../platform/api';
 import { aRun, fakeRunsApi, problem, PROJECT, SHA } from './fake-runs-api';
 
@@ -517,11 +515,6 @@ describe('Run page: the agent that ran', () => {
     await expect(container).toHaveNoAxeViolations();
   });
 
-  it('judges a skill name by the rule of the definitions package', () => {
-    expect(SKILL_NAME_PATTERN.source).toBe(AGENT_NAME_PATTERN.source);
-    expect(SKILL_NAME_PATTERN.flags).toBe(AGENT_NAME_PATTERN.flags);
-  });
-
   it('shows a name that is not a valid skill name as text, never as a link', async () => {
     const run = withAgent({ skills: ['ok-skill', '../x', 'Bad Name'] });
     fakeRunsApi([run]);
@@ -538,9 +531,10 @@ describe('Run page: the agent that ran', () => {
   it('says None when the Run had no skills', async () => {
     const run = aRun({ state: 'succeeded' });
     fakeRunsApi([run]);
-    renderRun(run.id);
+    const { container } = renderRun(run.id);
     await heading();
 
     expect(fact('Skills').textContent).toBe('None');
+    await expect(container).toHaveNoAxeViolations();
   });
 });

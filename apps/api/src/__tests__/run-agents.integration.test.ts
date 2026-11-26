@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { DATABASE_CLIENT, type DatabaseClient } from '../platform/database/database.module.js';
 import { problemDetailsSchema } from '../platform/http/problem-details.js';
 import { createGitFixture, pushFiles, type GitFixture } from './git-fixture.js';
@@ -876,6 +876,12 @@ describe('choosing an agent for a Run (PostgreSQL + Redis via Testcontainers)', 
   });
 
   describe('the skills a Run recorded', () => {
+    afterEach(async () => {
+      // Test isolation only: the Draft goes back to its start, also after a failed test.
+      await db().$executeRaw`DELETE FROM agent_draft_files`;
+      await db().$executeRaw`UPDATE agent_drafts SET base_commit = NULL, version = 0`;
+    });
+
     const skillFile = (name: string, description = `Does ${name}`) =>
       `---\nname: ${name}\ndescription: ${description}\n---\nHow to ${name}.\n`;
     const SCRIPT = '#!/bin/sh\necho lint\n';
@@ -996,9 +1002,6 @@ describe('choosing an agent for a Run (PostgreSQL + Redis via Testcontainers)', 
         ]);
         const claimed = await http().get(`/api/runs/${runId}`).set('Cookie', cookie);
         expect(claimed.body.agent.skills).toEqual(['notes', 'lint']);
-        // Test isolation only: the Draft goes back to its start.
-        await db().$executeRaw`DELETE FROM agent_draft_files`;
-        await db().$executeRaw`UPDATE agent_drafts SET base_commit = NULL, version = 0`;
       },
     );
 

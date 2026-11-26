@@ -376,3 +376,39 @@ describe('the fake runner and the agent folder', () => {
     expect(built.events.map((event) => event.text)).not.toContain('fake runner: agent folder');
   });
 });
+
+describe('the fake runner and the skills', () => {
+  async function startWithSkills(
+    skills: { name: string; description: string; entryFile: string }[],
+  ) {
+    const events: RunnerEvent[] = [];
+    await drainRunStep(
+      new FakeRunner({ slowMs: 10, slowLineMs: 2 }).start({
+        run: run('Add a feature'),
+        workspace: { ...workspace, ...(skills.length === 0 ? {} : { skills }) },
+        signal: new AbortController().signal,
+        processes,
+      }),
+      (event) => events.push(event),
+    );
+    return events.map((event) => ('text' in event ? event.text : ''));
+  }
+
+  it('logs the names of the placed skills, never a description or a path', async () => {
+    const texts = await startWithSkills([
+      {
+        name: 'lint',
+        description: 'Secret description',
+        entryFile: '/runs/x/skills/lint/SKILL.md',
+      },
+      { name: 'notes', description: 'Other', entryFile: '/runs/x/skills/notes/SKILL.md' },
+    ]);
+
+    expect(texts).toContain('fake runner: skills lint, notes');
+    expect(texts.join(' ')).not.toMatch(/Secret|\/runs\//);
+  });
+
+  it('logs nothing for a Run without skills', async () => {
+    expect((await startWithSkills([])).some((text) => text.includes('skills'))).toBe(false);
+  });
+});

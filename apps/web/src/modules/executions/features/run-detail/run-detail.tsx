@@ -311,15 +311,6 @@ function ProjectLink({ projectId }: { projectId: string }) {
   );
 }
 
-/**
- * The Run's title (the start of its Task), from the cached Run. The Studio Shell breadcrumb and
- * other modules use it; `fallback` shows while the Run is loading or unreadable (default "Run").
- */
-export function RunTitle({ runId, fallback = 'Run' }: { runId: string; fallback?: string }) {
-  const { data } = useRun(runId);
-  return <>{data ? taskSummary(data.task) : fallback}</>;
-}
-
 export function RunDetail({ runId }: { runId: string }) {
   const { data: run, error, isPending, isError, isRefetching, refetch } = useRun(runId);
   const log = useRef<RunLogHandle>(null);

@@ -102,6 +102,12 @@ export async function fakeAgentFolderLine(dir: string | null | undefined): Promi
   return `fake runner: agent folder ${described.length} files: ${described.join(', ')}`;
 }
 
+/** What the fake runner reports of the placed skills: their names, never a path or any content. */
+export function fakeSkillsLine(skills: readonly { name: string }[] | undefined): string | null {
+  if (!skills || skills.length === 0) return null;
+  return `fake runner: skills ${skills.map((skill) => skill.name).join(', ')}`;
+}
+
 /** The fake agent's session reference for a Run: deterministic, per Run. */
 export function fakeSessionRef(runId: string): string {
   return `fake-session-${runId}`;
@@ -178,6 +184,8 @@ export class FakeRunner implements Runner {
     if (agentLine !== null) yield { type: 'message', text: agentLine };
     const folderLine = await fakeAgentFolderLine(workspace.agentFolder);
     if (folderLine !== null) yield { type: 'message', text: folderLine };
+    const skillsLine = fakeSkillsLine(workspace.skills);
+    if (skillsLine !== null) yield { type: 'message', text: skillsLine };
     return yield* this.play(scenario, run, workspace, signal, false);
   }
 
@@ -392,6 +400,8 @@ export class FakeRunner implements Runner {
     if (agentLine !== null) yield { type: 'message', text: agentLine };
     const folderLine = await fakeAgentFolderLine(workspace.agentFolder);
     if (folderLine !== null) yield { type: 'message', text: folderLine };
+    const skillsLine = fakeSkillsLine(workspace.skills);
+    if (skillsLine !== null) yield { type: 'message', text: skillsLine };
     signal.throwIfAborted();
     if (scenario === 'lost-session' || sessionRef !== fakeSessionRef(run.runId)) {
       throw new AgentFailedError(

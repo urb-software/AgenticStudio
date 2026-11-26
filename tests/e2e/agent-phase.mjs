@@ -179,6 +179,15 @@ export async function runAgentPhase(options) {
     `base rules ${baseRulesVersion}; ` +
     `instructions ${Buffer.byteLength(REVIEWER_INSTRUCTIONS)} bytes, sha256 ${digest}`;
   assert(texts.includes(expected), `the log has no record of the agent: ${JSON.stringify(texts)}`);
+  // The worker placed the Run's skill: the fake runner names it (never its text or path).
+  assert(
+    texts.includes(`fake runner: skills ${SKILL_NAME}`),
+    `the log has no record of the skills: ${JSON.stringify(texts)}`,
+  );
+  assert(
+    !texts.some((text) => text.includes('Summarise the merged pull requests.')),
+    'the log holds the text of the skill',
+  );
   assert(
     !texts.some((text) => text.includes('Review every change twice.')),
     'the log holds the text of the instructions',
