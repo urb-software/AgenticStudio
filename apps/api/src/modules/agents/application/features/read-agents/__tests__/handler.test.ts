@@ -761,7 +761,7 @@ describe('the skills an agent names, when the skills list is cut', () => {
     expect(skillTrees.filter(([, options]) => options?.directory === 'skills')).toHaveLength(2);
   });
 
-  it('fails closed, the same on every request, for names past the budget, and no agent depends on another', async () => {
+  it('answers the same on every request, alone or in the list, for names past the budget', async () => {
     const names = manySkills(200 + MAX_ON_DEMAND_SKILLS + 20);
     const beyond = names.slice(200);
     const agentNames = Array.from({ length: 12 }, (_, index) => `agent-${index}`);

@@ -5083,7 +5083,7 @@
           },
           "message": {
             "type": "string",
-            "description": "Fixed wording per code; never a value or file content."
+            "description": "Fixed wording per code; it may quote a key, a path or a skill name, never other values or file content."
           }
         },
         "required": [
@@ -5378,7 +5378,7 @@
           },
           "message": {
             "type": "string",
-            "description": "Fixed wording per code; never a value or file content."
+            "description": "Fixed wording per code; it may quote a key, a path or a skill name, never other values or file content."
           }
         },
         "required": [

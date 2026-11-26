@@ -273,7 +273,7 @@ export type AgentDraftProblemOutput = {
      */
     key: string | null;
     /**
-     * Fixed wording per code; never a value or file content.
+     * Fixed wording per code; it may quote a key, a path or a skill name, never other values or file content.
      */
     message: string;
 };
@@ -400,7 +400,7 @@ export type AgentProblemOutput = {
      */
     key: string | null;
     /**
-     * Fixed wording per code; never a value or file content.
+     * Fixed wording per code; it may quote a key, a path or a skill name, never other values or file content.
      */
     message: string;
 };

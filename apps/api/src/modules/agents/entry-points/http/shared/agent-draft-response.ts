@@ -29,7 +29,11 @@ const draftProblemSchema = z
       .describe(
         'The front matter key, when the problem is about one; for the skill reasons, the skill name.',
       ),
-    message: z.string().describe('Fixed wording per code; never a value or file content.'),
+    message: z
+      .string()
+      .describe(
+        'Fixed wording per code; it may quote a key, a path or a skill name, never other values or file content.',
+      ),
   })
   .meta({ id: 'AgentDraftProblem' });
 
