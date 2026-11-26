@@ -9,6 +9,7 @@ const USABLE = {
   source: 'definitions' as const,
   usable: true,
   instructions: 'Review.',
+  skills: [] as string[],
 };
 
 describe('RunnableAgent', () => {

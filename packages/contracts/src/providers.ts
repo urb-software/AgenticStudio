@@ -11,6 +11,12 @@ export type Provider = (typeof PROVIDERS)[number];
 /** Longest instructions of an agent, in UTF-8 bytes (64 KiB): the definitions' and the claim's bound. */
 export const AGENT_INSTRUCTIONS_MAX_BYTES = 64 * 1024;
 
+/**
+ * Most bytes of skill files a Run gets in total (20 MiB): the API leaves out the skills that would
+ * pass it, in the Run's order, and the worker refuses a hand-over over it.
+ */
+export const RUN_SKILLS_MAX_BYTES = 20 * 1024 * 1024;
+
 /** The model value that names "the CLI's own default": no model option is passed. */
 export const MODEL_DEFAULT = 'default';
 

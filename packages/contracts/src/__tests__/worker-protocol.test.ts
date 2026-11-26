@@ -77,6 +77,7 @@ const AGENT_FIELDS = {
     model: 'default',
     instructions: '',
   },
+  skills: [],
 };
 
 describe('run payload (claim response)', () => {
@@ -114,14 +115,18 @@ describe('run payload (claim response)', () => {
       expect(valid({ agent: definitions })).toBe(true);
     });
 
-    it('requires both, since the worker and Studio deploy together', () => {
+    it('requires all three, the skills included (empty for none), since the worker and Studio deploy together', () => {
       const { baseRules: _rules, ...withoutRules } = payload;
       const { agent: _agent, ...withoutAgent } = payload;
+      const { skills: _skills, ...withoutSkills } = payload;
       void _rules;
       void _agent;
+      void _skills;
 
       expect(runPayloadSchema.safeParse(withoutRules).success).toBe(false);
       expect(runPayloadSchema.safeParse(withoutAgent).success).toBe(false);
+      expect(runPayloadSchema.safeParse(withoutSkills).success).toBe(false);
+      expect(valid({ skills: [{ name: 'lint', description: 'Lints.' }] })).toBe(true);
     });
 
     it('ties the commit to the source', () => {

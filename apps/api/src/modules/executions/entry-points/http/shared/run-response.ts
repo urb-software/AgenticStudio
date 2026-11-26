@@ -34,6 +34,7 @@ export const runFailureCodeSchema = z.enum([
   'agent_folder_invalid',
   'model_not_allowed',
   'model_refused',
+  'skills_unusable',
   'unknown',
 ]);
 
@@ -117,6 +118,11 @@ export const runAgentResponseSchema = z
       ),
     provider: runProviderSchema,
     model: z.string().describe('The model the definition named; `default` is the CLI own.'),
+    skills: z
+      .array(z.string())
+      .describe(
+        'The names of the skills the agent had when the Run started, at the recorded commit; empty for none.',
+      ),
     instructions: z
       .string()
       .optional()
@@ -257,6 +263,7 @@ export function toRunResponse(
       provider: z.infer<typeof runProviderSchema>;
       model: string;
       instructions: string;
+      skills: readonly string[];
     };
     task: string;
     state: z.infer<typeof runStateSchema>;
@@ -358,6 +365,7 @@ export function toRunResponse(
       commit: run.agent.commit,
       provider: run.agent.provider,
       model: run.agent.model,
+      skills: [...run.agent.skills],
       instructions: run.agent.instructions,
     },
     task: run.task,

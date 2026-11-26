@@ -46,6 +46,7 @@ describe('GetAgentFolderHandler', () => {
     provider: 'codex' as const,
     model: 'default',
     instructions: 'Review.',
+    skills: [] as string[],
   };
 
   beforeEach(() => {

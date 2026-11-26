@@ -509,6 +509,7 @@ export const zRunAgentOutput = z.object({
     commit: z.string().nullable(),
     provider: z.enum(['claude_code', 'codex']),
     model: z.string(),
+    skills: z.array(z.string()),
     instructions: z.string().optional()
 });
 
@@ -683,6 +684,7 @@ export const zRunPartEndOutput = z.object({
         'agent_folder_invalid',
         'model_not_allowed',
         'model_refused',
+        'skills_unusable',
         'unknown'
     ]).optional(),
     delivery: z.enum([
@@ -753,6 +755,7 @@ export const zRunOutput = z.object({
             'agent_folder_invalid',
             'model_not_allowed',
             'model_refused',
+            'skills_unusable',
             'unknown'
         ]),
         detail: z.string()

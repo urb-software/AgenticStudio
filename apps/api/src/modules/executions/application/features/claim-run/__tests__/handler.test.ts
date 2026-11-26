@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AgentSkills } from '../../../../../agents/contracts/index.js';
 import type { EnvironmentFile } from '@agentic-studio/contracts';
 import { RUN_ENVIRONMENT_FILE_SECRET_OWNER } from '../../../ports/environment-file-snapshots.js';
 import { InMemoryRunDiffRepository } from '../../../../domain/repositories/__tests__/in-memory-run-diff-repository.js';
@@ -30,6 +31,7 @@ describe('ClaimRunHandler', () => {
   let files: Map<string, EnvironmentFile>;
   let filesFail: Error | undefined;
   let diffs: InMemoryRunDiffRepository;
+  let describeSkills: ReturnType<typeof vi.fn<AgentSkills['describe']>>;
 
   const REVIEWER = {
     name: 'reviewer',
@@ -38,6 +40,7 @@ describe('ClaimRunHandler', () => {
     provider: 'claude_code' as const,
     model: 'opus',
     instructions: 'Review carefully.',
+    skills: [] as string[],
   };
 
   const queue = (projectId: string, agent?: RunAgentData) =>
@@ -61,6 +64,9 @@ describe('ClaimRunHandler', () => {
     files = new Map();
     filesFail = undefined;
     diffs = new InMemoryRunDiffRepository();
+    describeSkills = vi.fn<AgentSkills['describe']>(() =>
+      Promise.resolve({ status: 'found', skills: [] }),
+    );
     kinds.definitionsId = null;
     const environmentFiles = {
       forProject: (projectId: string) =>
@@ -78,6 +84,7 @@ describe('ClaimRunHandler', () => {
         releaseFor: (runId) => Promise.resolve(void released.push(runId)),
       },
       diffs,
+      { describe: describeSkills, files: () => Promise.reject(new Error('not used')) },
     );
   });
 
@@ -107,6 +114,7 @@ describe('ClaimRunHandler', () => {
         provider: 'claude_code',
         model: 'default',
         instructions: '',
+        skills: [] as string[],
       },
     });
     expect(await handler.execute({ workerId: OTHER_WORKER })).toMatchObject({
@@ -167,6 +175,85 @@ describe('ClaimRunHandler', () => {
     });
   });
 
+  describe('skills', () => {
+    const WITH_SKILLS = { ...REVIEWER, skills: ['lint', 'notes'] };
+
+    it('hands out no skills for a built-in agent and for an agent without any, reading nothing', async () => {
+      await queue(A);
+      await queue(B, REVIEWER);
+
+      expect(await handler.execute({ workerId: WORKER })).toMatchObject({ skills: [] });
+      expect(await handler.execute({ workerId: OTHER_WORKER })).toMatchObject({ skills: [] });
+      expect(describeSkills).not.toHaveBeenCalled();
+    });
+
+    it('hands out name and description of each recorded skill, read at the recorded commit', async () => {
+      const run = await queue(A, WITH_SKILLS);
+      describeSkills.mockResolvedValueOnce({
+        status: 'found',
+        skills: [
+          { name: 'lint', description: 'Lints' },
+          { name: 'notes', description: 'Writes notes' },
+        ],
+      });
+
+      const claimed = await handler.execute({ workerId: WORKER });
+
+      expect(claimed).toMatchObject({
+        id: run.id,
+        skills: [
+          { name: 'lint', description: 'Lints' },
+          { name: 'notes', description: 'Writes notes' },
+        ],
+      });
+      expect(describeSkills).toHaveBeenCalledExactlyOnceWith(['lint', 'notes'], REVIEWER.commit);
+    });
+
+    it.each([
+      ['unavailable', { status: 'unavailable' as const }, 'skills_unusable', /no longer available/],
+      ['unreadable', { status: 'unreadable' as const }, 'preparation_failed', /could not be read/],
+      [
+        'invalid',
+        {
+          status: 'invalid' as const,
+          problems: [{ skill: 'lint', code: 'shell_line', path: 'SKILL.md' }],
+        },
+        'skills_unusable',
+        /shell_line \(lint\/SKILL\.md\)/,
+      ],
+    ])(
+      'fails the Run, with the right code, when its skills are %s, and hands out the next',
+      async (_case, answer, code, reason) => {
+        const failing = await queue(A, WITH_SKILLS);
+        const next = await queue(B);
+        describeSkills.mockResolvedValueOnce(answer);
+
+        const claimed = await handler.execute({ workerId: WORKER });
+
+        expect(claimed?.id).toBe(next.id);
+        const failed = await runs.findById(failing.id);
+        expect(failed?.lifecycle).toMatchObject({
+          state: 'failed',
+          failure: { code },
+        });
+        expect(failed?.lifecycle.failure?.detail).toMatch(reason);
+        expect(failed?.claim.claimedBy).toBeNull();
+      },
+    );
+
+    it('fails the Run as preparation_failed when reading throws, never starting without them', async () => {
+      const failing = await queue(A, WITH_SKILLS);
+      describeSkills.mockRejectedValueOnce(new Error('boom'));
+
+      expect(await handler.execute({ workerId: WORKER })).toBeNull();
+
+      expect((await runs.findById(failing.id))?.lifecycle).toMatchObject({
+        state: 'failed',
+        failure: { code: 'preparation_failed' },
+      });
+    });
+  });
+
   describe('delivery retries', () => {
     const WORKING_COPY = {
       runBranch: 'agent/x-r0b8e5c2d',
@@ -174,8 +261,8 @@ describe('ClaimRunHandler', () => {
       hasUncommittedChanges: false,
     };
 
-    async function failedDelivery(projectId: string, recorded = true) {
-      const run = await queue(projectId);
+    async function failedDelivery(projectId: string, recorded = true, agent?: RunAgentData) {
+      const run = await queue(projectId, agent);
       await runs.claimNext(WORKER, T0);
       for (const [from, to] of [
         ['preparing', 'running'],
@@ -208,6 +295,38 @@ describe('ClaimRunHandler', () => {
         claim: { claimedBy: WORKER },
       });
       expect(await handler.execute({ workerId: WORKER })).toBeNull();
+    });
+
+    it('hands out the skills of the Run with a retry, for the check before the push', async () => {
+      const run = await failedDelivery(A, true, { ...REVIEWER, skills: ['lint'] });
+      await runs.requestDeliveryRetry(run.id);
+      describeSkills.mockResolvedValueOnce({
+        status: 'found',
+        skills: [{ name: 'lint', description: 'Lints' }],
+      });
+
+      expect(await handler.execute({ workerId: WORKER })).toMatchObject({
+        id: run.id,
+        state: 'failed',
+        skills: [{ name: 'lint', description: 'Lints' }],
+      });
+      expect(describeSkills).toHaveBeenCalledExactlyOnceWith(['lint'], REVIEWER.commit);
+    });
+
+    it('fails the delivery again with delivery_failed when its skills cannot be checked', async () => {
+      const run = await failedDelivery(A, true, { ...REVIEWER, skills: ['lint'] });
+      await runs.requestDeliveryRetry(run.id);
+      describeSkills.mockResolvedValueOnce({ status: 'unavailable' });
+
+      expect(await handler.execute({ workerId: WORKER })).toBeNull();
+
+      const failed = await runs.findById(run.id);
+      expect(failed?.lifecycle).toMatchObject({
+        state: 'failed',
+        failure: { code: 'delivery_failed' },
+      });
+      expect(failed?.lifecycle.failure?.detail).toMatch(/skills could not be checked/);
+      expect(failed?.claim.claimedBy).toBeNull();
     });
 
     it('hands out a retry without the Environment file content, keeping its recorded path', async () => {
@@ -435,6 +554,31 @@ describe('ClaimRunHandler', () => {
       await runs.answer(run.id, 'PostgreSQL', T0);
       return run;
     }
+
+    it('describes the recorded skills again for a resume, at the recorded commit', async () => {
+      const run = await answered(A, true, { ...REVIEWER, skills: ['lint'] });
+      describeSkills.mockResolvedValueOnce({
+        status: 'found',
+        skills: [{ name: 'lint', description: 'Lints' }],
+      });
+
+      expect(await handler.execute({ workerId: WORKER })).toMatchObject({
+        id: run.id,
+        skills: [{ name: 'lint', description: 'Lints' }],
+      });
+      expect(describeSkills).toHaveBeenCalledExactlyOnceWith(['lint'], REVIEWER.commit);
+    });
+
+    it('fails a resume whose skills are gone, before any agent starts', async () => {
+      const run = await answered(A, true, { ...REVIEWER, skills: ['lint'] });
+      describeSkills.mockResolvedValueOnce({ status: 'unavailable' });
+
+      expect(await handler.execute({ workerId: WORKER })).toBeNull();
+      expect((await runs.findById(run.id))?.lifecycle).toMatchObject({
+        state: 'failed',
+        failure: { code: 'skills_unusable' },
+      });
+    });
 
     it('hands an answered Run to resume, with the steps taken and the next seq, keeping its start', async () => {
       const run = await answered(A);
@@ -695,6 +839,10 @@ describe('ClaimRunHandler with Environment files', () => {
         },
       },
       new InMemoryRunDiffRepository(),
+      {
+        describe: () => Promise.resolve({ status: 'found', skills: [] }),
+        files: () => Promise.reject(new Error('not used')),
+      },
     );
   });
 

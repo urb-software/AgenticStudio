@@ -137,6 +137,8 @@ describe('Run enums of the HTTP contract and the worker protocol', () => {
       agentFolderUnavailable: EXECUTIONS_PROBLEM_TYPES.agentFolderUnavailable,
       agentFolderInvalid: EXECUTIONS_PROBLEM_TYPES.agentFolderInvalid,
       agentFolderCut: EXECUTIONS_PROBLEM_TYPES.agentFolderCut,
+      skillsUnavailable: EXECUTIONS_PROBLEM_TYPES.skillsUnavailable,
+      skillsInvalid: EXECUTIONS_PROBLEM_TYPES.skillsInvalid,
     });
   });
 

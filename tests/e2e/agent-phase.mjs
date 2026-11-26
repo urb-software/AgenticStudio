@@ -130,6 +130,7 @@ export async function runAgentPhase(options) {
     commit: definitionsCommit,
     provider: 'claude_code',
     model: 'opus',
+    skills: [],
     instructions: REVIEWER_INSTRUCTIONS,
   };
   const queued = (await call(`/api/runs/${runId}`)).body;

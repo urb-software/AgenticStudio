@@ -38,10 +38,12 @@ import {
   AgentFolderTransientError,
   AgentFolderUnavailableError,
 } from '../agent-folder.js';
+import { type PlacedSkills, RunSkills, SkillsUnusableError } from '../run-skills.js';
 import {
   AgentWorker,
   type AgentFolderPort,
   type AgentWorkerOptions,
+  type RunSkillsPort,
   SHUTDOWN_FAILURE,
   type WorkerApi,
 } from '../worker.js';
@@ -418,6 +420,7 @@ interface Extras {
   branchUpdates?: BranchUpdatePort;
   disk?: { snapshot(): unknown };
   agentFolders?: AgentFolderPort;
+  skills?: RunSkillsPort;
 }
 
 function startWorker(
@@ -444,6 +447,7 @@ function startWorker(
     diffs: extras.diffs ?? new FakeRunDiffs(),
     ...(extras.lookups ? { lookups: extras.lookups } : {}),
     ...(extras.agentFolders ? { agentFolders: extras.agentFolders } : {}),
+    ...(extras.skills ? { skills: extras.skills } : {}),
     ...(extras.disk ? { disk: extras.disk as AgentWorkerOptions['disk'] } : {}),
     pollMs: 5,
     heartbeatMs: 10,
@@ -2600,6 +2604,276 @@ describe('the processes of a step with agent files', () => {
       for (const [command, args, options] of spawned.mock.calls) {
         const started = [String(command), ...(args ?? []), String(options?.cwd ?? '')];
         for (const part of started) expect(part.includes(agentDir), part).toBe(false);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('the skills of a Run', () => {
+  const NAMES = [
+    { name: 'lint', description: 'Lints the code.' },
+    { name: 'notes', description: 'Writes notes.' },
+  ];
+  const withSkills = (run: RunPayload): RunPayload => ({
+    ...run,
+    agent: {
+      ...run.agent,
+      name: 'reviewer',
+      source: 'definitions',
+      commit: 'c'.repeat(40),
+      instructions: 'Review.',
+    },
+    skills: NAMES,
+  });
+
+  /** Records every rebuild, in order with the runner's steps. */
+  class RecordingSkills implements RunSkillsPort {
+    readonly events: string[] = [];
+    failure: Error | undefined;
+    omitted: string[] = [];
+    /** What `place` answers: both skills, or none. */
+    placed = true;
+
+    async place(run: RunPayload, dir: string): Promise<PlacedSkills | null> {
+      this.events.push(`place ${run.kind} ${dir}`);
+      if (this.failure) throw this.failure;
+      if (!this.placed) return null;
+      return {
+        dir,
+        skills: NAMES.map((skill) => ({ ...skill, entryFile: `${dir}/${skill.name}/SKILL.md` })),
+        omitted: this.omitted,
+      };
+    }
+  }
+
+  const recordingRunner = (events: string[], seen: StartRunStepInput[] = []): Runner => ({
+    // eslint-disable-next-line require-yield
+    async *start(input): RunStep {
+      events.push('start');
+      seen.push(input);
+      return { outcome: 'done', summary: 'Done.' };
+    },
+    // eslint-disable-next-line require-yield
+    async *resume(input): RunStep {
+      events.push('resume');
+      seen.push(input);
+      return { outcome: 'done', summary: 'Done.' };
+    },
+  });
+
+  const notices = (api: RecordingApi) =>
+    api
+      .events()
+      .filter((event) => event.kind === 'notice')
+      .map((event) => event.text);
+
+  it('are rebuilt before the first step and handed to the runner with their entry files', async () => {
+    const run = withSkills(payload('Add a feature'));
+    const api = new RecordingApi([run]);
+    const skills = new RecordingSkills();
+    const seen: StartRunStepInput[] = [];
+    startWorker(api, recordingRunner(skills.events, seen), undefined, { skills });
+
+    await until(() => api.reports().length === 3);
+
+    expect(skills.events).toEqual([`place start /data/runs/${run.runId}/skills`, 'start']);
+    expect(seen[0]?.workspace.skills).toEqual([
+      {
+        name: 'lint',
+        description: 'Lints the code.',
+        entryFile: `/data/runs/${run.runId}/skills/lint/SKILL.md`,
+      },
+      {
+        name: 'notes',
+        description: 'Writes notes.',
+        entryFile: `/data/runs/${run.runId}/skills/notes/SKILL.md`,
+      },
+    ]);
+  });
+
+  it('are rebuilt again before a resumed step, whatever resumes it', async () => {
+    const run = withSkills({
+      ...payload('Add a feature'),
+      kind: 'resume',
+      runBranch: REPORT.runBranch,
+      sessionRef: fakeSessionRef(payload('Add a feature').runId),
+      answer: 'Option A',
+      resumeReason: 'follow_up',
+      followUpNumber: 1,
+      nextSeq: 10,
+      completedSteps: 1,
+    });
+    const api = new RecordingApi([run]);
+    const skills = new RecordingSkills();
+    startWorker(api, recordingRunner(skills.events), undefined, { skills });
+
+    await until(() => api.reports().length === 3);
+
+    expect(skills.events).toEqual([`place resume /data/runs/${run.runId}/skills`, 'resume']);
+  });
+
+  it('are not named to the runner when the Run has none', async () => {
+    const run = payload('Add a feature');
+    const api = new RecordingApi([run]);
+    const skills = new RecordingSkills();
+    skills.placed = false;
+    const seen: StartRunStepInput[] = [];
+    startWorker(api, recordingRunner(skills.events, seen), undefined, { skills });
+
+    await until(() => api.reports().length === 3);
+
+    expect(seen[0]?.workspace).toEqual({
+      repoDir: `/data/runs/${run.runId}/repo`,
+      runDir: `/data/runs/${run.runId}`,
+      env: { COMPOSE_PROJECT_NAME: 'studio-run-0b8e5c2d1f3a' },
+    });
+    expect(seen[0]?.workspace).not.toHaveProperty('skills');
+    expect(notices(api)).toEqual([]);
+  });
+
+  it('are named in the Run log by the ones left out for the budget; the runner names the rest', async () => {
+    const run = withSkills(payload('Add a feature'));
+    const api = new RecordingApi([run]);
+    const skills = new RecordingSkills();
+    skills.omitted = ['big'];
+    startWorker(api, recordingRunner(skills.events), undefined, { skills });
+
+    await until(() => api.reports().length === 3);
+
+    expect(notices(api)).toEqual(['Skills left out because their files pass 20 MiB in total: big']);
+    expect(notices(api).join(' ')).not.toMatch(/Lints|Writes|SKILL\.md/);
+  });
+
+  it('fail the Run as skills_unusable before any agent starts', async () => {
+    const run = withSkills(payload('Add a feature'));
+    const api = new RecordingApi([run]);
+    const skills = new RecordingSkills();
+    const error = new SkillsUnusableError(
+      'The skill lint fails the validation: shell_line (lint/more.md).',
+    );
+    skills.failure = error;
+    startWorker(api, recordingRunner(skills.events), undefined, { skills });
+
+    await until(() => api.reports().length === 1);
+
+    expect(api.reports()).toHaveLength(1);
+    expect(api.reports()[0]).toEqual([
+      'state',
+      run.runId,
+      {
+        state: 'failed',
+        failure: { code: 'skills_unusable', detail: error.detail },
+        workingCopy: REPORT,
+      },
+    ]);
+    expect(skills.events).toEqual([`place start /data/runs/${run.runId}/skills`]);
+  });
+
+  it('are fetched with the Run id only, and an outage of the route fails the Run as preparation_failed', async () => {
+    const run = withSkills(payload('Add a feature'));
+    const api = new RecordingApi([run]);
+    const asked: string[] = [];
+    const real = new RunSkills({
+      api: {
+        runSkills: async (runId) => {
+          asked.push(runId);
+          throw new StudioApiError(503, '/api/worker/runs/x/skills');
+        },
+      },
+    });
+    startWorker(api, recordingRunner([]), undefined, { skills: real });
+
+    await until(() => api.reports().length === 1);
+
+    expect(asked).toEqual([run.runId]);
+    expect(api.reports()[0]?.[2]).toMatchObject({
+      state: 'failed',
+      failure: { code: 'preparation_failed' },
+    });
+  });
+});
+
+describe('the processes of a step with skills', () => {
+  it('starts no process whose command, argument or working directory is in the skills folder', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'studio-step-skills-'));
+    try {
+      const runDir = join(root, 'run');
+      mkdirSync(join(runDir, 'repo'), { recursive: true });
+      const marker = join(root, 'ran');
+      const base = payload('Add a feature');
+      const run: RunPayload = {
+        ...base,
+        agent: {
+          ...base.agent,
+          name: 'reviewer',
+          source: 'definitions',
+          commit: 'c'.repeat(40),
+          instructions: 'Review.',
+        },
+        skills: [{ name: 'lint', description: 'Does lint' }],
+      };
+      class TmpCopies extends FakeWorkingCopies {
+        override async prepare(claimed: RunPayload): Promise<PreparedRun> {
+          return { ...(await super.prepare(claimed)), runDir, repoDir: join(runDir, 'repo') };
+        }
+      }
+      const b64 = (text: string) => Buffer.from(text).toString('base64');
+      const skills = new RunSkills({
+        api: {
+          runSkills: async () => ({
+            commit: 'c'.repeat(40),
+            skills: [
+              {
+                name: 'lint',
+                files: [
+                  {
+                    path: 'SKILL.md',
+                    executable: false,
+                    contentBase64: b64('---\nname: lint\ndescription: Does lint\n---\nGo.\n'),
+                  },
+                  {
+                    path: 'run.sh',
+                    executable: true,
+                    contentBase64: b64(`#!/bin/sh\ntouch '${marker}'\n`),
+                  },
+                ],
+              },
+            ],
+            omitted: [],
+          }),
+        },
+      });
+      const spawned = vi.mocked(spawn);
+      spawned.mockClear();
+      const api = new RecordingApi([run]);
+      const fake = new FakeRunner({ slowMs: 10 });
+      // A step that starts one process of its own, as a CLI runner does, then plays the fake step.
+      const starting: Runner = {
+        async *start(input): RunStep {
+          await runProcess({
+            binary: process.execPath,
+            args: ['-e', '0'],
+            cwd: input.workspace.repoDir,
+            env: {},
+            timeoutMs: 10_000,
+          });
+          return yield* fake.start(input);
+        },
+        resume: (input) => fake.resume(input),
+      };
+      startWorker(api, starting, new TmpCopies(), { skills });
+
+      await until(() => api.reports().length === 3);
+
+      expect(spawned.mock.calls.length).toBeGreaterThan(0);
+      const skillsDir = join(runDir, 'skills');
+      expect(readdirSync(join(skillsDir, 'lint')).sort()).toEqual(['SKILL.md', 'run.sh']);
+      expect(existsSync(marker)).toBe(false);
+      for (const [command, args, options] of spawned.mock.calls) {
+        const started = [String(command), ...(args ?? []), String(options?.cwd ?? '')];
+        for (const part of started) expect(part.includes(skillsDir), part).toBe(false);
       }
     } finally {
       rmSync(root, { recursive: true, force: true });

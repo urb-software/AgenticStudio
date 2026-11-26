@@ -1,5 +1,8 @@
 /** Where Agent definitions live in the definitions Repository, and how a folder is judged. */
-import { AGENT_INSTRUCTIONS_MAX_BYTES } from '@agentic-studio/contracts/providers';
+import {
+  AGENT_INSTRUCTIONS_MAX_BYTES,
+  RUN_SKILLS_MAX_BYTES as RUN_SKILLS_BYTES,
+} from '@agentic-studio/contracts/providers';
 
 /** The top-level folder holding one folder per agent: `agents/<name>/`. */
 export const AGENTS_DIRECTORY = 'agents';
@@ -50,6 +53,9 @@ export const KNOWN_KEYS = ['name', 'description', 'provider', 'model', 'skills']
 
 /** An agent names at most this many skills. */
 export const MAX_AGENT_SKILLS = 20;
+
+/** Most bytes of skill files a Run gets in total; the one constant the API and the worker use. */
+export const RUN_SKILLS_MAX_BYTES = RUN_SKILLS_BYTES;
 
 /**
  * Keys that ask for tools, permissions, hooks, MCP servers, memory or isolation. A definition

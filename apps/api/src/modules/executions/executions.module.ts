@@ -54,6 +54,8 @@ import { GetAgentWorkerEndpoint } from './entry-points/http/operator/get-agent-w
 import { GetAgentWorkerHandler } from './application/features/get-agent-worker/handler.js';
 import { GetAgentFolderEndpoint } from './entry-points/http/agent-worker/get-agent-folder/endpoint.js';
 import { GetAgentFolderHandler } from './application/features/get-agent-folder/handler.js';
+import { GetRunSkillsEndpoint } from './entry-points/http/agent-worker/get-run-skills/endpoint.js';
+import { GetRunSkillsHandler } from './application/features/get-run-skills/handler.js';
 import { GetRunStatesEndpoint } from './entry-points/http/agent-worker/get-run-states/endpoint.js';
 import { GetRunStatesHandler } from './application/features/get-run-states/handler.js';
 import { ListProvidersEndpoint } from './entry-points/http/operator/list-providers/endpoint.js';
@@ -219,6 +221,7 @@ export class ExecutionsModule {
         GetMergeReviewEndpoint,
         GetRunStatesEndpoint,
         GetAgentFolderEndpoint,
+        GetRunSkillsEndpoint,
         ReportWorkerStatusEndpoint,
         ListProvidersEndpoint,
         GetAgentWorkerEndpoint,
@@ -343,6 +346,7 @@ export class ExecutionsModule {
         GetMergeReviewFileHandler,
         GetRunStatesHandler,
         GetAgentFolderHandler,
+        GetRunSkillsHandler,
         ReportWorkerStatusHandler,
         ListProvidersHandler,
         GetAgentWorkerHandler,

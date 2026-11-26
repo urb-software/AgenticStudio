@@ -4,6 +4,7 @@ import type {
   RunPayload,
   RunStepResult,
 } from '@agentic-studio/contracts';
+import type { PlacedSkill } from './run-skills.js';
 import type { ProcessGroupRegistry } from './spawn-boundary.js';
 
 /**
@@ -25,6 +26,11 @@ export interface RunWorkspace {
    * named in the instructions and given to no CLI option: nothing loads it by itself.
    */
   agentFolder?: string | null;
+  /**
+   * The skills placed for this step, in the Run's order, each with the absolute path of its entry
+   * file. They are listed in the instructions and given to no CLI option; absent for none.
+   */
+  skills?: readonly PlacedSkill[];
 }
 
 export interface StartRunStepInput {

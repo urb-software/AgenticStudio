@@ -7,6 +7,7 @@ interface AgentFacts {
   source: 'built_in' | 'definitions';
   usable: boolean;
   instructions: string;
+  skills: string[];
 }
 
 type RunnableFacts = AgentFacts & {
@@ -29,6 +30,7 @@ export class RunnableAgent {
     readonly model: string,
     readonly source: 'built_in' | 'definitions',
     readonly instructions: string,
+    readonly skills: string[],
   ) {}
 
   static of(agent: RunnableFacts): RunnableAgent {
@@ -39,6 +41,7 @@ export class RunnableAgent {
       agent.model,
       agent.source,
       agent.instructions,
+      [...agent.skills],
     );
   }
 }

@@ -56,7 +56,7 @@ describe('composeProjectName', () => {
 });
 
 describe('Run directories', () => {
-  it("keeps the Working copy and, beside it, the Task, the Run file, the agent's result and the agent's folder", () => {
+  it("keeps the Working copy and, beside it, the Task, the Run file, the agent's result, the agent's folder and its skills", () => {
     expect(runDirectories(DATA_DIR, RUN_ID)).toEqual({
       runDir: `${DATA_DIR}/runs/${RUN_ID}`,
       repoDir: `${DATA_DIR}/runs/${RUN_ID}/repo`,
@@ -65,6 +65,7 @@ describe('Run directories', () => {
       processesFile: `${DATA_DIR}/runs/${RUN_ID}/step-processes`,
       resultFile: `${DATA_DIR}/runs/${RUN_ID}/result.json`,
       agentDir: `${DATA_DIR}/runs/${RUN_ID}/agent`,
+      skillsDir: `${DATA_DIR}/runs/${RUN_ID}/skills`,
     });
   });
 

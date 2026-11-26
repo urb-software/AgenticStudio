@@ -183,6 +183,7 @@ export function aRun(overrides: Partial<RunOutput> = {}): RunOutput {
       commit: null,
       provider: 'claude_code',
       model: 'default',
+      skills: [],
       instructions: '',
     },
     task,

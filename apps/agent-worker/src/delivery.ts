@@ -94,8 +94,8 @@ export interface DeliveriesOptions {
   /** The Agent account on GitHub: its token (when configured) and the REST API's base URL. */
   github: { token?: string; apiUrl: string };
   /**
-   * The Git blob ids of the files of the Run's agent folder (non-empty files only), each with its
-   * path in the folder. A commit that holds one of them is never pushed. Asked only for a
+   * The Git blob ids of the files of the Run's agent folder and skills (non-empty files only),
+   * each with its path in its folder. A commit that holds one of them is never pushed. Asked only for a
    * definitions agent; a failure fails the delivery before the push.
    */
   agentFolderBlobs?: (run: RunPayload, signal: AbortSignal) => Promise<ReadonlyMap<string, string>>;

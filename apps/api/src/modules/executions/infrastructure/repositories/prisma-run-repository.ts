@@ -50,6 +50,7 @@ const LIST_FIELDS = {
   agentCommit: true,
   agentProvider: true,
   agentModel: true,
+  agentSkills: true,
   task: true,
   state: true,
   startCommit: true,
@@ -143,6 +144,7 @@ interface RunRow {
   agentCommit: string | null;
   agentProvider: string;
   agentModel: string;
+  agentSkills: string[];
   /** Left out of a list of Runs, which never shows or hands out the agent's text. */
   agentInstructions?: string;
   task: string;
@@ -318,6 +320,7 @@ function toRun(row: RunRow): Run {
       provider: row.agentProvider as Provider,
       model: row.agentModel,
       instructions: row.agentInstructions ?? '',
+      skills: row.agentSkills,
     },
     task: row.task,
     state: row.state as RunState,
@@ -537,6 +540,7 @@ export class PrismaRunRepository implements RunRepository {
         agentProvider: run.agent.provider,
         agentModel: run.agent.model,
         agentInstructions: run.agent.instructions,
+        agentSkills: [...run.agent.skills],
         task: run.task,
         startCommit: run.startCommit,
         remoteUrl: run.remoteUrl,

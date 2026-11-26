@@ -25,7 +25,12 @@ import { type Backoff, ReportOutbox } from './report-outbox.js';
 import type { ComputedRunDiff, RunDiffPort, RunDiffReport } from './run-diff.js';
 import { RunDiffUnavailableError } from './run-diff.js';
 import { RunLog } from './run-log.js';
-import { AGENT_DIRECTORY_NAME, composeProjectName, STEP_PROCESSES_FILE } from './run-layout.js';
+import {
+  AGENT_DIRECTORY_NAME,
+  composeProjectName,
+  SKILLS_DIRECTORY_NAME,
+  STEP_PROCESSES_FILE,
+} from './run-layout.js';
 import type { RunResources } from './run-resources.js';
 import {
   AgentFolderInvalidError,
@@ -34,6 +39,13 @@ import {
   type PlacedAgentFolder,
 } from './agent-folder.js';
 import { ModelNotAllowedError, ModelRefusedError } from './model-option.js';
+import {
+  type PlacedSkill,
+  type PlacedSkills,
+  skillsNotices,
+  SkillsTransientError,
+  SkillsUnusableError,
+} from './run-skills.js';
 import { AgentFailedError, drainRunStep, type Runner, UsageLimitError } from './runner.js';
 import { StepProcesses } from './step-processes.js';
 import { isRunLost, type StudioApi } from './studio-api.js';
@@ -66,6 +78,12 @@ export interface AgentFolderPort {
   place(run: RunPayload, dir: string, signal: AbortSignal): Promise<PlacedAgentFolder | null>;
 }
 
+/** The skills of a Run, rebuilt before every step ({@link RunSkills} in production). */
+export interface RunSkillsPort {
+  /** Throws {@link SkillsUnusableError}. `null` for a Run without skills. */
+  place(run: RunPayload, dir: string, signal: AbortSignal): Promise<PlacedSkills | null>;
+}
+
 export interface AgentWorkerOptions {
   api: WorkerApi;
   runner: Runner;
@@ -84,6 +102,11 @@ export interface AgentWorkerOptions {
    * files are placed.
    */
   agentFolders?: AgentFolderPort;
+  /**
+   * Rebuilds the Run's skills in its directory before every Run step. Without it no skills are
+   * placed.
+   */
+  skills?: RunSkillsPort;
   /**
    * Answers Studio's pull request lookups in a loop of its own, whatever the worker is carrying,
    * and reads the pull request before a Follow-up starts. Without it neither happens.
@@ -264,6 +287,7 @@ export class AgentWorker {
     });
     let prepared: PreparedRun | undefined;
     let agentFolder: string | null = null;
+    let skills: readonly PlacedSkill[] = [];
     let processes: StepProcessGroups | undefined;
     /** Whether the end of the Follow-up the Run works on was logged already. */
     let followUpMarked = false;
@@ -351,6 +375,17 @@ export class AgentWorker {
         abort.signal,
       );
       agentFolder = placed?.dir ?? null;
+      abort.signal.throwIfAborted();
+      // The Run's skills are rebuilt the same way; a refusal fails the Run before any CLI starts.
+      const placedSkills = await this.options.skills?.place(
+        run,
+        posix.join(prepared.runDir, SKILLS_DIRECTORY_NAME),
+        abort.signal,
+      );
+      skills = placedSkills?.skills ?? [];
+      if (placedSkills) {
+        for (const notice of skillsNotices(placedSkills)) log.push(stepIndex, 'notice', notice);
+      }
       abort.signal.throwIfAborted();
       // A new part starts clean: a merge an earlier part left open is aborted, so nothing of it is
       // built on or committed; a bring-up part that never succeeded returns the branch to where it
@@ -477,6 +512,7 @@ export class AgentWorker {
           log,
           instruction,
           agentFolder,
+          skills,
         );
       } finally {
         clearTimeout(limit);
@@ -749,12 +785,14 @@ export class AgentWorker {
     log: RunLog,
     instruction?: string,
     agentFolder: string | null = null,
+    skills: readonly PlacedSkill[] = [],
   ): Promise<RunStepResult> {
     const workspace = {
       repoDir: prepared.repoDir,
       runDir: prepared.runDir,
       env: prepared.env,
       ...(agentFolder === null ? {} : { agentFolder }),
+      ...(skills.length === 0 ? {} : { skills }),
     };
     // The Environment file is in the Working copy; its content reaches the runner no other way
     // (never a prompt, an argument or the process environment).
@@ -991,6 +1029,8 @@ function failureOf(error: unknown): RunFailure {
   if (error instanceof AgentFolderTransientError) {
     return failure('preparation_failed', error.message);
   }
+  if (error instanceof SkillsUnusableError) return failure('skills_unusable', error.detail);
+  if (error instanceof SkillsTransientError) return failure('preparation_failed', error.message);
   if (error instanceof ModelNotAllowedError) return failure('model_not_allowed', error.message);
   if (error instanceof ModelRefusedError) return failure('model_refused', error.message);
   if (error instanceof AgentFailedError) return failure('agent_failed', error.message);

@@ -674,7 +674,7 @@ export type RunOutput = {
     startedAt?: string;
     finishedAt?: string;
     failure?: {
-        code: 'provider_disabled' | 'preparation_failed' | 'agent_failed' | 'usage_limit' | 'worker_lost' | 'delivery_failed' | 'step_limit' | 'agent_folder_unavailable' | 'agent_folder_invalid' | 'model_not_allowed' | 'model_refused' | 'unknown';
+        code: 'provider_disabled' | 'preparation_failed' | 'agent_failed' | 'usage_limit' | 'worker_lost' | 'delivery_failed' | 'step_limit' | 'agent_folder_unavailable' | 'agent_folder_invalid' | 'model_not_allowed' | 'model_refused' | 'skills_unusable' | 'unknown';
         detail: string;
     };
     runBranch?: string;
@@ -722,6 +722,10 @@ export type RunAgentOutput = {
      * The model the definition named; `default` is the CLI own.
      */
     model: string;
+    /**
+     * The names of the skills the agent had when the Run started, at the recorded commit; empty for none.
+     */
+    skills: Array<string>;
     /**
      * A copy of the definition instructions, plain text. Single-Run answers only; lists leave it out.
      */
@@ -836,7 +840,7 @@ export type RunMessageOutput = {
 
 export type RunPartEndOutput = {
     state: 'succeeded' | 'failed' | 'cancelled' | 'timed_out';
-    failureCode?: 'provider_disabled' | 'preparation_failed' | 'agent_failed' | 'usage_limit' | 'worker_lost' | 'delivery_failed' | 'step_limit' | 'agent_folder_unavailable' | 'agent_folder_invalid' | 'model_not_allowed' | 'model_refused' | 'unknown';
+    failureCode?: 'provider_disabled' | 'preparation_failed' | 'agent_failed' | 'usage_limit' | 'worker_lost' | 'delivery_failed' | 'step_limit' | 'agent_folder_unavailable' | 'agent_folder_invalid' | 'model_not_allowed' | 'model_refused' | 'skills_unusable' | 'unknown';
     delivery?: 'none' | 'delivered' | 'failed';
 };
 

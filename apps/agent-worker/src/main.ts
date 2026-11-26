@@ -1,4 +1,5 @@
 import { AgentFolders } from './agent-folder.js';
+import { RunSkills } from './run-skills.js';
 import { AgentSessions } from './agent-sessions.js';
 import { ClaudeCodeRunner, probeClaudeCode } from './claude-code/runner.js';
 import { prepareCodexHome } from './codex/codex-home.js';
@@ -133,12 +134,15 @@ const workingCopies = new WorkingCopies({
   allowFileRemotes: config.environment !== 'production',
   logger,
 });
-// The agent definition's files of a Run: rebuilt before every step, and checked before a push.
+// The agent definition's files and the Run's skills: rebuilt before every step, and checked
+// before a push.
 const agentFolders = new AgentFolders({ api });
+const runSkills = new RunSkills({ api });
 const worker = new AgentWorker({
   api,
   runner,
   agentFolders,
+  skills: runSkills,
   gate,
   resources,
   status: {
@@ -165,7 +169,11 @@ const worker = new AgentWorker({
     agentGitEmail: config.agentGitEmail,
     allowFileRemotes: config.environment !== 'production',
     github: config.agentGitHub,
-    agentFolderBlobs: (run, signal) => agentFolders.placedBlobs(run, signal),
+    agentFolderBlobs: async (run, signal) =>
+      new Map([
+        ...(await agentFolders.placedBlobs(run, signal)),
+        ...(await runSkills.placedBlobs(run, signal)),
+      ]),
     logger,
   }),
   // The state of a Run's pull request, read through the Agent account (reads only).

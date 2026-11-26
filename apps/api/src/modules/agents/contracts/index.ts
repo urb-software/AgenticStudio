@@ -13,6 +13,8 @@ export interface ResolvedAgent {
   model: string;
   /** Empty for a built-in agent. */
   instructions: string;
+  /** The names of the skills the definition lists, in its order; empty for a built-in agent. */
+  skills: string[];
 }
 
 /**
@@ -54,4 +56,40 @@ export type AgentFolderRead =
 export interface AgentFolders {
   /** The folder of the agent `name` at `commit` of the definitions Repository, from Git only. */
   folderAt(name: string, commit: string): Promise<AgentFolderRead>;
+}
+
+export const AGENT_SKILLS = Symbol('AGENT_SKILLS');
+
+/** What a claim says of one skill of a Run. */
+export interface RunSkillDescription {
+  name: string;
+  description: string;
+}
+
+/** One skill's files, `SKILL.md` included, relative to the skill's folder. */
+export interface RunSkillFiles {
+  name: string;
+  files: AgentFolderFile[];
+}
+
+/** Why the Run's skills cannot be handed out; `problems` name a skill, a code and a path only. */
+export type RunSkillsFailure =
+  | { status: 'invalid'; problems: { skill: string; code: string; path: string }[] }
+  | { status: 'unavailable' }
+  | { status: 'unreadable' };
+
+export type RunSkillDescriptionsRead =
+  { status: 'found'; skills: RunSkillDescription[] } | RunSkillsFailure;
+
+/**
+ * `omitted`: the skills left out because those before them already used the Run's byte budget.
+ */
+export type RunSkillFilesRead =
+  { status: 'found'; skills: RunSkillFiles[]; omitted: string[] } | RunSkillsFailure;
+
+export interface AgentSkills {
+  /** The description of each named skill at `commit`, in the order of `names`, judged by the shared validation. */
+  describe(names: readonly string[], commit: string): Promise<RunSkillDescriptionsRead>;
+  /** The files of each named skill at `commit`, in the order of `names`, from Git only. */
+  files(names: readonly string[], commit: string): Promise<RunSkillFilesRead>;
 }

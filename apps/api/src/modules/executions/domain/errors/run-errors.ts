@@ -241,3 +241,27 @@ export class AgentFolderCutError extends Error {
     this.name = 'AgentFolderCutError';
   }
 }
+
+/** The Clone no longer holds the commit or a skill the Run recorded. */
+export class SkillsUnavailableError extends Error {
+  constructor() {
+    super("The agent's skills are no longer available in the definitions Repository.");
+    this.name = 'SkillsUnavailableError';
+  }
+}
+
+/** A skill of the Run fails the shared validation; `detail` names skills, paths and codes only. */
+export class SkillsInvalidError extends Error {
+  constructor(readonly detail: string) {
+    super(detail);
+    this.name = 'SkillsInvalidError';
+  }
+}
+
+/** The skills could not be read right now (Git failed); trying again may work. */
+export class SkillsReadFailedError extends Error {
+  constructor() {
+    super("The agent's skills could not be read from the definitions Repository right now.");
+    this.name = 'SkillsReadFailedError';
+  }
+}

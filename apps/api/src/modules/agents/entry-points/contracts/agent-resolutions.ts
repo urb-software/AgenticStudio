@@ -27,6 +27,7 @@ export class ReadAgentsAgentResolutions implements AgentResolutions {
         provider: runnable.provider,
         model: runnable.model,
         instructions: runnable.instructions,
+        skills: runnable.skills,
       },
     };
   }
