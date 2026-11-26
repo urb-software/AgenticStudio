@@ -86,6 +86,48 @@ describe('StudioApi', () => {
     });
   });
 
+  it('asks for the skills of a Run by its id and the worker id only, and validates the answer', async () => {
+    const runId = '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b';
+    const answer = {
+      commit: 'a'.repeat(40),
+      skills: [
+        {
+          name: 'lint',
+          files: [{ path: 'SKILL.md', executable: false, contentBase64: 'IyBTCg==' }],
+        },
+      ],
+      omitted: ['big'],
+    };
+    const { api, calls } = client(async () => Response.json(answer));
+
+    expect(await api.runSkills(runId)).toEqual(answer);
+
+    expect(calls[0]?.url).toBe(
+      `http://studio.test/api/worker/runs/${runId}/skills?workerId=${WORKER_ID}`,
+    );
+    expect(calls[0]?.init.method).toBe('GET');
+    expect(calls[0]?.init.body).toBeUndefined();
+    expect((calls[0]?.init.headers as Record<string, string>).Authorization).toBe(
+      `Bearer ${TOKEN}`,
+    );
+    const { api: invalid } = client(async () =>
+      Response.json({ commit: null, skills: [{ name: 'lint', files: [] }], omitted: [] }),
+    );
+    await expect(invalid.runSkills(runId)).rejects.toThrow();
+  });
+
+  it('keeps the problem type of a refusal of the skills', async () => {
+    const runId = '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b';
+    const { api } = client(async () =>
+      Response.json({ type: 'urn:agentic-studio:problem:skills-invalid' }, { status: 409 }),
+    );
+
+    await expect(api.runSkills(runId)).rejects.toMatchObject({
+      status: 409,
+      problemType: 'urn:agentic-studio:problem:skills-invalid',
+    });
+  });
+
   it('reports removed Working copies with a states request', async () => {
     const runId = '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b';
     const { api, calls } = client(async () => Response.json([]));

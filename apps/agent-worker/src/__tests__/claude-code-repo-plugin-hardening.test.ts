@@ -18,6 +18,7 @@ import {
   TreeListingTooLargeError,
   type TreeEntry,
 } from '../claude-code/repo-plugin.js';
+import { SHELL_LINE } from '@agentic-studio/agent-definitions';
 
 // Exploit classes of the repository plugin: shell forms, read bounds, paths, frontmatter tricks.
 
@@ -290,4 +291,17 @@ describe('paths and frontmatter tricks', () => {
       }
     },
   );
+});
+
+describe('the shell-line rule of the repository plugin', () => {
+  it('is the shared definitions constant, not a copy that could drift', () => {
+    const source = readFileSync(
+      join(import.meta.dirname, '..', 'claude-code', 'repo-plugin.ts'),
+      'utf8',
+    );
+
+    expect(source).toMatch(/import \{ SHELL_LINE \} from '@agentic-studio\/agent-definitions'/);
+    expect(source).not.toMatch(/const SHELL_LINE\s*=/);
+    expect(SHELL_LINE).toBeInstanceOf(RegExp);
+  });
 });

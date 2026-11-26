@@ -6,8 +6,8 @@ import {
 import { AGENT_ENTRY_FILE, validateAgentFiles } from '@agentic-studio/agent-definitions';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import { chmod, mkdir, rm, writeFile } from 'node:fs/promises';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { rm } from 'node:fs/promises';
+import { type PlacedFile, writeFiles } from './placed-files.js';
 import { isTransient, StudioApiError } from './studio-api.js';
 
 /** The hand-over route as the worker uses it ({@link StudioApi} in production). */
@@ -47,16 +47,7 @@ export interface PlacedAgentFolder {
   files: number;
 }
 
-/** What the agent gets: Git's executable bit is the only mode that comes from the Repository. */
-const FILE_MODE = 0o644;
-const EXECUTABLE_MODE = 0o755;
-const DIRECTORY_MODE = 0o755;
-
-interface HandedFile {
-  path: string;
-  executable: boolean;
-  content: Buffer;
-}
+type HandedFile = PlacedFile;
 
 /**
  * The agent's folder in the Run's directory: fetched from Studio, judged by the shared validation
@@ -80,7 +71,11 @@ export class AgentFolders {
     await rm(dir, { recursive: true, force: true });
     if (files.length === 0) return null;
     try {
-      await write(dir, files);
+      await writeFiles(
+        dir,
+        files,
+        () => new AgentFolderInvalidError('A path of the hand-over leaves the agent folder.'),
+      );
     } catch (error) {
       await rm(dir, { recursive: true, force: true });
       throw error;
@@ -177,32 +172,4 @@ function judge(handed: AgentFolderResponse): HandedFile[] {
     );
   }
   return files;
-}
-
-/** Writes the files below `dir`; each path is joined safely and must stay inside it. */
-async function write(dir: string, files: HandedFile[]): Promise<void> {
-  const root = resolve(dir);
-  await mkdir(root, { mode: DIRECTORY_MODE });
-  await chmod(root, DIRECTORY_MODE);
-  const made = new Set<string>([root]);
-  for (const file of files) {
-    const target = resolve(root, ...file.path.split('/'));
-    const inside = relative(root, target);
-    if (inside === '' || inside.startsWith('..') || !target.startsWith(`${root}${sep}`)) {
-      throw new AgentFolderInvalidError('A path of the hand-over leaves the agent folder.');
-    }
-    const parents: string[] = [];
-    for (let parent = dirname(target); !made.has(parent); parent = dirname(parent)) {
-      parents.unshift(parent);
-    }
-    for (const parent of parents) {
-      await mkdir(parent, { mode: DIRECTORY_MODE });
-      await chmod(parent, DIRECTORY_MODE);
-      made.add(parent);
-    }
-    const mode = file.executable ? EXECUTABLE_MODE : FILE_MODE;
-    // `wx`: never through a link, never over an existing file.
-    await writeFile(join(target), file.content, { flag: 'wx', mode });
-    await chmod(target, mode);
-  }
 }

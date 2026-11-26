@@ -62,6 +62,9 @@ export function cachesDirectory(dataDir: string): string {
 /** The name of the agent folder inside a Run's directory. */
 export const AGENT_DIRECTORY_NAME = 'agent';
 
+/** The name of the folder that holds the Run's skills inside a Run's directory. */
+export const SKILLS_DIRECTORY_NAME = 'skills';
+
 /** The file in a Run's directory that lists the process groups of its Run step. */
 export const STEP_PROCESSES_FILE = 'step-processes';
 
@@ -80,6 +83,11 @@ export interface RunDirectories {
    * directory a CLI discovers on its own, so no CLI reads it unless the instructions name it.
    */
   agentDir: string;
+  /**
+   * The skills of the Run's agent, one folder per skill, rebuilt before every step. Beside the
+   * Working copy and the agent folder, under no directory a CLI discovers on its own.
+   */
+  skillsDir: string;
 }
 
 export function runDirectories(dataDir: string, runId: string): RunDirectories {
@@ -92,6 +100,7 @@ export function runDirectories(dataDir: string, runId: string): RunDirectories {
     processesFile: posix.join(runDir, STEP_PROCESSES_FILE),
     resultFile: posix.join(runDir, 'result.json'),
     agentDir: posix.join(runDir, AGENT_DIRECTORY_NAME),
+    skillsDir: posix.join(runDir, SKILLS_DIRECTORY_NAME),
   };
 }
 

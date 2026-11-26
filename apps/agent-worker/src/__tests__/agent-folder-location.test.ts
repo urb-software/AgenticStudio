@@ -123,7 +123,10 @@ describe('what the CLIs are given', () => {
 });
 
 describe('the worker never runs what it places', () => {
-  const source = readFileSync(join(import.meta.dirname, '..', 'agent-folder.ts'), 'utf8');
+  // The folder's own file and the one that writes files for it and for the skills.
+  const source = ['agent-folder.ts', 'placed-files.ts']
+    .map((name) => readFileSync(join(import.meta.dirname, '..', name), 'utf8'))
+    .join('\n');
 
   it.each([
     'node:child_process',

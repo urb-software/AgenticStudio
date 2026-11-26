@@ -31,3 +31,18 @@ export const goldenNotices = (runner: 'claude' | 'codex'): string[] =>
       'utf8',
     ),
   ) as string[];
+
+/**
+ * An agent with instructions and no skills (captured from the builder before skills existed), and
+ * the same agent with two skills (the section follows the agent's section): same repository files,
+ * marker and Task as above.
+ */
+export const goldenAgent = (
+  name:
+    'claude-instructions' | 'codex-prompt' | 'skills-claude-instructions' | 'skills-codex-prompt',
+): string => {
+  const file = name.startsWith('skills-')
+    ? `agent-${name}.golden.txt`
+    : `agent-no-skills-${name}.golden.txt`;
+  return readFileSync(join(import.meta.dirname, 'fixtures', file), 'utf8');
+};

@@ -403,6 +403,22 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
       expect(stub.requests).toEqual([]);
     });
 
+    it("are never pushed when the copy is of a skill's file: the blobs of the skills count the same", async () => {
+      const run = reviewerRun();
+      const prepared = await prepare(run);
+      agentWrites(prepared, { 'my-lint.sh': SCRIPT, 'pages.ts': 'x\n' });
+
+      const error = await finishWith(run, prepared, async () =>
+        blobsOf(SCRIPT, 'skills/lint/run.sh'),
+      ).catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(DeliveryFailedError);
+      expect((error as DeliveryFailedError).detail).toMatch(
+        /contains my-lint\.sh, a copy of the agent's file skills\/lint\/run\.sh/,
+      );
+      expect(gitRunner.pushes()).toEqual([]);
+    });
+
     it('are found in any commit of the branch, also one a later commit removed again', async () => {
       const run = reviewerRun();
       const prepared = await prepare(run);

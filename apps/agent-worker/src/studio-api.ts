@@ -12,6 +12,8 @@ import {
   type ReportRunStepRequest,
   type RunPayload,
   runPayloadSchema,
+  type RunSkillsResponse,
+  runSkillsResponseSchema,
   type RunStatesResponse,
   runStatesResponseSchema,
   WORKER_PROBLEM_TYPES,
@@ -165,6 +167,18 @@ export class StudioApi {
       signal,
     );
     return agentFolderResponseSchema.parse(await response.json());
+  }
+
+  /**
+   * The files of the skills this worker's Run recorded, at the commit it recorded; the worker names
+   * neither a skill nor a commit. A refusal carries its problem type (`skills-unavailable`, `-invalid`).
+   */
+  async runSkills(runId: string, signal?: AbortSignal): Promise<RunSkillsResponse> {
+    const response = await this.get(
+      `runs/${encodeURIComponent(runId)}/skills?workerId=${encodeURIComponent(this.options.workerId)}`,
+      signal,
+    );
+    return runSkillsResponseSchema.parse(await response.json());
   }
 
   /** Tells Studio this worker's runner mode and which providers it enables. */

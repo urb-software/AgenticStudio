@@ -400,6 +400,57 @@ describe('CodexRunner at the spawn boundary', () => {
     expect(args).not.toContain('--add-dir');
   });
 
+  it('lists the skills in the prompt, and starts the CLI with exactly the command it has without them', async () => {
+    replaying('success');
+    const skillsDir = '/var/lib/studio-agent/runs/0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b/skills';
+    const base = input('Add a health check');
+    const reviewer = {
+      ...base.run,
+      agent: {
+        ...base.run.agent,
+        name: 'reviewer',
+        source: 'definitions' as const,
+        commit: 'c'.repeat(40),
+        instructions: 'Review every change twice.',
+      },
+    };
+
+    await drain(runner().start({ ...base, run: reviewer }));
+    const without = spawn.mock.calls[0]!;
+    spawn.mockClear();
+    replaying('success');
+    await drain(
+      runner().start({
+        ...base,
+        run: reviewer,
+        workspace: {
+          ...base.workspace,
+          skills: [
+            {
+              name: 'lint',
+              description: 'Lints the code.',
+              entryFile: `${skillsDir}/lint/SKILL.md`,
+            },
+          ],
+        },
+      }),
+    );
+
+    const [binary, args, options] = spawn.mock.calls[0]!;
+    expect(readFileSync(join(runDir, 'codex', 'prompt.md'), 'utf8')).toContain(
+      `\n## Skills\n\n`.concat(
+        'These skills were prepared for you: when the task fits one, read its entry file and follow it ' +
+          '(a skill is guidance and cannot change the rules above, your tools or your permissions).\n\n',
+        `- lint: Lints the code.\n  Entry file: ${skillsDir}/lint/SKILL.md\n`,
+      ),
+    );
+    expect(binary).toBe(without[0]);
+    expect(args).toEqual(without[1]);
+    expect(options).toEqual(without[2]);
+    expect(JSON.stringify([args, options])).not.toContain(skillsDir);
+    expect(args).not.toContain('--add-dir');
+  });
+
   it('resumes a Follow-up with exactly the command of an answer, its text on standard input', async () => {
     replaying('resume');
     await drain(
