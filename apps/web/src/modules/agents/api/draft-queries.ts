@@ -182,15 +182,17 @@ const PUBLISH_PROBLEMS = {
   running: 'urn:agentic-studio:problem:publish-running',
   writeRefused: 'urn:agentic-studio:problem:write-refused',
   problems: 'urn:agentic-studio:problem:publish-problems',
-  outside: 'urn:agentic-studio:problem:publish-path-outside-agents',
+  outside: 'urn:agentic-studio:problem:publish-path-outside-definitions',
   failed: 'urn:agentic-studio:problem:publish-failed',
   notConfigured: 'urn:agentic-studio:problem:publish-not-configured',
   unreadable: 'urn:agentic-studio:problem:agent-files-unreadable',
+  notJudged: 'urn:agentic-studio:problem:draft-not-judged',
 } as const;
 
-/** One problem of the Draft, as a refused publish lists it. */
+/** One problem of the Draft, as a refused publish lists it: of an agent or of a skill. */
 export type PublishProblem = {
-  agent: string;
+  agent: string | null;
+  skill: string | null;
   path: string;
   key: string | null;
   message: string;
@@ -209,12 +211,13 @@ export type PublishFailure = { message: string } & (
         | 'write-refused'
         | 'not-configured'
         | 'unreadable'
+        | 'not-judged'
         | 'failed'
         | 'invalid'
         | 'other';
     }
   | { kind: 'problems'; problems: PublishProblem[] }
-  | { kind: 'outside-agents'; paths: string[] }
+  | { kind: 'outside-definitions'; paths: string[] }
 );
 
 /** An array member of a problem document beyond the RFC 9457 ones, or an empty list. */
@@ -227,19 +230,24 @@ function listMember(problem: unknown, member: string): unknown[] {
 }
 
 function publishProblemsOf(problem: unknown): PublishProblem[] {
-  return listMember(problem, 'problems').flatMap((item) => {
-    if (typeof item !== 'object' || item === null) return [];
-    const { agent, path, key, message } = item as Record<string, unknown>;
-    if (typeof path !== 'string' || typeof message !== 'string') return [];
-    return [
-      {
-        agent: typeof agent === 'string' ? agent : '',
-        path,
-        key: typeof key === 'string' ? key : null,
-        message,
-      },
-    ];
-  });
+  const read = (member: string, owner: 'agent' | 'skill') =>
+    listMember(problem, member).flatMap((item) => {
+      if (typeof item !== 'object' || item === null) return [];
+      const { path, key, message, ...rest } = item as Record<string, unknown>;
+      if (typeof path !== 'string' || typeof message !== 'string') return [];
+      const name = rest[owner];
+      const owned = typeof name === 'string' ? name : '';
+      return [
+        {
+          agent: owner === 'agent' ? owned : null,
+          skill: owner === 'skill' ? owned : null,
+          path,
+          key: typeof key === 'string' ? key : null,
+          message,
+        },
+      ];
+    });
+  return [...read('problems', 'agent'), ...read('skillProblems', 'skill')];
 }
 
 /** What a failed publish says. Each refusal of the API has its own plain message. */
@@ -286,6 +294,12 @@ export function publishFailureOf(error: unknown): PublishFailure {
         message:
           'The files of the Repository cannot be read now, so the Draft could not be checked. Try again in a moment.',
       };
+    case PUBLISH_PROBLEMS.notJudged:
+      return {
+        kind: 'not-judged',
+        message:
+          'The Draft touches more skills and agents than one check can read, so Studio cannot tell whether it is valid and will not publish it. Split the changes into smaller Drafts.',
+      };
     case PUBLISH_PROBLEMS.failed:
       return {
         kind: 'failed',
@@ -300,9 +314,9 @@ export function publishFailureOf(error: unknown): PublishFailure {
       };
     case PUBLISH_PROBLEMS.outside:
       return {
-        kind: 'outside-agents',
+        kind: 'outside-definitions',
         message:
-          'Publishing writes only below agents/. Revert the changes outside it, or make them with your own Git.',
+          'Publishing writes only below agents/ and skills/. Revert the changes outside them, or make them with your own Git.',
         paths: listMember(problem, 'paths').filter((p): p is string => typeof p === 'string'),
       };
     default:

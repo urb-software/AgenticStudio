@@ -81,6 +81,7 @@ const entry = (path: string, agent: string | null = null): AgentFileEntryOutput 
   size: 120,
   openable: true,
   agent,
+  skill: null,
 });
 
 const ENTRIES = [
@@ -135,7 +136,9 @@ const MODIFIED_DRAFT: Partial<AgentDraftOutput> = {
   baseCommit: SHA,
   currentCommit: SHA,
   version: 3,
-  files: [{ path: 'agents/reviewer/run.sh', change: 'modified', size: 7, movedFrom: null }],
+  files: [
+    { path: 'agents/reviewer/run.sh', change: 'modified', size: 7, movedFrom: null, skill: null },
+  ],
 };
 
 const treeNav = () => screen.getByRole('navigation', { name: 'Files' });
@@ -542,7 +545,7 @@ describe('Draft editing: the Repository and other writers', () => {
     api.changeDraftElsewhere({
       files: [
         ...MODIFIED_DRAFT.files!,
-        { path: 'README.md', change: 'modified', size: 1, movedFrom: null },
+        { path: 'README.md', change: 'modified', size: 1, movedFrom: null, skill: null },
       ],
     });
     act(() => focusManager.setFocused(true));
@@ -760,7 +763,15 @@ describe('Draft editing: honest confirmations', () => {
       path: 'agents/reviewer/new.md',
       draft: {
         ...MODIFIED_DRAFT,
-        files: [{ path: 'agents/reviewer/new.md', change: 'added', size: 3, movedFrom: null }],
+        files: [
+          {
+            path: 'agents/reviewer/new.md',
+            change: 'added',
+            size: 3,
+            movedFrom: null,
+            skill: null,
+          },
+        ],
       },
     });
     const user = userEvent.setup();

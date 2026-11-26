@@ -74,6 +74,7 @@ const entry = (
   size: 120,
   openable: true,
   agent: null,
+  skill: null,
   ...overrides,
 });
 

@@ -1033,7 +1033,7 @@
     },
     "/api/agents/definitions-repository/files": {
       "get": {
-        "description": "The whole definitions Repository as a tree at its last fetched commit: path, kind (`file`, `symlink` or `submodule`), size and the agent folder each entry belongs to. At most 2,000 entries; `truncated` says when there are more. Read from Git, never from a working tree; links and submodules are listed and never followed. Judges nothing: the problems of an agent come from the agent list.",
+        "description": "The whole definitions Repository as a tree at its last fetched commit: path, kind (`file`, `symlink` or `submodule`), size and the agent folder and the skill folder each entry belongs to. At most 2,000 entries; `truncated` says when there are more. Read from Git, never from a working tree; links and submodules are listed and never followed. Judges nothing: the problems of an agent come from the agent list, those of a skill from the skill list.",
         "operationId": "listAgentFiles",
         "parameters": [],
         "responses": {
@@ -1697,7 +1697,7 @@
             }
           },
           "422": {
-            "description": "The Draft has problems; the `problems` member lists each (urn:agentic-studio:problem:publish-problems), or changes paths outside agents/, listed in `paths` (urn:agentic-studio:problem:publish-path-outside-agents)",
+            "description": "The Draft has problems; the `problems` member lists each (urn:agentic-studio:problem:publish-problems), `skillProblems` those of skills, or changes paths outside agents/ and skills/, listed in `paths` (urn:agentic-studio:problem:publish-path-outside-definitions)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1717,7 +1717,7 @@
             }
           },
           "503": {
-            "description": "The commit identity is not configured (urn:agentic-studio:problem:publish-not-configured) or the Clone cannot be read now (urn:agentic-studio:problem:agent-files-unreadable)",
+            "description": "The commit identity is not configured (urn:agentic-studio:problem:publish-not-configured), the Clone cannot be read now (urn:agentic-studio:problem:agent-files-unreadable) or the Draft is over the limits of one check (urn:agentic-studio:problem:draft-not-judged)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4842,6 +4842,13 @@
               "string",
               "null"
             ]
+          },
+          "skill": {
+            "description": "The skill folder the entry is in; null for any other part of the Repository.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -4849,7 +4856,8 @@
           "kind",
           "size",
           "openable",
-          "agent"
+          "agent",
+          "skill"
         ],
         "additionalProperties": false
       },
@@ -5016,13 +5024,21 @@
               "string",
               "null"
             ]
+          },
+          "skill": {
+            "description": "The skill folder the path is in (`skills/<name>/...`); null for any other path.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
           "path",
           "change",
           "size",
-          "movedFrom"
+          "movedFrom",
+          "skill"
         ],
         "additionalProperties": false
       },
@@ -5095,6 +5111,70 @@
         ],
         "additionalProperties": false
       },
+      "AgentDraftSkillProblem_Output": {
+        "type": "object",
+        "properties": {
+          "skill": {
+            "type": "string",
+            "description": "The skill folder the problem is in."
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "entry_missing",
+              "entry_unreadable",
+              "front_matter_missing",
+              "front_matter_malformed",
+              "front_matter_too_large",
+              "key_missing",
+              "key_invalid",
+              "provider_unknown",
+              "model_unknown",
+              "name_invalid",
+              "name_mismatch",
+              "name_reserved",
+              "unknown_key",
+              "forbidden_key",
+              "instructions_too_large",
+              "too_many_files",
+              "file_too_large",
+              "folder_too_large",
+              "path_outside_folder",
+              "nested_git",
+              "symlink_refused",
+              "kind_refused",
+              "duplicate_path",
+              "size_invalid",
+              "cli_config_path",
+              "short_name",
+              "shell_line"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "description": "The file or folder the problem is about, relative to the Repository root."
+          },
+          "key": {
+            "description": "The front matter key, when the problem is about one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "Fixed wording per code; it may quote a key or a path, never other values or file content."
+          }
+        },
+        "required": [
+          "skill",
+          "code",
+          "path",
+          "key",
+          "message"
+        ],
+        "additionalProperties": false
+      },
       "AgentDraft_Output": {
         "type": "object",
         "properties": {
@@ -5129,7 +5209,33 @@
             "items": {
               "$ref": "#/components/schemas/AgentDraftProblem_Output"
             },
-            "description": "What the shared validation finds in each agent folder the Draft touches, with the Draft laid over the base tree. Empty when the Clone cannot be read."
+            "description": "What the shared validation finds in each agent folder the Draft touches and in each agent that names a skill the Draft touches, with the Draft laid over the base tree; a skill that is missing or invalid in the Draft gives `skill_missing` or `skill_invalid`. Empty when the Clone cannot be read."
+          },
+          "skillProblems": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentDraftSkillProblem_Output"
+            },
+            "description": "What the shared validation finds in each skill folder the Draft touches, with the Draft laid over the base tree. Empty when the Clone cannot be read."
+          },
+          "judged": {
+            "type": "boolean",
+            "description": "False when the Draft could not be judged: `problems` and `skillProblems` are then empty without meaning that the Draft is clean, and a publish is refused."
+          },
+          "notJudgedReason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "clone_unreadable",
+                  "over_limits"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why it was not judged: the Clone could not be read now, or the Draft touches more skills and agents than one judgement reads (it stays so until the Draft shrinks); null when it was judged."
           },
           "movedUpstream": {
             "type": "array",
@@ -5145,6 +5251,9 @@
           "version",
           "files",
           "problems",
+          "skillProblems",
+          "judged",
+          "notJudgedReason",
           "movedUpstream"
         ],
         "additionalProperties": false

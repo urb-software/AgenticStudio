@@ -330,7 +330,7 @@ export class SkillsReader {
 }
 
 /** The view of one skill folder, judged from the files read of it. */
-function judgeFolder(
+export function judgeFolder(
   folder: SkillFolder,
   wanted: AgentEntry[],
   contents: Map<string, DefinitionsFileRead>,
@@ -383,7 +383,7 @@ function isRefusedBySize(folder: SkillFolder): boolean {
 }
 
 /** The entry file and every Markdown file (read for shell lines), none for a refused folder. */
-function toRead(folder: SkillFolder): AgentEntry[] {
+export function toRead(folder: SkillFolder): AgentEntry[] {
   if (isRefusedBySize(folder)) return [];
   return filesOf(folder).filter(
     (item) => item.path === SKILL_ENTRY_FILE || MARKDOWN_FILE.test(item.path),
