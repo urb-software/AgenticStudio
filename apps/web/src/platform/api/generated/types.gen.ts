@@ -329,6 +329,14 @@ export type AgentDraftOutput = {
      */
     skillProblems: Array<AgentDraftSkillProblemOutput>;
     /**
+     * False when the Draft could not be judged: `problems` and `skillProblems` are then empty without meaning that the Draft is clean, and a publish is refused.
+     */
+    judged: boolean;
+    /**
+     * Why it was not judged: the Clone could not be read now, or the Draft touches more skills and agents than one judgement reads (it stays so until the Draft shrinks); null when it was judged.
+     */
+    notJudgedReason: 'clone_unreadable' | 'over_limits' | null;
+    /**
      * Paths of the Draft whose blob differs between the base commit and the current commit.
      */
     movedUpstream: Array<string>;
@@ -2197,7 +2205,7 @@ export type PublishAgentDraftErrors = {
      */
     502: ProblemDetails;
     /**
-     * The commit identity is not configured (urn:agentic-studio:problem:publish-not-configured) or the Clone cannot be read now (urn:agentic-studio:problem:agent-files-unreadable)
+     * The commit identity is not configured (urn:agentic-studio:problem:publish-not-configured), the Clone cannot be read now (urn:agentic-studio:problem:agent-files-unreadable) or the Draft is over the limits of one check (urn:agentic-studio:problem:draft-not-judged)
      */
     503: ProblemDetails;
     /**

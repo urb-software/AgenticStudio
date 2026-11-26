@@ -7,6 +7,7 @@ import { DraftChangedConcurrentlyError } from '../../../../domain/errors/agent-d
 import {
   NothingToPublishError,
   PublishFailedError,
+  PublishNotJudgedError,
   PublishNotConfiguredError,
   PublishPathOutsideDefinitionsError,
   PublishProblemsError,
@@ -36,6 +37,7 @@ describe('toPublishHttpError', () => {
       422,
       AGENTS_PROBLEM_TYPES.publishPathOutsideDefinitions,
     ],
+    [new PublishNotJudgedError(), 503, AGENTS_PROBLEM_TYPES.draftNotJudged],
     [new PublishFailedError('failed'), 502, AGENTS_PROBLEM_TYPES.publishFailed],
     [
       new PublishFailedError('repository_not_ready'),

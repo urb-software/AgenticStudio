@@ -370,6 +370,13 @@ describe('Publish: each refusal has its own message', () => {
     await expect(dialog).toHaveNoAxeViolations();
   });
 
+  it('draft-not-judged says the Draft is too large to be checked', async () => {
+    const { dialog } = await refused(503, fail(503, 'draft-not-judged', {}));
+    const message = await within(dialog).findByText(/Split the changes into smaller Drafts/);
+    expect(message.textContent).toContain('cannot tell whether it is valid');
+    await expect(dialog).toHaveNoAxeViolations();
+  });
+
   it('publish-problems lists the problems of skills beside those of agents', async () => {
     const { dialog } = await refused(
       422,

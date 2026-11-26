@@ -12,6 +12,8 @@ const VIEW = {
   files: [],
   problems: [],
   skillProblems: [],
+  judged: true,
+  notJudgedReason: null,
   movedUpstream: [],
 };
 

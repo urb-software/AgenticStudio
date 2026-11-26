@@ -13,6 +13,8 @@ const VIEW = {
   files: [{ path: 'docs/a.md', change: 'added' as const, size: 2, movedFrom: null, skill: null }],
   problems: [],
   skillProblems: [],
+  judged: true,
+  notJudgedReason: null,
   movedUpstream: [],
 };
 

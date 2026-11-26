@@ -90,6 +90,20 @@ export const agentDraftResponseSchema = z
         'What the shared validation finds in each skill folder the Draft touches, with the ' +
           'Draft laid over the base tree. Empty when the Clone cannot be read.',
       ),
+    judged: z
+      .boolean()
+      .describe(
+        'False when the Draft could not be judged: `problems` and `skillProblems` are then ' +
+          'empty without meaning that the Draft is clean, and a publish is refused.',
+      ),
+    notJudgedReason: z
+      .enum(['clone_unreadable', 'over_limits'])
+      .nullable()
+      .describe(
+        'Why it was not judged: the Clone could not be read now, or the Draft touches more ' +
+          'skills and agents than one judgement reads (it stays so until the Draft shrinks); ' +
+          'null when it was judged.',
+      ),
     movedUpstream: z
       .array(z.string())
       .describe(
@@ -126,6 +140,8 @@ export function toAgentDraftResponse(view: AgentDraftView) {
       key,
       message,
     })),
+    judged: view.judged,
+    notJudgedReason: view.notJudgedReason,
     movedUpstream: view.movedUpstream,
   };
 }

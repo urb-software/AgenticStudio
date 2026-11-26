@@ -12,6 +12,7 @@ import {
 import {
   NothingToPublishError,
   PublishFailedError,
+  PublishNotJudgedError,
   PublishNotConfiguredError,
   PublishPathOutsideDefinitionsError,
   PublishProblemsError,
@@ -329,6 +330,20 @@ describe('PublishAgentDraftHandler', () => {
       await expect(handler.execute(request(version))).resolves.toEqual({ commit: PUBLISHED });
     });
 
+    it('refuses with its own reason a Draft over the limits of one judgement, pushing nothing', async () => {
+      const many = { ...BASE_FILES } as Record<string, FakeCommitFile>;
+      for (let index = 0; index < 501; index += 1) {
+        many[`agents/a${index}/AGENT.md`] = agentFile(`a${index}`);
+      }
+      definitions.commit(BASE_COMMIT, many);
+      const version = await put('skills/solo/SKILL.md', skillFile('solo'));
+
+      await expect(handler.execute(request(version))).rejects.toBeInstanceOf(PublishNotJudgedError);
+
+      expect(publisher.publish).not.toHaveBeenCalled();
+      expect(repository.stored.files).toHaveLength(1);
+    });
+
     it('refuses a Draft whose skills it could not judge', async () => {
       const version = await put('skills/lint/SKILL.md', skillFile('lint'));
       definitions.readFilesFails = true;
@@ -499,6 +514,24 @@ describe('PublishAgentDraftHandler', () => {
       '.github/workflows/ci.yml',
       'docs/a.md',
     ]);
+    expect(publisher.publish).not.toHaveBeenCalled();
+  });
+
+  it('keeps the path rule to agents/ and skills/ exactly: no prefix, no other case', async () => {
+    const paths = ['skills-evil/x.md', 'Skills/x.md', 'agentsX/y.md', 'Agents/z.md'];
+    const version = await draftWith(
+      (draft, f) => {
+        for (const path of paths) draft.put({ ...f, path, size: 1 });
+      },
+      Object.fromEntries(paths.map((path) => [path, 'x'])),
+    );
+
+    const error = await handler.execute(request(version)).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(PublishPathOutsideDefinitionsError);
+    expect([...(error as PublishPathOutsideDefinitionsError).paths].sort()).toEqual(
+      [...paths].sort(),
+    );
     expect(publisher.publish).not.toHaveBeenCalled();
   });
 });

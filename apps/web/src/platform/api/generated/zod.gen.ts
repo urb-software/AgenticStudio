@@ -300,6 +300,8 @@ export const zAgentDraftOutput = z.object({
     files: z.array(zAgentDraftFileOutput),
     problems: z.array(zAgentDraftProblemOutput),
     skillProblems: z.array(zAgentDraftSkillProblemOutput),
+    judged: z.boolean(),
+    notJudgedReason: z.enum(['clone_unreadable', 'over_limits']).nullable(),
     movedUpstream: z.array(z.string())
 });
 

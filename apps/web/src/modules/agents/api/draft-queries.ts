@@ -186,11 +186,13 @@ const PUBLISH_PROBLEMS = {
   failed: 'urn:agentic-studio:problem:publish-failed',
   notConfigured: 'urn:agentic-studio:problem:publish-not-configured',
   unreadable: 'urn:agentic-studio:problem:agent-files-unreadable',
+  notJudged: 'urn:agentic-studio:problem:draft-not-judged',
 } as const;
 
-/** One problem of the Draft, as a refused publish lists it. */
+/** One problem of the Draft, as a refused publish lists it: of an agent or of a skill. */
 export type PublishProblem = {
-  agent: string;
+  agent: string | null;
+  skill: string | null;
   path: string;
   key: string | null;
   message: string;
@@ -209,6 +211,7 @@ export type PublishFailure = { message: string } & (
         | 'write-refused'
         | 'not-configured'
         | 'unreadable'
+        | 'not-judged'
         | 'failed'
         | 'invalid'
         | 'other';
@@ -233,9 +236,11 @@ function publishProblemsOf(problem: unknown): PublishProblem[] {
       const { path, key, message, ...rest } = item as Record<string, unknown>;
       if (typeof path !== 'string' || typeof message !== 'string') return [];
       const name = rest[owner];
+      const owned = typeof name === 'string' ? name : '';
       return [
         {
-          agent: typeof name === 'string' ? name : '',
+          agent: owner === 'agent' ? owned : null,
+          skill: owner === 'skill' ? owned : null,
           path,
           key: typeof key === 'string' ? key : null,
           message,
@@ -288,6 +293,12 @@ export function publishFailureOf(error: unknown): PublishFailure {
         kind: 'unreadable',
         message:
           'The files of the Repository cannot be read now, so the Draft could not be checked. Try again in a moment.',
+      };
+    case PUBLISH_PROBLEMS.notJudged:
+      return {
+        kind: 'not-judged',
+        message:
+          'The Draft touches more skills and agents than one check can read, so Studio cannot tell whether it is valid and will not publish it. Split the changes into smaller Drafts.',
       };
     case PUBLISH_PROBLEMS.failed:
       return {

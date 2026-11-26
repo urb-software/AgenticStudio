@@ -3,6 +3,7 @@ import { FieldProblemException } from '../../../../../platform/http/problem-deta
 import {
   NothingToPublishError,
   PublishFailedError,
+  PublishNotJudgedError,
   PublishNotConfiguredError,
   PublishPathOutsideDefinitionsError,
   PublishProblemsError,
@@ -14,6 +15,7 @@ import { InvalidPublishMessageError } from '../../../domain/value-objects/publis
 import { toDraftHttpError } from './draft-http-error.js';
 import {
   agentFilesUnreadable,
+  draftNotJudged,
   nothingToPublish,
   publishFailed,
   publishNotConfigured,
@@ -43,6 +45,7 @@ export function toPublishHttpError(error: unknown): unknown {
   if (error instanceof PublishPathOutsideDefinitionsError) {
     return publishPathOutsideDefinitions(error.paths);
   }
+  if (error instanceof PublishNotJudgedError) return draftNotJudged();
   if (error instanceof PublishProblemsError) {
     return publishProblems(error.problems, error.skillProblems);
   }

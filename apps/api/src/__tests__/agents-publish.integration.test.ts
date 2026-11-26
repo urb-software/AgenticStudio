@@ -285,6 +285,68 @@ describe.runIf(linux)('publishing the Draft (PostgreSQL + Redis via Testcontaine
     expect(gitIn(fixture.bare, ['rev-parse', 'refs/heads/dev'])).toBe(commit);
   });
 
+  it('shows the problems of a skill in the Draft and refuses to publish it, listing them', async () => {
+    const { fixture, commit } = await connected('publish-skill-problems');
+    const skill = (extra: string) =>
+      `---\nname: lint\ndescription: Does the lint thing\n${extra}---\nSteps.\n`;
+    expect((await put('skills/lint/SKILL.md', skill('tools: Bash\n'))).status).toBe(200);
+    expect(
+      (
+        await put(
+          'agents/user/AGENT.md',
+          agentFile('user').replace('provider: codex\n', 'provider: codex\nskills:\n  - lint\n'),
+        )
+      ).status,
+    ).toBe(200);
+    const shown = (await getDraft()).body;
+
+    expect(shown.judged).toBe(true);
+    expect(shown.skillProblems).toEqual([
+      expect.objectContaining({ skill: 'lint', code: 'forbidden_key', key: 'tools' }),
+    ]);
+    expect(shown.problems).toEqual([
+      expect.objectContaining({ agent: 'user', code: 'skill_invalid', key: 'lint' }),
+    ]);
+    expect(shown.files).toContainEqual(
+      expect.objectContaining({ path: 'skills/lint/SKILL.md', skill: 'lint' }),
+    );
+
+    const refused = await publish(body(shown));
+
+    expect(refused.status).toBe(422);
+    expect(refused.body.type).toBe('urn:agentic-studio:problem:publish-problems');
+    expect(refused.body.skillProblems).toEqual([
+      expect.objectContaining({ skill: 'lint', code: 'forbidden_key' }),
+    ]);
+    expect(gitIn(fixture.bare, ['rev-parse', 'refs/heads/dev'])).toBe(commit);
+  });
+
+  it('pushes a new skill and the agent that names it together', async () => {
+    const { fixture } = await connected('publish-skill-ok');
+    const skill = '---\nname: lint\ndescription: Does the lint thing\n---\nSteps.\n';
+    expect((await put('skills/lint/SKILL.md', skill)).status).toBe(200);
+    expect(
+      (
+        await put(
+          'agents/user/AGENT.md',
+          agentFile('user').replace('provider: codex\n', 'provider: codex\nskills:\n  - lint\n'),
+        )
+      ).status,
+    ).toBe(200);
+    const draft = (await getDraft()).body;
+    expect(draft.problems).toEqual([]);
+    expect(draft.skillProblems).toEqual([]);
+
+    const published = await publish(body(draft));
+
+    expect(published.status).toBe(200);
+    const next = published.body.commit as string;
+    expect(gitIn(fixture.bare, ['show', `${next}:skills/lint/SKILL.md`])).toBe(skill.trimEnd());
+    expect(gitIn(fixture.bare, ['ls-tree', '-r', '--name-only', next])).toContain(
+      'agents/user/AGENT.md',
+    );
+  });
+
   it('answers 409 agent-draft-conflict when the Draft changed since the page read it', async () => {
     await connected('publish-stale');
     const draft = await draftOfChanges();

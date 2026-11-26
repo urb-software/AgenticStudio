@@ -27,6 +27,7 @@ export const AGENTS_PROBLEM_TYPES = {
   writeRefused: 'urn:agentic-studio:problem:write-refused',
   publishProblems: 'urn:agentic-studio:problem:publish-problems',
   publishFailed: 'urn:agentic-studio:problem:publish-failed',
+  draftNotJudged: 'urn:agentic-studio:problem:draft-not-judged',
   publishPathOutsideDefinitions: 'urn:agentic-studio:problem:publish-path-outside-definitions',
 } as const;
 
@@ -273,6 +274,16 @@ export function publishProblems(
         message,
       })),
     },
+  });
+}
+
+/** 503 when the Draft is over the limits of one judgement: it is never published unchecked. */
+export function draftNotJudged(): ProblemException {
+  return new ProblemException(HttpStatus.SERVICE_UNAVAILABLE, {
+    type: AGENTS_PROBLEM_TYPES.draftNotJudged,
+    title: 'The Draft cannot be checked',
+    detail:
+      'The Draft touches more skills and agents than one check can read, so Studio cannot tell whether it is valid and will not publish it. Split the changes into smaller Drafts.',
   });
 }
 

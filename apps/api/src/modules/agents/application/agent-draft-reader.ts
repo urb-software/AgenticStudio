@@ -47,13 +47,30 @@ export interface AgentDraftSkillProblem {
 }
 
 /** What the Draft's state makes of the skills it touches and of the agents it touches or that name them. */
-export interface DraftJudgement {
-  agents: AgentDraftProblem[];
-  skills: AgentDraftSkillProblem[];
-}
+export type DraftJudgement =
+  | { judged: true; agents: AgentDraftProblem[]; skills: AgentDraftSkillProblem[] }
+  | { judged: false; reason: NotJudgedReason };
 
-// A BOM is kept, as Git's own text read keeps it.
-const LENIENT_UTF8 = new TextDecoder('utf-8', { ignoreBOM: true });
+/** Why a Draft could not be judged: the Clone could not be read, or the judgement was over its limits. */
+export type NotJudgedReason = 'clone_unreadable' | 'over_limits';
+
+/** Per base commit, the skills each agent folder names; a base commit never changes. */
+export type BaseSkillNames = Map<string, Map<string, string[]>>;
+
+/** Base commits whose agents' skill names are kept. */
+const MEMOISED_BASES = 4;
+
+const STRICT_UTF8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+
+/** The text of stored bytes as the Clone read gives it: NUL or invalid UTF-8 is no text. */
+function textOf(bytes: Uint8Array): string | undefined {
+  try {
+    const text = STRICT_UTF8.decode(bytes);
+    return text.includes('\u0000') ? undefined : text;
+  } catch {
+    return undefined;
+  }
+}
 
 const byName = <T extends { name: string }>(a: T, b: T) =>
   a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
@@ -69,19 +86,23 @@ const folderOf = (directory: string, path: string): string[] => {
 const placeOf = (directory: string, folder: string, path: string) =>
   path === '' ? `${directory}/${folder}` : `${directory}/${folder}/${path}`;
 
+const NOT_READ: DraftJudgement = { judged: false, reason: 'clone_unreadable' };
+const OVER_LIMITS: DraftJudgement = { judged: false, reason: 'over_limits' };
+
 /**
  * Judges the Draft over its base tree: the skills it touches, the agents it touches and those
- * naming a touched skill, against the skills as the Draft leaves them. `null` means nothing was
- * judged (the Clone could not be read whole); a publish must refuse it, it is never "no problem".
+ * naming a touched skill, against the skills as the Draft leaves them. A Draft that could not be
+ * judged says why; a publish must refuse it, it is never "no problem".
  */
 export async function judgeDraftState(
   definitions: DefinitionsFiles,
   drafts: AgentDraftRepository,
   draft: AgentDraft,
   baseCommit: string,
-): Promise<DraftJudgement | null> {
+  baseNames: BaseSkillNames,
+): Promise<DraftJudgement> {
   const tree = await definitions.listTree(baseCommit, { whole: true });
-  if (tree.status !== 'listed' || tree.truncated) return null;
+  if (tree.status !== 'listed' || tree.truncated) return NOT_READ;
 
   const changed = new Map(draft.files.map((file) => [file.path, file]));
   const entries: AgentEntry[] = [
@@ -97,11 +118,14 @@ export async function judgeDraftState(
   const touchedAgents = touched(AGENTS_DIRECTORY);
   const touchedSkills = touched(SKILLS_DIRECTORY);
 
-  /** The text of each path as the Draft has it; a path that is not UTF-8 text is left out. */
+  /** The text of each path as the Draft has it; a path that is not text is left out. */
   const textsOf = async (paths: string[]): Promise<Map<string, string> | null> => {
     const texts = new Map<string, string>();
     const stored = await drafts.findContents(paths.filter((path) => changed.has(path)));
-    for (const [path, bytes] of stored) texts.set(path, LENIENT_UTF8.decode(bytes));
+    for (const [path, bytes] of stored) {
+      const text = textOf(bytes);
+      if (text !== undefined) texts.set(path, text);
+    }
     const unchanged = paths.filter((path) => !changed.has(path));
     if (unchanged.length > 0) {
       const read = await definitions.readFiles(baseCommit, unchanged, MAX_FILE_BYTES);
@@ -113,20 +137,57 @@ export async function judgeDraftState(
     return texts;
   };
 
-  // With a skill touched every agent is read: any of them may name it.
+  // With a skill touched, the agents that name it are found from what the base agents name.
+  let naming = new Set<string>();
+  if (touchedSkills.size > 0) {
+    let names = baseNames.get(baseCommit);
+    if (!names) {
+      const base = tree.entries.filter((entry) => {
+        const [top, agent, file, ...rest] = entry.path.split('/');
+        return (
+          entry.kind === 'file' &&
+          top === AGENTS_DIRECTORY &&
+          !!agent &&
+          file === AGENT_ENTRY_FILE &&
+          rest.length === 0
+        );
+      });
+      const bytes = base.reduce((sum, entry) => sum + entry.size, 0);
+      if (base.length > MAX_READ_PATHS || bytes > MAX_READ_BYTES) return OVER_LIMITS;
+      const read = await definitions.readFiles(
+        baseCommit,
+        base.map((entry) => entry.path),
+        MAX_FILE_BYTES,
+      );
+      if (read.status !== 'read') return NOT_READ;
+      names = new Map();
+      for (const file of read.files) {
+        const agent = file.path.split('/')[1]!;
+        const text = file.status === 'found' && !file.binary ? file.text : undefined;
+        names.set(agent, text === undefined ? [] : agentSkillNames(text));
+      }
+      baseNames.set(baseCommit, names);
+      while (baseNames.size > MEMOISED_BASES) baseNames.delete(baseNames.keys().next().value!);
+    }
+    naming = new Set(
+      [...names]
+        .filter(([, skills]) => skills.some((skill) => touchedSkills.has(skill)))
+        .map(([agent]) => agent),
+    );
+  }
+
   const agentFolders = findAgentFolders(entries)
-    .filter((folder) => touchedAgents.has(folder.name) || touchedSkills.size > 0)
+    .filter((folder) => touchedAgents.has(folder.name) || naming.has(folder.name))
     .sort(byName);
   const agentEntries = agentFolders
     .filter((folder) =>
       folder.entries.some((entry) => entry.path === AGENT_ENTRY_FILE && entry.kind === 'file'),
     )
     .map((folder) => entryPathOf(folder.name));
-  if (agentEntries.length > MAX_READ_PATHS) return null;
   const agentTexts = await textsOf(agentEntries);
-  if (agentTexts === null) return null;
+  if (agentTexts === null) return NOT_READ;
 
-  const judgedAgents = agentFolders.flatMap((folder) => {
+  const judgedAgents = agentFolders.map((folder) => {
     const text = agentTexts.get(entryPathOf(folder.name));
     const judged = validateAgentFolder(
       folder.name,
@@ -134,11 +195,7 @@ export async function judgeDraftState(
         entry.path === AGENT_ENTRY_FILE && text !== undefined ? { ...entry, content: text } : entry,
       ),
     );
-    let named: string[] = [];
-    if (judged.ok) named = judged.definition.skills;
-    else if (text !== undefined) named = agentSkillNames(text);
-    const relevant = touchedAgents.has(folder.name) || named.some((n) => touchedSkills.has(n));
-    return relevant ? [{ folder, judged }] : [];
+    return { folder, judged };
   });
 
   // Only the skills that matter are read: the touched ones and those the judged agents name.
@@ -157,9 +214,9 @@ export async function judgeDraftState(
     (sum, { files }) => sum + files.reduce((total, file) => total + file.size, 0),
     0,
   );
-  if (paths.length > MAX_READ_PATHS || bytes > MAX_READ_BYTES) return null;
+  if (paths.length > MAX_READ_PATHS || bytes > MAX_READ_BYTES) return OVER_LIMITS;
   const skillTexts = await textsOf(paths);
-  if (skillTexts === null) return null;
+  if (skillTexts === null) return NOT_READ;
   const contents = new Map<string, DefinitionsFileRead>();
   for (const [path, text] of skillTexts) {
     contents.set(path, { path, status: 'found', text, size: text.length, binary: false });
@@ -192,7 +249,7 @@ export async function judgeDraftState(
       message: problem.message,
     }));
   });
-  return { agents, skills };
+  return { judged: true, agents, skills };
 }
 
 /** The Draft as the operator sees it: its changes, the problems they would make, and what moved upstream. */
@@ -213,6 +270,10 @@ export interface AgentDraftView {
   problems: AgentDraftProblem[];
   /** The skills the Draft touches, judged on the Draft's state. */
   skillProblems: AgentDraftSkillProblem[];
+  /** False when the Draft could not be judged: the problem lists are then empty, not clean. */
+  judged: boolean;
+  /** Why it was not judged; `null` when it was. */
+  notJudgedReason: NotJudgedReason | null;
   /** Paths of the Draft whose content differs between the base commit and the current one. */
   movedUpstream: string[];
 }
@@ -228,11 +289,13 @@ const skillOf = (path: string): string | null => {
 
 /**
  * Shows the Draft whole: its problems (see `judgeDraftState`) and its paths that changed upstream
- * by blob id. When the Clone cannot be read, the problems and `movedUpstream` are empty and the
- * Draft itself is still shown.
+ * by blob id. A Draft that could not be judged says so, with empty problem lists; the Draft itself
+ * is still shown.
  */
 @Injectable()
 export class AgentDraftReader {
+  private readonly baseNames: BaseSkillNames = new Map();
+
   constructor(
     @Inject(DEFINITIONS_FILES) private readonly definitions: DefinitionsFiles,
     @Inject(AGENT_DRAFT_REPOSITORY) private readonly drafts: AgentDraftRepository,
@@ -255,28 +318,28 @@ export class AgentDraftReader {
       files,
       problems: [] as AgentDraftProblem[],
       skillProblems: [] as AgentDraftSkillProblem[],
+      judged: true,
+      notJudgedReason: null as NotJudgedReason | null,
       movedUpstream: [] as string[],
     };
     if (baseCommit === null || files.length === 0) return view;
     const [judged, movedUpstream] = await Promise.all([
-      judgeDraftState(this.definitions, this.drafts, draft, baseCommit),
+      this.judge(draft),
       this.movedUpstream(draft, baseCommit, currentCommit),
     ]);
-    return {
-      ...view,
-      problems: judged?.agents ?? [],
-      skillProblems: judged?.skills ?? [],
-      movedUpstream,
-    };
+    if (!judged.judged) {
+      return { ...view, judged: false, notJudgedReason: judged.reason, movedUpstream };
+    }
+    return { ...view, problems: judged.agents, skillProblems: judged.skills, movedUpstream };
   }
 
   /**
-   * The problems of the Draft's skills and agents, or `null` when the Clone could not be read, so
-   * that nothing was judged. A publish must refuse `null`: it never means "no problem".
+   * The problems of the Draft's skills and agents, or why nothing was judged. A publish must
+   * refuse a Draft that was not judged: it never means "no problem".
    */
-  judge(draft: AgentDraft): Promise<DraftJudgement | null> {
-    if (draft.baseCommit === null) return Promise.resolve(null);
-    return judgeDraftState(this.definitions, this.drafts, draft, draft.baseCommit);
+  judge(draft: AgentDraft): Promise<DraftJudgement> {
+    if (draft.baseCommit === null) return Promise.resolve(NOT_READ);
+    return judgeDraftState(this.definitions, this.drafts, draft, draft.baseCommit, this.baseNames);
   }
 
   private async movedUpstream(

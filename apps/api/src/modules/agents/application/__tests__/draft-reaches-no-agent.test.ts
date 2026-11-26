@@ -94,6 +94,10 @@ describe('a Draft reaches no agent', () => {
         'provider: codex\n',
         'provider: codex\nskills:\n  - lint\n',
       ),
+      'agents/consumer/AGENT.md': agentFile('consumer', 'Use the drafted skill.').replace(
+        'provider: codex\n',
+        'provider: codex\nskills:\n  - drafted\n',
+      ),
       'skills/lint/SKILL.md': skillFile('lint'),
       'skills/lint/notes.md': 'notes\n',
     });
@@ -117,6 +121,7 @@ describe('a Draft reaches no agent', () => {
       drafted: await skillList.execute({ name: 'drafted' }),
       agents: await list.execute(),
       resolved: await resolutions.resolveForRun('reviewer'),
+      consumer: await resolutions.resolveForRun('consumer'),
       folder: await folders.folderAt('reviewer', BASE_COMMIT),
       tree: await files.execute(),
     };
@@ -135,6 +140,20 @@ describe('a Draft reaches no agent', () => {
     await expect(resolutions.resolveForRun('reviewer')).resolves.toEqual(before.resolved);
     await expect(folders.folderAt('reviewer', BASE_COMMIT)).resolves.toEqual(before.folder);
     await expect(files.execute()).resolves.toEqual(before.tree);
+    // Readers built after the writes hold no memo of the first read.
+    const freshSkills = new SkillsReader(definitions);
+    const freshAgents = new AgentsReader(definitions, freshSkills);
+    const freshList = new ReadAgentsHandler(freshAgents, {
+      forProject: () => Promise.resolve({ status: 'found', kind: 'code', agent: null }),
+    });
+    await expect(new ReadSkillsHandler(freshSkills, freshAgents).execute()).resolves.toEqual(
+      before.skills,
+    );
+    await expect(
+      new ReadAgentsAgentResolutions(freshList).resolveForRun('consumer'),
+    ).resolves.toEqual(before.consumer);
+    // An agent at the base that names a skill only the Draft adds stays unusable.
+    expect(before.consumer).toEqual({ status: 'not_usable' });
     expect(before.skills.skills.map((skill) => skill.name)).toEqual(['lint']);
     expect(before.drafted.skills).toEqual([]);
     expect(before.resolved).toMatchObject({ status: 'resolved' });

@@ -133,6 +133,8 @@ export function fakeAgentsApi(
     files: [],
     problems: [],
     skillProblems: [],
+    judged: true,
+    notJudgedReason: null,
     movedUpstream: [],
     ...agents.draft,
   };
@@ -212,6 +214,8 @@ export function fakeAgentsApi(
           files: [],
           problems: [],
           skillProblems: [],
+          judged: true,
+          notJudgedReason: null,
           movedUpstream: [],
           ...result.draft,
         };

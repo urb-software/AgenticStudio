@@ -13,6 +13,7 @@ import {
 import {
   NothingToPublishError,
   PublishFailedError,
+  PublishNotJudgedError,
   PublishNotConfiguredError,
   PublishPathOutsideDefinitionsError,
   PublishProblemsError,
@@ -103,7 +104,10 @@ export class PublishAgentDraftHandler {
     if (base.currentCommit !== baseCommit) throw new RepositoryMovedError();
     const judged = await this.reader.judge(draft);
     // Not judged is not "no problem": a Clone that cannot be read blocks the publish.
-    if (judged === null) throw new PublishFailedError('repository_not_ready');
+    if (!judged.judged) {
+      if (judged.reason === 'over_limits') throw new PublishNotJudgedError();
+      throw new PublishFailedError('repository_not_ready');
+    }
     if (judged.agents.length > 0 || judged.skills.length > 0) {
       throw new PublishProblemsError(judged.agents, judged.skills);
     }

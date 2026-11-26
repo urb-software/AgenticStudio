@@ -62,6 +62,8 @@ describe('GetAgentDraftHandler', () => {
       files: [],
       problems: [],
       skillProblems: [],
+      judged: true,
+      notJudgedReason: null,
       movedUpstream: [],
     });
     expect(definitions.listTreeCalls).toBe(0);
@@ -389,11 +391,101 @@ describe('GetAgentDraftHandler', () => {
       ]);
     });
 
-    it('has no problems when the Clone cannot be read', async () => {
+    it('says it was not judged when the Clone cannot be read', async () => {
       await put('skills/lint/SKILL.md', 'bad');
       definitions.readFilesFails = true;
 
-      await expect(handler.execute()).resolves.toMatchObject({ problems: [], skillProblems: [] });
+      await expect(handler.execute()).resolves.toMatchObject({
+        problems: [],
+        skillProblems: [],
+        judged: false,
+        notJudgedReason: 'clone_unreadable',
+      });
+    });
+
+    it('says it was over the limits when more agents are read than one judgement allows', async () => {
+      const many: Record<string, FakeCommitFile> = { ...SKILL_FILES };
+      for (let index = 0; index < 501; index += 1) {
+        many[`agents/a${index}/AGENT.md`] = agentFile(`a${index}`);
+      }
+      definitions = new FakeDefinitionsFiles(many);
+      handler = new GetAgentDraftHandler(repository, new AgentDraftReader(definitions, repository));
+      await put('skills/solo/SKILL.md', skillFile('solo'));
+
+      await expect(handler.execute()).resolves.toMatchObject({
+        problems: [],
+        skillProblems: [],
+        judged: false,
+        notJudgedReason: 'over_limits',
+      });
+    });
+
+    it('says it was over the limits when the entry files of the agents hold too many bytes', async () => {
+      const big = 'x'.repeat(1024 * 1024 - 200);
+      const many: Record<string, FakeCommitFile> = { ...SKILL_FILES };
+      for (let index = 0; index < 17; index += 1) {
+        many[`agents/b${index}/AGENT.md`] = agentFile(`b${index}`, `description2: ${big}\n`);
+      }
+      definitions = new FakeDefinitionsFiles(many);
+      handler = new GetAgentDraftHandler(repository, new AgentDraftReader(definitions, repository));
+      await put('skills/solo/SKILL.md', skillFile('solo'));
+
+      await expect(handler.execute()).resolves.toMatchObject({
+        judged: false,
+        notJudgedReason: 'over_limits',
+      });
+    });
+
+    describe('reading from Git', () => {
+      let reads: string[][];
+      beforeEach(() => {
+        reads = [];
+        const original = definitions.readFiles.bind(definitions);
+        definitions.readFiles = (commit, paths, max) => {
+          reads.push([...paths]);
+          return original(commit, paths, max);
+        };
+      });
+      const agentPaths = () => reads.flat().filter((path) => path.startsWith('agents/'));
+
+      it('reads no agent file for a second read of the same Draft', async () => {
+        await put('skills/solo/SKILL.md', skillFile('solo'));
+        await handler.execute();
+        expect(agentPaths().length).toBeGreaterThan(0);
+        reads.length = 0;
+
+        await handler.execute();
+
+        expect(agentPaths()).toEqual([]);
+      });
+
+      it('reads only the agents that name a touched skill, once the skills they name are known', async () => {
+        await put('skills/solo/SKILL.md', skillFile('solo'));
+        await handler.execute();
+        reads.length = 0;
+        await put('skills/lint/notes.md', 'changed\n');
+
+        await handler.execute();
+
+        expect(agentPaths()).toEqual(['agents/user/AGENT.md']);
+      });
+    });
+
+    it('treats a skill file with a NUL, or bytes that are not UTF-8, as unreadable like the Clone does', async () => {
+      await draftWith((draft, facts) => {
+        const f = { ...facts, baseEntries: entriesOf(SKILL_FILES) };
+        draft.put({ ...f, path: 'skills/lint/SKILL.md', size: 4 });
+        draft.put({ ...f, path: 'skills/lint/notes.md', size: 3 });
+      }, {});
+      repository.contents.set('skills/lint/SKILL.md', Buffer.from([0x2d, 0x2d, 0xc3, 0x28]));
+      repository.contents.set('skills/lint/notes.md', Buffer.from([0x61, 0x00, 0x62]));
+
+      const { skillProblems } = await handler.execute();
+
+      expect(skillProblems.map((p) => [p.code, p.path]).sort()).toEqual([
+        ['entry_unreadable', 'skills/lint/SKILL.md'],
+        ['entry_unreadable', 'skills/lint/notes.md'],
+      ]);
     });
   });
 

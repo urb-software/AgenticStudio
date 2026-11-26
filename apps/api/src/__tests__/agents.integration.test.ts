@@ -674,6 +674,8 @@ describe('agents API (PostgreSQL + Redis via Testcontainers)', () => {
           files: [],
           problems: [],
           skillProblems: [],
+          judged: true,
+          notJudgedReason: null,
           movedUpstream: [],
         });
         const refused = await put({ path: 'agents/a/AGENT.md', text: 'x' });
@@ -794,6 +796,8 @@ describe('agents API (PostgreSQL + Redis via Testcontainers)', () => {
           files: [{ path: 'README.md', change: 'modified', size: 9, movedFrom: null, skill: null }],
           problems: [],
           skillProblems: [],
+          judged: true,
+          notJudgedReason: null,
           movedUpstream: [],
         });
         expect(second.body.version).toBe(2);

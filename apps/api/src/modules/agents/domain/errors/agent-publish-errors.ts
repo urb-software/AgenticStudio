@@ -77,6 +77,14 @@ export class PublishPathOutsideDefinitionsError extends Error {
   }
 }
 
+/** The Draft is over the limits of one judgement, so it cannot be judged and is not published. */
+export class PublishNotJudgedError extends Error {
+  constructor() {
+    super('The Draft is too large to be checked.');
+    this.name = 'PublishNotJudgedError';
+  }
+}
+
 /** The publish could not be done for a reason that is not the Operator's to fix in the Draft. */
 export class PublishFailedError extends Error {
   constructor(readonly reason: 'repository_not_ready' | 'unsupported_platform' | 'failed') {
