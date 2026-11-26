@@ -107,8 +107,8 @@ export function AgentDetail({ agent }: { agent: AgentSummaryOutput }) {
         <section aria-label="Skills of this agent" className="flex flex-col gap-2">
           <h3 className="m-0 text-small font-semibold">Skills</h3>
           <ul className="m-0 flex list-none flex-wrap gap-x-4 gap-y-1 p-0 text-small">
-            {detail.skills.map((skill) => (
-              <li key={skill}>
+            {detail.skills.map((skill, index) => (
+              <li key={`${index}:${skill}`}>
                 {unresolved.has(skill) ? (
                   <code className="text-code break-all">{skill}</code>
                 ) : (

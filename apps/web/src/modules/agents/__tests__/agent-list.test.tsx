@@ -512,6 +512,29 @@ describe('Agents page: the skills of an agent', () => {
     expect(document.activeElement).toBe(document.body);
   });
 
+  it('lists a skill named twice without a duplicate key warning', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const twice: AgentSummaryOutput = {
+      ...WORKER,
+      usable: false,
+      skills: ['review', 'review'],
+      problems: [
+        {
+          code: 'skill_listed_twice',
+          path: 'AGENT.md',
+          key: 'review',
+          message: 'The skill "review" is listed more than once.',
+        },
+      ],
+    };
+    await open(twice, agentDetail(twice));
+
+    const region = await screen.findByRole('region', { name: 'Skills of this agent' });
+    expect(within(region).getAllByRole('link')).toHaveLength(2);
+    expect(error.mock.calls.map((call) => String(call[0])).join('\n')).not.toMatch(/same key/);
+    error.mockRestore();
+  });
+
   it('shows a skill that is missing or has an invalid name as text, not as a link', async () => {
     const refused: AgentSummaryOutput = {
       ...WORKER,
