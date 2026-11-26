@@ -53,11 +53,15 @@ _Avoid_: Status, workflow
 ### `agents`
 
 **Agent definition**:
-A folder in the Definitions Repository that tells an agent how to work: an entry file with front matter (name, description, Provider, Model) and instructions in Markdown, and beside it the agent's scripts and assets. It belongs to one Provider and comes after Studio's fixed base rules. A Run uses the commit of the Definitions Repository it started with. An invalid definition is listed with its reason and cannot be chosen.
+A folder in the Definitions Repository that tells an agent how to work: an entry file with front matter (name, description, Provider, Model, the Skill definitions it uses) and instructions in Markdown, and beside it the agent's scripts and assets. It belongs to one Provider and comes after Studio's fixed base rules. A Run uses the commit of the Definitions Repository it started with. An invalid definition is listed with its reason and cannot be chosen.
 _Avoid_: Agent (alone), prompt, profile
 
+**Skill definition**:
+A folder in the Definitions Repository holding reusable know-how that agents can share: an entry file with front matter (name, description) and instructions in Markdown, and beside it its scripts and assets. It belongs to no Provider. An Agent definition names the skills it uses, and a Run gets exactly those. An invalid or missing skill makes the agent that names it invalid. Not to be confused with the repository's own skills, which belong to the Repository a Run works on.
+_Avoid_: Plugin, command, tool
+
 **Definitions Repository**:
-The one Repository, a Project of its own kind, that holds the Agent definitions. It accepts no Run, no Preview and no Environment file, and the Agent account has no access to it. Whatever is on its Integration branch is published.
+The one Repository, a Project of its own kind, that holds the Agent definitions and the Skill definitions. It accepts no Run, no Preview and no Environment file, and the Agent account has no access to it. Whatever is on its Integration branch is published.
 _Avoid_: Agents repo, config repo
 
 **Default agent**:

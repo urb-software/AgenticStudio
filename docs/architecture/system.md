@@ -48,7 +48,7 @@ Conceptual diagram. The exact network, queue, auth, and deployment boundaries mu
 | Module | Owns | Does not own |
 | --- | --- | --- |
 | `projects` | Project lifecycle, repository connection, the Clone and its fetch, Git branches, the merge method setting | Agent definitions, raw Docker privilege, the pull request, its review and merge |
-| `agents` | Agent definitions read from the definitions Repository's Integration branch, the list of agents with their validation, the Default agents, drafts and publishing; later, `SkillDefinition` | The Repository connection and the Clone, Runs and their queue, Git credentials |
+| `agents` | Agent definitions read from the definitions Repository's Integration branch, the list of agents with their validation, the Default agents, drafts and publishing; Skill definitions (a model distinct from Agent definitions, [ADR 0006](adr/0006-skill-definitions.md)) | The Repository connection and the Clone, Runs and their queue, Git credentials |
 | `workflows` | Workflow definitions, step dependencies, ordering, conditions, human approval semantics | Individual worker/process execution plumbing |
 | `executions` | Runs, their working copies, state transitions, queue scheduling, progress/log/result records, the pull request, its review diff, the Merge approval and the merge | Direct Docker host control or unrelated project Git internals |
 | `environments` | A Project's Preview settings, the shared Preview and its states, builds and their logs, Compose stack abstraction | CLI agent definitions, Runs, the Project's Clone |
