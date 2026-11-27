@@ -27,6 +27,12 @@ export const TWO_PHASES_FILE =
   '  - id: first\n    kind: work\n    agent: reviewer\n' +
   '  - id: second\n    kind: work\n    agent: helper\n---\nNotes for the operator.\n';
 
+/** A Workflow of "implement, then review": a work Phase and a review Phase. */
+export const IMPLEMENT_REVIEW_FILE =
+  '---\nname: implement-review\ndescription: Implement, then review\nsequence:\n' +
+  '  - id: implement\n    kind: work\n    agent: helper\n' +
+  '  - id: review\n    kind: review\n    agent: reviewer\n---\nNotes for the operator.\n';
+
 async function until(read, done, what, timeoutMs = 60_000) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
@@ -242,6 +248,7 @@ export async function runAgentPhase(options) {
   assert(stopped.pullRequest === undefined, 'a pull request was opened for the copied file');
 
   await runWorkflowPhase({ call, projectId, definitionsCommit });
+  await runReviewPhase({ call, projectId });
 
   const listedRuns = (await call(`/api/projects/${projectId}/runs`)).body;
   assert(
@@ -385,5 +392,116 @@ async function runWorkflowPhase({ call, projectId, definitionsCommit }) {
   });
   console.log(
     '[e2e] workflow phase: a Run started with a Workflow of two work Phases recorded it, ran the Phases in order in sessions of their own, handed the second what the first reported and delivered once',
+  );
+}
+
+/**
+ * "Implement, then review" with the fake runner: an approval, changes requested (the pull request
+ * is delivered all the same, with the findings), a review that changes the Working copy (the
+ * change never reaches the pull request) and a review that ends without a Verdict.
+ */
+async function runReviewPhase({ call, projectId }) {
+  const listed = await call('/api/workflows');
+  const flow = listed.body.workflows.find((workflow) => workflow.name === 'implement-review');
+  assert(flow?.valid && flow.usable, `the Workflow is ${JSON.stringify(flow)}`);
+
+  const finish = async (task, what) => {
+    const started = await call(`/api/projects/${projectId}/runs`, {
+      method: 'POST',
+      body: JSON.stringify({ task, workflow: 'implement-review' }),
+    });
+    assert(started.status === 201, `starting the ${what} Run answered ${started.status}`);
+    return until(
+      async () => (await call(`/api/runs/${started.body.id}`)).body,
+      (run) => ['succeeded', 'failed', 'cancelled', 'timed_out'].includes(run.state),
+      `the ${what} Run to finish`,
+      180_000,
+    );
+  };
+
+  const approved = await finish('Add a file [fake:commit] [fake-review:approved]', 'approved');
+  assert(approved.state === 'succeeded', `the approved Run is ${approved.state}`);
+  assert(
+    approved.phases.map((phase) => `${phase.kind}:${phase.verdict}`).join() ===
+      'work:null,review:approved' && approved.reviewNotPassed === false,
+    `the approved Run's Phases are ${JSON.stringify(approved.phases)}`,
+  );
+  assert(
+    approved.delivery === 'delivered' &&
+      approved.pullRequest?.number >= 1 &&
+      approved.commits?.length === 1,
+    `the approved Run delivered ${approved.delivery} with ${JSON.stringify(approved.commits)}`,
+  );
+
+  const changes = await finish(
+    'Add a file [fake:commit] [fake-review:changes]',
+    'changes requested',
+  );
+  assert(changes.state === 'succeeded', `the changes-requested Run is ${changes.state}`);
+  const review = changes.phases[1];
+  assert(
+    review.kind === 'review' &&
+      review.state === 'done' &&
+      review.verdict === 'changes_requested' &&
+      review.findings.length === 2 &&
+      review.findings[0].file === 'FAKE_CHANGE.md' &&
+      review.findings[0].line === 1 &&
+      review.findings[1].text.startsWith('<b>Not bold</b>'),
+    `the review is ${JSON.stringify(review)}`,
+  );
+  assert(changes.reviewNotPassed === true, 'the Run does not say its review did not pass');
+  assert(
+    changes.delivery === 'delivered' && changes.pullRequest?.number >= 1,
+    `the changes-requested Run delivered ${changes.delivery} with ${JSON.stringify(changes.pullRequest)}`,
+  );
+  const listedRuns = await call('/api/runs');
+  assert(
+    listedRuns.body.find((run) => run.id === changes.id)?.reviewNotPassed === true &&
+      listedRuns.body.find((run) => run.id === approved.id)?.reviewNotPassed === false,
+    'the Runs list does not mark the Run whose review did not pass',
+  );
+  assert(
+    listedRuns.body.every((run) => run.phases === undefined),
+    'a list of Runs shows the Phases and so the findings',
+  );
+
+  const careless = await finish('Add a file [fake:commit] [fake-review:edits]', 'careless review');
+  assert(careless.state === 'succeeded', `the careless-review Run is ${careless.state}`);
+  assert(
+    careless.phases[1].verdict === 'approved' &&
+      careless.commits?.length === 1 &&
+      careless.commits[0].subject === 'Fake change',
+    `the careless review's commits are ${JSON.stringify(careless.commits)}`,
+  );
+  const diff = await call(`/api/runs/${careless.id}/diff?scope=run`);
+  assert(
+    diff.status === 200 && diff.body.files.map((file) => file.path).join() === 'FAKE_CHANGE.md',
+    `the careless review's diff is ${JSON.stringify(diff.body?.files)}`,
+  );
+  const log = await call(`/api/runs/${careless.id}/events?limit=1000`);
+  assert(
+    log.body.events.some((event) =>
+      event.text.startsWith('The review Phase changed the working copy; it was restored'),
+    ),
+    'the log does not say that the Working copy was restored',
+  );
+
+  const forgot = await finish(
+    'Add a file [fake:commit] [fake-review:none]',
+    'review without a Verdict',
+  );
+  assert(
+    forgot.state === 'failed' &&
+      forgot.failure?.code === 'agent_failed' &&
+      forgot.failure.detail === 'The review Phase ended without a valid Verdict.' &&
+      forgot.delivery !== 'delivered',
+    `the Run of a review without a Verdict is ${forgot.state} ${JSON.stringify(forgot.failure)}`,
+  );
+  assert(
+    forgot.phases[1].state === 'failed' && forgot.phases[1].verdict === null,
+    `the Phase of a review without a Verdict is ${JSON.stringify(forgot.phases[1])}`,
+  );
+  console.log(
+    '[e2e] review phase: "implement, then review" delivered after an approval and after changes requested (with the findings), never carried a careless review\'s edits into the pull request, and failed a review without a Verdict',
   );
 }

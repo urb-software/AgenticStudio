@@ -1963,7 +1963,10 @@ test('a Workflow Run: the New run dialog, the Phases and the default card, in bo
   const phase = (position: number, state: string, text: string | null) => ({
     position,
     itemId: position === 0 ? phaseId : 'polish',
+    kind: 'work',
     state,
+    verdict: null,
+    findings: [],
     summary: text,
     agent: {
       name: position === 0 ? agentName : 'helper',
@@ -1981,6 +1984,7 @@ test('a Workflow Run: the New run dialog, the Phases and the default card, in bo
     provider: 'claude_code',
     agent: phase(1, 'running', null).agent,
     workflowName: flow,
+    reviewNotPassed: false,
     workflow: {
       name: flow,
       commit,
@@ -2103,5 +2107,172 @@ test('a Workflow Run: the New run dialog, the Phases and the default card, in bo
     await expect(phases.getByTestId('run-phase').nth(1)).toHaveAttribute('aria-current', 'step');
     await expect(phases.getByTestId('run-phase-summary')).toContainText('u'.repeat(120));
   });
+  expect(foreign, 'a request left the Studio origin').toEqual([]);
+});
+
+// A Run whose review asked for changes, with routed API answers: the Verdict and the findings on
+// the Run page (long text, a long file path, markup that stays text, a path that leaves the
+// Working copy), the way to the Changes tab by keyboard, and the mark in the Runs list, in both
+// themes, no sideways scroll, axe clean.
+test('a Run whose review did not pass: the Verdict, the findings and the Runs list, in both themes', async ({
+  page,
+}, testInfo) => {
+  const runId = '00000000-0000-4000-8000-0000000000c2';
+  const commit = EDITOR_SHA;
+  const longText = `${'The loop in the handler never ends when the list is empty. '.repeat(30)}${'w'.repeat(100)}`;
+  const longFile = `${'src/deeply/nested/'.repeat(20)}handler.ts`;
+
+  await signIn(page);
+  await createAndOpenProject(page, `Review runs ${testInfo.project.name}`);
+  const projectId = /\/projects\/([0-9a-f-]{36})$/.exec(page.url())![1]!;
+
+  const agent = (name: string, provider: string) => ({
+    name,
+    source: 'definitions',
+    commit,
+    provider,
+    model: 'default',
+    skills: [],
+  });
+  const findings = [
+    { text: longText, file: 'src/handler.ts', line: 12 },
+    { text: '<img src=x onerror=alert(1)> and **not bold**, [not a link](https://example.test).' },
+    { text: 'A very long path.', file: longFile, line: 3 },
+    { text: 'Leaves the working copy.', file: '../outside/secret.txt' },
+  ];
+  const run = {
+    id: runId,
+    projectId,
+    provider: 'claude_code',
+    agent: agent('reviewer', 'claude_code'),
+    workflowName: 'implement-review',
+    reviewNotPassed: true,
+    workflow: {
+      name: 'implement-review',
+      commit,
+      items: [
+        { id: 'implement', kind: 'work', agent: 'helper' },
+        { id: 'review', kind: 'review', agent: 'reviewer' },
+      ],
+    },
+    phases: [
+      {
+        position: 0,
+        itemId: 'implement',
+        kind: 'work',
+        state: 'done',
+        verdict: null,
+        findings: [],
+        summary: 'Added the handler.',
+        agent: agent('helper', 'codex'),
+        stepsUsed: 1,
+      },
+      {
+        position: 1,
+        itemId: 'review',
+        kind: 'review',
+        state: 'done',
+        verdict: 'changes_requested',
+        findings,
+        summary: 'The handler needs work.',
+        agent: agent('reviewer', 'claude_code'),
+        stepsUsed: 1,
+      },
+    ],
+    task: 'Add a health check',
+    state: 'succeeded',
+    startCommit: commit,
+    createdAt: '2026-11-27T09:00:00.000Z',
+    environmentFileSupplied: false,
+    limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
+    steps: { used: 2, usedInPart: 2 },
+    followUps: 0,
+    messages: [
+      {
+        role: 'operator',
+        kind: 'task',
+        text: 'Add a health check',
+        at: '2026-11-27T09:00:00.000Z',
+      },
+    ],
+  };
+  const { phases: _phases, workflow: _workflow, ...listed } = run;
+  void _phases;
+  void _workflow;
+  const answer = (body: unknown) => ({
+    contentType: 'application/json',
+    body: JSON.stringify(body),
+  });
+  await page.route(new RegExp(`/api/projects/${projectId}/runs$`), (route) =>
+    route.request().method() === 'GET' ? route.fulfill(answer([listed])) : route.continue(),
+  );
+  await page.route(new RegExp(`/api/runs/${runId}$`), (route) => route.fulfill(answer(run)));
+  await page.route(new RegExp(`/api/runs/${runId}/events\\?`), (route) =>
+    route.fulfill(answer({ events: [] })),
+  );
+  await page.route(new RegExp(`/api/runs/${runId}/steps$`), (route) =>
+    route.fulfill(answer({ steps: [] })),
+  );
+  await page.route(new RegExp(`/api/runs/${runId}/diff\\?`), (route) =>
+    route.fulfill(
+      answer({
+        scope: 'run',
+        baseCommit: commit,
+        includesUnpushed: true,
+        truncated: false,
+        files: [{ path: 'src/handler.ts', status: 'added', additions: 3, deletions: 0 }],
+      }),
+    ),
+  );
+  const foreign = watchForeignRequests(page);
+
+  async function inBothThemes(scenario: () => Promise<void>) {
+    for (const theme of ['light', 'dark']) {
+      await page.evaluate((value) => localStorage.setItem('theme', value), theme);
+      await page.reload();
+      await expect(page.locator('html')).toHaveClass(new RegExp(`(^|\\s)${theme}(\\s|$)`));
+      await scenario();
+      await expectNoHorizontalScroll(page);
+      await expectNoAxeViolations(page);
+    }
+  }
+
+  const main = page.getByRole('main', { name: 'Page content' });
+  await page.goto(`/projects/${projectId}`);
+  await inBothThemes(async () => {
+    await expect(main.getByTestId('review-not-passed-marker')).toHaveText('Review not passed');
+  });
+
+  await page.goto(`/executions/${runId}`);
+  await inBothThemes(async () => {
+    const phases = main.getByRole('region', { name: 'Phases of implement-review' });
+    const review = phases.getByTestId('run-phase').nth(1);
+    await expect(review).toContainText('Verdict: Changes requested');
+    await expect(review.getByTestId('run-finding')).toHaveCount(4);
+    // The reviewer's markup is text, never an element.
+    await expect(review.getByTestId('run-finding-text').nth(1)).toHaveText(
+      '<img src=x onerror=alert(1)> and **not bold**, [not a link](https://example.test).',
+    );
+    await expect(phases.locator('img, a')).toHaveCount(0);
+    // A path inside the working copy leads on; one that leaves it is only text.
+    await expect(review.getByRole('button', { name: /show it on the Changes tab/ })).toHaveCount(2);
+    await expect(review.getByTestId('run-finding-file')).toHaveText(['../outside/secret.txt']);
+    await expect(phases.getByTestId('review-not-passed')).toBeVisible();
+  });
+
+  // By keyboard: focus the finding's file, press Enter, and the Changes tab shows the file.
+  const first = main
+    .getByRole('region', { name: 'Phases of implement-review' })
+    .getByRole('button', { name: /src\/handler\.ts.*show it on the Changes tab/ });
+  await first.focus();
+  await page.keyboard.press('Enter');
+  await expect(main.getByRole('tab', { name: 'Changes' })).toHaveAttribute('aria-selected', 'true');
+  await expect(
+    main.getByRole('navigation', { name: /Changed files/ }).getByRole('button', {
+      name: /src\/handler\.ts/,
+    }),
+  ).toHaveAttribute('aria-current', 'true');
+  await expectNoHorizontalScroll(page);
+  await expectNoAxeViolations(page);
   expect(foreign, 'a request left the Studio origin').toEqual([]);
 });

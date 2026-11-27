@@ -98,6 +98,9 @@ _Avoid_: Context, handoff
 How a review Phase ends: approved, or changes requested with findings.
 _Avoid_: Result (a Run step ends with a result), approval (see Merge approval), score
 
+**Review not passed**:
+How a Workflow ends when a review Phase asks for changes: the Run still delivers its pull request, and the findings stay open on the Run page.
+
 **Checkpoint**:
 A place in a Workflow where the Run waits for the operator, who continues or stops it and may add a comment for the next Phase.
 _Avoid_: Gate, approval, pause

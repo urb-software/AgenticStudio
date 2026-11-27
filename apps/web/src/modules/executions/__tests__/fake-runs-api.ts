@@ -191,6 +191,7 @@ export function aRun(overrides: Partial<RunOutput> = {}): RunOutput {
       instructions: '',
     },
     workflowName: null,
+    reviewNotPassed: false,
     task,
     state: 'queued',
     startCommit: SHA,

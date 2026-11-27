@@ -571,15 +571,24 @@ export const zRunAgentOutput = z.object({
     instructions: z.string().optional()
 });
 
+export const zRunPhaseFindingOutput = z.object({
+    text: z.string(),
+    file: z.string().optional(),
+    line: z.int().gt(0).lte(9007199254740991).optional()
+});
+
 export const zRunPhaseOutput = z.object({
     position: z.int().gte(0).lte(9007199254740991),
     itemId: z.string().nullable(),
+    kind: z.enum(['work', 'review']),
     state: z.enum([
         'pending',
         'running',
         'done',
         'failed'
     ]),
+    verdict: z.enum(['approved', 'changes_requested']).nullable(),
+    findings: z.array(zRunPhaseFindingOutput),
     summary: z.string().nullable(),
     agent: z.object({
         name: z.string(),
@@ -827,6 +836,7 @@ export const zRunOutput = z.object({
     phases: z.array(zRunPhaseOutput).optional(),
     workflowName: z.string().nullable(),
     workflow: zRunWorkflowOutput.nullish(),
+    reviewNotPassed: z.boolean(),
     task: z.string(),
     state: z.enum([
         'queued',
