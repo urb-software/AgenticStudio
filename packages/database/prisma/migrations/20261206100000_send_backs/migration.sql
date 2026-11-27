@@ -11,6 +11,11 @@ ADD COLUMN     "send_back_review" INTEGER;
 -- AlterTable
 ALTER TABLE "run_phases" ADD COLUMN     "rounds" JSONB NOT NULL DEFAULT '[]';
 
+-- A Run started before this migration was claimed under "changes requested end the Workflow":
+-- it keeps that meaning, so its recorded limit is none. Only plans recorded from now on get the
+-- Workflow's number (default 2).
+UPDATE "runs" SET "workflow_send_backs" = 0 WHERE "workflow_name" IS NOT NULL;
+
 -- Prisma cannot express CHECK constraints: added by hand. No limit is above two, and a Run
 -- that is not a Workflow Run has no send-back.
 ALTER TABLE "runs" ADD CONSTRAINT "runs_send_backs_check" CHECK (

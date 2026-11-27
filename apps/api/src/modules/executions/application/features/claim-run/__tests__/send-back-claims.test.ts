@@ -221,4 +221,83 @@ describe('the claims of a Workflow Run that sends work back', () => {
     expect(finding!.text.length).toBeLessThanOrEqual(2000);
     expect(finding!.file!.length).toBeLessThanOrEqual(512);
   });
+
+  it('tells a review that runs again what the work Phase reported, not an earlier review', async () => {
+    runId = (
+      await runs.start({
+        projectId: PROJECT,
+        provider: 'codex',
+        agent: phaseAgent('builder'),
+        workflow: {
+          record: {
+            name: 'two-reviews',
+            commit: WORKFLOW_COMMIT,
+            items: [
+              { id: 'build', kind: 'work', agent: 'builder' },
+              { id: 'first', kind: 'review', agent: 'reviewer' },
+              { id: 'second', kind: 'review', agent: 'reviewer' },
+            ],
+          },
+          phaseAgents: [
+            phaseAgent('builder'),
+            phaseAgent('reviewer', 'claude_code'),
+            phaseAgent('reviewer', 'claude_code'),
+          ],
+        },
+        task: 'Add a health check',
+        startCommit: 'a',
+        remoteUrl: 'https://git.example.test/a.git',
+        limits: { stepMinutes: 60, maxSteps: 3, waitingDays: 14, maxTotalSteps: 20 },
+        integrationBranch: 'dev',
+      })
+    ).id;
+    const report = (
+      index: number,
+      summary: string,
+      next: object,
+      verdict?: 'approved' | 'changes_requested',
+    ) =>
+      runs.change(runId, (run) => {
+        run.reportState(WORKER, { state: 'running', failure: null }, T0);
+        run.reportStep(
+          WORKER,
+          {
+            kind: 'start',
+            index,
+            result: { outcome: 'done', summary },
+            sessionRef: `s-${run.currentPhase}`,
+            ...(verdict === undefined
+              ? {}
+              : {
+                  verdict,
+                  findings: verdict === 'approved' ? [] : [{ text: 'Fix X.' }],
+                }),
+          },
+          WORKING_COPY,
+          [],
+          T0,
+          next as never,
+        );
+      });
+    await handler.execute({ workerId: WORKER });
+    await report(1, 'Built.', { kind: 'phase', position: 1 });
+    await handler.execute({ workerId: WORKER });
+    await report(2, 'First is fine.', { kind: 'phase', position: 2 }, 'approved');
+    await handler.execute({ workerId: WORKER });
+    await report(
+      3,
+      'Second wants changes.',
+      { kind: 'send_back', position: 0 },
+      'changes_requested',
+    );
+    await handler.execute({ workerId: WORKER });
+    await report(4, 'Fixed after the findings.', { kind: 'phase', position: 2 });
+
+    const claimed = await handler.execute({ workerId: WORKER });
+
+    expect(claimed?.phase).toMatchObject({
+      itemId: 'second',
+      previous: { itemId: 'build', summary: 'Fixed after the findings.' },
+    });
+  });
 });

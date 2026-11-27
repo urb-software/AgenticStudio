@@ -1442,10 +1442,12 @@ export class Run {
     for (const phase of PHASES.get(this)!) {
       // A new round reads no comment of an earlier one.
       const cleared = phase.checkpointComment === null ? {} : { checkpointComment: null };
-      this.updatePhase(phase.position, { state: 'pending', ...cleared });
+      // The new part starts at round 1, as its send-backs start again.
+      const forgotten = phase.rounds.length === 0 ? {} : { rounds: [] };
+      this.updatePhase(phase.position, { state: 'pending', ...cleared, ...forgotten });
     }
     if (this.workflowEnded) this.applyPosition({ workflowEnded: false });
-    // The Workflow runs again from its start: it has all its send-backs again.
+    // A Follow-up starts the Workflow's send-backs again.
     if (this.sendBacksUsed !== 0 || this.sendBackReview !== null) {
       this.applyPosition({ sendBacksUsed: 0, sendBackReview: null });
     }

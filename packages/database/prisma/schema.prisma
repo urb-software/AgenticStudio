@@ -251,8 +251,8 @@ model Run {
   workflowName                  String?              @map("workflow_name") @db.VarChar(64)
   workflowCommit                String?              @map("workflow_commit") @db.VarChar(64)
   workflowItems                 Json?                @map("workflow_items")
-  /// The most send-backs the Workflow allowed per Run, 0 to 2 (a CHECK holds the range); null for a
-  /// Run recorded before send-backs existed, which has the default of 2.
+  /// The most send-backs the Workflow allowed per Run, 0 to 2 (a CHECK holds the range); 0 for a
+  /// Workflow Run started before send-backs existed; null for a Run started with an agent.
   workflowSendBacks             Int?                 @map("workflow_send_backs")
   /// The send-backs the Run used since it started or last started its Workflow again (a CHECK
   /// holds 0 to 2): one count for the Run, across every review Phase.

@@ -392,4 +392,51 @@ describe('a Follow-up to a Workflow Run that sent work back', () => {
     expect(run.sendBack).toEqual({ used: 0, limit: 2 });
     expect(run.pendingChanges().fields).toMatchObject({ sendBacksUsed: 0, sendBackReview: null });
   });
+
+  it('starts every Phase at round 1 with no history, as the count starts again', () => {
+    const run = sentBack();
+    step(run, { kind: 'phase', position: 1 }, {}, 'Fixed.');
+    step(run, { kind: 'end' }, { verdict: 'approved', findings: [] }, 'Fine now.');
+    run.reportState(
+      WORKER,
+      { state: 'succeeded', failure: null, delivery: { outcome: 'none' } },
+      AT,
+    );
+    expect(run.phases.map((phase) => phase.rounds.length)).toEqual([1, 1]);
+
+    run.followUp('Try again.', AT, AVAILABLE);
+
+    expect(run.phases.map((phase) => phase.rounds)).toEqual([[], []]);
+    expect(run.pendingChanges().fields.phaseUpdates).toMatchObject({
+      0: { rounds: [] },
+      1: { rounds: [] },
+    });
+  });
+});
+
+describe('the total of Run steps in a send-back round', () => {
+  it('still ends the Run, and sends nothing more back, when the total is reached', () => {
+    const run = workflow(ITEMS, 2, 3);
+    step(run, { kind: 'phase', position: 1 }, {}, 'Built.');
+    step(run, { kind: 'send_back', position: 0 }, changes(), 'Reviewed.');
+    step(run, { kind: 'phase', position: 1 }, {}, 'Fixed.');
+    expect(run.progress.stepCount).toBe(3);
+    run.claimBy(WORKER, AT);
+    run.reportState(WORKER, { state: 'running', failure: null }, AT);
+
+    const outcome = run.reportStep(
+      WORKER,
+      { kind: 'resume', index: 4, result: { outcome: 'done', summary: 'No.' }, ...changes() },
+      WORKING_COPY,
+      [],
+      AT,
+      { kind: 'send_back', position: 0 },
+    );
+
+    expect(outcome).toEqual({ status: 'step_limit' });
+    expect(run.lifecycle.state).toBe('failed');
+    expect(run.lifecycle.failure?.code).toBe('step_limit');
+    expect(run.phasePending).toBe(false);
+    expect(run.sendBacksUsed).toBe(1);
+  });
 });

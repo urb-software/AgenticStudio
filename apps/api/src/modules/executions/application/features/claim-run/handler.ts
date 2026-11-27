@@ -326,8 +326,12 @@ export class ClaimRunHandler {
     const round = run.sendBackClaim;
     // A send-back round's work Phase continues its own session: what the Phase before it said was
     // told long ago, and no Checkpoint comment is read again.
-    const before =
-      position > 0 && round?.returning !== false ? run.phases[position - 1] : undefined;
+    // A review that runs again is told what the work Phase it sent back reported.
+    const back = round?.returning
+      ? this.plans.next(workflow.toData(), position, 'changes_requested', { used: 0 })
+      : undefined;
+    const beforeAt = back?.kind === 'send_back' ? back.position : position - 1;
+    const before = position > 0 && round?.returning !== false ? run.phases[beforeAt] : undefined;
     const comment = round === null ? run.phases[position]!.checkpointComment : null;
     return {
       phase: {

@@ -203,8 +203,8 @@ export async function runSendBackPhase({ call, projectId }) {
   );
 
   // Stop at the Checkpoint right after a review that changed the Working copy: the Working copy
-  // was restored first, and the delivery holds only the work Phase's change.
-  const stopped = await start('Add a file [fake:commit] [fake-review:edits]', 'review-then-look');
+  // was restored first, and the delivery holds only the work Phase's change, described by its summary.
+  const stopped = await start('Add a file [fake:dirty] [fake-review:edits]', 'review-then-look');
   await until(
     () => read(stopped),
     (run) => run.state === 'waiting_for_operator' || FINAL_STATES.includes(run.state),
@@ -216,7 +216,7 @@ export async function runSendBackPhase({ call, projectId }) {
     stoppedRun.state === 'succeeded' &&
       stoppedRun.delivery === 'delivered' &&
       stoppedRun.commits?.length === 1 &&
-      stoppedRun.commits[0].subject === 'Fake change',
+      stoppedRun.commits[0].subject.includes('The fake agent finished the task. (Phase implement)'),
     `the stopped Run is ${stoppedRun.state} with ${JSON.stringify(stoppedRun.commits)}`,
   );
   const diff = await call(`/api/runs/${stopped}/diff?scope=run`);
