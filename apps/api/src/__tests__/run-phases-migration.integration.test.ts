@@ -317,6 +317,9 @@ describe('the migration that gives every Run a Phase (PostgreSQL via Testcontain
           kind: 'work',
           state: expect.stringMatching(/^(pending|running|done|failed)$/),
           summary: null,
+          // Added by the review Phase migration.
+          verdict: null,
+          findings: null,
         },
       ]);
 
