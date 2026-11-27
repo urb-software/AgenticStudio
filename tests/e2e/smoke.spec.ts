@@ -2141,6 +2141,7 @@ test('a Run waiting at a Checkpoint: the card, the Stop confirmation and the Run
     provider: 'claude_code',
     agent: agent('builder'),
     workflowName: 'plan-then-build',
+    reviewNotPassed: false,
     workflow: {
       name: 'plan-then-build',
       commit,
@@ -2154,6 +2155,9 @@ test('a Run waiting at a Checkpoint: the card, the Stop confirmation and the Run
       {
         position: 0,
         itemId: phaseId,
+        kind: 'work',
+        verdict: null,
+        findings: [],
         state: 'done',
         summary: report,
         agent: agent('planner'),
@@ -2162,6 +2166,9 @@ test('a Run waiting at a Checkpoint: the card, the Stop confirmation and the Run
       {
         position: 1,
         itemId: 'build',
+        kind: 'work',
+        verdict: null,
+        findings: [],
         state: 'pending',
         summary: null,
         agent: agent('builder'),
