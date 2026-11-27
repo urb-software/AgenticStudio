@@ -558,6 +558,9 @@ export class AgentWorker {
             if (!(error instanceof DeliveryFailedError)) throw error;
             commitFailure = error;
           });
+      } else if (handsOn) {
+        // A Checkpoint may follow: the operator may then ask for a delivery of what exists.
+        await this.options.deliveries.keep(prepared, result);
       }
       const workingCopy = await this.options.workingCopies.report(prepared, abort.signal);
       const sendStep = () =>

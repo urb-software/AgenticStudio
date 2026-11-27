@@ -309,6 +309,11 @@ export const runPhasePayloadSchema = z.strictObject({
       summary: z.string().max(20_000),
     })
     .optional(),
+  /**
+   * What the operator wrote at the Checkpoint before this Phase, for the first Phase too: untrusted
+   * text, like the Task. Absent when the operator wrote none.
+   */
+  checkpointComment: z.string().min(1).max(20_000).optional(),
 });
 export type RunPhasePayload = z.infer<typeof runPhasePayloadSchema>;
 

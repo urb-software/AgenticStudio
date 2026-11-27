@@ -13,6 +13,7 @@ const LEGAL: [RunState, RunState][] = [
   ['running', 'succeeded'],
   ['running', 'failed'],
   ['waiting_for_operator', 'queued'],
+  ['waiting_for_operator', 'succeeded'],
   ['queued', 'cancelled'],
   ['preparing', 'cancelled'],
   ['running', 'cancelled'],

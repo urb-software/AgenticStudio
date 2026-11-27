@@ -25,7 +25,7 @@ describe('ReportRunStepHandler for a Run started with a Workflow', () => {
   let runId: string;
 
   const plans: WorkflowPlans = {
-    resolve: SEQUENTIAL_PLANS.resolve,
+    ...SEQUENTIAL_PLANS,
     next: (...args) => {
       asked.push(args);
       return SEQUENTIAL_PLANS.next(...args);
@@ -108,7 +108,7 @@ describe('ReportRunStepHandler for a Run started with a Workflow', () => {
       runs,
       { now: () => T0 },
       { forRun: () => Promise.resolve([]) },
-      { resolve, next: plans.next },
+      { ...plans, resolve },
     );
 
     await changed.execute({
@@ -160,7 +160,7 @@ describe('ReportRunStepHandler for a Run started with a Workflow', () => {
       runs,
       { now: () => T0 },
       { forRun: () => Promise.resolve([]) },
-      { resolve: plans.resolve, next },
+      { ...plans, next },
     );
     const plain = await runs.start({
       projectId: '4a3c9d2f-5e6b-4c7d-8e9f-0a1b2c3d4e5f',
@@ -183,5 +183,103 @@ describe('ReportRunStepHandler for a Run started with a Workflow', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect((await runs.findById(plain.id))?.lifecycle.state).toBe('running');
+  });
+});
+
+describe('ReportRunStepHandler for a Workflow with a Checkpoint', () => {
+  const OTHER_WORKER = '7a2d3b5f-0c8e-4d4b-9f32-1e6a7b8c9d0e';
+  let runs: InMemoryRunRepository;
+  let handler: ReportRunStepHandler;
+  let runId: string;
+
+  const report = (index?: number) =>
+    handler.execute({
+      runId,
+      workerId: WORKER,
+      kind: 'start',
+      ...(index === undefined ? {} : { index }),
+      result: { outcome: 'done', summary: 'Planned.', sessionRef: 'session-1' },
+      workingCopy: WORKING_COPY,
+    });
+
+  beforeEach(async () => {
+    runs = new InMemoryRunRepository();
+    handler = new ReportRunStepHandler(
+      runs,
+      { now: () => T0 },
+      { forRun: () => Promise.resolve([]) },
+      SEQUENTIAL_PLANS,
+    );
+    runId = (
+      await runs.start({
+        projectId: PROJECT,
+        provider: 'codex',
+        agent: phaseAgent('builder'),
+        workflow: {
+          record: {
+            ...WORKFLOW_RECORD,
+            items: [
+              { id: 'plan', kind: 'work', agent: 'builder' },
+              { id: 'look', kind: 'checkpoint', text: 'Read the plan.' },
+              { id: 'build', kind: 'work', agent: 'polisher' },
+            ],
+          },
+          phaseAgents: [phaseAgent('builder'), phaseAgent('polisher', 'claude_code')],
+        },
+        task: 'x',
+        startCommit: 'a',
+        remoteUrl: 'https://git.example.test/a.git',
+        limits: LIMITS,
+        integrationBranch: 'dev',
+      })
+    ).id;
+    await runs.claimNext(WORKER, T0);
+    await runs.change(runId, (run) =>
+      run.reportState(WORKER, { state: 'running', failure: null }, T0),
+    );
+  });
+
+  it('stores the result and puts the Run at the Checkpoint in the same change', async () => {
+    await report();
+
+    const run = (await runs.findById(runId))!;
+    expect(run.lifecycle.state).toBe('waiting_for_operator');
+    expect(run.waiting).toEqual({
+      reason: 'checkpoint',
+      checkpoint: { id: 'look', text: 'Read the plan.' },
+    });
+    expect(run).toMatchObject({ currentPhase: 0, phasePending: false });
+    expect(run.phases.map((phase) => [phase.state, phase.summary])).toEqual([
+      ['done', 'Planned.'],
+      ['pending', null],
+    ]);
+    expect(runs.steps.map((step) => step.index)).toEqual([1]);
+  });
+
+  it('does not pass the Checkpoint for an agent: the result, sent again, changes nothing, and no worker gets the Run', async () => {
+    await report(1);
+    await report(1);
+
+    const run = (await runs.findById(runId))!;
+    expect(run.lifecycle.state).toBe('waiting_for_operator');
+    expect(run).toMatchObject({ currentPhase: 0, phasePending: false });
+    expect(await runs.claimNext(WORKER, T0)).toBeNull();
+    expect(await runs.claimNext(OTHER_WORKER, T0)).toBeNull();
+  });
+
+  it('refuses a further result, from the worker that ended the Phase or any other, once the Run waits', async () => {
+    await report(1);
+
+    await expect(report(2)).rejects.toThrow();
+    await expect(
+      handler.execute({
+        runId,
+        workerId: OTHER_WORKER,
+        kind: 'start',
+        result: { outcome: 'done', summary: 'Skipping.' },
+        workingCopy: WORKING_COPY,
+      }),
+    ).rejects.toThrow();
+    expect((await runs.findById(runId))!.waiting?.reason).toBe('checkpoint');
   });
 });

@@ -65,6 +65,11 @@ export interface DeliveryPort {
     signal: AbortSignal,
   ): Promise<void>;
   /**
+   * After a `done` Phase that hands the Working copy on: keeps the agent's result beside it, so a
+   * delivery asked for at a Checkpoint can write the pull request from it. Commits nothing.
+   */
+  keep(prepared: PreparedRun, result: RunStepResult): Promise<void>;
+  /**
    * Pushes the Run branch and opens (or reuses) its draft pull request; `none` when it has no
    * commits beyond the start commit. With a recorded `pullRequestNumber` it delivers to that
    * one only, refused before the push when it is no longer open. Throws {@link DeliveryFailedError}.
@@ -134,18 +139,22 @@ export const NO_WORKING_COPY = 'Working copy no longer exists';
 export class Deliveries implements DeliveryPort {
   constructor(private readonly options: DeliveriesOptions) {}
 
+  async keep(prepared: PreparedRun, result: RunStepResult): Promise<void> {
+    await writeFile(
+      runDirectories(this.options.dataDir, prepared.runId).resultFile,
+      `${JSON.stringify(result)}\n`,
+      { mode: 0o600 },
+    );
+  }
+
   async commit(
     prepared: PreparedRun,
     run: RunPayload,
     result: RunStepResult,
     signal: AbortSignal,
   ): Promise<void> {
-    const { git, dataDir } = this.options;
-    await writeFile(
-      runDirectories(dataDir, prepared.runId).resultFile,
-      `${JSON.stringify(result)}\n`,
-      { mode: 0o600 },
-    );
+    const { git } = this.options;
+    await this.keep(prepared, result);
     const local = this.local(prepared, signal);
     // A merge still open is never committed (`add --all` would mark conflicted files resolved,
     // markers included): the worker completes or aborts it first.

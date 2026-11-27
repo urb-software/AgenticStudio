@@ -26,6 +26,10 @@ import { PrismaMergeApprovalRepository } from './infrastructure/repositories/pri
 import { PrismaRunMergeReviewRepository } from './infrastructure/repositories/prisma-run-merge-review-repository.js';
 import { AnswerRunEndpoint } from './entry-points/http/operator/answer-run/endpoint.js';
 import { AnswerRunHandler } from './application/features/answer-run/handler.js';
+import { ContinueFromCheckpointEndpoint } from './entry-points/http/operator/continue-from-checkpoint/endpoint.js';
+import { ContinueFromCheckpointHandler } from './application/features/continue-from-checkpoint/handler.js';
+import { StopAtCheckpointEndpoint } from './entry-points/http/operator/stop-at-checkpoint/endpoint.js';
+import { StopAtCheckpointHandler } from './application/features/stop-at-checkpoint/handler.js';
 import { CancelLongWaitingRunsHandler } from './application/features/cancel-long-waiting-runs/handler.js';
 import { ClosePullRequestEndpoint } from './entry-points/http/operator/close-pull-request/endpoint.js';
 import { MergeRunEndpoint } from './entry-points/http/operator/merge-run/endpoint.js';
@@ -206,6 +210,8 @@ export class ExecutionsModule {
         CancelRunEndpoint,
         RetryDeliveryEndpoint,
         AnswerRunEndpoint,
+        ContinueFromCheckpointEndpoint,
+        StopAtCheckpointEndpoint,
         ResumeRunEndpoint,
         FollowUpRunEndpoint,
         BringUpToDateEndpoint,
@@ -327,6 +333,8 @@ export class ExecutionsModule {
         CancelLongWaitingRunsHandler,
         RetryDeliveryHandler,
         AnswerRunHandler,
+        ContinueFromCheckpointHandler,
+        StopAtCheckpointHandler,
         ResumeRunHandler,
         FollowUpRunHandler,
         RefreshPullRequestHandler,

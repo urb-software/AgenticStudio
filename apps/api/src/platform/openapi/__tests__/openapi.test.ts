@@ -544,6 +544,31 @@ describe('OpenAPI document', () => {
     expect(JSON.stringify(document)).not.toMatch(/sessionRef/);
   });
 
+  it('documents the Checkpoint routes: both answer the Run, with 404, 409 and 422, and the comment is bounded', () => {
+    const document = createOpenApiDocument(app);
+
+    const proceed = document.paths['/api/runs/{runId}/checkpoint/continue']?.post;
+    const stop = document.paths['/api/runs/{runId}/checkpoint/stop']?.post;
+    expect(proceed?.operationId).toBe('continueRunFromCheckpoint');
+    expect(stop?.operationId).toBe('stopRunAtCheckpoint');
+    for (const route of [proceed, stop]) {
+      expect(Object.keys(route?.responses ?? {})).toEqual(
+        expect.arrayContaining(['202', '404', '409', '422']),
+      );
+      expect(route?.responses['202']).toMatchObject({
+        content: { 'application/json': { schema: { $ref: '#/components/schemas/Run_Output' } } },
+      });
+    }
+    expect(document.components?.schemas?.ContinueFromCheckpointRequest).toMatchObject({
+      properties: { comment: { type: 'string', maxLength: 4000 } },
+      additionalProperties: false,
+    });
+    expect(document.components?.schemas?.RunWaiting_Output).toMatchObject({
+      properties: { reason: { enum: ['question', 'checkpoint'] } },
+      required: ['reason'],
+    });
+  });
+
   it("documents a project's Environment file endpoints, none returning the content", () => {
     const document = createOpenApiDocument(app);
 

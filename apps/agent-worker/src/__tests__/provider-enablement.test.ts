@@ -83,6 +83,7 @@ const workingCopies: WorkingCopyPort = {
 /** Delivery is not what this suite is about (delivery.linux.test.ts). */
 const deliveries: DeliveryPort = {
   commit: async () => undefined,
+  keep: async () => undefined,
   deliver: async () => ({ outcome: 'none' }),
   locate: async () => {
     throw new Error('not used');

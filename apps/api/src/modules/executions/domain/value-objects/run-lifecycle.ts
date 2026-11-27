@@ -24,7 +24,8 @@ export class RunLifecycle {
     queued: ['preparing', 'cancelled', 'timed_out'],
     preparing: ['running', 'failed', 'cancelled', 'timed_out'],
     running: ['waiting_for_operator', 'succeeded', 'failed', 'cancelled', 'timed_out'],
-    waiting_for_operator: ['queued', 'cancelled', 'timed_out'],
+    // `succeeded`: a Run stopped at a Checkpoint before any Phase ran has nothing to deliver.
+    waiting_for_operator: ['queued', 'succeeded', 'cancelled', 'timed_out'],
     succeeded: [],
     failed: [],
     cancelled: [],

@@ -56,6 +56,7 @@ import {
   SKILL_FILE,
   SKILL_NAME,
 } from './agent-phase.mjs';
+import { PLAN_THEN_BUILD_FILE } from './checkpoint-phase.mjs';
 import { COMPOSE, runControllerPhase } from './controller-phase.mjs';
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
@@ -219,6 +220,7 @@ async function createAgentFixtures(root) {
     [`skills/${SKILL_NAME}/SKILL.md`]: SKILL_FILE,
     'agents/helper/AGENT.md': HELPER_FILE,
     'workflows/two-phases/WORKFLOW.md': TWO_PHASES_FILE,
+    'workflows/plan-then-build/WORKFLOW.md': PLAN_THEN_BUILD_FILE,
   });
   return {
     codeUrl: code.url,

@@ -31,6 +31,8 @@ export const EXECUTIONS_PROBLEM_TYPES = {
   stepOutOfOrder: 'urn:agentic-studio:problem:step-out-of-order',
   deliveryNotRetryable: 'urn:agentic-studio:problem:delivery-not-retryable',
   runNotWaiting: 'urn:agentic-studio:problem:run-not-waiting',
+  runNotAtCheckpoint: 'urn:agentic-studio:problem:run-not-at-checkpoint',
+  startSlotTaken: 'urn:agentic-studio:problem:start-slot-taken',
   runNotResumable: 'urn:agentic-studio:problem:run-not-resumable',
   resumeSlotTaken: 'urn:agentic-studio:problem:resume-slot-taken',
   followUpNotAllowed: 'urn:agentic-studio:problem:follow-up-not-allowed',
@@ -358,6 +360,16 @@ export function resumeSlotTaken(detail: string): ProblemException {
   });
 }
 
+export function startSlotTaken(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: EXECUTIONS_PROBLEM_TYPES.startSlotTaken,
+    title: 'Another run of this project is active',
+    detail:
+      'Another run of this project is active, and this Workflow waits for you before its first ' +
+      'Phase, so it needs the place. Start it again when that run has ended.',
+  });
+}
+
 export function runNotFound(): ProblemException {
   return new ProblemException(HttpStatus.NOT_FOUND, {
     type: EXECUTIONS_PROBLEM_TYPES.runNotFound,
@@ -560,5 +572,16 @@ export function runNotWaiting(state: string): ProblemException {
     type: EXECUTIONS_PROBLEM_TYPES.runNotWaiting,
     title: 'Run not waiting for an answer',
     detail: NOT_WAITING_DETAILS[state] ?? 'The run is not waiting for an answer.',
+  });
+}
+
+/** 409 `not_at_checkpoint`: the Run does not wait at a Checkpoint, or not at the one named. */
+export function runNotAtCheckpoint(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: EXECUTIONS_PROBLEM_TYPES.runNotAtCheckpoint,
+    title: 'Run not at a Checkpoint',
+    detail:
+      'The run is not waiting at this Checkpoint: it may have gone on already, or been cancelled.',
+    extensions: { reason: 'not_at_checkpoint' },
   });
 }

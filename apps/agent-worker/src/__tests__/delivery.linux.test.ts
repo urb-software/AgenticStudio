@@ -575,6 +575,48 @@ describe.skipIf(process.platform !== 'linux')('Deliveries', () => {
     expect(stub.created).toHaveLength(1);
   });
 
+  it('delivers, after the operator stopped at a Checkpoint, what a Phase that handed on left', async () => {
+    const run = payload();
+    const prepared = await prepare(run);
+    agentWrites(prepared, { 'pages.ts': 'x\n' });
+    // The Phase handed the Working copy on: nothing was committed, only its result was kept.
+    await deliveries().keep(prepared, DONE);
+    expect(inRepo(prepared, ['status', '--porcelain'])).toContain('pages.ts');
+
+    const delivering = deliveries();
+    const located = await delivering.locate({
+      ...run,
+      kind: 'deliver',
+      runBranch: prepared.runBranch,
+      nextSeq: 1,
+    });
+    await delivering.commit(located.prepared, run, located.result, signal());
+    const delivery = await delivering.deliver(located.prepared, run, located.result, signal());
+
+    expect(located.result).toEqual(DONE);
+    expect(delivery).toMatchObject({ outcome: 'delivered', pullRequest: { number: 1 } });
+    expect(stub.created).toHaveLength(1);
+  });
+
+  it('delivers nothing, and opens no pull request, when the Phases left no change', async () => {
+    const run = payload();
+    const prepared = await prepare(run);
+    await deliveries().keep(prepared, DONE);
+
+    const delivering = deliveries();
+    const located = await delivering.locate({
+      ...run,
+      kind: 'deliver',
+      runBranch: prepared.runBranch,
+      nextSeq: 1,
+    });
+    await delivering.commit(located.prepared, run, located.result, signal());
+    const delivery = await delivering.deliver(located.prepared, run, located.result, signal());
+
+    expect(delivery).toEqual({ outcome: 'none' });
+    expect(stub.created).toEqual([]);
+  });
+
   it('refuses a retry from a Working copy that is not on its Run branch', async () => {
     const run = payload();
     const prepared = await prepare(run);
