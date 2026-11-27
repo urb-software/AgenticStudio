@@ -73,6 +73,9 @@ describe('a Run waiting at a Checkpoint is stored, moved and refused as the cont
     startsAtCheckpoint?: number,
   ): Promise<string> {
     const planner = phaseAgent('planner');
+    const phaseAgents = record.items.flatMap((item) =>
+      item.kind === 'checkpoint' ? [] : [phaseAgent(item.agent)],
+    );
     const run = await runs().add(
       Run.start({
         id: randomUUID(),
@@ -81,7 +84,7 @@ describe('a Run waiting at a Checkpoint is stored, moved and refused as the cont
         agent: planner,
         workflow: {
           record,
-          phaseAgents: [planner, phaseAgent('builder')],
+          phaseAgents,
           ...(startsAtCheckpoint === undefined ? {} : { startsAtCheckpoint }),
         },
         task: Task.of('Add a health check'),
