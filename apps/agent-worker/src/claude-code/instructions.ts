@@ -187,10 +187,8 @@ function untrustedSentence(what: string, marker: string): string {
 }
 
 /**
- * What the Phase before reported and what the operator wrote at a Checkpoint, with the Task, for a
- * Phase of a Workflow Run that has either. The whole block is bounded to
- * {@link PHASE_HAND_OVER_MAX_BYTES}; a cut is noted in it and in `notices`. Empty for a Run started
- * with an agent and for a first Phase after no Checkpoint.
+ * The Task, what the Phase before reported and the operator's note from a Checkpoint, as one block
+ * bounded to {@link PHASE_HAND_OVER_MAX_BYTES} (a cut is noted); empty when there is nothing to add.
  */
 export function handOverSection(
   phase: RunPayload['phase'],

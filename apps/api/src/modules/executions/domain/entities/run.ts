@@ -1264,10 +1264,8 @@ export class Run {
   }
 
   /**
-   * A Phase ended with `done`. The next Phase goes to the queue, in the same Working copy and
-   * with its own session; a Checkpoint makes the Run wait for the operator; the operator's cancel
-   * request ends the Run instead. At the end of the Workflow the Run goes on to its delivery, and
-   * the Phase is done when the Run succeeds.
+   * A Phase ended with `done`: the next Phase is queued, or the Run waits at a Checkpoint, or the
+   * operator's cancel request ends it; at the end of the Workflow the Run goes on to its delivery.
    */
   private endPhase(workerId: string, next: NextStep, summary: string | null, now: Date): void {
     const position = this.currentPhase;
