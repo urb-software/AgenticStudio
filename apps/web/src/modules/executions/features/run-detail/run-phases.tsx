@@ -26,7 +26,9 @@ export function RunPhases({ run }: { run: RunOutput }) {
   return (
     <Card aria-labelledby="run-phases-title">
       <CardHeader>
-        <CardTitle id="run-phases-title">Phases of {workflow.name}</CardTitle>
+        <CardTitle id="run-phases-title" className="break-all">
+          Phases of {workflow.name}
+        </CardTitle>
       </CardHeader>
       <CardContent>
         <ol className="m-0 flex list-none flex-col gap-3 p-0">
