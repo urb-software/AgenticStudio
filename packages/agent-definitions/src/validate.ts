@@ -94,7 +94,7 @@ export type SkillFolderResult =
   { ok: true; definition: SkillDefinition } | { ok: false; problems: SkillProblem[] };
 
 /** What differs between judging an agent folder and a skill folder. */
-interface Kind {
+export interface Kind {
   subject: Subject;
   entryFile: string;
   cliFiles: ReadonlySet<string>;
@@ -105,14 +105,14 @@ interface Kind {
 export type AgentFolderResult =
   { ok: true; definition: AgentDefinition } | { ok: false; problems: Problem[] };
 
-const normalise = (key: string): string =>
+export const normalise = (key: string): string =>
   key.toLowerCase().replaceAll('-', '').replaceAll('_', '');
 const FORBIDDEN = new Set(FORBIDDEN_KEYS.map(normalise));
 const SKILL_FORBIDDEN = new Set([...FORBIDDEN_KEYS, ...SKILL_FORBIDDEN_KEYS].map(normalise));
 const SKILL_KNOWN = new Set<string>(SKILL_KNOWN_KEYS);
 const KNOWN = new Set<string>(KNOWN_KEYS);
 // Controls, NEL and the Unicode line and paragraph separators: no second line, no escape codes.
-const DESCRIPTION_FORBIDDEN = /[\p{Cc}\u0085\u2028\u2029]/u;
+export const DESCRIPTION_FORBIDDEN = /[\p{Cc}\u0085\u2028\u2029]/u;
 const WINDOWS_DRIVE = /^[A-Za-z]:/;
 // eslint-disable-next-line no-control-regex -- control characters are exactly what is refused
 const CONTROL = /[\u0000-\u001f\u007f]/;
@@ -121,7 +121,8 @@ const CONTROL = /[\u0000-\u001f\u007f]/;
 // bidirectional mark), so `.g<ZWNJ>it` is `.git` there.
 const IGNORED_IN_NAMES = /[\u200c-\u200f\u202a-\u202e\u206a-\u206f\ufeff]/g;
 const SHORT_NAME = /^[^.~]{1,6}~\d+(\.[^.]{0,3})?$/i;
-const lower = (names: readonly string[]): Set<string> => new Set(names.map((n) => n.toLowerCase()));
+export const lower = (names: readonly string[]): Set<string> =>
+  new Set(names.map((n) => n.toLowerCase()));
 const CLI_FILES = lower(CLI_DISCOVERED_FILES);
 const SKILL_KIND: Kind = {
   subject: SKILL_SUBJECT,
@@ -183,12 +184,12 @@ function pathProblem(path: string, kind: Kind): PathCode | undefined {
 }
 
 /** The files of a folder, as kept after the path, kind and duplicate checks. */
-interface JudgedEntries {
+export interface JudgedEntries {
   problems: Problem<SharedProblemCode>[];
   fileEntries: AgentEntry[];
 }
 
-function judgeEntries(entries: readonly AgentEntry[], kind: Kind): JudgedEntries {
+export function judgeEntries(entries: readonly AgentEntry[], kind: Kind): JudgedEntries {
   const problem = (
     code: SharedProblemCode,
     path: string,
@@ -285,14 +286,14 @@ export function validateAgentFolder(
   };
 }
 
-type Add = (code: SharedProblemCode, key?: string) => void;
-type ParsedEntry = Extract<ReturnType<typeof parseEntry>, { status: 'ok' }>;
+export type Add = (code: SharedProblemCode, key?: string) => void;
+export type ParsedEntry = Extract<ReturnType<typeof parseEntry>, { status: 'ok' }>;
 
 /**
  * Reads the entry file's text and splits its front matter, or reports why it cannot. An entry
  * file over the size limit is never read: the size problem already says it.
  */
-function readEntry(
+export function readEntry(
   text: string | undefined,
   sizeRefused: boolean,
   add: Add,
@@ -315,7 +316,11 @@ function readEntry(
 }
 
 /** A required key that holds text, or undefined after reporting it missing or of the wrong kind. */
-function requiredText(values: Record<string, unknown>, key: string, add: Add): string | undefined {
+export function requiredText(
+  values: Record<string, unknown>,
+  key: string,
+  add: Add,
+): string | undefined {
   const value = values[key];
   if (value === undefined || value === null) {
     add('key_missing', key);
@@ -421,7 +426,7 @@ function judgeSkillNames(value: unknown, add: (code: ProblemCode, key?: string) 
 }
 
 /** True when the text is missing, is not UTF-8 or holds a NUL: it cannot be judged as text. */
-function unreadable(text: string | undefined): boolean {
+export function unreadable(text: string | undefined): boolean {
   return text === undefined || text.includes('�') || text.includes('\u0000');
 }
 
@@ -467,7 +472,7 @@ export function validateSkillFolder(
 }
 
 /** One line of 1 to `max` characters, with no control character. */
-function oneLine(value: string, max: number): boolean {
+export function oneLine(value: string, max: number): boolean {
   return value.trim() !== '' && value.length <= max && !DESCRIPTION_FORBIDDEN.test(value);
 }
 

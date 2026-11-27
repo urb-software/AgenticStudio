@@ -135,3 +135,47 @@ export const MARKDOWN_FILE = /\.(md|markdown)$/i;
  * and `!`; the `$` forms are refused too, as the start of syntax built from arguments at run time.
  */
 export const SHELL_LINE = /!`|```!|~~~!|```\$|~~~\$|!\$/;
+
+/** The top-level folder holding one folder per workflow: `workflows/<name>/`. */
+export const WORKFLOWS_DIRECTORY = 'workflows';
+
+/** The entry file of a workflow folder, relative to it. */
+export const WORKFLOW_ENTRY_FILE = 'WORKFLOW.md';
+
+/** The keys a workflow's entry file may carry. */
+export const WORKFLOW_KNOWN_KEYS = ['name', 'description', 'send-backs', 'sequence'] as const;
+
+/** The most a Run may send work back after a review; also the default. */
+export const WORKFLOW_DEFAULT_SEND_BACKS = 2;
+
+/** Most items (phases and checkpoints) in one workflow. */
+export const WORKFLOW_MAX_ITEMS = 12;
+
+/** The keys of a work or review phase, and of a checkpoint. */
+export const WORKFLOW_PHASE_KEYS = ['id', 'kind', 'agent', 'instructions'] as const;
+export const WORKFLOW_CHECKPOINT_KEYS = ['id', 'kind', 'text'] as const;
+
+/** Longest extra instructions of one phase, in UTF-8 bytes. */
+export const WORKFLOW_PHASE_INSTRUCTIONS_MAX_BYTES = 8 * 1024;
+
+/** Longest checkpoint text, in characters. */
+export const WORKFLOW_CHECKPOINT_TEXT_MAX_LENGTH = 500;
+
+/**
+ * Keys a workflow must not configure, at the top level or in an item: the agents decide these.
+ * Compared like FORBIDDEN_KEYS, and refused with their own reason.
+ */
+export const WORKFLOW_FORBIDDEN_KEYS = [
+  'model',
+  'provider',
+  'skills',
+  'limits',
+  'max-steps',
+  'step-minutes',
+  'timeout',
+  'command',
+  'commands',
+  'run',
+  'script',
+  'env',
+] as const;

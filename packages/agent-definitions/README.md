@@ -21,6 +21,16 @@ The format of an Agent definition and of a Skill definition, and their validatio
 - The path, kind, size and count rules and the limits are those of an agent folder. `SKILL.md` is allowed only at the folder root; every name of `SKILL_CLI_DISCOVERED_FILES` (those of an agent folder plus `AGENT.md`, any case) anywhere else, and any dot segment, are `cli_config_path`.
 - `shell_line`: a `SKILL.md`, or any other Markdown file (`.md`, `.markdown`), that matches `SHELL_LINE` (also in any decoded front matter value, so a YAML escape cannot hide it) (an inline `!` plus backtick, a fence opened with `!` or `$`, or `!$`) is refused. The caller must read the text of every Markdown file; one without text is `entry_unreadable`. In a skill folder a file with text is measured by it as well as by its declared size.
 
+## Workflow format
+
+- A workflow is the folder `workflows/<name>/` ([ADR 0007](../../docs/architecture/adr/0007-workflows.md)); the only file is `WORKFLOW.md` (any other file is `workflow_extra_file`). Front matter, then an optional Markdown body for the operator (`documentation`: bounded like instructions, never handed to an agent, refused if it holds a `SHELL_LINE`). Path, kind and size rules, `cli_config_path` and dot segments are those of a skill folder.
+- Keys (`WORKFLOW_KNOWN_KEYS`): `name` (agent name pattern, equals the folder name, not reserved), `description` (agent rules), `send-backs` (optional whole number 0 to `WORKFLOW_DEFAULT_SEND_BACKS` = 2, default 2; out of range is `send_backs_out_of_range`) and `sequence` (required list of at most `WORKFLOW_MAX_ITEMS` = 12 items, else `sequence_too_long`).
+- An item is a mapping with `id` (agent name pattern, unique: `item_id_duplicate`) and `kind`: `work` or `review` (then `agent`, required, and `instructions`, optional text of at most 8 KiB, no shell line) or `checkpoint` (then `text`, required, at most 500 characters, no control character but newline). Any other key of an item is `unknown_key`, quoting the item id; a bad item is `item_invalid`.
+- Order rules, each its own reason: `no_phase`, `review_first`, `review_before_work` (the first review has no work before it; not reported again when the review is the first item), `checkpoint_first`, `checkpoint_last`, `checkpoints_adjacent`.
+- Forbidden keys at the top and in items: `FORBIDDEN_KEYS` (`forbidden_key`) and `WORKFLOW_FORBIDDEN_KEYS` (model, provider, skills, limits, Run limits, commands, env: `workflow_forbidden_key`), compared like the others.
+- `checkWorkflowAgents(definition, agents)` is the pure cross-check against the agents at the same commit (`ReadonlyMap<name, { valid }>`): `phase_agent_missing` or `phase_agent_invalid`, naming the phase id and the agent. Provider enablement is not judged here. `WORKFLOW_PROBLEM_CODES` lists every reason; `PROBLEM_CODES` and `SKILL_PROBLEM_CODES` are unchanged.
+- Phase instructions live in the front matter, so the 8 KiB front matter limit bounds them first; the 8 KiB check of an item stays as a second line.
+
 ## Use
 
 ```ts
@@ -29,6 +39,8 @@ const folders = findAgentFolders(repositoryEntries); // agents/<name>/ groups of
 const problems = validateAgentFiles(entries); // the path, kind, duplicate and size rules alone
 const skill = validateSkillFolder(name, entries); // the same shape, for skills/<name>/
 const skills = findSkillFolders(repositoryEntries); // skills/<name>/ groups of a Repository tree
+const workflow = validateWorkflowFolder(name, entries); // the same shape, for workflows/<name>/
+const workflows = findWorkflowFolders(repositoryEntries); // workflows/<name>/ groups of a Repository tree
 ```
 
 `entries` is `{ path, kind, size, content? }[]`, with paths relative to the folder. A refusal always holds at least one problem `{ code, path, key?, message }`. A message quotes at most the offending key or path, never a value or file content. `validateAgentFiles` judges the files without an entry file or a name (the agent worker applies it to the files Studio hands over, which leave `AGENT.md` out).
