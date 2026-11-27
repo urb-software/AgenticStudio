@@ -181,6 +181,8 @@ describe('agents API (PostgreSQL + Redis via Testcontainers)', () => {
           instructions: '',
           files: [],
         }),
+        usedByWorkflows: [],
+        usedByWorkflowsTruncated: false,
       });
     });
 
