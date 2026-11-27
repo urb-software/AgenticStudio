@@ -179,7 +179,7 @@ export function RunCheckpoint({
           <>
             <p className="m-0 text-small text-text-muted">
               Reported by Phase <span className="font-mono text-code break-all">{before.id}</span>{' '}
-              (agent <span className="font-mono text-code break-all">{reported.agent.name}</span>) :
+              (agent <span className="font-mono text-code break-all">{reported.agent.name}</span>):
             </p>
             {/* The agent's text, shown as text: never markup. */}
             <p

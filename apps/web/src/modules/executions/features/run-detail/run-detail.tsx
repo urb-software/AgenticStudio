@@ -11,6 +11,7 @@ import {
   SearchXIcon,
   TriangleAlertIcon,
 } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { type ReactNode, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
@@ -40,7 +41,6 @@ import { NewRunDialog } from '../new-run/new-run-dialog';
 import { RunChanges } from '../run-changes/run-changes';
 import { RunLog, type RunLogHandle } from '../run-log/run-log';
 import { RunMergeReview } from '../run-merge-review/run-merge-review';
-import { RunCheckpoint } from './run-checkpoint';
 import { AnswerQuestion, RunConversation } from './run-conversation';
 import { RunCommits, RunDelivery } from './run-delivery';
 import { RunFollowUp } from './run-follow-up';
@@ -49,6 +49,9 @@ import { RunSkills } from './run-skills';
 import { RunPhases } from './run-phases';
 import { RunPullRequest } from './run-pull-request';
 import { ResumeRun } from './run-resume';
+
+// Only a Run waiting at a Checkpoint shows the card, so it stays out of the first load.
+const RunCheckpoint = dynamic(() => import('./run-checkpoint').then((m) => m.RunCheckpoint));
 
 /** The Run page's tabs: its log and what it changed. */
 const RUN_TABS = [
