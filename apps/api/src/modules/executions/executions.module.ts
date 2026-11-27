@@ -60,6 +60,8 @@ import { GetRunStatesEndpoint } from './entry-points/http/agent-worker/get-run-s
 import { GetRunStatesHandler } from './application/features/get-run-states/handler.js';
 import { ListProvidersEndpoint } from './entry-points/http/operator/list-providers/endpoint.js';
 import { ListProvidersHandler } from './application/features/list-providers/handler.js';
+import { PROVIDER_AVAILABILITIES } from './contracts/index.js';
+import { ListProvidersProviderAvailabilities } from './entry-points/contracts/provider-availabilities.js';
 import { ListProjectRunsEndpoint } from './entry-points/http/operator/list-project-runs/endpoint.js';
 import { ListProjectRunsHandler } from './application/features/list-project-runs/handler.js';
 import { ListRunsEndpoint } from './entry-points/http/operator/list-runs/endpoint.js';
@@ -381,7 +383,9 @@ export class ExecutionsModule {
           } satisfies DailyPullRequestRefreshSettings,
         },
         DailyPullRequestRefreshScheduler,
+        { provide: PROVIDER_AVAILABILITIES, useClass: ListProvidersProviderAvailabilities },
       ],
+      exports: [PROVIDER_AVAILABILITIES],
     };
   }
 }

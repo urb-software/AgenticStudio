@@ -4272,6 +4272,91 @@
           "environments"
         ]
       }
+    },
+    "/api/workflows": {
+      "get": {
+        "description": "The Workflow folders of the definitions Repository at its last fetched commit, each with its problems, whether it is valid and whether it can be chosen now (a phase whose agent uses a Provider that is not available makes a valid Workflow not usable). At most 200 are listed. The Draft is never read.",
+        "operationId": "listWorkflows",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowList_Output"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "workflows"
+        ]
+      }
+    },
+    "/api/workflows/{name}": {
+      "get": {
+        "description": "One Workflow with its phases and checkpoints in order, each phase with its agent, the state of that agent and whether it can be used now, and the send-back limit, read at the last fetched commit of the definitions Repository. A name that is not a valid Workflow name is unknown and reads nothing. The Draft is never read.",
+        "operationId": "getWorkflow",
+        "parameters": [
+          {
+            "name": "name",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowDetail_Output"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown Workflow (urn:agentic-studio:problem:workflow-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "workflows"
+        ]
+      }
     }
   },
   "info": {
@@ -5682,12 +5767,25 @@
           },
           "agent": {
             "$ref": "#/components/schemas/AgentDetailAgent_Output"
+          },
+          "usedByWorkflows": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The workflows at the same commit whose sequence names this agent, valid or not, sorted by name."
+          },
+          "usedByWorkflowsTruncated": {
+            "type": "boolean",
+            "description": "True when workflows beyond those read were not checked: the list may be incomplete."
           }
         },
         "required": [
           "commit",
           "repository",
-          "agent"
+          "agent",
+          "usedByWorkflows",
+          "usedByWorkflowsTruncated"
         ],
         "additionalProperties": false
       },
@@ -9446,6 +9544,424 @@
           "events",
           "final",
           "truncated"
+        ],
+        "additionalProperties": false
+      },
+      "WorkflowsRepository_Output": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "awaiting_key",
+              "awaiting_host_key",
+              "connecting",
+              "ready",
+              "fetching",
+              "failed",
+              "disconnecting"
+            ]
+          },
+          "note": {
+            "description": "Why the Workflows are the last known ones, or none; null when all is well.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "state",
+          "note"
+        ],
+        "additionalProperties": false
+      },
+      "WorkflowSummary_Output": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The name of the Workflow folder, as found; it may not be a valid name."
+          },
+          "description": {
+            "description": "Null for a Workflow whose entry file does not judge.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "valid": {
+            "type": "boolean",
+            "description": "False while the folder, or an agent a phase names, has problems."
+          },
+          "usable": {
+            "type": "boolean",
+            "description": "True when valid and every Provider its phases use is available now."
+          },
+          "notUsableReason": {
+            "description": "Why a valid Workflow cannot be chosen now, naming the phase and the Provider.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "problems": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkflowProblem_Output"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "valid",
+          "usable",
+          "notUsableReason",
+          "problems"
+        ],
+        "additionalProperties": false
+      },
+      "WorkflowProblem_Output": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "entry_missing",
+              "entry_unreadable",
+              "front_matter_missing",
+              "front_matter_malformed",
+              "front_matter_too_large",
+              "key_missing",
+              "key_invalid",
+              "name_invalid",
+              "name_mismatch",
+              "name_reserved",
+              "unknown_key",
+              "forbidden_key",
+              "instructions_too_large",
+              "too_many_files",
+              "file_too_large",
+              "folder_too_large",
+              "path_outside_folder",
+              "nested_git",
+              "symlink_refused",
+              "kind_refused",
+              "duplicate_path",
+              "size_invalid",
+              "cli_config_path",
+              "short_name",
+              "shell_line",
+              "workflow_extra_file",
+              "workflow_forbidden_key",
+              "item_invalid",
+              "item_id_duplicate",
+              "send_backs_out_of_range",
+              "sequence_too_long",
+              "phase_agent_reserved",
+              "no_phase",
+              "review_first",
+              "review_before_work",
+              "checkpoint_first",
+              "checkpoint_last",
+              "checkpoints_adjacent",
+              "phase_agent_missing",
+              "phase_agent_invalid"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "description": "The file or folder the problem is about, relative to the Workflow folder."
+          },
+          "key": {
+            "description": "The front matter key or item id, when the problem is about one; else null.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "Fixed wording per code; never file content."
+          }
+        },
+        "required": [
+          "code",
+          "path",
+          "key",
+          "message"
+        ],
+        "additionalProperties": false
+      },
+      "WorkflowList_Output": {
+        "type": "object",
+        "properties": {
+          "commit": {
+            "description": "The commit of the definitions Repository the Workflows were read at; null when none was.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repository": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowsRepository_Output"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null when no definitions Repository is connected."
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True when more Workflow folders exist than are listed."
+          },
+          "workflows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkflowSummary_Output"
+            }
+          }
+        },
+        "required": [
+          "commit",
+          "repository",
+          "truncated",
+          "workflows"
+        ],
+        "additionalProperties": false
+      },
+      "WorkflowItem_Output": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/WorkflowWorkPhase_Output"
+          },
+          {
+            "$ref": "#/components/schemas/WorkflowReviewPhase_Output"
+          },
+          {
+            "$ref": "#/components/schemas/WorkflowCheckpoint_Output"
+          }
+        ]
+      },
+      "WorkflowWorkPhase_Output": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "work"
+          },
+          "id": {
+            "type": "string",
+            "description": "The phase id, unique within the Workflow."
+          },
+          "agent": {
+            "type": "string",
+            "description": "The name of the agent that does the phase, as written."
+          },
+          "agentState": {
+            "type": "string",
+            "enum": [
+              "valid",
+              "invalid",
+              "missing"
+            ],
+            "description": "Whether the agent exists at the same commit and is valid."
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "claude_code",
+                  "codex"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Provider of the agent; null while the agent is not valid."
+          },
+          "usable": {
+            "type": "boolean",
+            "description": "True when the agent is valid and its Provider is available now."
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "agent",
+          "agentState",
+          "provider",
+          "usable"
+        ],
+        "additionalProperties": false
+      },
+      "WorkflowReviewPhase_Output": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "review"
+          },
+          "id": {
+            "type": "string",
+            "description": "The phase id, unique within the Workflow."
+          },
+          "agent": {
+            "type": "string",
+            "description": "The name of the agent that does the phase, as written."
+          },
+          "agentState": {
+            "type": "string",
+            "enum": [
+              "valid",
+              "invalid",
+              "missing"
+            ],
+            "description": "Whether the agent exists at the same commit and is valid."
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "claude_code",
+                  "codex"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Provider of the agent; null while the agent is not valid."
+          },
+          "usable": {
+            "type": "boolean",
+            "description": "True when the agent is valid and its Provider is available now."
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "agent",
+          "agentState",
+          "provider",
+          "usable"
+        ],
+        "additionalProperties": false
+      },
+      "WorkflowCheckpoint_Output": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "checkpoint"
+          },
+          "id": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string",
+            "description": "Plain text for the operator; it may hold line breaks."
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "WorkflowDetail_Output": {
+        "type": "object",
+        "properties": {
+          "commit": {
+            "description": "The commit of the definitions Repository the Workflows were read at; null when none was.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repository": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowsRepository_Output"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null when no definitions Repository is connected."
+          },
+          "name": {
+            "type": "string",
+            "description": "The name of the Workflow folder, as found; it may not be a valid name."
+          },
+          "description": {
+            "description": "Null for a Workflow whose entry file does not judge.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "valid": {
+            "type": "boolean",
+            "description": "False while the folder, or an agent a phase names, has problems."
+          },
+          "usable": {
+            "type": "boolean",
+            "description": "True when valid and every Provider its phases use is available now."
+          },
+          "notUsableReason": {
+            "description": "Why a valid Workflow cannot be chosen now, naming the phase and the Provider.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "problems": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkflowProblem_Output"
+            }
+          },
+          "sendBacks": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The most times work goes back to a work phase in one Run, the default applied; null for a Workflow whose sequence does not judge."
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkflowItem_Output"
+            },
+            "description": "The phases and checkpoints in order; empty for a Workflow that does not judge."
+          }
+        },
+        "required": [
+          "commit",
+          "repository",
+          "name",
+          "description",
+          "valid",
+          "usable",
+          "notUsableReason",
+          "problems",
+          "sendBacks",
+          "items"
         ],
         "additionalProperties": false
       },

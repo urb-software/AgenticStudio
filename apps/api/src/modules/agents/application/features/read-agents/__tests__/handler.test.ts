@@ -849,4 +849,80 @@ describe('the skills an agent names, when the skills list is cut', () => {
       truncated: true,
     });
   });
+  describe('the workflows that name an agent', () => {
+    const WF = (name: string, agent: string) =>
+      `---\nname: ${name}\ndescription: d\nsequence:\n  - id: a\n    kind: work\n    agent: ${agent}\n---\n`;
+
+    const setup = () =>
+      scripted({
+        tree: listed(
+          file('agents/builder/AGENT.md'),
+          file('workflows/ship/WORKFLOW.md'),
+          file('workflows/other/WORKFLOW.md'),
+        ),
+        files: {
+          'agents/builder/AGENT.md': VALID('builder'),
+          'workflows/ship/WORKFLOW.md': WF('ship', 'builder'),
+          'workflows/other/WORKFLOW.md': WF('other', 'someone'),
+        },
+      });
+
+    it('are named with the agent when asked', async () => {
+      const { handler, fake } = setup();
+
+      const result = await handler.execute({ name: 'builder', workflowUsers: true });
+
+      expect(result.usedByWorkflows).toEqual(['ship']);
+      expect(result.usedByWorkflowsTruncated).toBe(false);
+      expect(fake.listTree).toHaveBeenCalledWith(COMMIT, { directory: 'workflows' });
+    });
+
+    it('are not read unless asked', async () => {
+      const { handler, fake } = setup();
+
+      const result = await handler.execute({ name: 'builder' });
+
+      expect(result.usedByWorkflows).toEqual([]);
+      expect(result.usedByWorkflowsTruncated).toBe(false);
+      expect(fake.listTree).not.toHaveBeenCalledWith(COMMIT, { directory: 'workflows' });
+    });
+
+    it('are not read for a built-in agent or when nothing was read', async () => {
+      const { handler, fake } = setup();
+
+      const builtIn = await handler.execute({ name: 'default-codex', workflowUsers: true });
+
+      expect(builtIn.usedByWorkflows).toEqual([]);
+      expect(fake.listTree).not.toHaveBeenCalledWith(COMMIT, { directory: 'workflows' });
+      const none = scripted({ snapshot: null });
+      await expect(
+        none.handler.execute({ name: 'builder', workflowUsers: true }),
+      ).resolves.toMatchObject({ usedByWorkflows: [], usedByWorkflowsTruncated: false });
+    });
+
+    it('say they may be incomplete when the Clone cannot be read', async () => {
+      const { handler, fake } = setup();
+      fake.readFiles.mockImplementation((_commit: string, paths: readonly string[]) =>
+        Promise.resolve(
+          paths[0]?.startsWith('workflows/')
+            ? { status: 'failed' as const }
+            : {
+                status: 'read' as const,
+                files: paths.map((path) => ({
+                  path,
+                  status: 'found' as const,
+                  text: VALID('builder'),
+                  size: 10,
+                  binary: false,
+                })),
+              },
+        ),
+      );
+
+      const result = await handler.execute({ name: 'builder', workflowUsers: true });
+
+      expect(result.usedByWorkflows).toEqual([]);
+      expect(result.usedByWorkflowsTruncated).toBe(true);
+    });
+  });
 });

@@ -10,7 +10,7 @@ export { agentSkillNames, checkAgentSkills } from './agent-skills.js';
 export type { SkillStanding } from './agent-skills.js';
 export { findAgentFolders, findSkillFolders, findWorkflowFolders } from './find.js';
 export type { AgentFolder, SkillFolder, WorkflowFolder } from './find.js';
-export { checkWorkflowAgents, validateWorkflowFolder } from './workflow.js';
+export { checkWorkflowAgents, validateWorkflowFolder, workflowAgentNames } from './workflow.js';
 export type {
   AgentStanding,
   WorkflowCheckpoint,

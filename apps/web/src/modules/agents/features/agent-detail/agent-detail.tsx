@@ -8,7 +8,7 @@ import { Button } from '@/shared/ui/button';
 import { Skeleton } from '@/shared/ui/skeleton';
 import { ApiError, type AgentSummaryOutput } from '../../../../platform/api';
 import { useAgent } from '../../api/agents-queries';
-import { skillHref } from '../../components/definitions-view';
+import { skillHref, workflowHref } from '../../components/definitions-view';
 import { formatSize } from '../../components/format-size';
 import { Problems } from '../../components/problems';
 import { PlainText } from '../../components/plain-text';
@@ -119,6 +119,29 @@ export function AgentDetail({ agent }: { agent: AgentSummaryOutput }) {
               </li>
             ))}
           </ul>
+        </section>
+      ) : null}
+      {query.data.usedByWorkflows.length > 0 || query.data.usedByWorkflowsTruncated ? (
+        <section aria-label="Workflows that use this agent" className="flex flex-col gap-2">
+          <h3 className="m-0 text-small font-semibold">Used by Workflows</h3>
+          {query.data.usedByWorkflows.length > 0 ? (
+            <ul className="m-0 flex list-none flex-wrap gap-x-4 gap-y-1 p-0 text-small">
+              {query.data.usedByWorkflows.map((workflow) => (
+                <li key={workflow}>
+                  <Link href={workflowHref(workflow)} className="font-mono text-code break-all">
+                    {workflow}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="m-0 text-small text-text-muted">No Workflow names this agent.</p>
+          )}
+          {query.data.usedByWorkflowsTruncated ? (
+            <p className="m-0 text-small text-text-muted">
+              Not every Workflow folder could be checked, so this list may be incomplete.
+            </p>
+          ) : null}
         </section>
       ) : null}
       {detail.files.length > 0 ? (

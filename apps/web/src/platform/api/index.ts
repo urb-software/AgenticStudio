@@ -4,6 +4,8 @@ import * as sdk from './generated';
 import type {
   SkillDetailOutput,
   SkillListOutput,
+  WorkflowDetailOutput,
+  WorkflowListOutput,
   AgentDetailOutput,
   AgentDraftOutput,
   AgentFileOutput,
@@ -73,6 +75,11 @@ import {
 export type {
   SkillDetailOutput,
   SkillListOutput,
+  WorkflowDetailOutput,
+  WorkflowItemOutput,
+  WorkflowListOutput,
+  WorkflowProblemOutput,
+  WorkflowSummaryOutput,
   AgentDraftSkillProblemOutput,
   SkillProblemOutput,
   SkillSummaryOutput,
@@ -302,6 +309,9 @@ export const api = {
   getAgent: (name: string): Promise<AgentDetailOutput> => unwrap(sdk.getAgent({ path: { name } })),
   listSkills: (): Promise<SkillListOutput> => unwrap(sdk.listSkills()),
   getSkill: (name: string): Promise<SkillDetailOutput> => unwrap(sdk.getSkill({ path: { name } })),
+  listWorkflows: (): Promise<WorkflowListOutput> => unwrap(sdk.listWorkflows()),
+  getWorkflow: (name: string): Promise<WorkflowDetailOutput> =>
+    unwrap(sdk.getWorkflow({ path: { name } })),
   listAgentFiles: (): Promise<AgentFilesOutput> => unwrap(sdk.listAgentFiles()),
   getAgentFile: (path: string, commit?: string): Promise<AgentFileOutput> =>
     unwrap(sdk.getAgentFile({ query: { path, commit } })),

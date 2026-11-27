@@ -49,17 +49,21 @@ function routes(controllers: Controller[]): string[] {
 }
 
 describe('route and guard inventory', () => {
-  it('lists every route of projects, agents, executions and environments with its authentication and guards', () => {
+  it('lists every route of projects, agents, workflows, executions and environments with its authentication and guards', () => {
     // Reached through the composition root: nothing outside a module imports its internals.
-    // Only the four business modules are listed; the platform's controllers are not.
+    // Only the five business modules are listed; the platform's controllers are not.
     const modules = (AppModule.register(testConfig()).imports ?? []).filter(
       (entry): entry is DynamicModule =>
         'module' in entry &&
-        ['ProjectsModule', 'AgentsModule', 'ExecutionsModule', 'EnvironmentsModule'].includes(
-          entry.module.name,
-        ),
+        [
+          'ProjectsModule',
+          'AgentsModule',
+          'WorkflowsModule',
+          'ExecutionsModule',
+          'EnvironmentsModule',
+        ].includes(entry.module.name),
     );
-    expect(modules).toHaveLength(4);
+    expect(modules).toHaveLength(5);
     const controllers = modules.flatMap((entry) => entry.controllers ?? []);
     expect(routes(controllers as Controller[])).toMatchInlineSnapshot(`
       [
@@ -104,6 +108,8 @@ describe('route and guard inventory', () => {
         "GET /api/skills/:name [session]",
         "GET /api/worker/runs/:runId/agent-folder [worker-token]",
         "GET /api/worker/runs/:runId/skills [worker-token]",
+        "GET /api/workflows [session]",
+        "GET /api/workflows/:name [session]",
         "POST /api/agents/definitions-repository/draft/files/move [session]",
         "POST /api/agents/definitions-repository/draft/files/revert [session]",
         "POST /api/agents/definitions-repository/draft/publish [session]",

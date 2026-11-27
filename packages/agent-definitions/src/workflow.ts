@@ -1,4 +1,4 @@
-import { utf8Length } from './front-matter.js';
+import { parseEntry, utf8Length } from './front-matter.js';
 import {
   AGENT_NAME_PATTERN,
   DESCRIPTION_MAX_LENGTH,
@@ -377,4 +377,20 @@ export function checkWorkflowAgents(
     );
   }
   return problems;
+}
+
+/**
+ * The agent names the phases of an entry file's front matter list, in order, whether or not the
+ * workflow is otherwise valid; empty when the front matter or `sequence` cannot be read. Pure.
+ */
+export function workflowAgentNames(entryText: string): string[] {
+  const parsed = parseEntry(entryText);
+  if (parsed.status !== 'ok') return [];
+  const sequence = parsed.values['sequence'];
+  if (!Array.isArray(sequence)) return [];
+  return sequence.flatMap((item): string[] =>
+    isRecord(item) && item['kind'] !== 'checkpoint' && typeof item['agent'] === 'string'
+      ? [item['agent']]
+      : [],
+  );
 }

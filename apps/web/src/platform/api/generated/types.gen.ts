@@ -524,6 +524,14 @@ export type AgentDetailOutput = {
      */
     repository: AgentsRepositoryOutput | null;
     agent: AgentDetailAgentOutput;
+    /**
+     * The workflows at the same commit whose sequence names this agent, valid or not, sorted by name.
+     */
+    usedByWorkflows: Array<string>;
+    /**
+     * True when workflows beyond those read were not checked: the list may be incomplete.
+     */
+    usedByWorkflowsTruncated: boolean;
 };
 
 export type RunAgentOptionOutput = {
@@ -1335,6 +1343,169 @@ export type PreviewBuildEventsOutput = {
     next?: number;
     final: boolean;
     truncated: boolean;
+};
+
+export type WorkflowsRepositoryOutput = {
+    state: 'awaiting_key' | 'awaiting_host_key' | 'connecting' | 'ready' | 'fetching' | 'failed' | 'disconnecting';
+    /**
+     * Why the Workflows are the last known ones, or none; null when all is well.
+     */
+    note: string | null;
+};
+
+export type WorkflowSummaryOutput = {
+    /**
+     * The name of the Workflow folder, as found; it may not be a valid name.
+     */
+    name: string;
+    /**
+     * Null for a Workflow whose entry file does not judge.
+     */
+    description: string | null;
+    /**
+     * False while the folder, or an agent a phase names, has problems.
+     */
+    valid: boolean;
+    /**
+     * True when valid and every Provider its phases use is available now.
+     */
+    usable: boolean;
+    /**
+     * Why a valid Workflow cannot be chosen now, naming the phase and the Provider.
+     */
+    notUsableReason: string | null;
+    problems: Array<WorkflowProblemOutput>;
+};
+
+export type WorkflowProblemOutput = {
+    code: 'entry_missing' | 'entry_unreadable' | 'front_matter_missing' | 'front_matter_malformed' | 'front_matter_too_large' | 'key_missing' | 'key_invalid' | 'name_invalid' | 'name_mismatch' | 'name_reserved' | 'unknown_key' | 'forbidden_key' | 'instructions_too_large' | 'too_many_files' | 'file_too_large' | 'folder_too_large' | 'path_outside_folder' | 'nested_git' | 'symlink_refused' | 'kind_refused' | 'duplicate_path' | 'size_invalid' | 'cli_config_path' | 'short_name' | 'shell_line' | 'workflow_extra_file' | 'workflow_forbidden_key' | 'item_invalid' | 'item_id_duplicate' | 'send_backs_out_of_range' | 'sequence_too_long' | 'phase_agent_reserved' | 'no_phase' | 'review_first' | 'review_before_work' | 'checkpoint_first' | 'checkpoint_last' | 'checkpoints_adjacent' | 'phase_agent_missing' | 'phase_agent_invalid';
+    /**
+     * The file or folder the problem is about, relative to the Workflow folder.
+     */
+    path: string;
+    /**
+     * The front matter key or item id, when the problem is about one; else null.
+     */
+    key: string | null;
+    /**
+     * Fixed wording per code; never file content.
+     */
+    message: string;
+};
+
+export type WorkflowListOutput = {
+    /**
+     * The commit of the definitions Repository the Workflows were read at; null when none was.
+     */
+    commit: string | null;
+    /**
+     * Null when no definitions Repository is connected.
+     */
+    repository: WorkflowsRepositoryOutput | null;
+    /**
+     * True when more Workflow folders exist than are listed.
+     */
+    truncated: boolean;
+    workflows: Array<WorkflowSummaryOutput>;
+};
+
+export type WorkflowItemOutput = WorkflowWorkPhaseOutput | WorkflowReviewPhaseOutput | WorkflowCheckpointOutput;
+
+export type WorkflowWorkPhaseOutput = {
+    kind: 'work';
+    /**
+     * The phase id, unique within the Workflow.
+     */
+    id: string;
+    /**
+     * The name of the agent that does the phase, as written.
+     */
+    agent: string;
+    /**
+     * Whether the agent exists at the same commit and is valid.
+     */
+    agentState: 'valid' | 'invalid' | 'missing';
+    /**
+     * The Provider of the agent; null while the agent is not valid.
+     */
+    provider: 'claude_code' | 'codex' | null;
+    /**
+     * True when the agent is valid and its Provider is available now.
+     */
+    usable: boolean;
+};
+
+export type WorkflowReviewPhaseOutput = {
+    kind: 'review';
+    /**
+     * The phase id, unique within the Workflow.
+     */
+    id: string;
+    /**
+     * The name of the agent that does the phase, as written.
+     */
+    agent: string;
+    /**
+     * Whether the agent exists at the same commit and is valid.
+     */
+    agentState: 'valid' | 'invalid' | 'missing';
+    /**
+     * The Provider of the agent; null while the agent is not valid.
+     */
+    provider: 'claude_code' | 'codex' | null;
+    /**
+     * True when the agent is valid and its Provider is available now.
+     */
+    usable: boolean;
+};
+
+export type WorkflowCheckpointOutput = {
+    kind: 'checkpoint';
+    id: string;
+    /**
+     * Plain text for the operator; it may hold line breaks.
+     */
+    text: string;
+};
+
+export type WorkflowDetailOutput = {
+    /**
+     * The commit of the definitions Repository the Workflows were read at; null when none was.
+     */
+    commit: string | null;
+    /**
+     * Null when no definitions Repository is connected.
+     */
+    repository: WorkflowsRepositoryOutput | null;
+    /**
+     * The name of the Workflow folder, as found; it may not be a valid name.
+     */
+    name: string;
+    /**
+     * Null for a Workflow whose entry file does not judge.
+     */
+    description: string | null;
+    /**
+     * False while the folder, or an agent a phase names, has problems.
+     */
+    valid: boolean;
+    /**
+     * True when valid and every Provider its phases use is available now.
+     */
+    usable: boolean;
+    /**
+     * Why a valid Workflow cannot be chosen now, naming the phase and the Provider.
+     */
+    notUsableReason: string | null;
+    problems: Array<WorkflowProblemOutput>;
+    /**
+     * The most times work goes back to a work phase in one Run, the default applied; null for a Workflow whose sequence does not judge.
+     */
+    sendBacks: number | null;
+    /**
+     * The phases and checkpoints in order; empty for a Workflow that does not judge.
+     */
+    items: Array<WorkflowItemOutput>;
 };
 
 export type ProblemDetails = {
@@ -3580,3 +3751,53 @@ export type ListPreviewBuildEventsResponses = {
 };
 
 export type ListPreviewBuildEventsResponse = ListPreviewBuildEventsResponses[keyof ListPreviewBuildEventsResponses];
+
+export type ListWorkflowsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/workflows';
+};
+
+export type ListWorkflowsErrors = {
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type ListWorkflowsError = ListWorkflowsErrors[keyof ListWorkflowsErrors];
+
+export type ListWorkflowsResponses = {
+    200: WorkflowListOutput;
+};
+
+export type ListWorkflowsResponse = ListWorkflowsResponses[keyof ListWorkflowsResponses];
+
+export type GetWorkflowData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/workflows/{name}';
+};
+
+export type GetWorkflowErrors = {
+    /**
+     * Unknown Workflow (urn:agentic-studio:problem:workflow-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type GetWorkflowError = GetWorkflowErrors[keyof GetWorkflowErrors];
+
+export type GetWorkflowResponses = {
+    200: WorkflowDetailOutput;
+};
+
+export type GetWorkflowResponse = GetWorkflowResponses[keyof GetWorkflowResponses];

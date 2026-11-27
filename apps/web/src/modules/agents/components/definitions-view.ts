@@ -17,6 +17,11 @@ export function skillHref(name: string): string {
   return `/agents/skills?${new URLSearchParams({ open: name })}`;
 }
 
+/** The Workflows page with one Workflow open. */
+export function workflowHref(name: string): string {
+  return `/workflows?${new URLSearchParams({ open: name })}`;
+}
+
 /** The Agents page with one definitions agent open. */
 export function agentHref(name: string): string {
   return `/agents?${new URLSearchParams({ open: name })}`;

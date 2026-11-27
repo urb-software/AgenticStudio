@@ -9,6 +9,7 @@ import {
   SKILL_PROBLEM_CODES,
   validateAgentFolder,
   validateWorkflowFolder,
+  workflowAgentNames,
   WORKFLOW_AGENT_CHECK_CODES,
   WORKFLOW_DEFAULT_SEND_BACKS,
   WORKFLOW_ENTRY_FILE,
@@ -405,5 +406,31 @@ describe('checkWorkflowAgents', () => {
       'phase_agent_missing',
     ]);
     for (const code of WORKFLOW_AGENT_CHECK_CODES) expect(WORKFLOW_PROBLEM_CODES).toContain(code);
+  });
+});
+
+describe('workflowAgentNames', () => {
+  const text = (front: string) => workflowFile(front).content as string;
+
+  it('lists the agents of the phases in order, skipping checkpoints, whether or not valid', () => {
+    expect(workflowAgentNames(text(`${HEAD}\n${sequence(WORK, CHECKPOINT, REVIEW)}`))).toEqual([
+      'implementer',
+      'reviewer',
+    ]);
+    expect(workflowAgentNames(text(`${HEAD}\nunknown: 1\n${sequence(REVIEW)}`))).toEqual([
+      'reviewer',
+    ]);
+  });
+
+  it('is empty when the front matter or the sequence cannot be read', () => {
+    expect(workflowAgentNames('no front matter')).toEqual([]);
+    expect(workflowAgentNames('---\nname: [x\n---\n')).toEqual([]);
+    expect(workflowAgentNames(text(HEAD))).toEqual([]);
+    expect(workflowAgentNames(text(`${HEAD}\nsequence: nope`))).toEqual([]);
+  });
+
+  it('ignores an item that names no text agent', () => {
+    const odd = '  - id: x\n    kind: work\n    agent: 5';
+    expect(workflowAgentNames(text(`${HEAD}\n${sequence(odd, WORK)}`))).toEqual(['implementer']);
   });
 });

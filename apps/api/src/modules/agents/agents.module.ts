@@ -30,7 +30,13 @@ import { ReadRunSkillsAgentSkills } from './entry-points/contracts/agent-skills.
 import { GetAgentFileEndpoint } from './entry-points/http/operator/get-agent-file/endpoint.js';
 import { ReadAgentsAgentResolutions } from './entry-points/contracts/agent-resolutions.js';
 import { ListRunAgentsEndpoint } from './entry-points/http/operator/list-run-agents/endpoint.js';
-import { AGENT_FOLDERS, AGENT_RESOLUTION, AGENT_SKILLS } from './contracts/index.js';
+import { ReadAgentsAgentStandings } from './entry-points/contracts/agent-standings.js';
+import {
+  AGENT_FOLDERS,
+  AGENT_RESOLUTION,
+  AGENT_SKILLS,
+  AGENT_STANDINGS,
+} from './contracts/index.js';
 import { AgentDraftDisconnectStep } from './entry-points/disconnect/agent-draft-disconnect-step.js';
 import { RevertAgentDraftFileEndpoint } from './entry-points/http/operator/revert-agent-draft-file/endpoint.js';
 import { DeleteAgentDraftFileEndpoint } from './entry-points/http/operator/delete-agent-draft-file/endpoint.js';
@@ -111,8 +117,9 @@ export class AgentsModule {
         { provide: AGENT_RESOLUTION, useClass: ReadAgentsAgentResolutions },
         { provide: AGENT_FOLDERS, useClass: ReadAgentFolderAgentFolders },
         { provide: AGENT_SKILLS, useClass: ReadRunSkillsAgentSkills },
+        { provide: AGENT_STANDINGS, useClass: ReadAgentsAgentStandings },
       ],
-      exports: [AGENT_RESOLUTION, AGENT_FOLDERS, AGENT_SKILLS],
+      exports: [AGENT_RESOLUTION, AGENT_FOLDERS, AGENT_SKILLS, AGENT_STANDINGS],
     };
   }
 }

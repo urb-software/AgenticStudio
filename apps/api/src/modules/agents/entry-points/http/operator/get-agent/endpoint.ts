@@ -24,13 +24,15 @@ export class GetAgentEndpoint {
   @ZodResponse({ status: 200, type: AgentDetailResponseDto })
   @ApiProblemResponses({ 404: `Unknown agent (${AGENTS_PROBLEM_TYPES.agentNotFound})` })
   async get(@Param('name') name: string) {
-    const result = await this.handler.execute({ name });
+    const result = await this.handler.execute({ name, workflowUsers: true });
     const agent = result.agents[0];
     if (!agent) throw agentNotFound();
     return {
       commit: result.commit,
       repository: toAgentsRepository(result.repository),
       agent: { ...toAgentSummary(agent), instructions: agent.instructions, files: agent.files },
+      usedByWorkflows: result.usedByWorkflows,
+      usedByWorkflowsTruncated: result.usedByWorkflowsTruncated,
     };
   }
 }
