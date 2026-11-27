@@ -29,6 +29,13 @@ export const projectResponseSchema = z
         'The agent a Run offers first, by name; null when none is named. Whether it is usable ' +
           'is judged where agents are read.',
       ),
+    defaultWorkflow: z
+      .string()
+      .nullable()
+      .describe(
+        'The Workflow a Run offers first, by name; null when none is named. At most one of the ' +
+          'default agent and the default Workflow is set.',
+      ),
     createdAt: z.iso.datetime(),
   })
   .meta({ id: 'Project' });
@@ -43,6 +50,7 @@ export function toProjectResponse(project: {
   mergeMethod: MergeMethod;
   kind: ProjectKind;
   defaultAgent: string | null;
+  defaultWorkflow: string | null;
   createdAt: Date;
 }): ProjectResponse {
   return {
@@ -51,6 +59,7 @@ export function toProjectResponse(project: {
     mergeMethod: project.mergeMethod,
     kind: project.kind,
     defaultAgent: project.defaultAgent,
+    defaultWorkflow: project.defaultWorkflow,
     createdAt: project.createdAt.toISOString(),
   };
 }

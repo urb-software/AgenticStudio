@@ -14,6 +14,8 @@ export const EXECUTIONS_PROBLEM_TYPES = {
   providerUnavailable: 'urn:agentic-studio:problem:provider-unavailable',
   agentUnknown: 'urn:agentic-studio:problem:agent-unknown',
   agentNotUsable: 'urn:agentic-studio:problem:agent-not-usable',
+  workflowUnknown: 'urn:agentic-studio:problem:workflow-unknown',
+  workflowNotUsable: 'urn:agentic-studio:problem:workflow-not-usable',
   runNotHeld: 'urn:agentic-studio:problem:run-not-held',
   agentFolderUnavailable: 'urn:agentic-studio:problem:agent-folder-unavailable',
   agentFolderInvalid: 'urn:agentic-studio:problem:agent-folder-invalid',
@@ -401,6 +403,26 @@ export function agentNotUsable(): ProblemException {
     title: 'Agent not usable',
     detail: 'The agent cannot be used: its definition has problems. See the Agents page.',
     extensions: { reason: 'agent_not_usable' },
+  });
+}
+
+/** 409 for a Run start naming a Workflow that no folder has. */
+export function workflowUnknown(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: EXECUTIONS_PROBLEM_TYPES.workflowUnknown,
+    title: 'Workflow unknown',
+    detail: 'No Workflow has this name. Pick one of the Workflows offered for the project.',
+    extensions: { reason: 'workflow_unknown' },
+  });
+}
+
+/** 409 for a Run start naming a Workflow that cannot be used now; `reason` says why. */
+export function workflowNotUsable(reason: string): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: EXECUTIONS_PROBLEM_TYPES.workflowNotUsable,
+    title: 'Workflow not usable',
+    detail: `The Workflow cannot be used: ${reason}`,
+    extensions: { reason: 'workflow_not_usable' },
   });
 }
 

@@ -928,7 +928,7 @@
     },
     "/api/projects/{id}/default-agent": {
       "put": {
-        "description": "Names the agent a Run of the project offers first, or `null` for none. Only the name is checked: whether the agent is usable is judged when the project's run agents are listed, and then the built-in Default agent is preselected instead.",
+        "description": "Names the agent or the Workflow a Run of the project offers first, or `null` for none. Only the name is checked: whether it is usable is judged when the project's run agents are listed, or at the start of a Run.",
         "operationId": "setDefaultAgent",
         "parameters": [
           {
@@ -2020,7 +2020,7 @@
             }
           },
           "409": {
-            "description": "The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: run), or the project's repository is missing or not ready (urn:agentic-studio:problem:repository-not-ready), or the provider is switched off on the agent worker or no agent worker is connected (urn:agentic-studio:problem:provider-unavailable; reason: provider_disabled), or no agent has the name (urn:agentic-studio:problem:agent-unknown; reason: agent_unknown), or its definition has problems (urn:agentic-studio:problem:agent-not-usable; reason: agent_not_usable)",
+            "description": "The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: run), or the project's repository is missing or not ready (urn:agentic-studio:problem:repository-not-ready), or the provider is switched off on the agent worker or no agent worker is connected (urn:agentic-studio:problem:provider-unavailable; reason: provider_disabled), or no agent has the name (urn:agentic-studio:problem:agent-unknown; reason: agent_unknown), or its definition has problems (urn:agentic-studio:problem:agent-not-usable; reason: agent_not_usable), or no Workflow has the name (urn:agentic-studio:problem:workflow-unknown; reason: workflow_unknown), or the Workflow cannot be used, for instance because it has problems or a review Phase or Checkpoint (urn:agentic-studio:problem:workflow-not-usable; reason: workflow_not_usable)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2030,7 +2030,7 @@
             }
           },
           "422": {
-            "description": "Invalid request body (field errors), also for a request naming neither an agent nor a provider, or an agent of another provider than the one named",
+            "description": "Invalid request body (field errors), also for a request naming both an agent and a Workflow, a Workflow with a provider, no choice at all while the project has no default, or an agent of another provider than the one named",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4464,6 +4464,13 @@
               "null"
             ]
           },
+          "defaultWorkflow": {
+            "description": "The Workflow a Run offers first, by name; null when none is named. At most one of the default agent and the default Workflow is set.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
@@ -4476,6 +4483,7 @@
           "mergeMethod",
           "kind",
           "defaultAgent",
+          "defaultWorkflow",
           "createdAt"
         ],
         "additionalProperties": false
@@ -4562,6 +4570,13 @@
               "null"
             ]
           },
+          "defaultWorkflow": {
+            "description": "The Workflow a Run offers first, by name; null when none is named. At most one of the default agent and the default Workflow is set.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
@@ -4584,6 +4599,7 @@
           "mergeMethod",
           "kind",
           "defaultAgent",
+          "defaultWorkflow",
           "createdAt",
           "repository"
         ],
@@ -4763,6 +4779,7 @@
         "type": "object",
         "properties": {
           "agent": {
+            "description": "The agent a Run offers first, by name; null names none.",
             "anyOf": [
               {
                 "type": "string",
@@ -4771,13 +4788,21 @@
               {
                 "type": "null"
               }
-            ],
-            "description": "The agent a Run offers first, by name; null names none."
+            ]
+          },
+          "workflow": {
+            "description": "The Workflow a Run offers first, by name; null names none.",
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
-        "required": [
-          "agent"
-        ],
         "additionalProperties": false
       },
       "DefinitionsRepository_Output": {
@@ -6099,6 +6124,12 @@
             "minLength": 1,
             "maxLength": 64
           },
+          "workflow": {
+            "description": "The Workflow to start with, by name, in place of an agent. With neither an agent, a Workflow nor a provider, the project's default is started.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
           "provider": {
             "description": "Alone, it means the Default agent of this Provider. With an `agent`, it must be the agent's Provider.",
             "type": "string",
@@ -6155,6 +6186,24 @@
             "items": {
               "$ref": "#/components/schemas/RunPhase_Output"
             }
+          },
+          "workflowName": {
+            "description": "The name of the Workflow the Run started with; null for a Run with an agent.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "workflow": {
+            "description": "The Workflow as the Run recorded it; null for a Run started with an agent.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunWorkflow_Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "task": {
             "type": "string"
@@ -6343,6 +6392,7 @@
           "projectId",
           "provider",
           "agent",
+          "workflowName",
           "task",
           "state",
           "startCommit",
@@ -6417,6 +6467,30 @@
             "maximum": 9007199254740991,
             "description": "0 for the first Phase, then 1, 2, … in order."
           },
+          "itemId": {
+            "description": "The Workflow item the Phase came from; null for a Run started with an agent.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "running",
+              "done",
+              "failed"
+            ],
+            "description": "Whether the Phase waits, works, is done or ended without finishing."
+          },
+          "summary": {
+            "description": "What the Phase's last Run step reported, plain text; null before one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "agent": {
             "type": "object",
             "properties": {
@@ -6476,8 +6550,68 @@
         },
         "required": [
           "position",
+          "itemId",
+          "state",
+          "summary",
           "agent",
           "stepsUsed"
+        ],
+        "additionalProperties": false
+      },
+      "RunWorkflow_Output": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "commit": {
+            "type": "string",
+            "description": "The definitions Repository commit the Workflow was read at."
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RunWorkflowItem_Output"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "commit",
+          "items"
+        ],
+        "additionalProperties": false
+      },
+      "RunWorkflowItem_Output": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "work",
+              "review",
+              "checkpoint"
+            ]
+          },
+          "agent": {
+            "description": "The agent a Phase names; absent for a Checkpoint.",
+            "type": "string"
+          },
+          "instructions": {
+            "description": "The Phase's own instructions, when it has any.",
+            "type": "string"
+          },
+          "text": {
+            "description": "What a Checkpoint tells the operator.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind"
         ],
         "additionalProperties": false
       },

@@ -21,5 +21,13 @@ export type RunHandOut =
       pendingUpdate?: { baseCommit: string; pushedCommit?: string };
       bringUpToDate?: { updateBase?: string; updateTip?: string };
     } & HandOutBase)
+  | ({
+      /** The next Phase of a Workflow Run, in the Working copy the Phase before left. */
+      kind: 'next_phase';
+      runBranch: string;
+      /** With a Phase that has a session from an earlier round: continue it with `answer`. */
+      session?: { sessionRef: string; answer: string; reason: ResumeReason };
+      followUpNumber?: number;
+    } & HandOutBase)
   | { kind: 'start' }
   | { kind: 'refused'; failure: RunFailure; as: 'delivery' | 'preparation' };

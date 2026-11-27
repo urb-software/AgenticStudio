@@ -14,6 +14,11 @@ export type { AgentView } from '../../agents-reader.js';
 export interface ReadAgentsInput {
   /** Reads this agent only, wherever it sits among the folders. */
   name?: string;
+  /**
+   * Reads at exactly this commit rather than the last fetched one; `commit` of the result is then
+   * `null` when the Clone cannot be read at it.
+   */
+  atCommit?: string;
   /** Also answers the agents a Run of this Project offers, and the one to preselect. */
   projectId?: string;
   /** With a `name`: also names the workflows at the same commit that list the agent. */
@@ -51,7 +56,7 @@ export class ReadAgentsHandler {
   ) {}
 
   async execute(input: ReadAgentsInput = {}): Promise<ReadAgentsResult> {
-    const read = await this.reader.read(input.name);
+    const read = await this.reader.read(input.name, input.atCommit);
     const result = { ...read, ...(await this.workflowUsers(input, read)) };
     if (input.projectId === undefined) return result;
     return { ...result, forRun: await this.offeredFor(input.projectId, result.agents) };

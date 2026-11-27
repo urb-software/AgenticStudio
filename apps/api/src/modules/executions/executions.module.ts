@@ -181,11 +181,21 @@ export class ExecutionsModule {
     projects: DynamicModule,
     environments: DynamicModule,
     agents: DynamicModule,
+    /** Provides `WORKFLOW_PLANS`; `executions` imports nothing of what implements it. */
+    workflowPlans: DynamicModule,
     options: ExecutionsModuleOptions = {},
   ): DynamicModule {
     return {
       module: ExecutionsModule,
-      imports: [DatabaseModule, AuthModule, SecretsModule, projects, environments, agents],
+      imports: [
+        DatabaseModule,
+        AuthModule,
+        SecretsModule,
+        projects,
+        environments,
+        agents,
+        workflowPlans,
+      ],
       controllers: [
         StartRunEndpoint,
         ListProjectRunsEndpoint,

@@ -21,6 +21,15 @@ export const startRunRequestSchema = z
       .max(RUN_AGENT_NAME_MAX_LENGTH)
       .optional()
       .describe('The agent to start with, by name. Absent: the Default agent of `provider`.'),
+    workflow: z
+      .string()
+      .min(1)
+      .max(RUN_AGENT_NAME_MAX_LENGTH)
+      .optional()
+      .describe(
+        'The Workflow to start with, by name, in place of an agent. With neither an agent, a ' +
+          "Workflow nor a provider, the project's default is started.",
+      ),
     provider: z
       .enum(PROVIDERS)
       .optional()
@@ -29,9 +38,13 @@ export const startRunRequestSchema = z
           "agent's Provider.",
       ),
   })
-  .refine((request) => request.agent !== undefined || request.provider !== undefined, {
-    path: ['agent'],
-    message: 'Name an agent or a provider.',
+  .refine((request) => request.agent === undefined || request.workflow === undefined, {
+    path: ['workflow'],
+    message: 'Name an agent or a Workflow, not both.',
+  })
+  .refine((request) => request.workflow === undefined || request.provider === undefined, {
+    path: ['provider'],
+    message: 'A Workflow names its own providers.',
   })
   .meta({ id: 'StartRunRequest' });
 

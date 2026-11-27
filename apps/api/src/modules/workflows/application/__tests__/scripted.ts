@@ -8,6 +8,8 @@ import type {
   DefinitionsTreeEntry,
   DefinitionsTreeResult,
 } from '../../../projects/contracts/index.js';
+import { DefinitionsWorkflowPlans } from '../../entry-points/contracts/workflow-plans.js';
+import { WorkflowDefinitions } from '../workflow-definitions.js';
 import { WorkflowsReader } from '../workflows-reader.js';
 
 export const COMMIT = 'a'.repeat(40);
@@ -109,6 +111,7 @@ export function scripted(script: Script) {
     definitions,
     standings,
     providers,
-    reader: new WorkflowsReader(definitions, standings, providers),
+    reader: new WorkflowsReader(new WorkflowDefinitions(definitions, standings), providers),
+    plans: new DefinitionsWorkflowPlans(new WorkflowDefinitions(definitions, standings)),
   };
 }

@@ -114,7 +114,7 @@ export const setMergeMethod = <ThrowOnError extends boolean = false>(options: Op
 });
 
 /**
- * Names the agent a Run of the project offers first, or `null` for none. Only the name is checked: whether the agent is usable is judged when the project's run agents are listed, and then the built-in Default agent is preselected instead.
+ * Names the agent or the Workflow a Run of the project offers first, or `null` for none. Only the name is checked: whether it is usable is judged when the project's run agents are listed, or at the start of a Run.
  */
 export const setDefaultAgent = <ThrowOnError extends boolean = false>(options: Options<SetDefaultAgentData, ThrowOnError>): RequestResult<SetDefaultAgentResponses, SetDefaultAgentErrors, ThrowOnError> => (options.client ?? client).put<SetDefaultAgentResponses, SetDefaultAgentErrors, ThrowOnError>({
     url: '/api/projects/{id}/default-agent',

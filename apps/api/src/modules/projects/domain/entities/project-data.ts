@@ -11,5 +11,7 @@ export interface ProjectData {
   readonly kind: ProjectKind;
   /** The agent a Run of the Project offers first; `null` when none is named. */
   readonly defaultAgent: string | null;
+  /** The Workflow a Run offers first; exclusive with `defaultAgent`; absent means none. */
+  readonly defaultWorkflow?: string | null;
   readonly createdAt: Date;
 }

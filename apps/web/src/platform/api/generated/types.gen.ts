@@ -39,6 +39,10 @@ export type ProjectOutput = {
      * The agent a Run offers first, by name; null when none is named. Whether it is usable is judged where agents are read.
      */
     defaultAgent: string | null;
+    /**
+     * The Workflow a Run offers first, by name; null when none is named. At most one of the default agent and the default Workflow is set.
+     */
+    defaultWorkflow: string | null;
     createdAt: string;
 };
 
@@ -72,6 +76,10 @@ export type ProjectDetailOutput = {
      * The agent a Run offers first, by name; null when none is named. Whether it is usable is judged where agents are read.
      */
     defaultAgent: string | null;
+    /**
+     * The Workflow a Run offers first, by name; null when none is named. At most one of the default agent and the default Workflow is set.
+     */
+    defaultWorkflow: string | null;
     createdAt: string;
     repository: RepositorySummaryOutput | null;
 };
@@ -136,7 +144,11 @@ export type SetDefaultAgentRequest = {
     /**
      * The agent a Run offers first, by name; null names none.
      */
-    agent: string | null;
+    agent?: string | null;
+    /**
+     * The Workflow a Run offers first, by name; null names none.
+     */
+    workflow?: string | null;
 };
 
 export type DefinitionsRepositoryOutput = {
@@ -661,6 +673,10 @@ export type StartRunRequest = {
      */
     agent?: string;
     /**
+     * The Workflow to start with, by name, in place of an agent. With neither an agent, a Workflow nor a provider, the project's default is started.
+     */
+    workflow?: string;
+    /**
      * Alone, it means the Default agent of this Provider. With an `agent`, it must be the agent's Provider.
      */
     provider?: 'claude_code' | 'codex';
@@ -676,6 +692,14 @@ export type RunOutput = {
     provider: 'claude_code' | 'codex';
     agent: RunAgentOutput;
     phases?: Array<RunPhaseOutput>;
+    /**
+     * The name of the Workflow the Run started with; null for a Run with an agent.
+     */
+    workflowName: string | null;
+    /**
+     * The Workflow as the Run recorded it; null for a Run started with an agent.
+     */
+    workflow?: RunWorkflowOutput | null;
     task: string;
     state: 'queued' | 'preparing' | 'running' | 'waiting_for_operator' | 'succeeded' | 'failed' | 'cancelled' | 'timed_out';
     startCommit: string;
@@ -746,6 +770,18 @@ export type RunPhaseOutput = {
      * 0 for the first Phase, then 1, 2, … in order.
      */
     position: number;
+    /**
+     * The Workflow item the Phase came from; null for a Run started with an agent.
+     */
+    itemId: string | null;
+    /**
+     * Whether the Phase waits, works, is done or ended without finishing.
+     */
+    state: 'pending' | 'running' | 'done' | 'failed';
+    /**
+     * What the Phase's last Run step reported, plain text; null before one.
+     */
+    summary: string | null;
     agent: {
         name: string;
         /**
@@ -770,6 +806,32 @@ export type RunPhaseOutput = {
      * The Run steps taken in the Phase.
      */
     stepsUsed: number;
+};
+
+export type RunWorkflowOutput = {
+    name: string;
+    /**
+     * The definitions Repository commit the Workflow was read at.
+     */
+    commit: string;
+    items: Array<RunWorkflowItemOutput>;
+};
+
+export type RunWorkflowItemOutput = {
+    id: string;
+    kind: 'work' | 'review' | 'checkpoint';
+    /**
+     * The agent a Phase names; absent for a Checkpoint.
+     */
+    agent?: string;
+    /**
+     * The Phase's own instructions, when it has any.
+     */
+    instructions?: string;
+    /**
+     * What a Checkpoint tells the operator.
+     */
+    text?: string;
 };
 
 export type RunLimitsOutput = {
@@ -2608,11 +2670,11 @@ export type StartRunErrors = {
      */
     404: ProblemDetails;
     /**
-     * The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: run), or the project's repository is missing or not ready (urn:agentic-studio:problem:repository-not-ready), or the provider is switched off on the agent worker or no agent worker is connected (urn:agentic-studio:problem:provider-unavailable; reason: provider_disabled), or no agent has the name (urn:agentic-studio:problem:agent-unknown; reason: agent_unknown), or its definition has problems (urn:agentic-studio:problem:agent-not-usable; reason: agent_not_usable)
+     * The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: run), or the project's repository is missing or not ready (urn:agentic-studio:problem:repository-not-ready), or the provider is switched off on the agent worker or no agent worker is connected (urn:agentic-studio:problem:provider-unavailable; reason: provider_disabled), or no agent has the name (urn:agentic-studio:problem:agent-unknown; reason: agent_unknown), or its definition has problems (urn:agentic-studio:problem:agent-not-usable; reason: agent_not_usable), or no Workflow has the name (urn:agentic-studio:problem:workflow-unknown; reason: workflow_unknown), or the Workflow cannot be used, for instance because it has problems or a review Phase or Checkpoint (urn:agentic-studio:problem:workflow-not-usable; reason: workflow_not_usable)
      */
     409: ProblemDetails;
     /**
-     * Invalid request body (field errors), also for a request naming neither an agent nor a provider, or an agent of another provider than the one named
+     * Invalid request body (field errors), also for a request naming both an agent and a Workflow, a Workflow with a provider, no choice at all while the project has no default, or an agent of another provider than the one named
      */
     422: ProblemDetails;
     /**

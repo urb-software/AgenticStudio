@@ -9,6 +9,7 @@ import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { LogRedaction } from '../../../domain/value-objects/log-redaction.js';
 import { RUN_SECRET_VALUES, type RunSecretValues } from '../../ports/run-secret-values.js';
+import { WORKFLOW_PLANS, type WorkflowPlans } from '../../../contracts/index.js';
 
 export interface ReportRunStepInput {
   runId: string;
@@ -34,9 +35,9 @@ export interface ReportRunStepResult {
 }
 
 /**
- * Free text is redacted before storing, never enum fields or the session reference; a re-sent step
- * number is acknowledged. Throws {@link RunNotFoundError}, `RunNotHeldError`,
- * `StepLimitReachedError` or `StepOutOfOrderError`.
+ * Free text is redacted before storing, never the session reference; a re-sent step number is
+ * acknowledged. Moves a Workflow Run to the next Phase its Workflow names. Throws
+ * {@link RunNotFoundError}, `RunNotHeldError`, `StepLimitReachedError` or `StepOutOfOrderError`.
  */
 @Injectable()
 export class ReportRunStepHandler {
@@ -44,6 +45,7 @@ export class ReportRunStepHandler {
     @Inject(RUN_REPOSITORY) private readonly runs: RunRepository,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(RUN_SECRET_VALUES) private readonly secrets: RunSecretValues,
+    @Inject(WORKFLOW_PLANS) private readonly plans: WorkflowPlans,
   ) {}
 
   async execute(input: ReportRunStepInput): Promise<ReportRunStepResult> {
@@ -70,6 +72,11 @@ export class ReportRunStepHandler {
         redaction.workingCopy(input.workingCopy),
         failingChecks(result),
         this.clock.now(),
+        // Decided in the same transaction that stores the result, from the plan the Run recorded;
+        // a Run started with an agent never asks.
+        run.workflow !== null && input.result.outcome === 'done'
+          ? this.plans.next(run.workflow.toData(), run.currentPhase, 'done')
+          : undefined,
       );
     });
     if (!saved || !outcome) throw new RunNotFoundError();

@@ -123,6 +123,7 @@ export const PROJECT: ProjectOutput = {
   mergeMethod: 'squash',
   kind: 'code',
   defaultAgent: null,
+  defaultWorkflow: null,
   createdAt: '2026-11-12T09:00:00.000Z',
 };
 
@@ -186,6 +187,7 @@ export function aRun(overrides: Partial<RunOutput> = {}): RunOutput {
       skills: [],
       instructions: '',
     },
+    workflowName: null,
     task,
     state: 'queued',
     startCommit: SHA,

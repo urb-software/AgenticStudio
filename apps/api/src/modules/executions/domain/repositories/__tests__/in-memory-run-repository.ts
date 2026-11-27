@@ -30,6 +30,7 @@ import { EnvironmentFileSnapshotRule } from '../../value-objects/environment-fil
 import { PullRequestRefreshRule } from '../../value-objects/pull-request-refresh-rule.js';
 import { RetentionPolicy } from '../../value-objects/retention-policy.js';
 import type { RunAgentData } from '../../value-objects/run-agent.js';
+import type { RunWorkflowData } from '../../value-objects/run-workflow.js';
 import { Task } from '../../value-objects/task.js';
 import type { PreparedFollowUp } from '../../entities/prepared-follow-up.js';
 import type { ReviewComments } from '../../entities/review-comments.js';
@@ -59,6 +60,8 @@ export interface StartedRun {
   provider: Provider;
   /** The built-in Default agent of `provider` when absent. */
   agent?: RunAgentData;
+  /** A Run of a Workflow: its record and the agent of each Phase; `agent` is the first one. */
+  workflow?: { record: RunWorkflowData; phaseAgents: readonly RunAgentData[] };
   task: string;
   startCommit: string;
   remoteUrl: string;
@@ -99,7 +102,7 @@ export const defaultAgentOf = (provider: Provider): RunAgentData => ({
 
 const isClaimed = (state: RunState) => (CLAIMED_RUN_STATES as readonly RunState[]).includes(state);
 const queuedToResume = (run: RestoreData<typeof Run>) =>
-  run.state === 'queued' && run.sessionRef !== null;
+  run.state === 'queued' && (run.sessionRef !== null || run.phasePending === true);
 
 /** In-memory {@link RunRepository} for handler tests, following the database adapter's rules. */
 export class InMemoryRunRepository implements RunRepository {
@@ -113,6 +116,10 @@ export class InMemoryRunRepository implements RunRepository {
       projectId: run.projectId,
       provider: run.provider,
       agent: run.agent.toData(),
+      phases: run.phases.map((phase) => structuredClone(phase)),
+      currentPhase: run.currentPhase,
+      workflow: run.workflow === null ? null : run.workflow.toData(),
+      phasePending: false,
       task: run.task,
       startCommit: run.startCommit,
       remoteUrl: run.remoteUrl,
@@ -314,7 +321,21 @@ export class InMemoryRunRepository implements RunRepository {
   private apply(stored: StoredRun, run: Run): void {
     const runId = stored.id;
     const changes = run.pendingChanges();
-    Object.assign(stored, structuredClone(changes.fields));
+    const { phaseUpdates, ...fields } = structuredClone(changes.fields);
+    Object.assign(stored, fields);
+    // The Phase the Run moved to carries its session; the one it left keeps the one it reported.
+    const phases = stored.phases ?? [];
+    stored.phases = phases.map((phase) => ({
+      ...phase,
+      ...phaseUpdates?.[phase.position],
+    }));
+    stored.agent = run.agent.toData();
+    const current = run.currentPhaseView;
+    stored.phases = stored.phases.map((phase) =>
+      phase.position === current.position
+        ? { ...phase, sessionRef: current.sessionRef, agent: current.agent }
+        : phase,
+    );
     const entry = stored.messages.findLast((message) => message.kind === 'follow_up');
     if (changes.followUpEntry && entry?.kind === 'follow_up') {
       Object.assign(entry, structuredClone(changes.followUpEntry));

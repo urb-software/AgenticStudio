@@ -26,9 +26,9 @@ export class SetDefaultAgentEndpoint {
   @ApiOperation({
     operationId: 'setDefaultAgent',
     description:
-      'Names the agent a Run of the project offers first, or `null` for none. Only the name ' +
-      "is checked: whether the agent is usable is judged when the project's run agents are " +
-      'listed, and then the built-in Default agent is preselected instead.',
+      'Names the agent or the Workflow a Run of the project offers first, or `null` for none. ' +
+      "Only the name is checked: whether it is usable is judged when the project's run agents " +
+      'are listed, or at the start of a Run.',
   })
   @ZodResponse({ status: 200, type: ProjectResponseDto })
   @ApiProblemResponses({
@@ -37,7 +37,9 @@ export class SetDefaultAgentEndpoint {
   })
   async set(@Param('id') id: string, @Body() body: SetDefaultAgentRequestDto) {
     try {
-      return toProjectResponse(await this.handler.execute({ projectId: id, agent: body.agent }));
+      return toProjectResponse(
+        await this.handler.execute({ projectId: id, agent: body.agent, workflow: body.workflow }),
+      );
     } catch (error) {
       if (error instanceof ProjectNotFoundError) throw projectNotFound();
       if (error instanceof DefinitionsProjectError) throw definitionsProjectDefaultAgent();

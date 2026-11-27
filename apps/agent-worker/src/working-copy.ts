@@ -237,7 +237,7 @@ export class WorkingCopies implements WorkingCopyPort {
   async locate(run: RunPayload, signal?: AbortSignal): Promise<PreparedRun> {
     // The Run branch and start commit come from Studio, never from `run.json`, which the agent
     // could rewrite.
-    if (run.kind !== 'resume' || run.runBranch === undefined) {
+    if ((run.kind !== 'resume' && run.kind !== 'next_phase') || run.runBranch === undefined) {
       throw new PreparationFailedError('Studio sent no recorded Run branch for this resume.');
     }
     const paths = runDirectories(this.options.dataDir, run.runId);

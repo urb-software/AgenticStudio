@@ -22,6 +22,7 @@ const PROJECT: ProjectOutput = {
   mergeMethod: 'squash',
   kind: 'code',
   defaultAgent: null,
+  defaultWorkflow: null,
   createdAt: '2026-11-12T09:00:00.000Z',
 };
 const URL = 'https://github.com/acme/shop.git';

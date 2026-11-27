@@ -46,9 +46,13 @@ const run = {
     instructions: '',
     skills: [] as string[],
   },
+  workflow: null,
   phases: [
     {
       position: 0,
+      itemId: null,
+      state: 'running' as const,
+      summary: null,
       agent: {
         name: 'default-codex',
         source: 'built_in' as const,
@@ -183,6 +187,9 @@ describe('Run response: Phases', () => {
     expect(phases).toEqual([
       {
         position: 0,
+        itemId: null,
+        state: 'running',
+        summary: null,
         agent: {
           name: 'default-codex',
           source: 'built_in',
@@ -196,8 +203,30 @@ describe('Run response: Phases', () => {
     ]);
   });
 
-  it('leaves the Phases out of a list of Runs', () => {
+  it('leaves the Phases and the recorded Workflow out of a list of Runs', () => {
     expect(toRunListItem(run)).not.toHaveProperty('phases');
+    expect(toRunListItem(run)).not.toHaveProperty('workflow');
+  });
+
+  it('names the Workflow a Run started with, with its items in a single Run', () => {
+    const items = [
+      { id: 'build', kind: 'work' as const, agent: 'builder', instructions: 'Keep it small.' },
+      { id: 'look', kind: 'checkpoint' as const, text: 'Look at it.' },
+    ];
+    const flow = { name: 'flow', commit: 'c'.repeat(40), items };
+
+    const single = runResponseSchema.parse(toRunResponse({ ...run, workflow: flow }));
+
+    expect(single.workflowName).toBe('flow');
+    expect(single.workflow).toEqual(flow);
+    expect(toRunListItem({ ...run, workflow: flow })).toMatchObject({ workflowName: 'flow' });
+  });
+
+  it('has no Workflow for a Run started with an agent', () => {
+    expect(runResponseSchema.parse(toRunResponse(run))).toMatchObject({
+      workflowName: null,
+      workflow: null,
+    });
   });
 });
 

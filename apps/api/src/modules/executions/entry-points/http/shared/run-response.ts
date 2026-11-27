@@ -132,9 +132,40 @@ export const runAgentResponseSchema = z
   })
   .meta({ id: 'RunAgent' });
 
+export const runPhaseStateSchema = z
+  .enum(['pending', 'running', 'done', 'failed'])
+  .describe('Whether the Phase waits, works, is done or ended without finishing.');
+
+export const runWorkflowItemResponseSchema = z
+  .object({
+    id: z.string(),
+    kind: z.enum(['work', 'review', 'checkpoint']),
+    agent: z.string().optional().describe('The agent a Phase names; absent for a Checkpoint.'),
+    instructions: z.string().optional().describe("The Phase's own instructions, when it has any."),
+    text: z.string().optional().describe('What a Checkpoint tells the operator.'),
+  })
+  .meta({ id: 'RunWorkflowItem' });
+
+export const runWorkflowResponseSchema = z
+  .object({
+    name: z.string(),
+    commit: z.string().describe('The definitions Repository commit the Workflow was read at.'),
+    items: z.array(runWorkflowItemResponseSchema),
+  })
+  .meta({ id: 'RunWorkflow' });
+
 export const runPhaseResponseSchema = z
   .object({
     position: z.int().min(0).describe('0 for the first Phase, then 1, 2, … in order.'),
+    itemId: z
+      .string()
+      .nullable()
+      .describe('The Workflow item the Phase came from; null for a Run started with an agent.'),
+    state: runPhaseStateSchema,
+    summary: z
+      .string()
+      .nullable()
+      .describe("What the Phase's last Run step reported, plain text; null before one."),
     agent: runAgentResponseSchema.omit({ instructions: true }),
     stepsUsed: z.int().min(0).describe('The Run steps taken in the Phase.'),
   })
@@ -148,6 +179,15 @@ export const runResponseSchema = z
     agent: runAgentResponseSchema,
     /** Single-Run answers only; a Run started with an agent has one Phase. */
     phases: z.array(runPhaseResponseSchema).optional(),
+    workflowName: z
+      .string()
+      .nullable()
+      .describe('The name of the Workflow the Run started with; null for a Run with an agent.'),
+    /** Single-Run answers only. */
+    workflow: runWorkflowResponseSchema
+      .nullable()
+      .optional()
+      .describe('The Workflow as the Run recorded it; null for a Run started with an agent.'),
     task: z.string(),
     state: runStateSchema,
     startCommit: z.string(),
@@ -275,8 +315,19 @@ export function toRunResponse(
       instructions: string;
       skills: readonly string[];
     };
+    workflow: {
+      name: string;
+      commit: string;
+      items: readonly (
+        | { id: string; kind: 'work' | 'review'; agent: string; instructions?: string }
+        | { id: string; kind: 'checkpoint'; text: string }
+      )[];
+    } | null;
     phases: readonly {
       position: number;
+      itemId: string | null;
+      state: z.infer<typeof runPhaseStateSchema>;
+      summary: string | null;
       agent: {
         name: string;
         source: 'built_in' | 'definitions';
@@ -390,8 +441,20 @@ export function toRunResponse(
       skills: [...run.agent.skills],
       instructions: run.agent.instructions,
     },
+    workflowName: run.workflow?.name ?? null,
+    workflow:
+      run.workflow === null
+        ? null
+        : {
+            name: run.workflow.name,
+            commit: run.workflow.commit,
+            items: run.workflow.items.map((item) => ({ ...item })),
+          },
     phases: run.phases.map((phase) => ({
       position: phase.position,
+      itemId: phase.itemId,
+      state: phase.state,
+      summary: phase.summary,
       agent: {
         name: phase.agent.name,
         source: phase.agent.source,
@@ -607,10 +670,17 @@ function preparationResponse(status: Parameters<typeof toRunResponse>[0]['pullRe
 }
 
 export function toRunListItem(run: Parameters<typeof toRunResponse>[0]): RunResponse {
-  const { messages: _messages, question: _question, phases: _phases, ...item } = toRunResponse(run);
+  const {
+    messages: _messages,
+    question: _question,
+    phases: _phases,
+    workflow: _workflow,
+    ...item
+  } = toRunResponse(run);
   void _messages;
   void _question;
   void _phases;
+  void _workflow;
   const { instructions: _instructions, ...agent } = item.agent;
   void _instructions;
   return { ...item, agent };

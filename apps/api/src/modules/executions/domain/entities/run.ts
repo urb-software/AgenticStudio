@@ -34,10 +34,10 @@ import type { EnvironmentFileSnapshotFacts } from '../value-objects/environment-
 import type { LimitedRunFacts } from '../value-objects/limited-run-facts.js';
 import type { PullRequestRefreshFacts } from '../value-objects/pull-request-refresh-facts.js';
 import type { RunSweepFacts } from '../value-objects/run-sweep-facts.js';
-import type { RunChanges } from './run-change-facts.js';
+import type { RunChanges, RunFieldChanges } from './run-change-facts.js';
 import type { RunStartInput } from './run-start-facts.js';
 import type { RunStateReport } from './run-report-facts.js';
-import type { RunStepOutcome, RunStepRecord } from './run-step-facts.js';
+import type { PhaseNext, RunStepOutcome, RunStepRecord } from './run-step-facts.js';
 import { RunLifecycle } from '../value-objects/run-lifecycle.js';
 import { RunProgress } from '../value-objects/run-progress.js';
 import { RunPullRequestStatus } from '../value-objects/run-pull-request-status.js';
@@ -55,7 +55,9 @@ import { Lease } from '../value-objects/lease.js';
 import { WorkerPresence } from '../value-objects/worker-presence.js';
 import type { LookupKind } from '../value-objects/lookup-kind.js';
 import { RunAgent } from '../value-objects/run-agent.js';
-import type { RunPhaseData } from '../value-objects/run-phase.js';
+import type { RunPhaseState } from '../value-objects/run-phase.js';
+import type { RunPhaseView } from '../value-objects/run-phase-view.js';
+import { RunWorkflow } from '../value-objects/run-workflow.js';
 import { RunStep } from './run-step.js';
 
 type RunPatch = Partial<
@@ -67,6 +69,9 @@ type RunPatch = Partial<
     | 'provider'
     | 'agent'
     | 'phases'
+    | 'currentPhase'
+    | 'workflow'
+    | 'phasePending'
     | 'task'
     | 'startCommit'
     | 'remoteUrl'
@@ -97,7 +102,10 @@ const WORKING_COPY_REMOVED = RunFailure.of(
 );
 
 const CHANGES = new WeakMap<Run, RunChanges>();
-const PHASES = new WeakMap<Run, readonly RunPhaseData[]>();
+const PHASES = new WeakMap<Run, readonly RunPhaseView[]>();
+
+/** The state a Run's end gives the Phase it was working on. */
+const FAILED_END_STATES: readonly RunState[] = ['failed', 'cancelled', 'timed_out'];
 
 /**
  * The store saves {@link Run.pendingChanges} in one transaction under the
@@ -107,8 +115,14 @@ export class Run {
   declare readonly id: RunData['id'];
   declare readonly projectId: RunData['projectId'];
   declare readonly provider: RunData['provider'];
+  /** The agent of the current Phase. */
   declare readonly agent: RunAgent;
-  declare private readonly storedPhases: readonly RunPhaseData[];
+  /** What the Run recorded of its Workflow; `null` for a Run started with an agent. */
+  declare readonly workflow: RunWorkflow | null;
+  /** The position of the current Phase. */
+  declare readonly currentPhase: number;
+  /** A Workflow Run between two Phases: queued, it holds its place until its worker claims it. */
+  declare readonly phasePending: boolean;
   declare readonly task: RunData['task'];
   declare readonly startCommit: RunData['startCommit'];
   /** Never a credential. */
@@ -132,6 +146,9 @@ export class Run {
       projectId: data.projectId,
       provider: data.provider,
       agent: RunAgent.restore(data.agent),
+      workflow: data.workflow == null ? null : RunWorkflow.restore(data.workflow),
+      currentPhase: data.currentPhase ?? 0,
+      phasePending: data.phasePending ?? false,
       task: data.task,
       startCommit: data.startCommit,
       remoteUrl: data.remoteUrl,
@@ -152,43 +169,103 @@ export class Run {
     PHASES.set(this, Run.checkedPhases(data));
   }
 
-  private static checkedPhases(data: RunData): readonly RunPhaseData[] {
+  private static checkedPhases(data: RunData): readonly RunPhaseView[] {
     const phases = data.phases ?? [{ position: 0, agent: data.agent, stepsUsed: data.stepCount }];
-    const current = phases.at(-1);
+    const current = phases[data.currentPhase ?? 0];
     if (
       current === undefined ||
       phases.some((phase, index) => phase.position !== index) ||
       current.agent.name !== data.agent.name
     ) {
       throw new TypeError(
-        'The Phases of a Run are numbered from 0 and end with its current agent.',
+        'The Phases of a Run are numbered from 0, and its current Phase has its agent.',
       );
     }
-    return phases.map((phase) => ({ ...phase, agent: RunAgent.restore(phase.agent).toData() }));
+    const planned = data.workflow?.items.filter((item) => item.kind !== 'checkpoint') ?? null;
+    if (
+      planned === null
+        ? phases.length !== 1
+        : phases.length !== planned.length ||
+          phases.some((phase, index) => phase.itemId !== planned[index]!.id)
+    ) {
+      throw new TypeError('The Phases of a Run are the Phases of its Workflow, or one.');
+    }
+    return phases.map((phase) => ({
+      position: phase.position,
+      itemId: phase.itemId ?? null,
+      kind: phase.kind ?? 'work',
+      state: phase.state ?? 'pending',
+      agent: RunAgent.restore(phase.agent).toData(),
+      sessionRef: phase.sessionRef ?? null,
+      summary: phase.summary ?? null,
+      stepsUsed: phase.stepsUsed,
+    }));
   }
 
   /**
-   * The Run's Phases in order. The current Phase has taken the Run steps the earlier ones did not.
+   * The Run's Phases in order. The current Phase has taken the Run steps the others did not; a
+   * Phase of a Run that ended while it was working did not finish it.
    */
-  get phases(): readonly RunPhaseData[] {
+  get phases(): readonly RunPhaseView[] {
     const stored = PHASES.get(this)!;
-    const earlier = stored.slice(0, -1);
-    const used = earlier.reduce((sum, phase) => sum + phase.stepsUsed, 0);
-    const current = stored.at(-1)!;
-    return [...earlier, { ...current, stepsUsed: Math.max(0, this.progress.stepCount - used) }].map(
-      (phase) => ({ ...phase, agent: { ...phase.agent, skills: [...phase.agent.skills] } }),
+    const others = stored.reduce(
+      (sum, phase, index) => (index === this.currentPhase ? sum : sum + phase.stepsUsed),
+      0,
     );
+    return stored.map((phase, index) => {
+      const agent = { ...phase.agent, skills: [...phase.agent.skills] };
+      if (index !== this.currentPhase) return { ...phase, agent };
+      const ended = phase.state === 'running' && this.lifecycle.isFinal;
+      return {
+        ...phase,
+        agent,
+        sessionRef: this.claim.sessionRef,
+        stepsUsed: Math.max(0, this.progress.stepCount - others),
+        state: ended ? (this.lifecycle.state === 'succeeded' ? 'done' : 'failed') : phase.state,
+      };
+    });
+  }
+
+  /** The Phase a claim or a report is about. */
+  get currentPhaseView(): RunPhaseView {
+    return this.phases[this.currentPhase]!;
   }
 
   static start(input: RunStartInput): Run {
     if (!(PROVIDERS as readonly string[]).includes(input.provider)) {
       throw new TypeError(`Unknown provider: ${input.provider}`);
     }
+    const planned = input.workflow;
+    if (planned !== undefined) {
+      const record = RunWorkflow.restore(planned.record);
+      const items = record.phases;
+      if (
+        planned.phaseAgents.length !== items.length ||
+        items.some((item) => item.kind !== 'work') ||
+        planned.phaseAgents[0]!.name !== input.agent.name
+      ) {
+        throw new TypeError('A Run records one agent per work Phase of its Workflow.');
+      }
+    }
     return new Run({
       id: input.id,
       projectId: input.projectId,
       provider: input.provider,
       agent: input.agent,
+      ...(planned === undefined
+        ? {}
+        : {
+            workflow: planned.record,
+            phases: planned.phaseAgents.map((agent, position) => ({
+              position,
+              itemId: planned.record.items.filter((item) => item.kind !== 'checkpoint')[position]!
+                .id,
+              kind: 'work' as const,
+              state: 'pending' as const,
+              agent,
+              stepsUsed: 0,
+            })),
+          }),
       task: input.task.value,
       startCommit: input.startCommit,
       remoteUrl: input.remoteUrl,
@@ -230,6 +307,7 @@ export class Run {
       state: this.lifecycle.state,
       claimedBy: this.claim.claimedBy,
       sessionRef: this.claim.sessionRef,
+      phasePending: this.phasePending,
       followUpQueued: this.progress.followUpQueued,
       deliveryRequested: this.delivery.requested,
       lastClaimedBy: this.claim.lastClaimedBy,
@@ -282,6 +360,9 @@ export class Run {
     }
     const resume = this.resumeMessage();
     const { sessionRef } = this.claim;
+    if (this.phasePending) {
+      return this.nextPhaseHandOut(reachable, mergedBase, pullRequest, resume);
+    }
     if (resume !== null && sessionRef !== null) {
       // A Working copy the worker reported removed cannot be resumed.
       if (!reachable || !workingCopy || this.claim.workingCopyRemoved) {
@@ -308,6 +389,35 @@ export class Run {
     }
     if (!reachable) return { kind: 'refused', failure: NO_REMOTE, as: 'preparation' };
     return { kind: 'start' };
+  }
+
+  /**
+   * The next Phase continues in the Working copy the Phase before left, in the session it had in an
+   * earlier round (the Follow-up's text), or in a new one.
+   */
+  private nextPhaseHandOut(
+    reachable: boolean,
+    mergedBase: { mergedIntegrationCommit?: string },
+    pullRequest: { pullRequestNumber?: number },
+    resume: RunResume | null,
+  ): RunHandOut {
+    const { workingCopy } = this;
+    if (!reachable || !workingCopy || this.claim.workingCopyRemoved) {
+      const failure = this.claim.workingCopyRemoved ? WORKING_COPY_REMOVED : NOT_RESUMABLE;
+      return { kind: 'refused', failure, as: 'preparation' };
+    }
+    const { sessionRef } = this.claim;
+    const { followUpCount } = this.progress;
+    return {
+      kind: 'next_phase',
+      runBranch: workingCopy.runBranch,
+      ...(resume !== null && sessionRef !== null
+        ? { session: { sessionRef, answer: resume.text, reason: resume.reason } }
+        : {}),
+      ...(followUpCount > 0 ? { followUpNumber: followUpCount } : {}),
+      ...mergedBase,
+      ...pullRequest,
+    };
   }
 
   get isResumable(): boolean {
@@ -464,12 +574,17 @@ export class Run {
   }
 
   followUpFacts(workers: WorkerFacts, now: Date, leaseSeconds: number): FollowUpFacts {
-    const provider = WorkerPresence.of(workers.latest, Lease.ofSeconds(leaseSeconds))
-      .providerAvailability(now)
-      .find((candidate) => candidate.id === this.provider);
+    const availability = WorkerPresence.of(
+      workers.latest,
+      Lease.ofSeconds(leaseSeconds),
+    ).providerAvailability(now);
+    // A Follow-up works through the Phases again, so every Provider they use must be available.
+    const providers = new Set(this.phases.map((phase) => phase.agent.provider));
     return {
       workerAvailable: Lease.ofSeconds(leaseSeconds).covers(workers.holderLastSeen, now),
-      providerAvailable: provider?.available === true,
+      providerAvailable: [...providers].every(
+        (id) => availability.find((candidate) => candidate.id === id)?.available === true,
+      ),
     };
   }
 
@@ -487,7 +602,7 @@ export class Run {
     // at the next lookup.
     const ended = this.pullRequestStatus.followUpRefusal;
     if (ended !== null) return refuse(ended);
-    if (!this.claim.hasSession) return refuse('no_session');
+    if (!this.followUpSession()) return refuse('no_session');
     if (this.workingCopy === null || this.claim.workingCopyRemoved) {
       return refuse('working_copy_removed');
     }
@@ -495,6 +610,11 @@ export class Run {
     if (!facts.workerAvailable) return refuse('worker_unavailable');
     if (!facts.providerAvailable) return refuse('provider_unavailable');
     return { allowed: true };
+  }
+
+  /** A Follow-up resumes the session of the Phase it starts at: the first Phase of a Workflow. */
+  private followUpSession(): boolean {
+    return this.workflow === null ? this.claim.hasSession : this.phases[0]!.sessionRef !== null;
   }
 
   retentionFacts(): RetentionFacts {
@@ -576,6 +696,12 @@ export class Run {
     const eligibility = this.followUpEligibility(facts);
     if (!eligibility.allowed) throw new FollowUpNotAllowedError(eligibility.reason);
     const source = typeof origin === 'object' ? origin.source : origin;
+    // Bring up to date works in the last Phase's session; any other Follow-up starts again at the
+    // first Phase.
+    const restartAt = source === 'bring_up_to_date' ? this.phases.length - 1 : 0;
+    if (this.workflow !== null && this.phases[restartAt]!.sessionRef === null) {
+      throw new FollowUpNotAllowedError('no_session');
+    }
     let comments: { count: number; authors: string[] } | undefined;
     if (typeof origin === 'object') {
       if (origin.comments === null || origin.comments.count === 0) {
@@ -610,6 +736,7 @@ export class Run {
       waitingSince: null,
       stepStartedAt: null,
     });
+    if (this.workflow !== null) this.restartAt(restartAt);
     return source === undefined || source === 'bring_up_to_date' ? undefined : source;
   }
 
@@ -763,7 +890,17 @@ export class Run {
     workingCopy: RunWorkingCopy,
     failingChecks: readonly string[],
     now: Date,
+    next?: PhaseNext,
   ): RunStepOutcome {
+    // The report that ended a Phase released the Run: a resend of it is acknowledged.
+    if (
+      this.phasePending &&
+      this.claim.releasedBy === workerId &&
+      step.index !== undefined &&
+      step.index <= this.progress.stepCount
+    ) {
+      return { status: 'stored', index: step.index, duplicate: true };
+    }
     if (this.lifecycle.state !== 'running' || !this.claim.isHeldBy(workerId)) {
       throw new RunNotHeldError();
     }
@@ -771,10 +908,14 @@ export class Run {
     const index = step.index ?? last + 1;
     if (index <= last) return { status: 'stored', index, duplicate: true };
     if (index !== last + 1) throw new StepOutOfOrderError(last + 1);
-    if (!this.progress.allowsStep(index)) {
+    // The total bounds the Phases of a Workflow together; a Run with an agent keeps its own limits.
+    const overTotal = this.workflow !== null && index > this.progress.limits.maxTotalSteps;
+    if (overTotal || !this.progress.allowsStep(index)) {
       this.apply({
         state: 'failed',
-        failure: this.progress.stepLimitFailure(),
+        failure: overTotal
+          ? this.progress.totalStepLimitFailure()
+          : this.progress.stepLimitFailure(),
         ...this.released(null, now),
       });
       return { status: 'step_limit' };
@@ -795,6 +936,7 @@ export class Run {
       lastActivityAt: now,
       ...(step.sessionRef === undefined ? {} : { sessionRef: step.sessionRef }),
     });
+    if (next !== undefined) this.endPhase(workerId, next, summaryOf(step.result), now);
     return { status: 'stored', index };
   }
 
@@ -883,7 +1025,9 @@ export class Run {
    * report cannot do it. `false` when the Run is not a queued resume.
    */
   abandonResume(failure: RunFailure, now: Date): boolean {
-    if (this.lifecycle.state !== 'queued' || !this.claim.hasSession) return false;
+    if (this.lifecycle.state !== 'queued' || !(this.claim.hasSession || this.phasePending)) {
+      return false;
+    }
     this.apply({ state: 'failed', failure, finishedAt: now, followUpQueued: false });
     return true;
   }
@@ -976,6 +1120,118 @@ export class Run {
     if (!held || !this.claim.isHeldBy(workerId)) throw new RunNotHeldError();
   }
 
+  /**
+   * A Phase ended with `done`. The next Phase goes to the queue, in the same Working copy and
+   * with its own session; the operator's cancel request ends the Run instead. At the end of the
+   * Workflow the Run goes on to its delivery, and the Phase is done when the Run succeeds.
+   */
+  private endPhase(workerId: string, next: PhaseNext, summary: string | null, now: Date): void {
+    const position = this.currentPhase;
+    this.updatePhase(position, { summary });
+    if (next.kind === 'end') return;
+    const target = PHASES.get(this)![next.position];
+    if (target === undefined || next.position === position) {
+      throw new TypeError('The next Phase is another Phase of the Run.');
+    }
+    this.updatePhase(position, {
+      state: 'done',
+      sessionRef: this.claim.sessionRef,
+      stepsUsed: this.phases[position]!.stepsUsed,
+    });
+    if (this.lifecycle.cancelRequested) {
+      this.apply({
+        state: 'cancelled',
+        cancellation: { ...RunCancellation.OPERATOR },
+        claimedBy: null,
+        heartbeatAt: null,
+        releasedBy: workerId,
+        waitingSince: null,
+        finishedAt: now,
+      });
+      return;
+    }
+    const used = this.progress.stepCount;
+    this.apply({
+      state: 'queued',
+      claimedBy: null,
+      heartbeatAt: null,
+      releasedBy: workerId,
+      waitingSince: null,
+      sessionRef: target.sessionRef,
+      stepsBeforePart: used,
+    });
+    this.movePhase(next.position, true);
+  }
+
+  /** A Follow-up starts the Workflow again at `position`; each Phase is pending until reached. */
+  private restartAt(position: number): void {
+    // The Phase the Run leaves keeps the session and the Run steps it has now.
+    const left = this.currentPhaseView;
+    const target = this.phases[position]!;
+    for (const phase of PHASES.get(this)!) this.updatePhase(phase.position, { state: 'pending' });
+    this.updatePhase(left.position, { sessionRef: left.sessionRef, stepsUsed: left.stepsUsed });
+    this.apply({ sessionRef: target.sessionRef, stepsBeforePart: this.progress.stepCount });
+    this.movePhase(position, false);
+  }
+
+  /** Makes the Phase at `position` the current one: its agent and Provider become the Run's. */
+  private movePhase(position: number, pending: boolean): void {
+    const target = PHASES.get(this)![position]!;
+    const agent = RunAgent.restore(target.agent);
+    Object.assign(this, { agent, provider: agent.provider, currentPhase: position });
+    this.applyPosition({
+      currentPhase: position,
+      provider: agent.provider,
+      phasePending: pending,
+    });
+  }
+
+  private applyPosition(
+    patch: Partial<Pick<RunFieldChanges, 'currentPhase' | 'provider' | 'phasePending'>>,
+  ): void {
+    if (patch.phasePending !== undefined) Object.assign(this, { phasePending: patch.phasePending });
+    Object.assign(CHANGES.get(this)!.fields, patch);
+  }
+
+  /** Records a change of a Phase's state or summary, kept in memory and saved with the Run. */
+  private updatePhase(
+    position: number,
+    patch: {
+      state?: RunPhaseState;
+      summary?: string | null;
+      sessionRef?: string | null;
+      stepsUsed?: number;
+    },
+  ): void {
+    const stored = PHASES.get(this)!;
+    const { stepsUsed, ...saved } = patch;
+    PHASES.set(
+      this,
+      stored.map((phase) => (phase.position === position ? { ...phase, ...patch } : phase)),
+    );
+    if (Object.keys(saved).length === 0) return;
+    void stepsUsed;
+    const fields = CHANGES.get(this)!.fields;
+    fields.phaseUpdates = {
+      ...fields.phaseUpdates,
+      [position]: { ...fields.phaseUpdates?.[position], ...saved },
+    };
+  }
+
+  /** What a Run's own state change does to the Phase it is working on. */
+  private markCurrentPhase(state: RunState): void {
+    // The claim read the Phase as pending; once the Phase runs it is no longer waiting for one.
+    if (state === 'running' && this.phasePending) this.applyPosition({ phasePending: false });
+    const phase = PHASES.get(this)![this.currentPhase]!;
+    if (state === 'running' && phase.state !== 'running') {
+      this.updatePhase(phase.position, { state: 'running' });
+    } else if (state === 'succeeded' && phase.state !== 'done') {
+      this.updatePhase(phase.position, { state: 'done' });
+    } else if (FAILED_END_STATES.includes(state) && phase.state === 'running') {
+      this.updatePhase(phase.position, { state: 'failed' });
+    }
+  }
+
   private released(by: string | null, now: Date): RunPatch {
     return { claimedBy: null, heartbeatAt: null, releasedBy: by, finishedAt: now };
   }
@@ -1008,10 +1264,17 @@ export class Run {
       ...(patch.failingChecks === undefined ? {} : { failingChecks: patch.failingChecks }),
     });
     Object.assign(CHANGES.get(this)!.fields, patch);
+    if (patch.state !== undefined) this.markCurrentPhase(patch.state);
   }
 
   private append(message: RunMessage): void {
     CHANGES.get(this)!.messages.push(message);
     Object.assign(this, { conversation: this.conversation.append(message) });
   }
+}
+
+/** The summary a Run step's result carries; `null` when it has none. */
+function summaryOf(result: unknown): string | null {
+  const { summary } = (result ?? {}) as { summary?: unknown };
+  return typeof summary === 'string' ? summary : null;
 }

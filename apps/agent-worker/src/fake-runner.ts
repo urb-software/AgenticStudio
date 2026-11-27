@@ -108,18 +108,32 @@ export function fakeSkillsLine(skills: readonly { name: string }[] | undefined):
   return `fake runner: skills ${skills.map((skill) => skill.name).join(', ')}`;
 }
 
-/** The fake agent's session reference for a Run: deterministic, per Run. */
-export function fakeSessionRef(runId: string): string {
-  return `fake-session-${runId}`;
+/**
+ * The fake agent's session reference: deterministic, per Run, and per Phase after the first (each
+ * Phase of a Workflow Run has a session of its own).
+ */
+export function fakeSessionRef(runId: string, position = 0): string {
+  return position === 0 ? `fake-session-${runId}` : `fake-session-${runId}-phase-${position}`;
+}
+
+/** What the fake runner logs of the Phase and of what the Phase before reported; no text of an agent. */
+export function fakePhaseLines(run: Pick<StartRunStepInput['run'], 'phase'>): string[] {
+  const { phase } = run;
+  if (phase === undefined) return [];
+  const lines = [`fake runner: phase ${phase.itemId} (${phase.position + 1}/${phase.count})`];
+  if (phase.previous !== undefined) {
+    lines.push(`fake runner: told by phase ${phase.previous.itemId}: ${phase.previous.summary}`);
+  }
+  return lines;
 }
 
 /** The fake agent's question, with options and a recommendation. */
-function asking(runId: string, text: string): RunStepResult {
+function asking(runId: string, text: string, position = 0): RunStepResult {
   return {
     outcome: 'needs_input',
     summary: 'The fake agent needs a decision.',
     question: { text, options: ['Option A', 'Option B'], recommendation: 'Option A' },
-    sessionRef: fakeSessionRef(runId),
+    sessionRef: fakeSessionRef(runId, position),
   };
 }
 
@@ -170,11 +184,11 @@ export class FakeRunner implements Runner {
    * finished Run can take a Follow-up.
    */
   async *start(input: StartRunStepInput): RunStep {
-    return withSession(input.run.runId, yield* this.startStep(input));
+    return withSession(input.run, yield* this.startStep(input));
   }
 
   async *resume(input: ResumeRunStepInput): RunStep {
-    return withSession(input.run.runId, yield* this.resumeStep(input));
+    return withSession(input.run, yield* this.resumeStep(input));
   }
 
   private async *startStep({ run, workspace, signal }: StartRunStepInput): RunStep {
@@ -182,6 +196,7 @@ export class FakeRunner implements Runner {
     yield { type: 'message', text: `fake runner: ${scenario}` };
     const agentLine = fakeAgentLine(run);
     if (agentLine !== null) yield { type: 'message', text: agentLine };
+    for (const text of fakePhaseLines(run)) yield { type: 'message', text };
     const folderLine = await fakeAgentFolderLine(workspace.agentFolder);
     if (folderLine !== null) yield { type: 'message', text: folderLine };
     const skillsLine = fakeSkillsLine(workspace.skills);
@@ -214,7 +229,7 @@ export class FakeRunner implements Runner {
       case 'question':
       case 'question-twice':
       case 'lost-session':
-        return asking(run.runId, 'Which option should the fake agent take?');
+        return asking(run.runId, 'Which option should the fake agent take?', run.phase?.position);
       case 'slow': {
         yield { type: 'command', text: 'fake-work --slowly' };
         const started = Date.now();
@@ -398,12 +413,16 @@ export class FakeRunner implements Runner {
     };
     const agentLine = fakeAgentLine(run);
     if (agentLine !== null) yield { type: 'message', text: agentLine };
+    for (const text of fakePhaseLines(run)) yield { type: 'message', text };
     const folderLine = await fakeAgentFolderLine(workspace.agentFolder);
     if (folderLine !== null) yield { type: 'message', text: folderLine };
     const skillsLine = fakeSkillsLine(workspace.skills);
     if (skillsLine !== null) yield { type: 'message', text: skillsLine };
     signal.throwIfAborted();
-    if (scenario === 'lost-session' || sessionRef !== fakeSessionRef(run.runId)) {
+    if (
+      scenario === 'lost-session' ||
+      sessionRef !== fakeSessionRef(run.runId, run.phase?.position)
+    ) {
       throw new AgentFailedError(
         'The fake agent cannot resume: the provider has no such session (its transcript is missing).',
       );
@@ -434,15 +453,19 @@ export class FakeRunner implements Runner {
     yield { type: 'output', text: `answer received: ${answer}` };
     // The first resume of question-twice (its second Run step) asks again.
     if (scenario === 'question-twice' && run.completedSteps === 1) {
-      return asking(run.runId, 'And which variant of it?');
+      return asking(run.runId, 'And which variant of it?', run.phase?.position);
     }
     return done();
   }
 }
 
 /** The result with the fake agent's session reference. */
-function withSession(runId: string, result: RunStepResult): RunStepResult {
-  return { ...result, sessionRef: fakeSessionRef(runId) };
+function withSession(run: StartRunStepInput['run'], result: RunStepResult): RunStepResult {
+  const sessionRef = fakeSessionRef(run.runId, run.phase?.position);
+  // A Phase's result says which Phase it is, so the next Phase can be seen to be told it.
+  return run.phase !== undefined && result.outcome === 'done'
+    ? { ...result, summary: `${result.summary} (Phase ${run.phase.itemId})`, sessionRef }
+    : { ...result, sessionRef };
 }
 
 function done(): RunStepResult {

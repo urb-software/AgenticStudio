@@ -30,6 +30,11 @@ export interface AgentResolutions {
    * why none can be used. A built-in agent needs no Repository.
    */
   resolveForRun(name: string): Promise<AgentResolution>;
+  /**
+   * The definitions agent of this name at exactly `commit`, so the Phases of a Workflow read at one
+   * commit all record that commit. `not_usable` when the Clone cannot be read at it.
+   */
+  resolveAt(commit: string, name: string): Promise<AgentResolution>;
 }
 
 export const AGENT_FOLDERS = Symbol('AGENT_FOLDERS');

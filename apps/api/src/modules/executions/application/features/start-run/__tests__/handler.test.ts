@@ -4,7 +4,16 @@ import type {
   AgentResolutions,
   ResolvedAgent,
 } from '../../../../../agents/contracts/index.js';
-import type { RunStartPoint, RunStartPoints } from '../../../../../projects/contracts/index.js';
+import type {
+  ProjectDefaultAgent,
+  RunStartPoint,
+  RunStartPoints,
+} from '../../../../../projects/contracts/index.js';
+import type {
+  WorkflowPlan,
+  WorkflowPlans,
+  WorkflowResolution,
+} from '../../../../contracts/index.js';
 import {
   AgentNotChosenError,
   AgentNotUsableError,
@@ -14,12 +23,14 @@ import {
   RepositoryNotReadyError,
   RunProjectNotFoundError,
   ProviderUnavailableError,
+  WorkflowNotUsableError,
+  WorkflowUnknownError,
 } from '../../../../domain/errors/run-errors.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import type { WorkerStatusData } from '../../../../domain/value-objects/worker-status-data.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { FakeProjectKinds } from '../../../ports/__tests__/fake-project-kinds.js';
-import { StartRunHandler } from '../handler.js';
+import { StartRunHandler, WORKFLOW_ITEMS_NOT_SUPPORTED } from '../handler.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const HEAD = 'd'.repeat(40);
@@ -73,11 +84,39 @@ describe('StartRunHandler', () => {
       resolved.push(name);
       return Promise.resolve(known[name] ?? { status: 'unknown' });
     },
+    resolveAt: (commit, name) => {
+      resolvedAt.push(`${commit}:${name}`);
+      return Promise.resolve(known[name] ?? { status: 'unknown' });
+    },
   };
+  const resolvedAt: string[] = [];
+  const workflows: Record<string, WorkflowResolution> = {};
+  const plans: WorkflowPlans = {
+    resolve: (_projectId, name) =>
+      Promise.resolve(workflows[name] ?? ({ status: 'unknown' } as const)),
+    next: () => ({ kind: 'end' }),
+  };
+  let projectDefault: ProjectDefaultAgent;
+  const defaults = { forProject: () => Promise.resolve(projectDefault) };
 
   const startPoints: RunStartPoints = { forProject: () => Promise.resolve(startPoint) };
-  const startWith = (request: { agent?: string; provider?: 'claude_code' | 'codex' }) =>
-    new StartRunHandler(kinds, runs, startPoints, agents, statuses, clock, LEASE, LIMITS).execute({
+  const startWith = (request: {
+    agent?: string;
+    workflow?: string;
+    provider?: 'claude_code' | 'codex';
+  }) =>
+    new StartRunHandler(
+      kinds,
+      runs,
+      startPoints,
+      agents,
+      statuses,
+      clock,
+      LEASE,
+      LIMITS,
+      plans,
+      defaults,
+    ).execute({
       projectId: PROJECT,
       task: 'Fix the login bug',
       ...request,
@@ -103,11 +142,19 @@ describe('StartRunHandler', () => {
     kinds.kind = 'code';
     workerReports(true);
     resolved.length = 0;
+    resolvedAt.length = 0;
+    projectDefault = { status: 'found', kind: 'code', agent: null, workflow: null };
+    for (const key of Object.keys(workflows)) delete workflows[key];
     for (const key of Object.keys(known)) delete known[key];
     known['default-codex'] = { status: 'resolved', agent: BUILT_IN('codex') };
     known['default-claude-code'] = { status: 'resolved', agent: BUILT_IN('claude_code') };
     known['reviewer'] = { status: 'resolved', agent: REVIEWER };
     known['broken'] = { status: 'not_usable' };
+    known['builder'] = { status: 'resolved', agent: { ...REVIEWER, name: 'builder' } };
+    known['coder'] = {
+      status: 'resolved',
+      agent: { ...REVIEWER, name: 'coder', provider: 'codex', model: 'default' },
+    };
   });
 
   it('copies the limits in force onto the Run', async () => {
@@ -264,6 +311,126 @@ describe('StartRunHandler', () => {
       startPoint = { status: 'project_not_found' };
 
       await expect(start()).rejects.toBeInstanceOf(RunProjectNotFoundError);
+    });
+  });
+
+  describe('a Workflow', () => {
+    const plan = (items: WorkflowPlan['items']): WorkflowResolution => ({
+      status: 'resolved',
+      plan: { name: 'flow', commit: 'f'.repeat(40), items },
+    });
+    const TWO_PHASES: WorkflowPlan['items'] = [
+      { id: 'build', kind: 'work', agent: 'coder' },
+      { id: 'polish', kind: 'work', agent: 'builder', instructions: 'Keep it small.' },
+    ];
+
+    beforeEach(() => {
+      statuses.record({
+        workerId: '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d',
+        runner: 'cli',
+        providers: { claude_code: true, codex: true },
+        reportedAt: NOW,
+      });
+    });
+
+    it('records the Workflow and one Phase per work item, all read at the Workflow commit', async () => {
+      workflows['flow'] = plan(TWO_PHASES);
+
+      const { id } = await startWith({ workflow: 'flow' });
+      const run = (await runs.findById(id))!;
+
+      expect(resolvedAt).toEqual([`${'f'.repeat(40)}:coder`, `${'f'.repeat(40)}:builder`]);
+      expect(run.workflow?.toData()).toEqual({
+        name: 'flow',
+        commit: 'f'.repeat(40),
+        items: TWO_PHASES,
+      });
+      expect(run.phases.map((phase) => [phase.itemId, phase.agent.name, phase.state])).toEqual([
+        ['build', 'coder', 'pending'],
+        ['polish', 'builder', 'pending'],
+      ]);
+      expect(run.agent.name).toBe('coder');
+      expect(run.provider).toBe('codex');
+    });
+
+    it('refuses an unknown Workflow, starting nothing', async () => {
+      await expect(startWith({ workflow: 'nope' })).rejects.toEqual(
+        new WorkflowUnknownError('nope'),
+      );
+      expect(runs.runs).toEqual([]);
+    });
+
+    it('refuses a Workflow that is not usable, with the reason', async () => {
+      workflows['flow'] = { status: 'not_usable', reason: 'The Workflow has problems.' };
+
+      await expect(startWith({ workflow: 'flow' })).rejects.toEqual(
+        new WorkflowNotUsableError('The Workflow has problems.'),
+      );
+      expect(runs.runs).toEqual([]);
+    });
+
+    it.each([
+      ['a review Phase', [{ id: 'check', kind: 'review', agent: 'coder' }]],
+      ['a Checkpoint', [{ id: 'wait', kind: 'checkpoint', text: 'Look at it.' }]],
+    ] as const)('refuses a Workflow with %s until it is supported', async (_case, extra) => {
+      workflows['flow'] = plan([{ id: 'build', kind: 'work', agent: 'coder' }, ...extra]);
+
+      await expect(startWith({ workflow: 'flow' })).rejects.toEqual(
+        new WorkflowNotUsableError(WORKFLOW_ITEMS_NOT_SUPPORTED),
+      );
+      expect(runs.runs).toEqual([]);
+    });
+
+    it('refuses a Workflow whose Phase names an agent that cannot be used at its commit', async () => {
+      workflows['flow'] = plan([{ id: 'build', kind: 'work', agent: 'broken' }]);
+
+      await expect(startWith({ workflow: 'flow' })).rejects.toBeInstanceOf(WorkflowNotUsableError);
+      expect(runs.runs).toEqual([]);
+    });
+
+    it('refuses a Workflow that uses a Provider that is not available', async () => {
+      workflows['flow'] = plan(TWO_PHASES);
+      statuses.record({
+        workerId: '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d',
+        runner: 'cli',
+        providers: { claude_code: false, codex: true },
+        reportedAt: NOW,
+      });
+
+      await expect(startWith({ workflow: 'flow' })).rejects.toBeInstanceOf(WorkflowNotUsableError);
+      expect(runs.runs).toEqual([]);
+    });
+
+    it('starts the Project default when the request names neither an agent nor a Workflow', async () => {
+      workflows['flow'] = plan(TWO_PHASES);
+      projectDefault = { status: 'found', kind: 'code', agent: null, workflow: 'flow' };
+
+      const { id } = await startWith({});
+
+      expect((await runs.findById(id))!.workflow?.name).toBe('flow');
+    });
+
+    it('starts the Project default agent when it names one', async () => {
+      projectDefault = { status: 'found', kind: 'code', agent: 'reviewer', workflow: null };
+
+      const { id } = await startWith({});
+
+      const run = (await runs.findById(id))!;
+      expect(run.workflow).toBeNull();
+      expect(run.agent.name).toBe('reviewer');
+    });
+
+    it('asks for a choice when there is no default', async () => {
+      await expect(startWith({})).rejects.toBeInstanceOf(AgentNotChosenError);
+    });
+
+    it('starts a Run with an agent as before, without asking for a Workflow', async () => {
+      const { id } = await startWith({ provider: 'codex' });
+
+      const run = (await runs.findById(id))!;
+      expect(run.workflow).toBeNull();
+      expect(run.phases).toHaveLength(1);
+      expect(resolvedAt).toEqual([]);
     });
   });
 });

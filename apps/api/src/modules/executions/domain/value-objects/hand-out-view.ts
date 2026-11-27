@@ -6,6 +6,8 @@ export interface HandOutView {
   state: RunState;
   claimedBy: string | null;
   sessionRef: string | null;
+  /** A Workflow Run between two Phases: it keeps its place and its worker like an answered Run. */
+  phasePending?: boolean;
   followUpQueued: boolean;
   deliveryRequested: boolean;
   lastClaimedBy: string | null;

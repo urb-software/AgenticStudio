@@ -1,6 +1,7 @@
 import {
   BRING_UP_TO_DATE_DEFAULT_TEXT,
   FAILURE_DETAIL_MAX_LENGTH,
+  PROVIDER_NAMES,
   type Provider,
   type RunFailure,
   type RunPayload,
@@ -291,6 +292,8 @@ export class AgentWorker {
     let processes: StepProcessGroups | undefined;
     /** Whether the end of the Follow-up the Run works on was logged already. */
     let followUpMarked = false;
+    /** Whether the Phase's end was logged already. */
+    let phaseMarked = false;
     /** The integration branch commit this part merges, and the Run branch's commit before. */
     let expectedCommit: string | undefined = run.updateTip;
     let baseCommit: string | undefined = run.updateBase;
@@ -361,9 +364,9 @@ export class AgentWorker {
           throw new PullRequestEndedError(state, run.pullRequestNumber);
         }
       }
-      // A resumed Run continues in the Working copy it kept.
+      // A resumed Run, and the next Phase of a Workflow Run, continue in the Working copy kept.
       prepared =
-        run.kind === 'resume'
+        run.kind === 'resume' || run.kind === 'next_phase'
           ? await this.options.workingCopies.locate(run, abort.signal)
           : await this.options.workingCopies.prepare(run, abort.signal);
       abort.signal.throwIfAborted();
@@ -482,6 +485,9 @@ export class AgentWorker {
         // The Follow-up the usage limit paused goes on.
         log.push(stepIndex, 'notice', `Follow-up ${run.followUpNumber} resumed`);
       }
+      if (run.phase !== undefined) {
+        log.push(stepIndex, 'notice', phaseStartNotice(run, run.phase));
+      }
       outbox.send('running', (signal) =>
         api.reportState(
           run.runId,
@@ -529,9 +535,15 @@ export class AgentWorker {
         );
         if (completed?.completed) log.push(stepIndex, 'notice', 'The merge was completed');
       }
-      if (result.outcome === 'done') {
+      // A Phase that is not the last hands the Working copy on: nothing is committed or delivered.
+      const handsOn = result.outcome === 'done' && run.phase !== undefined && !run.phase.final;
+      if (result.outcome === 'done' && !handsOn) {
         followUpEnded(run, stepIndex, log, 'done');
         followUpMarked = true;
+      }
+      if (run.phase !== undefined && result.outcome !== 'needs_input') {
+        log.push(stepIndex, 'notice', phaseEndNotice(run.phase, 'done'));
+        phaseMarked = true;
       }
       // The log goes first: Studio accepts events only while the worker holds the Run.
       await this.closeLog(log);
@@ -539,7 +551,7 @@ export class AgentWorker {
       // What a done step left is committed before its report, so the report lists that commit; a
       // refused commit still lets the step's result be reported first.
       let commitFailure: DeliveryFailedError | undefined;
-      if (result.outcome === 'done') {
+      if (result.outcome === 'done' && !handsOn) {
         await this.options.deliveries
           .commit(prepared, run, result, abort.signal)
           .catch((error: unknown) => {
@@ -548,24 +560,37 @@ export class AgentWorker {
           });
       }
       const workingCopy = await this.options.workingCopies.report(prepared, abort.signal);
-      outbox.send('step', (signal) =>
-        api.reportStep(
-          run.runId,
-          // Numbered, so a retry of a report Studio already stored is not stored twice.
-          {
-            index: stepIndex,
-            kind: run.kind === 'resume' ? 'resume' : 'start',
-            result,
-            workingCopy,
-          },
-          signal,
-        ),
-      );
+      const sendStep = () =>
+        outbox.send('step', (signal) =>
+          api.reportStep(
+            run.runId,
+            // Numbered, so a retry of a report Studio already stored is not stored twice.
+            {
+              index: stepIndex,
+              kind: run.sessionRef !== undefined ? 'resume' : 'start',
+              result,
+              workingCopy,
+            },
+            signal,
+          ),
+        );
       // The Run's diffs after every result, before the Run moves on (Studio takes them only while
-      // this worker holds the Run).
-      const diff = await this.computeDiff(run, prepared, abort.signal);
-      outbox.send('diff', (signal) => api.reportDiff(run.runId, diff.report, signal));
-      if (result.outcome === 'needs_input') {
+      // this worker holds the Run). The step that ends a Phase releases the Run, so its diffs go
+      // before it.
+      let diff: Awaited<ReturnType<AgentWorker['computeDiff']>>;
+      if (handsOn) {
+        diff = await this.computeDiff(run, prepared, abort.signal);
+        outbox.send('diff', (signal) => api.reportDiff(run.runId, diff.report, signal));
+        sendStep();
+      } else {
+        sendStep();
+        diff = await this.computeDiff(run, prepared, abort.signal);
+        outbox.send('diff', (signal) => api.reportDiff(run.runId, diff.report, signal));
+      }
+      if (handsOn) {
+        // Studio moved the Run to its next Phase when it stored this result; nothing is reported.
+        logger.info(`Run ${run.runId}: Phase ${run.phase!.itemId} is done; the next one follows.`);
+      } else if (result.outcome === 'needs_input') {
         outbox.send('waiting_for_operator', (signal) =>
           api.reportState(run.runId, { state: 'waiting_for_operator' }, signal),
         );
@@ -617,6 +642,11 @@ export class AgentWorker {
       }
       // A Follow-up ends with the step that did not finish; a failed delivery after a done step
       // already marked its end.
+      if (run.phase !== undefined && !phaseMarked && reason !== 'lost') {
+        const usageLimit = error instanceof UsageLimitError && reason === undefined;
+        if (!usageLimit)
+          log.push(stepIndex, 'notice', phaseEndNotice(run.phase, endOf(error, reason)));
+      }
       if (run.kind !== 'deliver' && !followUpMarked && reason !== 'lost') {
         // The usage limit pauses the Follow-up; a resume continues it.
         if (error instanceof UsageLimitError && reason === undefined) {
@@ -801,7 +831,7 @@ export class AgentWorker {
     const input = { run: forRunner, workspace, signal, processes };
     log.push(stepIndex, 'step_started', `Run step ${stepIndex} started`);
     const runnerStep =
-      run.kind === 'resume' && run.sessionRef !== undefined && run.answer !== undefined
+      run.sessionRef !== undefined && run.answer !== undefined
         ? this.options.runner.resume({
             ...input,
             sessionRef: run.sessionRef,
@@ -928,7 +958,7 @@ export class AgentWorker {
       logger.info(`Run ${run.runId} reported: ${state}.`);
       return;
     }
-    const failure = failureOf(error);
+    const failure = withPhase(run, failureOf(error));
     if (failure === UNEXPECTED_FAILURE) {
       logger.error(`Run ${run.runId} stopped unexpectedly: ${describe(error)}`);
     }
@@ -1041,6 +1071,34 @@ function failureOf(error: unknown): RunFailure {
   // A refused commit of a done step.
   if (error instanceof DeliveryFailedError) return failure('delivery_failed', error.detail);
   return UNEXPECTED_FAILURE;
+}
+
+/** The log's notice where a Phase starts. */
+function phaseStartNotice(run: RunPayload, phase: NonNullable<RunPayload['phase']>): string {
+  return `Phase ${phase.itemId} (${phase.position + 1}/${phase.count}): agent ${run.agent.name}, ${PROVIDER_NAMES[run.provider]}`;
+}
+
+/** The log's notice where a Phase ends, with its outcome. */
+function phaseEndNotice(phase: NonNullable<RunPayload['phase']>, outcome: string): string {
+  return `Phase ${phase.itemId} (${phase.position + 1}/${phase.count}) ended: ${outcome}`;
+}
+
+/** How a Phase ended when its step did not end normally. */
+function endOf(error: unknown, reason: StopReason | undefined): string {
+  if (reason === 'cancel') return 'cancelled';
+  if (reason === 'timeout') return 'timed out';
+  return error instanceof UsageLimitError ? 'paused: usage limit' : 'failed';
+}
+
+/** A Provider switched off after the Run started fails the Phase that needs it, saying which. */
+function withPhase(run: RunPayload, failed: RunFailure): RunFailure {
+  if (run.phase === undefined || failed.code !== 'provider_disabled') return failed;
+  const { phase } = run;
+  const prefix = `Phase ${phase.itemId} (${phase.position + 1}/${phase.count}) did not start: `;
+  return {
+    code: failed.code,
+    detail: (prefix + failed.detail).slice(0, FAILURE_DETAIL_MAX_LENGTH),
+  };
 }
 
 /** A failure with its detail cut to the protocol's limit. */

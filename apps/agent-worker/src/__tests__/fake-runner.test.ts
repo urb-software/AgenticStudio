@@ -412,3 +412,72 @@ describe('the fake runner and the skills', () => {
     expect((await startWithSkills([])).some((text) => text.includes('skills'))).toBe(false);
   });
 });
+
+describe('the fake runner in a Workflow Run', () => {
+  it('logs the Phase and what the Phase before reported', async () => {
+    const events: RunnerEvent[] = [];
+    await drainRunStep(
+      new FakeRunner({ slowMs: 10, slowLineMs: 2 }).start({
+        run: {
+          ...run('Add a feature'),
+          phase: {
+            position: 1,
+            itemId: 'polish',
+            count: 2,
+            final: true,
+            previous: { itemId: 'build', agent: 'builder', summary: 'Built it.' },
+          },
+        },
+        workspace,
+        signal: new AbortController().signal,
+        processes,
+      }),
+      (event) => events.push(event),
+    );
+
+    expect(events.map((event) => event.text)).toEqual(
+      expect.arrayContaining([
+        'fake runner: phase polish (2/2)',
+        'fake runner: told by phase build: Built it.',
+      ]),
+    );
+  });
+
+  it('gives each Phase a session of its own, the first one the Run always had', () => {
+    expect(fakeSessionRef('r', 0)).toBe(fakeSessionRef('r'));
+    expect(fakeSessionRef('r', 1)).not.toBe(fakeSessionRef('r', 0));
+    expect(fakeSessionRef('r', 2)).not.toBe(fakeSessionRef('r', 1));
+  });
+
+  it('says in its result which Phase it is of, and logs nothing of a Phase for an agent Run', async () => {
+    const events: RunnerEvent[] = [];
+    const result = await drainRunStep(
+      new FakeRunner({ slowMs: 10, slowLineMs: 2 }).start({
+        run: {
+          ...run('Add a feature'),
+          phase: { position: 0, itemId: 'build', count: 2, final: false },
+        },
+        workspace,
+        signal: new AbortController().signal,
+        processes,
+      }),
+      (event) => events.push(event),
+    );
+
+    expect(result).toMatchObject({
+      outcome: 'done',
+      summary: 'The fake agent finished the task. (Phase build)',
+      sessionRef: fakeSessionRef(run('x').runId, 0),
+    });
+    const plain = await drainRunStep(
+      new FakeRunner({ slowMs: 10, slowLineMs: 2 }).start({
+        run: run('Add a feature'),
+        workspace,
+        signal: new AbortController().signal,
+        processes,
+      }),
+      (event) => events.push(event),
+    );
+    expect(plain).toMatchObject({ summary: 'The fake agent finished the task.' });
+  });
+});

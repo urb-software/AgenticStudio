@@ -31,6 +31,9 @@ model Project {
   /// The agent a Run of this project offers first; name syntax only, usability is judged where it
   /// is read. Null when none is named.
   defaultAgent        String?              @map("default_agent") @db.VarChar(64)
+  /// The Workflow a Run of this project offers first, by name; a CHECK keeps it exclusive with
+  /// default_agent. Null when none is named.
+  defaultWorkflow     String?              @map("default_workflow") @db.VarChar(64)
   /// The connected Repository (Story #60): at most one per project.
   repository          Repository?
   /// The project's Runs (`executions` module, Issue #96).
@@ -242,6 +245,15 @@ model Run {
   hasSession                    Boolean              @default(false) @map("has_session")
   /// The position of the Run's current Phase: where its agent, session and Run-step allowance are.
   currentPhase                  Int                  @default(0) @map("current_phase")
+  /// The Workflow the Run was started with, its definitions commit and its items as recorded at
+  /// start (ids, kinds, agents, Phase instructions, Checkpoint texts); all null for a Run started
+  /// with an agent (a CHECK keeps them together).
+  workflowName                  String?              @map("workflow_name") @db.VarChar(64)
+  workflowCommit                String?              @map("workflow_commit") @db.VarChar(64)
+  workflowItems                 Json?                @map("workflow_items")
+  /// A Workflow Run whose next Phase has not been claimed yet: queued, it holds its place and goes
+  /// only to the worker that holds its Working copy, like an answered Run does.
+  phasePending                  Boolean              @default(false) @map("phase_pending")
   /// Issue #141: how many Follow-ups the operator sent to the Run.
   followUpCount                 Int                  @default(0) @map("follow_up_count")
   /// Issue #141: the Run is queued for a Follow-up its agent worker has not claimed yet. Unlike an
@@ -334,6 +346,15 @@ model RunPhase {
   run               Run       @relation(fields: [runId], references: [id], onDelete: Cascade)
   /// 0, 1, … within the Run, in order.
   position          Int
+  /// The Workflow item the Phase came from; null for the one Phase of a Run started with an agent.
+  itemId            String?   @map("item_id") @db.VarChar(64)
+  /// work (a CHECK holds the list).
+  kind              String    @default("work") @db.VarChar(16)
+  /// pending | running | done | failed (a CHECK holds the list).
+  state             String    @default("pending") @db.VarChar(16)
+  /// The summary the Phase's last Run step reported (redacted): what the next Phase is told and
+  /// the Run page shows. Null until a Run step of the Phase is done.
+  summary           String?
   /// The agent's name, `built_in` | `definitions` (a CHECK holds the list and that agent_commit is
   /// set exactly for `definitions`), the definitions Repository's commit, the Provider, the model
   /// the definition named and the instructions' text. Treated like the task: never logged in full.

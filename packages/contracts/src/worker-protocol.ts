@@ -157,9 +157,10 @@ export const STUDIO_PATHS_MAX = 50;
 
 /**
  * What a claim hands out: a Run to `start`, a `delivery_failed` Run to `deliver` again from the
- * Working copy it kept, or an answered Run to `resume` in the same agent session.
+ * Working copy it kept, an answered Run to `resume` in the same agent session, or a Workflow
+ * Run's next Phase (`next_phase`) in the Working copy the Phase before left.
  */
-export const RUN_PAYLOAD_KINDS = ['start', 'deliver', 'resume'] as const;
+export const RUN_PAYLOAD_KINDS = ['start', 'deliver', 'resume', 'next_phase'] as const;
 export type RunPayloadKind = (typeof RUN_PAYLOAD_KINDS)[number];
 
 /**
@@ -269,6 +270,48 @@ export const runSkillSummarySchema = z.strictObject({
 });
 export type RunSkillSummary = z.infer<typeof runSkillSummarySchema>;
 
+/** Most Phases a Run of a Workflow has: the Workflow format's limit, repeated here for the wire. */
+export const RUN_PHASES_MAX = 12;
+
+/** Longest hand-over to a Phase after the first, in UTF-8 bytes; the worker cuts it with a note. */
+export const PHASE_HAND_OVER_MAX_BYTES = 8 * 1024;
+
+/** Longest Phase instructions of a Workflow, in UTF-8 bytes: the Workflow format's limit. */
+export const PHASE_INSTRUCTIONS_MAX_BYTES = 2 * 1024;
+
+/**
+ * The Phase of a Workflow Run a claim is for; a Run started with an agent has none. The text of
+ * `instructions` and `previous.summary` is untrusted, like the Task.
+ */
+export const runPhasePayloadSchema = z.strictObject({
+  /** 0 for the first Phase. */
+  position: z
+    .int()
+    .min(0)
+    .max(RUN_PHASES_MAX - 1),
+  itemId: z.string().min(1).max(64),
+  /** How many Phases the Run has. */
+  count: z.int().min(1).max(RUN_PHASES_MAX),
+  /** Studio decided that this Phase's `done` ends the Workflow: the Run delivers after it. */
+  final: z.boolean(),
+  /** The Workflow item's own instructions for this Phase, after the agent's. */
+  instructions: z
+    .string()
+    .refine(withinBytes(PHASE_INSTRUCTIONS_MAX_BYTES), {
+      message: 'The Phase instructions are longer than the Workflow format allows.',
+    })
+    .optional(),
+  /** For a Phase after the first: what the Phase before it reported. */
+  previous: z
+    .strictObject({
+      itemId: z.string().min(1).max(64),
+      agent: z.string().regex(RUN_AGENT_NAME_PATTERN),
+      summary: z.string().max(20_000),
+    })
+    .optional(),
+});
+export type RunPhasePayload = z.infer<typeof runPhasePayloadSchema>;
+
 /** An opaque reference to the agent's session, as the runner reported it. */
 const sessionRefSchema = z.string().min(1).max(SESSION_REF_MAX_LENGTH);
 
@@ -300,6 +343,8 @@ export const runPayloadSchema = z
     /** The Repository's integration branch when the Run started: the pull request's base. */
     integrationBranch: z.string().min(1).max(BRANCH_NAME_MAX_LENGTH),
     kind: z.enum(RUN_PAYLOAD_KINDS),
+    /** The Phase of a Workflow Run this claim is for; absent for a Run started with an agent. */
+    phase: runPhasePayloadSchema.optional(),
     /**
      * Paths (relative to the Working copy) of files Studio places in it, never committed or
      * pushed. Studio's list is authoritative: what the agent writes beside the Working copy can
@@ -397,19 +442,41 @@ export const runPayloadSchema = z
     message: 'A delivery or resume claim carries the recorded Run branch, a start claim none.',
   })
   .refine(
-    (payload) =>
-      [payload.sessionRef, payload.answer, payload.resumeReason].every(
-        (field) => (field !== undefined) === (payload.kind === 'resume'),
-      ) && (payload.nextSeq !== undefined) === (payload.kind !== 'start'),
+    (payload) => {
+      const resumed = [payload.sessionRef, payload.answer, payload.resumeReason].map(
+        (field) => field !== undefined,
+      );
+      // A next-Phase claim resumes the Phase's session only in a Follow-up round.
+      const consistent =
+        payload.kind === 'resume'
+          ? resumed.every(Boolean)
+          : payload.kind === 'next_phase'
+            ? resumed.every(Boolean) || !resumed.some(Boolean)
+            : !resumed.some(Boolean);
+      return consistent && (payload.nextSeq !== undefined) === (payload.kind !== 'start');
+    },
     {
       path: ['kind'],
       message:
-        'A resume claim carries the session reference, the answer and the resume reason, a resume or delivery claim the next seq; a start claim none of them.',
+        'A resume claim carries the session reference, the answer and the resume reason, a next-Phase claim all or none of them, a resume, next-Phase or delivery claim the next seq; a start claim none of them.',
     },
   )
   .refine(
     (payload) =>
-      (payload.followUpNumber === undefined || payload.kind === 'resume') &&
+      payload.phase === undefined
+        ? payload.kind !== 'next_phase'
+        : payload.kind !== 'deliver' && payload.phase.position < payload.phase.count,
+    {
+      path: ['phase'],
+      message:
+        'A next-Phase claim carries its Phase, a delivery claim none, and a Phase lies within the Run count.',
+    },
+  )
+  .refine(
+    (payload) =>
+      (payload.followUpNumber === undefined ||
+        payload.kind === 'resume' ||
+        payload.kind === 'next_phase') &&
       ((payload.resumeReason !== 'follow_up' && payload.resumeReason !== 'bring_up_to_date') ||
         payload.followUpNumber !== undefined) &&
       (payload.answer === undefined ||
@@ -420,7 +487,7 @@ export const runPayloadSchema = z
     {
       path: ['followUpNumber'],
       message:
-        'A Follow-up number comes with a resume claim only, and always with the resume reason follow_up or bring_up_to_date.',
+        'A Follow-up number comes with a resume or next-Phase claim only, and always with the resume reason follow_up or bring_up_to_date.',
     },
   )
   .refine(

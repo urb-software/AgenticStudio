@@ -9,6 +9,7 @@ import {
   agentNotice,
   skillsNotice,
   buildInstructions,
+  handOverSection,
   type RepositoryFiles,
 } from '../claude-code/instructions.js';
 import { errorReason } from '../cli-output.js';
@@ -184,7 +185,15 @@ export class CodexRunner implements Runner {
       });
       stdinFile = files.promptFile;
     } else {
-      await writeFile(files.answerFile, codexAnswer(resumed.answer, resumed.reason), {
+      // A Phase resumed in an earlier round is told what the Phase before reported, as an untrusted
+      // block, since its first prompt is long past.
+      const handOver = handOverSection(
+        run.phase,
+        run.task,
+        this.options.marker?.() ?? randomBytes(6).toString('hex'),
+        [],
+      );
+      await writeFile(files.answerFile, codexAnswer(resumed.answer, resumed.reason) + handOver, {
         mode: 0o600,
       });
       args = codexResumeArguments({

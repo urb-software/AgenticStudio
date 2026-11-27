@@ -9,7 +9,7 @@ import {
   type ExecutionsModuleOptions,
 } from './modules/executions/executions.module.js';
 import { ProjectsModule, type ProjectsModuleOptions } from './modules/projects/projects.module.js';
-import { WorkflowsModule } from './modules/workflows/workflows.module.js';
+import { WorkflowPlansModule, WorkflowsModule } from './modules/workflows/workflows.module.js';
 import { AuthModule } from './platform/auth/auth.module.js';
 import type { AppConfig } from './platform/config/config.js';
 import { ConfigModule } from './platform/config/config.module.js';
@@ -32,15 +32,18 @@ export class AppModule {
     } = {},
   ): DynamicModule {
     // One instance each: `executions`, `environments`, `agents` and `workflows` import `projects`;
-    // `executions` imports `environments` and `agents`, and `workflows` imports `agents` and
-    // `executions`, to reach their public contracts.
+    // `executions` imports `environments`, `agents` and the plans `workflows` provides, and
+    // `workflows` imports `agents` and `executions`, to reach their public contracts.
     const projects = ProjectsModule.register(options.projects);
     const agents = AgentsModule.register(projects);
     const environments = EnvironmentsModule.register(projects, options.environments);
+    // Provides the order of a Workflow's Phases to `executions`, which imports nothing of it.
+    const workflowPlans = WorkflowPlansModule.register(projects, agents);
     const executions = ExecutionsModule.register(
       projects,
       environments,
       agents,
+      workflowPlans,
       options.executions,
     );
     return {
@@ -57,7 +60,7 @@ export class AppModule {
         agents,
         executions,
         environments,
-        WorkflowsModule.register(projects, agents, executions),
+        WorkflowsModule.register(projects, agents, executions, workflowPlans),
       ],
     };
   }

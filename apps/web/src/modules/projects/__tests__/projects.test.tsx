@@ -13,6 +13,7 @@ const ALPHA: ProjectOutput = {
   mergeMethod: 'squash',
   kind: 'code',
   defaultAgent: null,
+  defaultWorkflow: null,
   createdAt: '2026-11-12T09:00:00.000Z',
 };
 const BETA: ProjectOutput = {
@@ -21,6 +22,7 @@ const BETA: ProjectOutput = {
   mergeMethod: 'squash',
   kind: 'code',
   defaultAgent: null,
+  defaultWorkflow: null,
   createdAt: '2026-11-12T10:00:00.000Z',
 };
 
@@ -526,6 +528,7 @@ describe('the definitions Repository in the list', () => {
     mergeMethod: 'squash',
     kind: 'definitions',
     defaultAgent: null,
+    defaultWorkflow: null,
     createdAt: '2026-11-12T11:00:00.000Z',
   };
 

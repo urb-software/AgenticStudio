@@ -22,6 +22,11 @@ export class GetProjectDefaultAgentHandler {
       ? await this.projects.findById(input.projectId)
       : null;
     if (!project) return { status: 'project_not_found' };
-    return { status: 'found', kind: project.kind, agent: project.defaultAgent };
+    return {
+      status: 'found',
+      kind: project.kind,
+      agent: project.defaultAgent,
+      workflow: project.defaultWorkflow,
+    };
   }
 }

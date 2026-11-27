@@ -27,12 +27,17 @@ export class HandOutRule {
   }
 
   holdsPlace(
-    run: Pick<HandOutView, 'state' | 'claimedBy' | 'sessionRef' | 'followUpQueued'>,
+    run: Pick<
+      HandOutView,
+      'state' | 'claimedBy' | 'sessionRef' | 'followUpQueued' | 'phasePending'
+    >,
   ): boolean {
     return (
       (HandOutRule.PLACE_STATES as readonly string[]).includes(run.state) ||
       (run.state === 'failed' && run.claimedBy !== null) ||
-      (run.state === 'queued' && run.sessionRef !== null && !run.followUpQueued)
+      (run.state === 'queued' &&
+        (run.sessionRef !== null || run.phasePending === true) &&
+        !run.followUpQueued)
     );
   }
 
@@ -44,8 +49,12 @@ export class HandOutRule {
    * it alone has the Working copy.
    */
   takes(run: HandOutView): boolean {
-    if (run.state === 'queued')
-      return run.sessionRef === null || run.lastClaimedBy === this.workerId;
+    if (run.state === 'queued') {
+      return (
+        (run.sessionRef === null && run.phasePending !== true) ||
+        run.lastClaimedBy === this.workerId
+      );
+    }
     return (
       run.state === 'failed' &&
       run.deliveryRequested &&
