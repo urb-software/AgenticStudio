@@ -411,7 +411,9 @@ export const zAgentDetailAgentOutput = z.object({
 export const zAgentDetailOutput = z.object({
     commit: z.string().nullable(),
     repository: zAgentsRepositoryOutput.nullable(),
-    agent: zAgentDetailAgentOutput
+    agent: zAgentDetailAgentOutput,
+    usedByWorkflows: z.array(z.string()),
+    usedByWorkflowsTruncated: z.boolean()
 });
 
 export const zRunAgentOptionOutput = z.object({
@@ -1607,6 +1609,134 @@ export const zPreviewBuildEventsOutput = z.object({
     truncated: z.boolean()
 });
 
+export const zWorkflowsRepositoryOutput = z.object({
+    state: z.enum([
+        'awaiting_key',
+        'awaiting_host_key',
+        'connecting',
+        'ready',
+        'fetching',
+        'failed',
+        'disconnecting'
+    ]),
+    note: z.string().nullable()
+});
+
+export const zWorkflowProblemOutput = z.object({
+    code: z.enum([
+        'entry_missing',
+        'entry_unreadable',
+        'front_matter_missing',
+        'front_matter_malformed',
+        'front_matter_too_large',
+        'key_missing',
+        'key_invalid',
+        'name_invalid',
+        'name_mismatch',
+        'name_reserved',
+        'unknown_key',
+        'forbidden_key',
+        'instructions_too_large',
+        'too_many_files',
+        'file_too_large',
+        'folder_too_large',
+        'path_outside_folder',
+        'nested_git',
+        'symlink_refused',
+        'kind_refused',
+        'duplicate_path',
+        'size_invalid',
+        'cli_config_path',
+        'short_name',
+        'shell_line',
+        'workflow_extra_file',
+        'workflow_forbidden_key',
+        'item_invalid',
+        'item_id_duplicate',
+        'send_backs_out_of_range',
+        'sequence_too_long',
+        'phase_agent_reserved',
+        'no_phase',
+        'review_first',
+        'review_before_work',
+        'checkpoint_first',
+        'checkpoint_last',
+        'checkpoints_adjacent',
+        'phase_agent_missing',
+        'phase_agent_invalid'
+    ]),
+    path: z.string(),
+    key: z.string().nullable(),
+    message: z.string()
+});
+
+export const zWorkflowSummaryOutput = z.object({
+    name: z.string(),
+    description: z.string().nullable(),
+    valid: z.boolean(),
+    usable: z.boolean(),
+    notUsableReason: z.string().nullable(),
+    problems: z.array(zWorkflowProblemOutput)
+});
+
+export const zWorkflowListOutput = z.object({
+    commit: z.string().nullable(),
+    repository: zWorkflowsRepositoryOutput.nullable(),
+    truncated: z.boolean(),
+    workflows: z.array(zWorkflowSummaryOutput)
+});
+
+export const zWorkflowWorkPhaseOutput = z.object({
+    kind: z.literal('work'),
+    id: z.string(),
+    agent: z.string(),
+    agentState: z.enum([
+        'valid',
+        'invalid',
+        'missing'
+    ]),
+    provider: z.enum(['claude_code', 'codex']).nullable(),
+    usable: z.boolean()
+});
+
+export const zWorkflowReviewPhaseOutput = z.object({
+    kind: z.literal('review'),
+    id: z.string(),
+    agent: z.string(),
+    agentState: z.enum([
+        'valid',
+        'invalid',
+        'missing'
+    ]),
+    provider: z.enum(['claude_code', 'codex']).nullable(),
+    usable: z.boolean()
+});
+
+export const zWorkflowCheckpointOutput = z.object({
+    kind: z.literal('checkpoint'),
+    id: z.string(),
+    text: z.string()
+});
+
+export const zWorkflowItemOutput = z.union([
+    zWorkflowWorkPhaseOutput,
+    zWorkflowReviewPhaseOutput,
+    zWorkflowCheckpointOutput
+]);
+
+export const zWorkflowDetailOutput = z.object({
+    commit: z.string().nullable(),
+    repository: zWorkflowsRepositoryOutput.nullable(),
+    name: z.string(),
+    description: z.string().nullable(),
+    valid: z.boolean(),
+    usable: z.boolean(),
+    notUsableReason: z.string().nullable(),
+    problems: z.array(zWorkflowProblemOutput),
+    sendBacks: z.int().gte(0).lte(9007199254740991).nullable(),
+    items: z.array(zWorkflowItemOutput)
+});
+
 export const zProblemDetails = z.object({
     type: z.string(),
     title: z.string(),
@@ -2034,3 +2164,11 @@ export const zListPreviewBuildEventsQuery = z.object({
 });
 
 export const zListPreviewBuildEventsResponse = zPreviewBuildEventsOutput;
+
+export const zListWorkflowsResponse = zWorkflowListOutput;
+
+export const zGetWorkflowPath = z.object({
+    name: z.string()
+});
+
+export const zGetWorkflowResponse = zWorkflowDetailOutput;

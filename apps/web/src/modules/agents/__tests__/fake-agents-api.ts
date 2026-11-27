@@ -67,6 +67,8 @@ export function agentDetail(
     commit: null,
     repository: null,
     agent: { ...agent, instructions: extras.instructions ?? '', files: extras.files ?? [] },
+    usedByWorkflows: [],
+    usedByWorkflowsTruncated: false,
     ...overrides,
   };
 }

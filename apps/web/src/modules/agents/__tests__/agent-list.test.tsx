@@ -571,3 +571,52 @@ describe('Agents page: the skills of an agent', () => {
     await expect(container).toHaveNoAxeViolations();
   });
 });
+
+describe('Agents page: the Workflows that name an agent', () => {
+  const open = async (usedByWorkflows: string[], usedByWorkflowsTruncated = false) => {
+    fakeAgentsApi(
+      { repository: READY },
+      {
+        list: agentList({ commit: SHA, repository: REPOSITORY, agents: [...BUILT_INS, REVIEWER] }),
+        details: {
+          reviewer: agentDetail(
+            REVIEWER,
+            { instructions: 'Work.' },
+            { usedByWorkflows, usedByWorkflowsTruncated },
+          ),
+        },
+      },
+    );
+    const view = renderAgents();
+    await userEvent.click(await screen.findByRole('button', { name: 'Show reviewer' }));
+    return view;
+  };
+
+  it('lists the Workflows, each linking to the Workflow, without axe violations', async () => {
+    const { container } = await open(['ship', 'review-only']);
+
+    const region = await screen.findByRole('region', { name: 'Workflows that use this agent' });
+    const links = within(region).getAllByRole('link');
+    expect(links.map((link) => link.textContent)).toEqual(['ship', 'review-only']);
+    expect(links.map((link) => link.getAttribute('href'))).toEqual([
+      '/workflows?open=ship',
+      '/workflows?open=review-only',
+    ]);
+    await expect(container).toHaveNoAxeViolations();
+  });
+
+  it('says nothing for an agent no Workflow names, when the check was complete', async () => {
+    await open([]);
+
+    await screen.findByText('Work.');
+    expect(screen.queryByRole('region', { name: 'Workflows that use this agent' })).toBeNull();
+  });
+
+  it('says the list may be incomplete when Workflow folders were not all checked', async () => {
+    await open([], true);
+
+    const region = await screen.findByRole('region', { name: 'Workflows that use this agent' });
+    expect(within(region).getByText('No Workflow names this agent.')).toBeTruthy();
+    expect(within(region).getByText(/may be incomplete/)).toBeTruthy();
+  });
+});

@@ -91,6 +91,7 @@ describe('Studio Shell', () => {
     expect(links.map((link) => [link.textContent, link.getAttribute('href')])).toEqual([
       ['Projects', '/projects'],
       ['Agents', '/agents'],
+      ['Workflows', '/workflows'],
       ['Executions', '/executions'],
     ]);
     expect(links[0]!.getAttribute('aria-current')).toBe('page');
