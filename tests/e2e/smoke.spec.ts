@@ -2267,11 +2267,16 @@ test('a Run whose review did not pass: the Verdict, the findings and the Runs li
   await first.focus();
   await page.keyboard.press('Enter');
   await expect(main.getByRole('tab', { name: 'Changes' })).toHaveAttribute('aria-selected', 'true');
-  await expect(
-    main.getByRole('navigation', { name: /Changed files/ }).getByRole('button', {
-      name: /src\/handler\.ts/,
-    }),
-  ).toHaveAttribute('aria-current', 'true');
+  // On a phone the list gives way to the file's own diff; at desktop width the file is selected.
+  if ((page.viewportSize()?.width ?? 1280) < 768) {
+    await expect(main.getByRole('region', { name: /^src\/handler\.ts/ })).toBeVisible();
+  } else {
+    await expect(
+      main
+        .getByRole('navigation', { name: /Changed files/ })
+        .getByRole('button', { name: /src\/handler\.ts/ }),
+    ).toHaveAttribute('aria-current', 'true');
+  }
   await expectNoHorizontalScroll(page);
   await expectNoAxeViolations(page);
   expect(foreign, 'a request left the Studio origin').toEqual([]);
