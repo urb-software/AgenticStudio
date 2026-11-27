@@ -65,6 +65,14 @@ export class RunNotWaitingError extends Error {
   }
 }
 
+/** The Run does not wait at the Checkpoint the request is about (or at any). */
+export class RunNotAtCheckpointError extends Error {
+  constructor(readonly state: RunState) {
+    super('The run is not waiting at a Checkpoint.');
+    this.name = 'RunNotAtCheckpointError';
+  }
+}
+
 /**
  * Not held: claimed by another worker, released (waiting for the operator, or final),
  * or failed as `worker_lost`.

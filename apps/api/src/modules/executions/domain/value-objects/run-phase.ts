@@ -27,5 +27,7 @@ export interface RunPhaseData {
   verdict?: RunPhaseVerdict | null;
   /** What the review found (redacted); empty without a Verdict and for `approved` with none. */
   findings?: readonly RunPhaseFinding[];
+  /** What the operator wrote at the Checkpoint before the Phase: untrusted; `null` for none. */
+  checkpointComment?: string | null;
   stepsUsed: number;
 }

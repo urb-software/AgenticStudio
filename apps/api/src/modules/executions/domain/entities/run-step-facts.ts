@@ -18,10 +18,11 @@ export interface RunStepRecord {
 }
 
 /**
- * What follows a Phase's `done` result, as the Workflow decided it: the position of the next Phase,
- * or the end of the Workflow.
+ * What follows a Phase's `done` result, or a Checkpoint, as the Workflow decided it: the position
+ * of the next Phase, the place among the items of a Checkpoint to wait at, or the end.
  */
-export type PhaseNext = { kind: 'phase'; position: number } | { kind: 'end' };
+export type NextStep =
+  { kind: 'phase'; position: number } | { kind: 'checkpoint'; item: number } | { kind: 'end' };
 
 /** What storing a reported Run step did. */
 export type RunStepOutcome =

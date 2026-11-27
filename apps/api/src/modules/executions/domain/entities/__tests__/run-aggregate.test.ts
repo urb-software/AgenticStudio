@@ -174,6 +174,7 @@ describe('restoring a Run from its flat record and giving it back', () => {
     expect(Object.keys(run).sort()).toEqual(
       [
         'agent',
+        'checkpointItem',
         'claim',
         'conversation',
         'createdAt',
@@ -191,6 +192,7 @@ describe('restoring a Run from its flat record and giving it back', () => {
         'startCommit',
         'task',
         'workflow',
+        'workflowEnded',
         'workingCopy',
       ].sort(),
     );

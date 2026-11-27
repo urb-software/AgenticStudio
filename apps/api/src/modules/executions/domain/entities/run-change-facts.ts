@@ -24,6 +24,9 @@ export type RunFieldChanges = Partial<
       currentPhase: number;
       provider: Provider;
       phasePending: boolean;
+      /** The place of the Checkpoint the Run waits at among its items; `null` when none. */
+      checkpointItem: number | null;
+      workflowEnded: boolean;
       /** Changes of Phases other than by the session and step count, by position. */
       phaseUpdates: Record<
         number,
@@ -33,6 +36,7 @@ export type RunFieldChanges = Partial<
           sessionRef?: string | null;
           verdict?: RunPhaseVerdict | null;
           findings?: readonly RunPhaseFinding[];
+          checkpointComment?: string | null;
         }
       >;
     }

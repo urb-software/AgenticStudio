@@ -75,6 +75,8 @@ export interface ClaimedPhase {
   instructions?: string;
   /** What the Phase before reported; only for a Phase after the first. */
   previous?: { itemId: string; agent: string; summary: string };
+  /** What the operator wrote at the Checkpoint before this Phase: untrusted text. */
+  checkpointComment?: string;
 }
 
 /** What the agent worker needs to prepare and run a claimed Run. */
@@ -310,12 +312,14 @@ export class ClaimRunHandler {
     const review = item.kind === 'review';
     const next = this.plans.next(workflow.toData(), position, review ? 'approved' : 'done');
     const before = position > 0 ? run.phases[position - 1] : undefined;
+    const comment = run.phases[position]!.checkpointComment;
     return {
       phase: {
         position,
         itemId: item.id,
         count: run.phases.length,
         kind: item.kind,
+        // A Checkpoint after the Phase is not an end: the Run waits there, the Phase hands on.
         final: next.kind === 'end',
         ...(review
           ? {
@@ -335,6 +339,7 @@ export class ClaimRunHandler {
                 summary: cutReport(before.summary ?? ''),
               },
             }),
+        ...(comment === null ? {} : { checkpointComment: cutReport(comment) }),
       },
     };
   }

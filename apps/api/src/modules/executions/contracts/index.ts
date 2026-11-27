@@ -39,8 +39,12 @@ export type WorkflowResolution =
   | { status: 'unknown' }
   | { status: 'not_usable'; reason: string };
 
-/** What follows a Phase's result: the position of the next Phase, or the end of the Workflow. */
-export type NextPhase = { kind: 'phase'; position: number } | { kind: 'end' };
+/**
+ * What follows a Phase's result or a Checkpoint: the position of the next Phase, the place among
+ * the items of the Checkpoint the Run waits at, or the end of the Workflow.
+ */
+export type NextStep =
+  { kind: 'phase'; position: number } | { kind: 'checkpoint'; item: number } | { kind: 'end' };
 
 /** How a Phase ended: a work Phase is `done`, a review Phase gives its Verdict. */
 export type PhaseOutcome = 'done' | 'approved' | 'changes_requested';
@@ -50,8 +54,12 @@ export interface WorkflowPlans {
   /** The Workflow as it stands at the definitions Repository's last fetched commit. */
   resolve(projectId: string, name: string): Promise<WorkflowResolution>;
   /**
-   * Pure over the recorded plan: the Phase after the one at `position` for `outcome`, or the end.
-   * Called inside the transaction that records the Phase's result.
+   * Pure over the recorded plan: what follows the Phase at `position` for `outcome`. Called inside
+   * the transaction that records the Phase's result.
    */
-  next(plan: WorkflowPlan, position: number, outcome: PhaseOutcome): NextPhase;
+  next(plan: WorkflowPlan, position: number, outcome: PhaseOutcome): NextStep;
+  /** Pure over the recorded plan: what follows the Checkpoint at place `item` among the items. */
+  afterCheckpoint(plan: WorkflowPlan, item: number): NextStep;
+  /** Pure over the recorded plan: where a Run of it starts (a Checkpoint may come first). */
+  first(plan: WorkflowPlan): NextStep;
 }

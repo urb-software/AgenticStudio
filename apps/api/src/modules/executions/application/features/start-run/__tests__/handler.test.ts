@@ -30,7 +30,8 @@ import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__
 import type { WorkerStatusData } from '../../../../domain/value-objects/worker-status-data.js';
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { FakeProjectKinds } from '../../../ports/__tests__/fake-project-kinds.js';
-import { StartRunHandler, WORKFLOW_ITEMS_NOT_SUPPORTED } from '../handler.js';
+import { SEQUENTIAL_PLANS } from '../../../ports/__tests__/fake-workflow-plans.js';
+import { FIRST_ITEM_NOT_A_PHASE, StartRunHandler } from '../handler.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const HEAD = 'd'.repeat(40);
@@ -92,9 +93,9 @@ describe('StartRunHandler', () => {
   const resolvedAt: string[] = [];
   const workflows: Record<string, WorkflowResolution> = {};
   const plans: WorkflowPlans = {
+    ...SEQUENTIAL_PLANS,
     resolve: (_projectId, name) =>
       Promise.resolve(workflows[name] ?? ({ status: 'unknown' } as const)),
-    next: () => ({ kind: 'end' }),
   };
   let projectDefault: ProjectDefaultAgent;
   const defaults = { forProject: () => Promise.resolve(projectDefault) };
@@ -369,18 +370,6 @@ describe('StartRunHandler', () => {
       expect(runs.runs).toEqual([]);
     });
 
-    it('refuses a Workflow with a Checkpoint until it is supported', async () => {
-      workflows['flow'] = plan([
-        { id: 'build', kind: 'work', agent: 'coder' },
-        { id: 'wait', kind: 'checkpoint', text: 'Look at it.' },
-      ]);
-
-      await expect(startWith({ workflow: 'flow' })).rejects.toEqual(
-        new WorkflowNotUsableError(WORKFLOW_ITEMS_NOT_SUPPORTED),
-      );
-      expect(runs.runs).toEqual([]);
-    });
-
     it('starts a Workflow with a review Phase, recording the Phase as a review', async () => {
       workflows['flow'] = plan([
         { id: 'build', kind: 'work', agent: 'coder' },
@@ -396,6 +385,34 @@ describe('StartRunHandler', () => {
         ['build', 'work', 'coder'],
         ['check', 'review', 'builder'],
       ]);
+    });
+
+    it('starts a Workflow with a Checkpoint, which the Run records among its items', async () => {
+      const items: WorkflowPlan['items'] = [
+        { id: 'build', kind: 'work', agent: 'coder' },
+        { id: 'wait', kind: 'checkpoint', text: 'Look at it.' },
+        { id: 'polish', kind: 'work', agent: 'builder' },
+      ];
+      workflows['flow'] = plan(items);
+
+      const run = (await runs.findById((await startWith({ workflow: 'flow' })).id))!;
+
+      expect(run.workflow?.items).toEqual(items);
+      expect(run.phases.map((phase) => phase.itemId)).toEqual(['build', 'polish']);
+      expect(run.lifecycle.state).toBe('queued');
+      expect(run.waiting).toBeNull();
+    });
+
+    it('refuses a Workflow whose first item is a Checkpoint, starting nothing', async () => {
+      workflows['flow'] = plan([
+        { id: 'wait', kind: 'checkpoint', text: 'Ready to start?' },
+        { id: 'build', kind: 'work', agent: 'coder' },
+      ]);
+
+      await expect(startWith({ workflow: 'flow' })).rejects.toEqual(
+        new WorkflowNotUsableError(FIRST_ITEM_NOT_A_PHASE),
+      );
+      expect(runs.runs).toEqual([]);
     });
 
     it('refuses a Workflow whose Phase names an agent that cannot be used at its commit', async () => {

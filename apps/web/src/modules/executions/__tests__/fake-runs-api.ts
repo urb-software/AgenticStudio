@@ -36,6 +36,8 @@ type Route =
   | 'stream'
   | 'cancel'
   | 'answer'
+  | 'checkpointContinue'
+  | 'checkpointStop'
   | 'followUp'
   | 'bringUp'
   | 'refresh'
@@ -72,6 +74,8 @@ const ROUTES: readonly [RegExp, (method: string) => Route][] = [
   [/^\/api\/agent-worker()$/, () => 'agentWorker'],
   [/^\/api\/runs\/([^/]+)\/cancel$/, () => 'cancel'],
   [/^\/api\/runs\/([^/]+)\/answer$/, () => 'answer'],
+  [/^\/api\/runs\/([^/]+)\/checkpoint\/continue$/, () => 'checkpointContinue'],
+  [/^\/api\/runs\/([^/]+)\/checkpoint\/stop$/, () => 'checkpointStop'],
   [/^\/api\/runs\/([^/]+)\/follow-up$/, () => 'followUp'],
   [/^\/api\/runs\/([^/]+)\/bring-up-to-date$/, () => 'bringUp'],
   [/^\/api\/runs\/([^/]+)\/pull-request\/refresh$/, () => 'refresh'],
@@ -228,6 +232,8 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     agentWorker: [],
     cancel: [],
     answer: [],
+    checkpointContinue: [],
+    checkpointStop: [],
     followUp: [],
     bringUp: [],
     refresh: [],
@@ -322,6 +328,8 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     const body: unknown =
       route === 'start' ||
       route === 'answer' ||
+      route === 'checkpointContinue' ||
+      route === 'checkpointStop' ||
       route === 'followUp' ||
       route === 'bringUp' ||
       route === 'mergeRun' ||
@@ -424,6 +432,34 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
         };
         runs[index] = answered;
         return new Response(null, { status: 202 });
+      }
+      case 'checkpointContinue':
+      case 'checkpointStop': {
+        // The API's rules, in short: the Run must wait at the Checkpoint the request names.
+        const index = runs.findIndex((candidate) => candidate.id === id);
+        const run = runs[index];
+        if (!run) return json(404, problem(404, 'Run not found'));
+        const named = (body as { checkpoint?: string }).checkpoint;
+        if (
+          run.state !== 'waiting_for_operator' ||
+          run.waiting?.reason !== 'checkpoint' ||
+          (named !== undefined && named !== run.waiting.checkpoint?.id)
+        ) {
+          return json(409, {
+            ...problem(
+              409,
+              'Run not at a Checkpoint',
+              'The run is not waiting at this Checkpoint: it may have gone on already, or been cancelled.',
+            ),
+            type: 'urn:agentic-studio:problem:run-not-at-checkpoint',
+            reason: 'not_at_checkpoint',
+          });
+        }
+        const { waiting: _waiting, ...rest } = run;
+        void _waiting;
+        const moved: RunOutput = { ...rest, state: 'queued' };
+        runs[index] = moved;
+        return json(202, moved);
       }
       case 'followUp': {
         // The API's rules, in short.

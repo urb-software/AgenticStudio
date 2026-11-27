@@ -13,6 +13,7 @@ import type { PullRequestRefreshOutcome } from '../domain/value-objects/pull-req
 import type { FailingChecksPreparationOutcome } from '../domain/value-objects/failing-checks-preparation-outcome.js';
 import type { RunPullRequestChecks } from '../domain/value-objects/run-pull-request-checks.js';
 import type { RunState } from '../domain/value-objects/run-state.js';
+import type { RunWaiting } from '../domain/value-objects/run-waiting.js';
 import type { PullRequestState } from '../domain/value-objects/pull-request-state.js';
 import type { RunWorkingCopy } from '../domain/value-objects/run-working-copy.js';
 
@@ -69,6 +70,8 @@ export interface RunView {
   failingChecks: readonly string[];
   resumable: boolean;
   question: RunQuestion | null;
+  /** Why the Run waits for the operator; `null` when it does not wait. */
+  waiting: RunWaiting | null;
   /** Empty in a list of Runs. */
   messages: RunMessage[];
 }
@@ -132,6 +135,7 @@ export function runView(run: Run, facts: RunViewFacts): RunView {
     failingChecks: [...run.failingChecks],
     resumable: run.resumable,
     question: run.openQuestion,
+    waiting: run.waiting,
     messages: [...run.conversation.messages],
   };
 }

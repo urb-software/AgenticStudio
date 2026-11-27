@@ -3,6 +3,7 @@
 // what it received. Everything goes through the operator routes.
 import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
+import { runCheckpointPhase } from './checkpoint-phase.mjs';
 
 /** The instructions of the agent in the definitions fixture; the phase checks the copy on the Run. */
 export const REVIEWER_INSTRUCTIONS =
@@ -249,6 +250,7 @@ export async function runAgentPhase(options) {
 
   await runWorkflowPhase({ call, projectId, definitionsCommit });
   await runReviewPhase({ call, projectId });
+  await runCheckpointPhase({ call, projectId });
 
   const listedRuns = (await call(`/api/projects/${projectId}/runs`)).body;
   assert(

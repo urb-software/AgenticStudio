@@ -51,6 +51,19 @@ describe('the claim of a Run with Phases', () => {
     expect(parses(NEXT)).toBe(true);
   });
 
+  it('carries what the operator wrote at the Checkpoint before the Phase, also for the first Phase', () => {
+    const first = { position: 0, itemId: 'build', count: 2, final: false };
+
+    expect(parses({ ...START, phase: { ...first, checkpointComment: 'Take care.' } })).toBe(true);
+    expect(
+      parses({ ...NEXT, phase: { ...NEXT.phase, checkpointComment: 'x'.repeat(20_000) } }),
+    ).toBe(true);
+    expect(
+      parses({ ...NEXT, phase: { ...NEXT.phase, checkpointComment: 'x'.repeat(20_001) } }),
+    ).toBe(false);
+    expect(parses({ ...NEXT, phase: { ...NEXT.phase, checkpointComment: '' } })).toBe(false);
+  });
+
   it.each([
     ['has no Phase', { phase: undefined }],
     ['has no Run branch', { runBranch: undefined }],

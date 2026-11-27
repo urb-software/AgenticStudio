@@ -174,6 +174,29 @@ describe('token matrix over every route', () => {
     }
   });
 
+  it('answers the routes that pass a Checkpoint to a session only, never to the worker token', async () => {
+    const checkpoint = routes.filter((route) => route.label.includes('/checkpoint/'));
+    expect(checkpoint.map((route) => route.label).sort()).toEqual([
+      'POST /api/runs/:runId/checkpoint/continue',
+      'POST /api/runs/:runId/checkpoint/stop',
+    ]);
+    for (const route of checkpoint) {
+      expect(route.kind).toBe('operator');
+      for (const credential of ['worker token', 'controller token', 'nothing'] as const) {
+        expect([401, 403], `${route.label} with ${credential}`).toContain(
+          await outcome(route, credential),
+        );
+      }
+      expect(await outcome(route, 'session')).toBe(200);
+    }
+  });
+
+  it('gives the agent worker no route that names a Checkpoint', () => {
+    const worker = routes.filter((route) => route.kind === 'worker');
+    expect(worker.length).toBeGreaterThan(0);
+    expect(worker.filter((route) => /checkpoint/i.test(route.label))).toEqual([]);
+  });
+
   it('answers the publish route, the write to a Repository, to a session only', async () => {
     const publish = routes.find(
       (route) => route.label === 'POST /api/agents/definitions-repository/draft/publish',

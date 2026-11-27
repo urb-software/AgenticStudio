@@ -17,6 +17,7 @@ import {
   IllegalRunTransitionError,
   ReviewCommentsNotLoadedError,
   RunAlreadyFinishedError,
+  RunNotAtCheckpointError,
   RunNotHeldError,
   RunNotResumableError,
   RunNotWaitingError,
@@ -37,7 +38,7 @@ import type { RunSweepFacts } from '../value-objects/run-sweep-facts.js';
 import type { RunChanges, RunFieldChanges } from './run-change-facts.js';
 import type { RunStartInput } from './run-start-facts.js';
 import type { RunStateReport } from './run-report-facts.js';
-import type { PhaseNext, RunStepOutcome, RunStepRecord } from './run-step-facts.js';
+import type { NextStep, RunStepOutcome, RunStepRecord } from './run-step-facts.js';
 import { RunLifecycle } from '../value-objects/run-lifecycle.js';
 import { RunProgress } from '../value-objects/run-progress.js';
 import { RunPullRequestStatus } from '../value-objects/run-pull-request-status.js';
@@ -58,6 +59,7 @@ import { RunAgent } from '../value-objects/run-agent.js';
 import type { RunPhaseFinding } from '../value-objects/run-phase-finding.js';
 import type { RunPhaseState, RunPhaseVerdict } from '../value-objects/run-phase.js';
 import type { RunPhaseView } from '../value-objects/run-phase-view.js';
+import type { RunWaiting } from '../value-objects/run-waiting.js';
 import { RunWorkflow } from '../value-objects/run-workflow.js';
 import { RunStep } from './run-step.js';
 
@@ -73,6 +75,8 @@ type RunPatch = Partial<
     | 'currentPhase'
     | 'workflow'
     | 'phasePending'
+    | 'checkpointItem'
+    | 'workflowEnded'
     | 'task'
     | 'startCommit'
     | 'remoteUrl'
@@ -102,6 +106,9 @@ const WORKING_COPY_REMOVED = RunFailure.of(
   "Working copy no longer exists — run again: the agent worker's retention removed it.",
 );
 
+/** Most characters of the comments of several Checkpoints in a row, kept for the Phase after. */
+const CHECKPOINT_COMMENT_MAX = 20_000;
+
 const CHANGES = new WeakMap<Run, RunChanges>();
 const PHASES = new WeakMap<Run, readonly RunPhaseView[]>();
 
@@ -124,6 +131,10 @@ export class Run {
   declare readonly currentPhase: number;
   /** A Workflow Run between two Phases: queued, it holds its place until its worker claims it. */
   declare readonly phasePending: boolean;
+  /** The place of the Checkpoint the Run waits at among the items of its Workflow. */
+  declare readonly checkpointItem: number | null;
+  /** The Workflow is over and the Run, queued, is handed out only to deliver what exists. */
+  declare readonly workflowEnded: boolean;
   declare readonly task: RunData['task'];
   declare readonly startCommit: RunData['startCommit'];
   /** Never a credential. */
@@ -150,6 +161,8 @@ export class Run {
       workflow: data.workflow == null ? null : RunWorkflow.restore(data.workflow),
       currentPhase: data.currentPhase ?? 0,
       phasePending: data.phasePending ?? false,
+      checkpointItem: data.checkpointItem ?? null,
+      workflowEnded: data.workflowEnded ?? false,
       task: data.task,
       startCommit: data.startCommit,
       remoteUrl: data.remoteUrl,
@@ -168,6 +181,18 @@ export class Run {
     });
     CHANGES.set(this, { fields: {}, messages: [] });
     PHASES.set(this, Run.checkedPhases(data));
+    this.checkCheckpoint(data);
+  }
+
+  private checkCheckpoint(data: RunData): void {
+    const item = data.checkpointItem ?? null;
+    if (item === null) return;
+    if (
+      data.state !== 'waiting_for_operator' ||
+      data.workflow?.items[item]?.kind !== 'checkpoint'
+    ) {
+      throw new TypeError('A Run waits at a Checkpoint of its Workflow, and only while it waits.');
+    }
   }
 
   private static checkedPhases(data: RunData): readonly RunPhaseView[] {
@@ -201,6 +226,7 @@ export class Run {
       summary: phase.summary ?? null,
       verdict: phase.verdict ?? null,
       findings: (phase.findings ?? []).map((finding) => ({ ...finding })),
+      checkpointComment: phase.checkpointComment ?? null,
       stepsUsed: phase.stepsUsed,
     }));
   }
@@ -368,6 +394,14 @@ export class Run {
     }
     const resume = this.resumeMessage();
     const { sessionRef } = this.claim;
+    if (this.phasePending && this.workflowEnded) {
+      // The Workflow ended at a Checkpoint: the worker that kept the Working copy delivers it.
+      if (!reachable || !workingCopy || this.claim.workingCopyRemoved) {
+        const failure = this.claim.workingCopyRemoved ? WORKING_COPY_REMOVED : NOT_RESUMABLE;
+        return { kind: 'refused', failure, as: 'preparation' };
+      }
+      return { kind: 'deliver', runBranch: workingCopy.runBranch, ...mergedBase, ...pullRequest };
+    }
     if (this.phasePending) {
       return this.nextPhaseHandOut(reachable, mergedBase, pullRequest);
     }
@@ -512,6 +546,17 @@ export class Run {
       : null;
   }
 
+  /** Why the Run waits for the operator; `null` when it does not wait. */
+  get waiting(): RunWaiting | null {
+    if (this.lifecycle.state !== 'waiting_for_operator') return null;
+    const item =
+      this.checkpointItem === null ? undefined : this.workflow?.items[this.checkpointItem];
+    if (item?.kind === 'checkpoint') {
+      return { reason: 'checkpoint', checkpoint: { id: item.id, text: item.text } };
+    }
+    return { reason: 'question' };
+  }
+
   /**
    * Whether each commit of the Working copy is on the remote Run branch, in order; `null` without
    * a Working copy, or when the pushed commit is not among the listed ones.
@@ -532,6 +577,69 @@ export class Run {
     this.lifecycle.assertTransitionTo('queued');
     this.append({ kind: 'answer', text, at: now });
     this.apply({ state: 'queued', waitingSince: null, lastActivityAt: now });
+  }
+
+  /**
+   * Throws {@link RunNotAtCheckpointError} unless the Run waits at a Checkpoint, and at the one
+   * named by `id` when it is given (a repeated request must not pass the next one in a row).
+   */
+  assertAtCheckpoint(id: string | undefined): void {
+    const { waiting } = this;
+    if (waiting?.reason !== 'checkpoint' || (id !== undefined && id !== waiting.checkpoint.id)) {
+      throw new RunNotAtCheckpointError(this.lifecycle.state);
+    }
+  }
+
+  /**
+   * The operator lets the Workflow go on past the Checkpoint it waits at, to what the Workflow
+   * decided (`next`): the next Phase queued as a claim, the next Checkpoint, or the end. The
+   * comment reaches the next Phase. Throws {@link RunNotAtCheckpointError}.
+   */
+  continueFromCheckpoint(next: NextStep, comment: string | undefined, now: Date): void {
+    this.assertAtCheckpoint(undefined);
+    const at = this.checkpointItem!;
+    const note = comment === undefined || comment.trim() === '' ? undefined : comment;
+    if (next.kind === 'end') {
+      this.endWorkflow(now);
+      return;
+    }
+    const receiver = this.phaseAfter(at);
+    if (note !== undefined && receiver !== null) this.addCheckpointComment(receiver, note);
+    if (next.kind === 'checkpoint') {
+      this.apply({ waitingSince: now, lastActivityAt: now });
+      this.applyPosition({ checkpointItem: next.item });
+      return;
+    }
+    this.lifecycle.assertTransitionTo('queued');
+    this.queuePhase(next.position, this.claim.releasedBy);
+  }
+
+  /** The Workflow ends at the Checkpoint: the Run delivers what exists. Same refusal as above. */
+  stopAtCheckpoint(now: Date): void {
+    this.continueFromCheckpoint({ kind: 'end' }, undefined, now);
+  }
+
+  private endWorkflow(now: Date): void {
+    this.lifecycle.assertTransitionTo('queued');
+    this.apply({ state: 'queued', waitingSince: null, lastActivityAt: now });
+    this.applyPosition({ phasePending: true, workflowEnded: true });
+  }
+
+  /** The position of the first Phase after the item at `item`; `null` when none follows. */
+  private phaseAfter(item: number): number | null {
+    const { items } = this.workflow!;
+    const index = items.findIndex((other, at) => at > item && other.kind !== 'checkpoint');
+    return index === -1
+      ? null
+      : items.slice(0, index).filter((x) => x.kind !== 'checkpoint').length;
+  }
+
+  private addCheckpointComment(position: number, note: string): void {
+    const target = PHASES.get(this)![position];
+    if (target === undefined) throw new TypeError('The next Phase is a Phase of the Run.');
+    const joined =
+      target.checkpointComment === null ? note : `${target.checkpointComment}\n\n${note}`;
+    this.updatePhase(position, { checkpointComment: joined.slice(0, CHECKPOINT_COMMENT_MAX) });
   }
 
   /**
@@ -775,7 +883,10 @@ export class Run {
     if (state === to && this.claim.isReportedBy(workerId)) return false;
     if (!this.claim.isHeldBy(workerId)) throw new RunNotHeldError();
     if (to === 'cancelled' && !cancelRequested) throw new IllegalRunTransitionError(state, to);
-    this.lifecycle.assertTransitionTo(to);
+    // The claim that delivers a Workflow ended at a Checkpoint runs no agent step: it reports its
+    // delivery from `preparing`.
+    const deliversEndedWorkflow = this.workflowEnded && state === 'preparing' && to === 'succeeded';
+    if (!deliversEndedWorkflow) this.lifecycle.assertTransitionTo(to);
     if (report.bringUpToDateStarted && to === 'running') {
       this.recordUpdateStart(workerId, report.bringUpToDateStarted);
     }
@@ -801,7 +912,9 @@ export class Run {
       releasedBy: held ? null : workerId,
       ...(to === 'running' ? { stepStartedAt: now } : {}),
       ...(isFinalRunState(to) ? { finishedAt: now } : {}),
-      ...(keepsWorkingCopy && report.workingCopy ? { workingCopy: report.workingCopy } : {}),
+      ...((keepsWorkingCopy || deliversEndedWorkflow) && report.workingCopy
+        ? { workingCopy: report.workingCopy }
+        : {}),
       ...(delivery ? this.delivery.outcomePatch(delivery) : {}),
       ...(failure?.code === 'delivery_failed' ? { delivery: 'failed' as const } : {}),
       // A delivery that pushed before it failed still records the push.
@@ -900,11 +1013,11 @@ export class Run {
     workingCopy: RunWorkingCopy,
     failingChecks: readonly string[],
     now: Date,
-    next?: PhaseNext,
+    next?: NextStep,
   ): RunStepOutcome {
     // The report that ended a Phase released the Run: a resend of it is acknowledged.
     if (
-      this.phasePending &&
+      (this.phasePending || this.checkpointItem !== null) &&
       this.claim.releasedBy === workerId &&
       step.index !== undefined &&
       step.index <= this.progress.stepCount
@@ -1144,11 +1257,10 @@ export class Run {
   }
 
   /**
-   * A Phase ended with `done`. The next Phase goes to the queue, in the same Working copy and
-   * with its own session; the operator's cancel request ends the Run instead. At the end of the
-   * Workflow the Run goes on to its delivery, and the Phase is done when the Run succeeds.
+   * A Phase ended with `done`: the next Phase is queued, or the Run waits at a Checkpoint, or the
+   * operator's cancel request ends it; at the end of the Workflow the Run goes on to its delivery.
    */
-  private endPhase(workerId: string, next: PhaseNext, step: RunStepRecord, now: Date): void {
+  private endPhase(workerId: string, next: NextStep, step: RunStepRecord, now: Date): void {
     const position = this.currentPhase;
     this.updatePhase(position, {
       summary: summaryOf(step.result),
@@ -1157,9 +1269,14 @@ export class Run {
         : { verdict: step.verdict, findings: step.findings ?? [] }),
     });
     if (next.kind === 'end') return;
-    const target = PHASES.get(this)![next.position];
-    if (target === undefined || next.position === position) {
+    if (
+      next.kind === 'phase' &&
+      (!PHASES.get(this)![next.position] || next.position === position)
+    ) {
       throw new TypeError('The next Phase is another Phase of the Run.');
+    }
+    if (next.kind === 'checkpoint' && this.workflow?.items[next.item]?.kind !== 'checkpoint') {
+      throw new TypeError('The Run waits at a Checkpoint of its Workflow.');
     }
     this.updatePhase(position, {
       state: 'done',
@@ -1178,17 +1295,34 @@ export class Run {
       });
       return;
     }
-    const used = this.progress.stepCount;
+    if (next.kind === 'checkpoint') {
+      // Waits like a Run with an open Question: the worker keeps the Working copy.
+      this.apply({
+        state: 'waiting_for_operator',
+        claimedBy: null,
+        heartbeatAt: null,
+        releasedBy: workerId,
+        waitingSince: now,
+      });
+      this.applyPosition({ checkpointItem: next.item });
+      return;
+    }
+    this.queuePhase(next.position, workerId);
+  }
+
+  /** Queues the Phase at `position` as a claim for the worker that holds the Working copy. */
+  private queuePhase(position: number, releasedBy: string | null): void {
+    const target = PHASES.get(this)![position]!;
     this.apply({
       state: 'queued',
       claimedBy: null,
       heartbeatAt: null,
-      releasedBy: workerId,
+      releasedBy,
       waitingSince: null,
       sessionRef: target.sessionRef,
-      stepsBeforePart: used,
+      stepsBeforePart: this.progress.stepCount,
     });
-    this.movePhase(next.position, true);
+    this.movePhase(position, true);
   }
 
   /** A Follow-up starts the Workflow again at `position`; each Phase is pending until reached. */
@@ -1196,7 +1330,12 @@ export class Run {
     // The Phase the Run leaves keeps the session and the Run steps it has now.
     const left = this.currentPhaseView;
     const target = this.phases[position]!;
-    for (const phase of PHASES.get(this)!) this.updatePhase(phase.position, { state: 'pending' });
+    for (const phase of PHASES.get(this)!) {
+      // A new round reads no comment of an earlier one.
+      const cleared = phase.checkpointComment === null ? {} : { checkpointComment: null };
+      this.updatePhase(phase.position, { state: 'pending', ...cleared });
+    }
+    if (this.workflowEnded) this.applyPosition({ workflowEnded: false });
     this.updatePhase(left.position, { sessionRef: left.sessionRef, stepsUsed: left.stepsUsed });
     this.apply({ sessionRef: target.sessionRef, stepsBeforePart: this.progress.stepCount });
     this.movePhase(position, false);
@@ -1215,9 +1354,20 @@ export class Run {
   }
 
   private applyPosition(
-    patch: Partial<Pick<RunFieldChanges, 'currentPhase' | 'provider' | 'phasePending'>>,
+    patch: Partial<
+      Pick<
+        RunFieldChanges,
+        'currentPhase' | 'provider' | 'phasePending' | 'checkpointItem' | 'workflowEnded'
+      >
+    >,
   ): void {
     if (patch.phasePending !== undefined) Object.assign(this, { phasePending: patch.phasePending });
+    if (patch.checkpointItem !== undefined) {
+      Object.assign(this, { checkpointItem: patch.checkpointItem });
+    }
+    if (patch.workflowEnded !== undefined) {
+      Object.assign(this, { workflowEnded: patch.workflowEnded });
+    }
     Object.assign(CHANGES.get(this)!.fields, patch);
   }
 
@@ -1230,6 +1380,7 @@ export class Run {
       verdict?: RunPhaseVerdict | null;
       findings?: readonly RunPhaseFinding[];
       sessionRef?: string | null;
+      checkpointComment?: string | null;
       stepsUsed?: number;
     },
   ): void {
@@ -1257,7 +1408,7 @@ export class Run {
     const phase = PHASES.get(this)![this.currentPhase]!;
     if (state === 'running' && phase.state !== 'running') {
       this.updatePhase(phase.position, { state: 'running' });
-    } else if (state === 'succeeded' && phase.state !== 'done') {
+    } else if (state === 'succeeded' && (phase.state === 'running' || phase.state === 'failed')) {
       this.updatePhase(phase.position, { state: 'done' });
     } else if (FAILED_END_STATES.includes(state) && phase.state === 'running') {
       this.updatePhase(phase.position, { state: 'failed' });
@@ -1296,7 +1447,13 @@ export class Run {
       ...(patch.failingChecks === undefined ? {} : { failingChecks: patch.failingChecks }),
     });
     Object.assign(CHANGES.get(this)!.fields, patch);
-    if (patch.state !== undefined) this.markCurrentPhase(patch.state);
+    if (patch.state !== undefined) {
+      // A Run waits at a Checkpoint only while it waits.
+      if (patch.state !== 'waiting_for_operator' && this.checkpointItem !== null) {
+        this.applyPosition({ checkpointItem: null });
+      }
+      this.markCurrentPhase(patch.state);
+    }
   }
 
   private append(message: RunMessage): void {

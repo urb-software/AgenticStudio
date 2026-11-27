@@ -1,7 +1,7 @@
 import { checkWorkflowAgents } from '@agentic-studio/agent-definitions';
 import { Injectable } from '@nestjs/common';
 import type {
-  NextPhase,
+  NextStep,
   PhaseOutcome,
   PlannedItem,
   WorkflowPlan,
@@ -50,8 +50,16 @@ export class DefinitionsWorkflowPlans implements WorkflowPlans {
     return { status: 'resolved', plan };
   }
 
-  next(plan: WorkflowPlan, position: number, outcome: PhaseOutcome): NextPhase {
+  next(plan: WorkflowPlan, position: number, outcome: PhaseOutcome): NextStep {
     return WorkflowSequence.of(plan.items).after(position, outcome);
+  }
+
+  afterCheckpoint(plan: WorkflowPlan, item: number): NextStep {
+    return WorkflowSequence.of(plan.items).afterCheckpoint(item);
+  }
+
+  first(plan: WorkflowPlan): NextStep {
+    return WorkflowSequence.of(plan.items).first();
   }
 }
 

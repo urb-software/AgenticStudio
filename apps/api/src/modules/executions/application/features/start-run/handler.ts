@@ -38,8 +38,9 @@ import { RUN_LIMITS, type RunLimitsSetting } from '../../ports/run-limits.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
 
-/** Why a Workflow with a Checkpoint cannot start a Run yet. */
-export const WORKFLOW_ITEMS_NOT_SUPPORTED = 'Checkpoints are not supported yet';
+/** Why a Workflow that starts with a Checkpoint cannot start a Run: there is nothing to look at. */
+export const FIRST_ITEM_NOT_A_PHASE =
+  'the first item of a Workflow must be a Phase, not a Checkpoint';
 
 export interface StartRunInput {
   projectId: string;
@@ -154,8 +155,8 @@ export class StartRunHandler {
     if (resolution.status === 'unknown') throw new WorkflowUnknownError(name);
     if (resolution.status === 'not_usable') throw new WorkflowNotUsableError(resolution.reason);
     const { plan } = resolution;
-    if (plan.items.some((item) => item.kind === 'checkpoint')) {
-      throw new WorkflowNotUsableError(WORKFLOW_ITEMS_NOT_SUPPORTED);
+    if (this.plans.first(plan).kind !== 'phase') {
+      throw new WorkflowNotUsableError(FIRST_ITEM_NOT_A_PHASE);
     }
     const phaseAgents: ResolvedAgent[] = [];
     for (const item of plan.items) {

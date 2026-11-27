@@ -6,6 +6,7 @@ import {
 } from '@agentic-studio/contracts';
 import type { MergeApprovalView } from '../../../application/merge-approval-view.js';
 import { mergeApprovalResponseSchema, toMergeApprovalResponse } from './merge-approval-response.js';
+import type { RunWaiting } from '../../../domain/value-objects/run-waiting.js';
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
@@ -68,6 +69,20 @@ export const runQuestionResponseSchema = z
     recommendation: z.string().optional(),
   })
   .meta({ id: 'RunQuestion' });
+
+/** Why a Run waits for the operator: an agent's Question, or a Checkpoint of its Workflow. */
+export const runWaitingResponseSchema = z
+  .object({
+    reason: z.enum(['question', 'checkpoint']),
+    checkpoint: z
+      .object({
+        id: z.string().describe('The id of the Checkpoint among the items of the Workflow.'),
+        text: z.string().describe('What the Checkpoint tells the operator, plain text.'),
+      })
+      .optional()
+      .describe('Only for the reason `checkpoint`.'),
+  })
+  .meta({ id: 'RunWaiting' });
 
 export const followUpRefusalSchema = z.enum([
   'not_finished',
@@ -310,6 +325,9 @@ export const runResponseSchema = z
     resumable: z.literal(true).optional(),
     failingChecks: z.array(z.string()).optional(),
     question: runQuestionResponseSchema.optional(),
+    waiting: runWaitingResponseSchema
+      .optional()
+      .describe('Only while the Run is waiting_for_operator: for an answer, or at a Checkpoint.'),
     /**
      * Everything the agent wrote is plain text. Single-Run answers only; lists leave it and
      * `question` out.
@@ -424,6 +442,7 @@ export function toRunResponse(
     failingChecks: readonly string[];
     resumable: boolean;
     question: { text: string; options?: string[]; recommendation?: string } | null;
+    waiting: RunWaiting | null;
     messages: (
       | {
           kind: 'question';
@@ -556,6 +575,17 @@ export function toRunResponse(
     ...(run.deliveryRequested ? { deliveryRetryRequested: true as const } : {}),
     ...(run.resumable ? { resumable: true as const } : {}),
     ...(run.failingChecks.length > 0 ? { failingChecks: [...run.failingChecks] } : {}),
+    ...(run.waiting
+      ? {
+          waiting:
+            run.waiting.reason === 'question'
+              ? { reason: 'question' as const }
+              : {
+                  reason: 'checkpoint' as const,
+                  checkpoint: { id: run.waiting.checkpoint.id, text: run.waiting.checkpoint.text },
+                },
+        }
+      : {}),
     ...(run.question
       ? {
           question: {

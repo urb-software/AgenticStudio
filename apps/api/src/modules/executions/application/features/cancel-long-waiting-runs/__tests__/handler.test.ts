@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Run } from '../../../../domain/entities/run.js';
+import { phaseAgent } from '../../../../domain/entities/__tests__/workflow-run-fixtures.js';
 import { InMemoryRunRepository } from '../../../../domain/repositories/__tests__/in-memory-run-repository.js';
 import { CancelLongWaitingRunsHandler } from '../handler.js';
 
@@ -82,5 +83,83 @@ describe('CancelLongWaitingRunsHandler', () => {
 
   it('cancels nothing when no Run waits', async () => {
     expect(await handler.execute()).toEqual({ cancelled: 0 });
+  });
+
+  describe('a Run waiting at a Checkpoint', () => {
+    async function atCheckpoint(projectId: string, waitingDays: number): Promise<Run> {
+      const planner = phaseAgent('planner');
+      const created = await runs.start({
+        projectId,
+        provider: planner.provider,
+        agent: planner,
+        workflow: {
+          record: {
+            name: 'plan-then-build',
+            commit: 'c'.repeat(40),
+            items: [
+              { id: 'plan', kind: 'work', agent: 'planner' },
+              { id: 'look', kind: 'checkpoint', text: 'Read the plan.' },
+              { id: 'build', kind: 'work', agent: 'builder' },
+            ],
+          },
+          phaseAgents: [planner, phaseAgent('builder')],
+        },
+        task: 'x',
+        startCommit: 'a',
+        remoteUrl: 'https://git.example.test/a.git',
+        integrationBranch: 'dev',
+        limits: { stepMinutes: 60, maxSteps: 10, waitingDays, maxTotalSteps: 50 },
+      });
+      await runs.claimNext(WORKER, T0);
+      await runs.change(created.id, (run) => {
+        run.reportState(WORKER, { state: 'running', failure: null }, T0);
+        run.reportStep(
+          WORKER,
+          { kind: 'start', index: 1, result: { outcome: 'done', summary: 'planned' } },
+          { runBranch: 'studio/run', commits: [], hasUncommittedChanges: true },
+          [],
+          T0,
+          { kind: 'checkpoint', item: 1 },
+        );
+      });
+      return created;
+    }
+
+    it('is cancelled by Studio after the longest waiting time, like one waiting for an Answer', async () => {
+      const run = await atCheckpoint(PROJECTS[0], 14);
+      now = later(14, 1);
+
+      expect(await handler.execute()).toEqual({ cancelled: 1 });
+
+      const cancelled = (await runs.findById(run.id))!;
+      expect(cancelled.lifecycle).toMatchObject({
+        state: 'cancelled',
+        cancellation: {
+          by: 'system',
+          reason: 'Cancelled automatically: the run waited for the operator longer than 14 days.',
+        },
+      });
+      expect(cancelled.waiting).toBeNull();
+      expect(cancelled.phasePending).toBe(false);
+    });
+
+    it('is left alone within the waiting time, and the time counts from the Checkpoint', async () => {
+      const run = await atCheckpoint(PROJECTS[0], 14);
+      now = later(14);
+
+      expect(await handler.execute()).toEqual({ cancelled: 0 });
+      expect((await runs.findById(run.id))?.waiting?.reason).toBe('checkpoint');
+    });
+
+    it('is not cancelled once the operator went on, which wins over the sweep', async () => {
+      const run = await atCheckpoint(PROJECTS[0], 14);
+      await runs.change(run.id, (locked) =>
+        locked.continueFromCheckpoint({ kind: 'phase', position: 1 }, undefined, later(13)),
+      );
+      now = later(15);
+
+      expect(await handler.execute()).toEqual({ cancelled: 0 });
+      expect((await runs.findById(run.id))?.lifecycle.state).toBe('queued');
+    });
   });
 });

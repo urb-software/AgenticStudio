@@ -1,6 +1,12 @@
 'use client';
 
-import { CircleCheckIcon, CircleXIcon, GitPullRequestIcon, TriangleAlertIcon } from 'lucide-react';
+import {
+  CircleCheckIcon,
+  CircleXIcon,
+  FlagIcon,
+  GitPullRequestIcon,
+  TriangleAlertIcon,
+} from 'lucide-react';
 import Link from 'next/link';
 import { StatusPill } from '@/shared/components/status-pill';
 import { formatExactTime, formatTimeAgo } from '@/shared/lib/relative-time';
@@ -92,6 +98,19 @@ export function RunRows({ runs, now, label, projectNames }: RunRowsProps) {
                 >
                   <TriangleAlertIcon aria-hidden="true" className="size-3.5" />
                   Review not passed
+                </span>
+              ) : null}
+              {run.state === 'waiting_for_operator' && run.waiting?.reason === 'checkpoint' ? (
+                // Waiting at a Checkpoint of its Workflow, not for an answer to a Question.
+                <span className="inline-flex items-center gap-1">
+                  <FlagIcon aria-hidden="true" className="size-3.5" />
+                  <span>At Checkpoint </span>
+                  <span
+                    className="inline-block max-w-[16ch] truncate align-bottom font-mono text-code"
+                    title={run.waiting.checkpoint?.id}
+                  >
+                    {run.waiting.checkpoint?.id}
+                  </span>
                 </span>
               ) : null}
               {/* The model the agent named when the Run started; `default` is the CLI's own. */}

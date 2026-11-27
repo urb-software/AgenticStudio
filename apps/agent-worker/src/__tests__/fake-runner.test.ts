@@ -13,6 +13,7 @@ import {
   FAKE_REVIEW_FINDINGS,
   FakeRunner,
   fakeAgentLine,
+  fakePhaseLines,
   fakeReviewScenarioOf,
   fakeScenarioOf,
   fakeSessionRef,
@@ -448,6 +449,16 @@ describe('the fake runner in a Workflow Run', () => {
         'fake runner: told by phase build: Built it.',
       ]),
     );
+  });
+
+  it('logs the note the operator wrote at a Checkpoint, also for a first Phase', () => {
+    const first = { position: 0, itemId: 'build', count: 2, final: false };
+
+    expect(fakePhaseLines({ phase: { ...first, checkpointComment: 'Take care.' } })).toEqual([
+      'fake runner: phase build (1/2)',
+      'fake runner: told by the operator: Take care.',
+    ]);
+    expect(fakePhaseLines({ phase: first })).toEqual(['fake runner: phase build (1/2)']);
   });
 
   it('gives each Phase a session of its own, the first one the Run always had', () => {

@@ -92,10 +92,57 @@ const run = {
   environmentFileSupplied: false,
   resumable: false,
   question: QUESTION as { text: string; options?: string[]; recommendation?: string } | null,
+  waiting: { reason: 'question' } as Parameters<typeof toRunResponse>[0]['waiting'],
   messages: [{ kind: 'question' as const, question: QUESTION, at: T1 }] as Parameters<
     typeof toRunResponse
   >[0]['messages'],
 };
+
+describe('Run response: why the Run waits', () => {
+  it('says a Run with an open Question waits for an answer to it', () => {
+    const response = runResponseSchema.parse(toRunResponse(run));
+
+    expect(response.waiting).toEqual({ reason: 'question' });
+  });
+
+  it('says a Run at a Checkpoint waits at it, with its id and text, and no Question', () => {
+    const response = runResponseSchema.parse(
+      toRunResponse({
+        ...run,
+        question: null,
+        messages: [],
+        waiting: { reason: 'checkpoint', checkpoint: { id: 'look', text: 'Read the plan.' } },
+      }),
+    );
+
+    expect(response.waiting).toEqual({
+      reason: 'checkpoint',
+      checkpoint: { id: 'look', text: 'Read the plan.' },
+    });
+    expect(response.question).toBeUndefined();
+  });
+
+  it('says nothing of a wait for a Run that does not wait', () => {
+    const response = runResponseSchema.parse(
+      toRunResponse({ ...run, state: 'running', question: null, waiting: null }),
+    );
+
+    expect(response).not.toHaveProperty('waiting');
+  });
+
+  it('keeps the reason, and the Checkpoint, in a list item, which has no conversation', () => {
+    const item = toRunListItem({
+      ...run,
+      question: null,
+      waiting: { reason: 'checkpoint', checkpoint: { id: 'look', text: 'Read the plan.' } },
+    });
+
+    expect(item.waiting).toEqual({
+      reason: 'checkpoint',
+      checkpoint: { id: 'look', text: 'Read the plan.' },
+    });
+  });
+});
 
 describe('Run response: conversation', () => {
   it('shows the open question of a waiting Run, with its options and recommendation', () => {

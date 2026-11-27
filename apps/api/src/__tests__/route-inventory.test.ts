@@ -127,6 +127,8 @@ describe('route and guard inventory', () => {
         "POST /api/runs/:runId/answer [session]",
         "POST /api/runs/:runId/bring-up-to-date [session]",
         "POST /api/runs/:runId/cancel [session]",
+        "POST /api/runs/:runId/checkpoint/continue [session]",
+        "POST /api/runs/:runId/checkpoint/stop [session]",
         "POST /api/runs/:runId/follow-up [session]",
         "POST /api/runs/:runId/merge [session]",
         "POST /api/runs/:runId/merge-review [session]",

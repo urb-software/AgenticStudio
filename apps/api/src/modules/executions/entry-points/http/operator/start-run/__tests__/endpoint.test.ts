@@ -56,7 +56,7 @@ describe('POST /api/projects/:id/runs with a Workflow', () => {
   });
 
   it('answers 409 workflow_not_usable with the reason', async () => {
-    const reason = 'Checkpoints are not supported yet';
+    const reason = 'the first item of a Workflow must be a Phase, not a Checkpoint';
 
     const { error } = await startWith(
       { task: 'x', workflow: 'ship' },

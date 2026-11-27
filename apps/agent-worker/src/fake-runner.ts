@@ -151,6 +151,9 @@ export function fakePhaseLines(run: Pick<StartRunStepInput['run'], 'phase'>): st
   if (phase.previous !== undefined) {
     lines.push(`fake runner: told by phase ${phase.previous.itemId}: ${phase.previous.summary}`);
   }
+  if (phase.checkpointComment !== undefined) {
+    lines.push(`fake runner: told by the operator: ${phase.checkpointComment}`);
+  }
   return lines;
 }
 

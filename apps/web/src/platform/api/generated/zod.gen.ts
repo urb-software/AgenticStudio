@@ -771,6 +771,14 @@ export const zRunQuestionOutput = z.object({
     recommendation: z.string().optional()
 });
 
+export const zRunWaitingOutput = z.object({
+    reason: z.enum(['question', 'checkpoint']),
+    checkpoint: z.object({
+        id: z.string(),
+        text: z.string()
+    }).optional()
+});
+
 export const zRunPartEndOutput = z.object({
     state: z.enum([
         'succeeded',
@@ -901,6 +909,7 @@ export const zRunOutput = z.object({
     resumable: z.literal(true).optional(),
     failingChecks: z.array(z.string()).optional(),
     question: zRunQuestionOutput.optional(),
+    waiting: zRunWaitingOutput.optional(),
     messages: z.array(zRunMessageOutput).optional()
 });
 
@@ -917,6 +926,15 @@ export const zCancelRunResponseOutput = z.object({
 
 export const zAnswerRunRequest = z.object({
     text: z.string().min(1).max(10000)
+});
+
+export const zContinueFromCheckpointRequest = z.object({
+    comment: z.string().max(4000).optional(),
+    checkpoint: z.string().min(1).max(64).optional()
+});
+
+export const zStopAtCheckpointRequest = z.object({
+    checkpoint: z.string().min(1).max(64).optional()
 });
 
 export const zFollowUpRunRequest = z.object({
@@ -2065,6 +2083,22 @@ export const zAnswerRunBody = zAnswerRunRequest;
 export const zAnswerRunPath = z.object({
     runId: z.string()
 });
+
+export const zContinueRunFromCheckpointBody = zContinueFromCheckpointRequest;
+
+export const zContinueRunFromCheckpointPath = z.object({
+    runId: z.string()
+});
+
+export const zContinueRunFromCheckpointResponse = zRunOutput;
+
+export const zStopRunAtCheckpointBody = zStopAtCheckpointRequest;
+
+export const zStopRunAtCheckpointPath = z.object({
+    runId: z.string()
+});
+
+export const zStopRunAtCheckpointResponse = zRunOutput;
 
 export const zResumeRunPath = z.object({
     runId: z.string()

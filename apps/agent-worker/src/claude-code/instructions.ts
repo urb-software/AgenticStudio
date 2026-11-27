@@ -189,9 +189,8 @@ function untrustedSentence(what: string, marker: string): string {
 }
 
 /**
- * What the Phase before reported, with the Task: after the first Phase of a Workflow Run only.
- * The block is bounded to {@link PHASE_HAND_OVER_MAX_BYTES}; a cut is noted in it and in `notices`.
- * Empty for a Run started with an agent and for the first Phase.
+ * The Task, what the Phase before reported and the operator's note from a Checkpoint, as one block
+ * bounded to {@link PHASE_HAND_OVER_MAX_BYTES} (a cut is noted); empty when there is nothing to add.
  */
 export function handOverSection(
   phase: RunPayload['phase'],
@@ -200,28 +199,57 @@ export function handOverSection(
   notices: string[],
 ): string {
   const previous = phase?.previous;
-  if (phase === undefined || previous === undefined) return '';
+  const comment = phase?.checkpointComment;
+  if (phase === undefined || (previous === undefined && comment === undefined)) return '';
   const limit = PHASE_HAND_OVER_MAX_BYTES;
   const note = `\n[... cut: the hand-over reached Studio's limit of ${limit / 1024} KiB]`;
+  const parts = previous !== undefined && comment !== undefined ? 3 : 2;
   // The Task keeps at most half of the room, so the Phase's own report always has some.
   const taskPart = cutToBytes(task.trimEnd(), limit / 2);
-  const summaryPart = cutToBytes(
-    previous.summary.trimEnd(),
-    Math.max(limit - bytesOf(taskPart.text) - bytesOf(note) * 2, 0),
-  );
-  if (taskPart.cut || summaryPart.cut) {
+  const room = Math.max(limit - bytesOf(taskPart.text) - bytesOf(note) * parts, 0);
+  // The operator's note keeps at most half of what is left when a report shares the room.
+  const commentPart =
+    comment === undefined
+      ? undefined
+      : cutToBytes(comment.trimEnd(), previous === undefined ? room : Math.floor(room / 2));
+  const summaryPart =
+    previous === undefined
+      ? undefined
+      : cutToBytes(
+          previous.summary.trimEnd(),
+          Math.max(room - (commentPart === undefined ? 0 : bytesOf(commentPart.text)), 0),
+        );
+  if (taskPart.cut || summaryPart?.cut || commentPart?.cut) {
     notices.push(`The hand-over from the Phase before was cut at ${limit / 1024} KiB.`);
   }
+  const before =
+    previous === undefined
+      ? 'The operator looked at the Workflow at a Checkpoint before you. '
+      : `The Phase before you, ${previous.itemId} (agent ${previous.agent}), has finished. `;
+  const what = [
+    'the Task',
+    ...(previous === undefined ? [] : ['what that Phase reported']),
+    ...(comment === undefined ? [] : ["the operator's note"]),
+  ].join(', ');
   const head =
     `\n## Your Phase\n\nYou are Phase ${phase.itemId} (${phase.position + 1} of ${phase.count}) of a ` +
-    `Workflow that works on one Task, one agent after another, in the same working copy. The ` +
-    `Phase before you, ${previous.itemId} (agent ${previous.agent}), has finished. ` +
-    untrustedSentence('the Task and what that Phase reported', marker) +
+    `Workflow that works on one Task, one agent after another, in the same working copy. ` +
+    before +
+    untrustedSentence(what, marker) +
     `\n\n===== BEGIN ${marker} hand-over (untrusted) =====\n`;
+  const report =
+    summaryPart === undefined
+      ? ''
+      : `Reported by the Phase before:\n${summaryPart.text}${summaryPart.cut ? note : ''}\n`;
+  const operator =
+    commentPart === undefined
+      ? ''
+      : `${report === '' ? '' : '\n'}Note from the operator at the Checkpoint:\n${commentPart.text}${commentPart.cut ? note : ''}\n`;
   return (
     head +
     `Task:\n${taskPart.text}${taskPart.cut ? note : ''}\n\n` +
-    `Reported by the Phase before:\n${summaryPart.text}${summaryPart.cut ? note : ''}\n` +
+    report +
+    operator +
     `===== END ${marker} hand-over =====\n`
   );
 }
