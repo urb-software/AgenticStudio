@@ -1,5 +1,6 @@
 import type { Provider } from '../value-objects/provider.js';
-import type { RunPhaseState } from '../value-objects/run-phase.js';
+import type { RunPhaseFinding } from '../value-objects/run-phase-finding.js';
+import type { RunPhaseState, RunPhaseVerdict } from '../value-objects/run-phase.js';
 import type { RunStep } from './run-step.js';
 import type { BringUpDetails } from '../value-objects/bring-up-details.js';
 import type { RunDeliveryData } from '../value-objects/run-delivery.js';
@@ -33,6 +34,8 @@ export type RunFieldChanges = Partial<
           state?: RunPhaseState;
           summary?: string | null;
           sessionRef?: string | null;
+          verdict?: RunPhaseVerdict | null;
+          findings?: readonly RunPhaseFinding[];
           checkpointComment?: string | null;
         }
       >;

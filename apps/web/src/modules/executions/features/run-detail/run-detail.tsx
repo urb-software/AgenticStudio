@@ -38,7 +38,7 @@ import { FINAL_STATES } from '../../components/run-states';
 import { StaleBanner } from '../../components/stale-banner';
 import { CancelRunDialog } from '../cancel-run/cancel-run-dialog';
 import { NewRunDialog } from '../new-run/new-run-dialog';
-import { RunChanges } from '../run-changes/run-changes';
+import { type FocusedFile, RunChanges } from '../run-changes/run-changes';
 import { RunLog, type RunLogHandle } from '../run-log/run-log';
 import { RunMergeReview } from '../run-merge-review/run-merge-review';
 import { AnswerQuestion, RunConversation } from './run-conversation';
@@ -333,6 +333,14 @@ export function RunDetail({ runId }: { runId: string }) {
   const { data: run, error, isPending, isError, isRefetching, refetch } = useRun(runId);
   const log = useRef<RunLogHandle>(null);
   const [tab, setTab] = useState<'log' | 'changes'>('log');
+  const [focusedFile, setFocusedFile] = useState<FocusedFile | null>(null);
+  /** Leads a finding's file to the Changes tab, where the file is selected when it changed. */
+  const showFile = (path: string) => {
+    flushSync(() => {
+      setTab('changes');
+      setFocusedFile({ path, at: Date.now() });
+    });
+  };
   /** Shows where a Run step starts in the log, switching to the Log tab first. */
   const showStep = (index: number) => {
     if (tab !== 'log') flushSync(() => setTab('log'));
@@ -428,7 +436,7 @@ export function RunDetail({ runId }: { runId: string }) {
         <RunFollowUp run={run} followUp={run.followUp} />
       ) : null}
 
-      <RunPhases run={run} />
+      <RunPhases run={run} onShowFile={showFile} />
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[2fr_1fr]">
         {/* Once the agent asked, the Task leads the conversation. */}
@@ -540,7 +548,7 @@ export function RunDetail({ runId }: { runId: string }) {
               <h2 id="run-diff-title" className="m-0 text-body font-semibold text-text">
                 Run diff, reported by the agent worker
               </h2>
-              <RunChanges key={`${run.id}-${run.followUps}`} run={run} />
+              <RunChanges key={`${run.id}-${run.followUps}`} run={run} focus={focusedFile} />
             </section>
           </div>
         </TabPanel>

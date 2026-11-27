@@ -56,7 +56,8 @@ import { Lease } from '../value-objects/lease.js';
 import { WorkerPresence } from '../value-objects/worker-presence.js';
 import type { LookupKind } from '../value-objects/lookup-kind.js';
 import { RunAgent } from '../value-objects/run-agent.js';
-import type { RunPhaseState } from '../value-objects/run-phase.js';
+import type { RunPhaseFinding } from '../value-objects/run-phase-finding.js';
+import type { RunPhaseState, RunPhaseVerdict } from '../value-objects/run-phase.js';
 import type { RunPhaseView } from '../value-objects/run-phase-view.js';
 import type { RunWaiting } from '../value-objects/run-waiting.js';
 import { RunWorkflow } from '../value-objects/run-workflow.js';
@@ -223,9 +224,16 @@ export class Run {
       agent: RunAgent.restore(phase.agent).toData(),
       sessionRef: phase.sessionRef ?? null,
       summary: phase.summary ?? null,
+      verdict: phase.verdict ?? null,
+      findings: (phase.findings ?? []).map((finding) => ({ ...finding })),
       checkpointComment: phase.checkpointComment ?? null,
       stepsUsed: phase.stepsUsed,
     }));
+  }
+
+  /** A review Phase of the Run asked for changes: the Workflow ended without an approval. */
+  get reviewNotPassed(): boolean {
+    return PHASES.get(this)!.some((phase) => phase.verdict === 'changes_requested');
   }
 
   /**
@@ -267,10 +275,9 @@ export class Run {
       const items = record.phases;
       if (
         planned.phaseAgents.length !== items.length ||
-        items.some((item) => item.kind !== 'work') ||
         planned.phaseAgents[0]!.name !== input.agent.name
       ) {
-        throw new TypeError('A Run records one agent per work Phase of its Workflow.');
+        throw new TypeError('A Run records one agent per Phase of its Workflow.');
       }
     }
     return new Run({
@@ -286,7 +293,8 @@ export class Run {
               position,
               itemId: planned.record.items.filter((item) => item.kind !== 'checkpoint')[position]!
                 .id,
-              kind: 'work' as const,
+              kind: planned.record.items.filter((item) => item.kind !== 'checkpoint')[position]!
+                .kind as 'work' | 'review',
               state: 'pending' as const,
               agent,
               stepsUsed: 0,
@@ -1035,6 +1043,19 @@ export class Run {
       });
       return { status: 'step_limit' };
     }
+    // A review Phase's `done` is a Verdict: without one it ends the Run, and nothing follows it.
+    if (
+      this.currentPhaseView.kind === 'review' &&
+      (step.result as { outcome?: unknown } | null)?.outcome === 'done' &&
+      step.verdict === undefined
+    ) {
+      this.apply({
+        state: 'failed',
+        failure: RunFailure.of('agent_failed', 'The review Phase ended without a valid Verdict.'),
+        ...this.released(null, now),
+      });
+      return { status: 'verdict_missing' };
+    }
     // The Run creates its step: the step cannot exist without the Run, and the number and the
     // limit above are the Run's to check from `stepCount`, so no other step is loaded for them.
     const pending = CHANGES.get(this)!;
@@ -1051,7 +1072,7 @@ export class Run {
       lastActivityAt: now,
       ...(step.sessionRef === undefined ? {} : { sessionRef: step.sessionRef }),
     });
-    if (next !== undefined) this.endPhase(workerId, next, summaryOf(step.result), now);
+    if (next !== undefined) this.endPhase(workerId, next, step, now);
     return { status: 'stored', index };
   }
 
@@ -1239,9 +1260,14 @@ export class Run {
    * A Phase ended with `done`: the next Phase is queued, or the Run waits at a Checkpoint, or the
    * operator's cancel request ends it; at the end of the Workflow the Run goes on to its delivery.
    */
-  private endPhase(workerId: string, next: NextStep, summary: string | null, now: Date): void {
+  private endPhase(workerId: string, next: NextStep, step: RunStepRecord, now: Date): void {
     const position = this.currentPhase;
-    this.updatePhase(position, { summary });
+    this.updatePhase(position, {
+      summary: summaryOf(step.result),
+      ...(step.verdict === undefined
+        ? {}
+        : { verdict: step.verdict, findings: step.findings ?? [] }),
+    });
     if (next.kind === 'end') return;
     if (
       next.kind === 'phase' &&
@@ -1351,6 +1377,8 @@ export class Run {
     patch: {
       state?: RunPhaseState;
       summary?: string | null;
+      verdict?: RunPhaseVerdict | null;
+      findings?: readonly RunPhaseFinding[];
       sessionRef?: string | null;
       checkpointComment?: string | null;
       stepsUsed?: number;

@@ -50,6 +50,9 @@ function atCheckpoint(overrides: Partial<RunOutput> = {}): RunOutput {
       {
         position: 0,
         itemId: 'plan',
+        kind: 'work',
+        verdict: null,
+        findings: [],
         state: 'done',
         summary: REPORT,
         agent: agent('planner'),
@@ -58,6 +61,9 @@ function atCheckpoint(overrides: Partial<RunOutput> = {}): RunOutput {
       {
         position: 1,
         itemId: 'build',
+        kind: 'work',
+        verdict: null,
+        findings: [],
         state: 'pending',
         summary: null,
         agent: agent('builder'),

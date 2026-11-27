@@ -4,7 +4,7 @@ import {
   runStepResultSchema,
   SESSION_REF_MAX_LENGTH,
 } from '@agentic-studio/contracts';
-import { agentResultSchema } from '../agent-definition/index.js';
+import { resultSchemaFor } from '../agent-definition/index.js';
 import { AgentFailedError, UsageLimitError } from '../runner.js';
 
 /**
@@ -55,6 +55,9 @@ export class ClaudeStream {
   private result: ResultEvent | undefined;
   private limit: { resetsAt?: number } | undefined;
   private lastText: string | undefined;
+
+  /** @param phase The Phase the step belongs to: a review's result carries a Verdict. */
+  constructor(private readonly phase?: { kind?: 'work' | 'review' }) {}
 
   /** The session id the CLI reported, once it has. */
   get sessionRef(): string | undefined {
@@ -171,7 +174,7 @@ export class ClaudeStream {
     const result = this.result;
     if (result && !result.isError && result.subtype === 'success' && end.exitCode === 0) {
       // The session comes only from the stream, never from the agent's output.
-      const agent = agentResultSchema.safeParse(result.structured);
+      const agent = resultSchemaFor(this.phase).safeParse(result.structured);
       const parsed = agent.success
         ? runStepResultSchema.safeParse({
             ...agent.data,
@@ -181,7 +184,9 @@ export class ClaudeStream {
       if (parsed.success) return { result: parsed.data, events: [] };
       return {
         error: new AgentFailedError(
-          'Claude Code ended without a valid structured result. Its final text is in the log.',
+          this.phase?.kind === 'review'
+            ? 'Claude Code ended the review without a valid structured result with a Verdict. Its final text is in the log.'
+            : 'Claude Code ended without a valid structured result. Its final text is in the log.',
         ),
         events: this.finalText(result.text, 'its structured result was missing or not valid'),
       };

@@ -98,6 +98,14 @@ export class StepLimitReachedError extends Error {
   }
 }
 
+/** A review Phase reported `done` without a valid Verdict: the Run failed. */
+export class ReviewVerdictMissingError extends Error {
+  constructor() {
+    super('The review Phase ended without a valid Verdict.');
+    this.name = 'ReviewVerdictMissingError';
+  }
+}
+
 /** No Workflow has the name at the definitions commit. */
 export class WorkflowUnknownError extends Error {
   constructor(readonly workflow: string) {

@@ -3,6 +3,7 @@ import { WorkerController } from '../../../../../../platform/auth/worker-route.j
 import {
   runNotFound,
   runNotHeld,
+  reviewVerdictMissing,
   stepLimitReached,
   stepOutOfOrder,
 } from '../../shared/problems.js';
@@ -13,7 +14,10 @@ import {
 } from '../../../../domain/repositories/run-repository.js';
 import { ReportRunStepHandler } from '../../../../application/features/report-run-step/handler.js';
 import { ReportRunStepRequestDto } from './schema.js';
-import { RunNotFoundError } from '../../../../domain/errors/run-errors.js';
+import {
+  ReviewVerdictMissingError,
+  RunNotFoundError,
+} from '../../../../domain/errors/run-errors.js';
 
 @WorkerController('runs')
 export class ReportRunStepEndpoint {
@@ -35,6 +39,7 @@ export class ReportRunStepEndpoint {
       if (error instanceof RunNotFoundError) throw runNotFound();
       if (error instanceof RunNotHeldError) throw runNotHeld();
       if (error instanceof StepLimitReachedError) throw stepLimitReached();
+      if (error instanceof ReviewVerdictMissingError) throw reviewVerdictMissing();
       if (error instanceof StepOutOfOrderError) throw stepOutOfOrder(error.expected);
       throw error;
     }

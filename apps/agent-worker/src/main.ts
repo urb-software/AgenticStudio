@@ -13,6 +13,7 @@ import { GitRunner } from './git.js';
 import { terminateLeftovers } from './leftovers.js';
 import { ManagedGuardrails } from './managed-guardrails.js';
 import { RETENTION_INTERVAL_MS, Retention } from './retention.js';
+import { ReviewGuard } from './review-guard.js';
 import { RunDiffs } from './run-diff.js';
 import { DockerRunResources } from './run-resources.js';
 import { ProviderGate } from './provider-gate.js';
@@ -143,6 +144,8 @@ const worker = new AgentWorker({
   runner,
   agentFolders,
   skills: runSkills,
+  // A review Phase changes nothing: its Working copy is recorded before and restored after.
+  reviewGuard: new ReviewGuard(git),
   gate,
   resources,
   status: {

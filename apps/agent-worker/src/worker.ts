@@ -47,6 +47,12 @@ import {
   SkillsTransientError,
   SkillsUnusableError,
 } from './run-skills.js';
+import {
+  RestoreFailedError,
+  type RestoreReport,
+  restoreNotice,
+  type WorkingCopySnapshot,
+} from './review-guard.js';
 import { AgentFailedError, drainRunStep, type Runner, UsageLimitError } from './runner.js';
 import { StepProcesses } from './step-processes.js';
 import { isRunLost, type StudioApi } from './studio-api.js';
@@ -85,6 +91,20 @@ export interface RunSkillsPort {
   place(run: RunPayload, dir: string, signal: AbortSignal): Promise<PlacedSkills | null>;
 }
 
+/**
+ * Records a Working copy before a review Phase and puts it back after it ({@link ReviewGuard} in
+ * production).
+ */
+export interface ReviewGuardPort {
+  capture(prepared: PreparedRun, signal?: AbortSignal): Promise<WorkingCopySnapshot>;
+  restore(snapshot: WorkingCopySnapshot): Promise<RestoreReport>;
+  /**
+   * Restores from the record an earlier review left behind (a crash, a failed restore); `null`
+   * when there is none. Throws {@link RestoreFailedError} when that cannot be verified.
+   */
+  recover(prepared: PreparedRun): Promise<RestoreReport | null>;
+}
+
 export interface AgentWorkerOptions {
   api: WorkerApi;
   runner: Runner;
@@ -108,6 +128,11 @@ export interface AgentWorkerOptions {
    * placed.
    */
   skills?: RunSkillsPort;
+  /**
+   * Keeps a review Phase from changing the Working copy. Without it a review Phase does not start:
+   * nothing else would undo what it changed.
+   */
+  reviewGuard?: ReviewGuardPort;
   /**
    * Answers Studio's pull request lookups in a loop of its own, whatever the worker is carrying,
    * and reads the pull request before a Follow-up starts. Without it neither happens.
@@ -370,6 +395,13 @@ export class AgentWorker {
           ? await this.options.workingCopies.locate(run, abort.signal)
           : await this.options.workingCopies.prepare(run, abort.signal);
       abort.signal.throwIfAborted();
+      // A review that did not end with a verified restore (its worker died, or the restore failed)
+      // is undone first; if that cannot be done, no agent starts and nothing is delivered.
+      const recovered = await this.options.reviewGuard?.recover(prepared);
+      const recoveryNotice = recovered ? restoreNotice(recovered) : null;
+      if (recoveryNotice !== null) {
+        log.push(stepIndex, 'notice', `An earlier review did not finish: ${recoveryNotice}`);
+      }
       // The agent's files are rebuilt from Studio's copy before every step, before anything the
       // agent could act on; a refusal fails the Run before any CLI starts.
       const placed = await this.options.agentFolders?.place(
@@ -498,6 +530,18 @@ export class AgentWorker {
           signal,
         ),
       );
+      // A review Phase may read the Working copy and change nothing: its state is recorded before
+      // the step and put back after it, whatever the step's end.
+      let snapshot: WorkingCopySnapshot | undefined;
+      if (run.phase?.kind === 'review') {
+        const guard = this.options.reviewGuard;
+        if (guard === undefined) {
+          throw new AgentFailedError(
+            'This agent worker cannot guard the working copy, so it does not run a review Phase.',
+          );
+        }
+        snapshot = await guard.capture(prepared, abort.signal);
+      }
       processes = this.processesFor(prepared);
       const limit = setTimeout(
         () => {
@@ -522,6 +566,11 @@ export class AgentWorker {
         );
       } finally {
         clearTimeout(limit);
+        if (snapshot !== undefined) {
+          const restored = await this.options.reviewGuard!.restore(snapshot);
+          const notice = restoreNotice(restored);
+          if (notice !== null) log.push(stepIndex, 'notice', notice);
+        }
       }
       abort.signal.throwIfAborted();
       // A merge the agent left open (conflicts resolved but not committed) is completed here; one
@@ -536,13 +585,16 @@ export class AgentWorker {
         if (completed?.completed) log.push(stepIndex, 'notice', 'The merge was completed');
       }
       // A Phase that is not the last hands the Working copy on: nothing is committed or delivered.
-      const handsOn = result.outcome === 'done' && run.phase !== undefined && !run.phase.final;
+      const handsOn =
+        result.outcome === 'done' &&
+        run.phase !== undefined &&
+        !phaseEndsWorkflow(run.phase, result);
       if (result.outcome === 'done' && !handsOn) {
         followUpEnded(run, stepIndex, log, 'done');
         followUpMarked = true;
       }
       if (run.phase !== undefined && result.outcome !== 'needs_input') {
-        log.push(stepIndex, 'notice', phaseEndNotice(run.phase, 'done'));
+        log.push(stepIndex, 'notice', phaseEndNotice(run.phase, endNoticeOf(run.phase, result)));
         phaseMarked = true;
       }
       // The log goes first: Studio accepts events only while the worker holds the Run.
@@ -551,16 +603,18 @@ export class AgentWorker {
       // What a done step left is committed before its report, so the report lists that commit; a
       // refused commit still lets the step's result be reported first.
       let commitFailure: DeliveryFailedError | undefined;
+      // A review's own result describes the review, not the change that is delivered.
+      const delivered = resultForDelivery(run, result);
       if (result.outcome === 'done' && !handsOn) {
         await this.options.deliveries
-          .commit(prepared, run, result, abort.signal)
+          .commit(prepared, run, delivered, abort.signal)
           .catch((error: unknown) => {
             if (!(error instanceof DeliveryFailedError)) throw error;
             commitFailure = error;
           });
       } else if (handsOn) {
         // A Checkpoint may follow: the operator may then ask for a delivery of what exists.
-        await this.options.deliveries.keep(prepared, result);
+        await this.options.deliveries.keep(prepared, delivered);
       }
       const workingCopy = await this.options.workingCopies.report(prepared, abort.signal);
       const sendStep = () =>
@@ -606,7 +660,7 @@ export class AgentWorker {
         const delivery = await this.options.deliveries.deliver(
           prepared,
           run,
-          result,
+          delivered,
           deliveryAbort.signal,
         );
         deliveryAbort.signal.throwIfAborted();
@@ -710,6 +764,8 @@ export class AgentWorker {
     const { deliveries, workingCopies, api, logger } = this.options;
     const { prepared, result } = await deliveries.locate(run);
     located(prepared);
+    // What an earlier review left is put back before anything is committed or pushed.
+    await this.options.reviewGuard?.recover(prepared);
     await deliveries.commit(prepared, run, result, signal);
     // The diffs again, whatever the delivery's outcome, so a result whose diff report was lost
     // still gets one; once pushed, again as pushed.
@@ -870,6 +926,18 @@ export class AgentWorker {
     if (!parsed.success) {
       log.push(stepIndex, 'step_finished', `Run step ${stepIndex} ended with an invalid result`);
       throw new InvalidResultError();
+    }
+    // Only a review Phase has a Verdict, and its `done` must have one.
+    const { verdict, findings, ...plain } = parsed.data;
+    void findings;
+    if (run.phase?.kind === 'review') {
+      if (parsed.data.outcome === 'done' && verdict === undefined) {
+        log.push(stepIndex, 'step_finished', `Run step ${stepIndex} ended without a Verdict`);
+        throw new AgentFailedError('The review Phase ended without a valid Verdict.');
+      }
+    } else if (verdict !== undefined) {
+      log.push(stepIndex, 'notice', 'A Verdict from a work Phase was ignored');
+      parsed.data = plain;
     }
     log.push(stepIndex, 'step_finished', `Run step ${stepIndex} finished: ${parsed.data.outcome}`);
     return parsed.data;
@@ -1070,6 +1138,7 @@ function failureOf(error: unknown): RunFailure {
   if (error instanceof ModelNotAllowedError) return failure('model_not_allowed', error.message);
   if (error instanceof ModelRefusedError) return failure('model_refused', error.message);
   if (error instanceof AgentFailedError) return failure('agent_failed', error.message);
+  if (error instanceof RestoreFailedError) return failure('agent_failed', error.message);
   // The agent ended without resolving the conflicts; the merge was aborted.
   if (error instanceof MergeIncompleteError) return failure('agent_failed', error.message);
   if (error instanceof UsageLimitError) return failure('usage_limit', error.message);
@@ -1087,6 +1156,41 @@ function phaseStartNotice(run: RunPayload, phase: NonNullable<RunPayload['phase'
 /** The log's notice where a Phase ends, with its outcome. */
 function phaseEndNotice(phase: NonNullable<RunPayload['phase']>, outcome: string): string {
   return `Phase ${phase.itemId} (${phase.position + 1}/${phase.count}) ended: ${outcome}`;
+}
+
+/**
+ * Whether the Workflow ends with this Phase's result, as Studio decided it for the claim: a work
+ * Phase's `done`, an approval, or changes requested (which end it until sending back exists).
+ */
+function phaseEndsWorkflow(
+  phase: NonNullable<RunPayload['phase']>,
+  result: RunStepResult,
+): boolean {
+  if (phase.kind === 'review' && result.verdict === 'changes_requested') {
+    return phase.endsOnChangesRequested ?? true;
+  }
+  return phase.final;
+}
+
+/** What the log says a Phase ended with: a review names its Verdict. */
+function endNoticeOf(phase: NonNullable<RunPayload['phase']>, result: RunStepResult): string {
+  if (phase.kind !== 'review' || result.verdict === undefined) return 'done';
+  return `done, ${result.verdict === 'approved' ? 'approved' : 'changes requested'}`;
+}
+
+/**
+ * What a delivery commits and opens the pull request from. A review changed nothing, so the
+ * change is described by what the Phase before it reported, and the review's own pull request
+ * title, body and checks are not used.
+ */
+function resultForDelivery(run: RunPayload, result: RunStepResult): RunStepResult {
+  if (run.phase?.kind !== 'review') return result;
+  const summary = run.phase.previous?.summary;
+  return {
+    outcome: 'done',
+    summary: summary === undefined || summary.trim() === '' ? result.summary : summary,
+    ...(result.sessionRef === undefined ? {} : { sessionRef: result.sessionRef }),
+  };
 }
 
 /** How a Phase ended when its step did not end normally. */

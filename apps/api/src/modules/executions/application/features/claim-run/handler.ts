@@ -67,8 +67,11 @@ export interface ClaimedPhase {
   position: number;
   itemId: string;
   count: number;
-  /** The Workflow ends after this Phase's `done`: the Run delivers then. */
+  kind: 'work' | 'review';
+  /** The Workflow ends after this Phase's `done` (a review: `approved`): the Run delivers then. */
   final: boolean;
+  /** A review Phase: the Workflow ends after `changes_requested` too. */
+  endsOnChangesRequested?: boolean;
   instructions?: string;
   /** What the Phase before reported; only for a Phase after the first. */
   previous?: { itemId: string; agent: string; summary: string };
@@ -306,7 +309,8 @@ export class ClaimRunHandler {
     if (workflow === null) return {};
     const position = run.currentPhase;
     const item = workflow.phases[position]!;
-    const next = this.plans.next(workflow.toData(), position, 'done');
+    const review = item.kind === 'review';
+    const next = this.plans.next(workflow.toData(), position, review ? 'approved' : 'done');
     const before = position > 0 ? run.phases[position - 1] : undefined;
     const comment = run.phases[position]!.checkpointComment;
     return {
@@ -314,8 +318,15 @@ export class ClaimRunHandler {
         position,
         itemId: item.id,
         count: run.phases.length,
+        kind: item.kind,
         // A Checkpoint after the Phase is not an end: the Run waits there, the Phase hands on.
         final: next.kind === 'end',
+        ...(review
+          ? {
+              endsOnChangesRequested:
+                this.plans.next(workflow.toData(), position, 'changes_requested').kind === 'end',
+            }
+          : {}),
         ...(item.instructions === undefined || item.instructions === ''
           ? {}
           : { instructions: item.instructions }),

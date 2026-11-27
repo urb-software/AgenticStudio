@@ -1,4 +1,4 @@
-import type { NextStep } from './next-step.js';
+import type { NextStep, PhaseOutcome } from './next-step.js';
 
 /** The part of a recorded Workflow the order of its items is decided from. */
 interface SequenceItem {
@@ -6,9 +6,8 @@ interface SequenceItem {
 }
 
 /**
- * The order of a Workflow's items, decided over the plan a Run recorded and nothing else. A Phase
- * is a work or review item; a Checkpoint is not one. Only `done` of a work Phase exists so far, so
- * the items follow one another.
+ * The order of a Workflow's items over the recorded plan alone; a Checkpoint is no Phase. `done`
+ * and `approved` go on; `changes_requested` ends the Workflow, where a send-back will be decided.
  */
 export class WorkflowSequence {
   private constructor(private readonly items: readonly SequenceItem[]) {}
@@ -26,8 +25,9 @@ export class WorkflowSequence {
     return this.from(0);
   }
 
-  /** What follows the Phase at `position`: a Checkpoint, the next Phase, or the end. */
-  after(position: number): NextStep {
+  /** What follows the Phase at `position` for how it ended: a Checkpoint, a Phase, or the end. */
+  after(position: number, outcome: PhaseOutcome = 'done'): NextStep {
+    if (outcome === 'changes_requested') return { kind: 'end' };
     let seen = -1;
     for (const [index, item] of this.items.entries()) {
       if (item.kind !== 'checkpoint') seen += 1;

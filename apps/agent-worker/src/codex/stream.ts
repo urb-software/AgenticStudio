@@ -4,7 +4,7 @@ import {
   runStepResultSchema,
   SESSION_REF_MAX_LENGTH,
 } from '@agentic-studio/contracts';
-import { agentResultSchema } from '../agent-definition/index.js';
+import { resultSchemaFor } from '../agent-definition/index.js';
 import { AgentFailedError, UsageLimitError } from '../runner.js';
 import { withoutNulls } from './result-schema.js';
 
@@ -65,8 +65,14 @@ export class CodexStream {
   private lastMessage: string | undefined;
   private readonly commands = new Set<string>();
 
-  /** @param resumed A resumed step's session, kept when the stream reports none of its own. */
-  constructor(private readonly resumed?: string) {}
+  /**
+   * @param resumed A resumed step's session, kept when the stream reports none of its own.
+   * @param phase The Phase the step belongs to: a review's result carries a Verdict.
+   */
+  constructor(
+    private readonly resumed?: string,
+    private readonly phase?: { kind?: 'work' | 'review' },
+  ) {}
 
   /** The session id the CLI reported, else the resumed one. */
   get sessionRef(): string | undefined {
@@ -208,11 +214,13 @@ export class CodexStream {
       };
     }
     const raw = source.kind === 'file' ? source.text?.trim() : this.lastMessage;
-    const parsed = parseResult(raw, this.sessionRef);
+    const parsed = parseResult(raw, this.sessionRef, this.phase);
     if (parsed !== undefined) return { result: parsed, events: [] };
     return {
       error: new AgentFailedError(
-        'Codex ended without a valid structured result. Its final text is in the log.',
+        this.phase?.kind === 'review'
+          ? 'Codex ended the review without a valid structured result with a Verdict. Its final text is in the log.'
+          : 'Codex ended without a valid structured result. Its final text is in the log.',
       ),
       events: this.finalText(raw),
     };
@@ -233,7 +241,11 @@ export class CodexStream {
  * The agent's JSON, validated strictly against the agent result schema, with the session from
  * the stream (never from the agent's output); `undefined` when it is not valid.
  */
-function parseResult(raw: string | undefined, session: string | undefined) {
+function parseResult(
+  raw: string | undefined,
+  session: string | undefined,
+  phase: { kind?: 'work' | 'review' } | undefined,
+) {
   if (raw === undefined || raw === '') return undefined;
   let value: unknown;
   try {
@@ -242,7 +254,7 @@ function parseResult(raw: string | undefined, session: string | undefined) {
     return undefined;
   }
   // The strict output schema makes absent fields null.
-  const agent = agentResultSchema.safeParse(withoutNulls(value));
+  const agent = resultSchemaFor(phase).safeParse(withoutNulls(value));
   if (!agent.success) return undefined;
   const result = runStepResultSchema.safeParse({
     ...agent.data,

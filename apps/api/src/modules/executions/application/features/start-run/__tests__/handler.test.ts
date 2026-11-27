@@ -31,11 +31,7 @@ import type { WorkerStatusData } from '../../../../domain/value-objects/worker-s
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { FakeProjectKinds } from '../../../ports/__tests__/fake-project-kinds.js';
 import { SEQUENTIAL_PLANS } from '../../../ports/__tests__/fake-workflow-plans.js';
-import {
-  FIRST_ITEM_NOT_A_PHASE,
-  StartRunHandler,
-  WORKFLOW_ITEMS_NOT_SUPPORTED,
-} from '../handler.js';
+import { FIRST_ITEM_NOT_A_PHASE, StartRunHandler } from '../handler.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const HEAD = 'd'.repeat(40);
@@ -374,16 +370,21 @@ describe('StartRunHandler', () => {
       expect(runs.runs).toEqual([]);
     });
 
-    it('refuses a Workflow with a review Phase until it is supported', async () => {
+    it('starts a Workflow with a review Phase, recording the Phase as a review', async () => {
       workflows['flow'] = plan([
         { id: 'build', kind: 'work', agent: 'coder' },
-        { id: 'check', kind: 'review', agent: 'coder' },
+        { id: 'check', kind: 'review', agent: 'builder' },
       ]);
 
-      await expect(startWith({ workflow: 'flow' })).rejects.toEqual(
-        new WorkflowNotUsableError(WORKFLOW_ITEMS_NOT_SUPPORTED),
-      );
-      expect(runs.runs).toEqual([]);
+      const { id } = await startWith({ workflow: 'flow' });
+
+      const run = runs.runs.find((candidate) => candidate.id === id)!;
+      expect(
+        (run.phases ?? []).map((phase) => [phase.itemId, phase.kind, phase.agent.name]),
+      ).toEqual([
+        ['build', 'work', 'coder'],
+        ['check', 'review', 'builder'],
+      ]);
     });
 
     it('starts a Workflow with a Checkpoint, which the Run records among its items', async () => {

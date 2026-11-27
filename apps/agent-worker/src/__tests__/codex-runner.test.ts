@@ -6,7 +6,10 @@ import { join, posix } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BASE_RULES } from '@agentic-studio/contracts';
-import { CODEX_RESULT_JSON_SCHEMA } from '../codex/result-schema.js';
+import {
+  CODEX_RESULT_JSON_SCHEMA,
+  CODEX_REVIEW_RESULT_JSON_SCHEMA,
+} from '../codex/result-schema.js';
 import { CodexRunner } from '../codex/runner.js';
 import { DEFAULT_PROVIDER_BINARIES } from '../config.js';
 import { GitCommandError } from '../git.js';
@@ -240,6 +243,30 @@ describe('CodexRunner at the spawn boundary', () => {
     );
     expect(existsSync(join(runDir, 'tmp'))).toBe(true);
     expect(existsSync(join(runDir, 'repo', 'prompt.md'))).toBe(false);
+  });
+
+  it('gives a review Phase the review schema and the review prompt, and fails a result without a Verdict', async () => {
+    replaying('success');
+    const base = input('Add a health check');
+    const review = {
+      ...base,
+      run: {
+        ...base.run,
+        kind: 'next_phase' as const,
+        phase: { position: 1, itemId: 'check', count: 2, kind: 'review' as const, final: true },
+      },
+    };
+
+    await expect(drain(runner().start(review))).rejects.toThrow(
+      /review without a valid structured result with a Verdict/,
+    );
+
+    expect(readFileSync(join(runDir, 'codex', 'result.schema.json'), 'utf8')).toBe(
+      CODEX_REVIEW_RESULT_JSON_SCHEMA,
+    );
+    expect(readFileSync(join(runDir, 'codex', 'prompt.md'), 'utf8')).toContain(
+      '## This Phase is a review',
+    );
   });
 
   describe('the agent of the Run', () => {

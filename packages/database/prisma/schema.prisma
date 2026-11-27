@@ -354,13 +354,19 @@ model RunPhase {
   position          Int
   /// The Workflow item the Phase came from; null for the one Phase of a Run started with an agent.
   itemId            String?   @map("item_id") @db.VarChar(64)
-  /// work (a CHECK holds the list).
+  /// work | review (a CHECK holds the list).
   kind              String    @default("work") @db.VarChar(16)
   /// pending | running | done | failed (a CHECK holds the list).
   state             String    @default("pending") @db.VarChar(16)
   /// The summary the Phase's last Run step reported (redacted): what the next Phase is told and
   /// the Run page shows. Null until a Run step of the Phase is done.
   summary           String?
+  /// A review Phase's Verdict, `approved` | `changes_requested` (a CHECK holds the list and that
+  /// only a review Phase has one). Null until the review is done.
+  verdict           String?   @db.VarChar(24)
+  /// What the review found, `[{ text, file?, line? }]` (redacted, bounded by the worker protocol):
+  /// set exactly when verdict is. Never read for a list of Runs.
+  findings          Json?
   /// What the operator wrote on "Continue" at the Checkpoint before the Phase: untrusted text the
   /// Phase is told after its instructions. Null when there was none.
   checkpointComment String?   @map("checkpoint_comment")

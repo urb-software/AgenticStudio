@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os';
 import { join, posix } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AGENT_RESULT_JSON_SCHEMA } from '../agent-definition/index.js';
+import { AGENT_RESULT_JSON_SCHEMA, REVIEW_RESULT_JSON_SCHEMA } from '../agent-definition/index.js';
 import { CLAUDE_CODE_PASSED_VARIABLES } from '../claude-code/cli-options.js';
 import { readGuardrailSettings } from '../claude-code/guardrails.js';
 import { ClaudeCodeRunner, probeClaudeCode } from '../claude-code/runner.js';
@@ -210,6 +210,28 @@ describe('ClaudeCodeRunner at the spawn boundary', () => {
     // The CLI's process group belongs to the Run step.
     expect(groups).toEqual([4242]);
     expect(result).toMatchObject({ outcome: 'done', sessionRef: SESSION });
+  });
+
+  it('gives a review Phase the review schema and the review instructions, and fails a result without a Verdict', async () => {
+    spawn.mockImplementation(() => fakeChild(recording('success')));
+    const base = input('Add a health check');
+    const review = {
+      ...base,
+      run: {
+        ...base.run,
+        kind: 'next_phase' as const,
+        phase: { position: 1, itemId: 'check', count: 2, kind: 'review' as const, final: true },
+      },
+    };
+
+    await expect(drain(runner().start(review))).rejects.toThrow(
+      /review without a valid structured result with a Verdict/,
+    );
+
+    const [, args] = spawn.mock.calls[0]!;
+    expect(args[args.indexOf('--json-schema') + 1]).toBe(REVIEW_RESULT_JSON_SCHEMA);
+    const instructions = readFileSync(join(runDir, 'instructions.md'), 'utf8');
+    expect(instructions).toContain('## This Phase is a review');
   });
 
   it('names the agent folder in the instructions and hands it to no option of the CLI', async () => {

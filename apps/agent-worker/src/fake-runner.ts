@@ -38,6 +38,33 @@ export type FakeScenario = (typeof FAKE_SCENARIOS)[number];
 
 const MARKER = /\[fake:([a-z-]+)\]/;
 
+/**
+ * What a fake review Phase does, chosen by `[fake-review:<verdict>]` in the Task (a work Phase
+ * ignores it): approve, ask for changes, end without a Verdict, change the Working copy and commit
+ * it as a careless reviewer could (then approve), or ask a question.
+ */
+export const FAKE_REVIEW_SCENARIOS = ['approved', 'changes', 'none', 'edits', 'question'] as const;
+export type FakeReviewScenario = (typeof FAKE_REVIEW_SCENARIOS)[number];
+
+const REVIEW_MARKER = /\[fake-review:([a-z-]+)\]/;
+
+/** The review a Task asks for; `approved` without a (known) marker. */
+export function fakeReviewScenarioOf(task: string): FakeReviewScenario {
+  const named = REVIEW_MARKER.exec(task)?.[1];
+  return (FAKE_REVIEW_SCENARIOS as readonly string[]).includes(named ?? '')
+    ? (named as FakeReviewScenario)
+    : 'approved';
+}
+
+/** The file the `edits` review adds to the Working copy; it must never reach a commit. */
+export const FAKE_REVIEW_FILE = 'FAKE_REVIEW_EDIT.md';
+
+/** The findings of the `changes` review: one that names a file, one that is text with markup. */
+export const FAKE_REVIEW_FINDINGS = [
+  { text: 'The fake review found a problem here.', file: 'FAKE_CHANGE.md', line: 1 },
+  { text: '<b>Not bold</b> and *not emphasised*, [not a link](https://example.test).' },
+] as const;
+
 /** The scenario a Task asks for; `success` without a (known) marker. */
 export function fakeScenarioOf(task: string): FakeScenario {
   const named = MARKER.exec(task)?.[1];
@@ -204,6 +231,7 @@ export class FakeRunner implements Runner {
     if (folderLine !== null) yield { type: 'message', text: folderLine };
     const skillsLine = fakeSkillsLine(workspace.skills);
     if (skillsLine !== null) yield { type: 'message', text: skillsLine };
+    if (run.phase?.kind === 'review') return yield* this.review(run, workspace, signal);
     return yield* this.play(scenario, run, workspace, signal, false);
   }
 
@@ -302,6 +330,51 @@ export class FakeRunner implements Runner {
         yield { type: 'command', text: 'fake-test --all' };
         yield { type: 'output', text: 'done' };
         return done();
+    }
+  }
+
+  /** A review Phase: reads the change, may misbehave (`edits`), and ends with its Verdict. */
+  private async *review(
+    run: StartRunStepInput['run'],
+    workspace: RunWorkspace,
+    signal: AbortSignal,
+  ): RunStep {
+    const scenario = fakeReviewScenarioOf(run.task);
+    yield { type: 'command', text: 'git status --short' };
+    yield { type: 'output', text: `reviewing: ${scenario}` };
+    signal.throwIfAborted();
+    switch (scenario) {
+      case 'question':
+        return asking(
+          run.runId,
+          'Which of the changes should the review look at?',
+          run.phase?.position,
+        );
+      case 'edits': {
+        // What a careless review does: edits a file, adds one and commits.
+        await this.write(workspace, FAKE_REVIEW_FILE, 'Written by a fake review.\n');
+        await this.write(workspace, FAKE_CHANGE_FILE, 'Rewritten by a fake review.\n');
+        const options = { cwd: workspace.repoDir, timeoutMs: GIT_TIMEOUTS.local, signal };
+        await this.git.run(['add', '--', FAKE_REVIEW_FILE, FAKE_CHANGE_FILE], options);
+        await this.git.run(['commit', '--quiet', '--no-verify', '-m', 'Fake review edit'], {
+          ...options,
+          config: this.commitConfig,
+        });
+        await this.write(workspace, 'FAKE_REVIEW_LEFTOVER.md', 'Left by a fake review.\n');
+        yield { type: 'output', text: 'edited, added and committed files (it must not count)' };
+        return { outcome: 'done', summary: 'The fake review approved it.', verdict: 'approved' };
+      }
+      case 'none':
+        return { outcome: 'done', summary: 'The fake review forgot its Verdict.' };
+      case 'changes':
+        return {
+          outcome: 'done',
+          summary: 'The fake review asks for changes.',
+          verdict: 'changes_requested',
+          findings: FAKE_REVIEW_FINDINGS.map((finding) => ({ ...finding })),
+        };
+      case 'approved':
+        return { outcome: 'done', summary: 'The fake review approved it.', verdict: 'approved' };
     }
   }
 
@@ -431,6 +504,10 @@ export class FakeRunner implements Runner {
       );
     }
     if (answer.trim() === '') throw new AgentFailedError('The fake agent got no answer.');
+    if (run.phase?.kind === 'review' && reason === 'answer') {
+      yield { type: 'output', text: `answer received: ${answer}` };
+      return { outcome: 'done', summary: 'The fake review approved it.', verdict: 'approved' };
+    }
     if (reason === 'bring_up_to_date') {
       // The instruction carries the operator's note; the note names the scenario.
       const updateScenario = fakeScenarioOf(answer);

@@ -292,8 +292,15 @@ export const runPhasePayloadSchema = z.strictObject({
   itemId: z.string().min(1).max(64),
   /** How many Phases the Run has. */
   count: z.int().min(1).max(RUN_PHASES_MAX),
-  /** Studio decided that this Phase's `done` ends the Workflow: the Run delivers after it. */
+  /** `work` when absent. A review Phase ends with a Verdict and cannot change the Working copy. */
+  kind: z.enum(['work', 'review']).optional(),
+  /**
+   * Studio decided that this Phase's `done` (a review: `approved`) ends the Workflow: the Run
+   * delivers after it.
+   */
   final: z.boolean(),
+  /** A review Phase only: Studio decided that `changes_requested` ends the Workflow too. */
+  endsOnChangesRequested: z.boolean().optional(),
   /** The Workflow item's own instructions for this Phase, after the agent's. */
   instructions: z
     .string()
@@ -631,6 +638,21 @@ export const runQuestionSchema = z.strictObject({
 });
 export type RunQuestion = z.infer<typeof runQuestionSchema>;
 
+/** What a review Phase decides. */
+export const PHASE_VERDICTS = ['approved', 'changes_requested'] as const;
+export type PhaseVerdict = (typeof PHASE_VERDICTS)[number];
+
+/** Most findings a review Phase reports. */
+export const PHASE_FINDINGS_MAX = 50;
+
+/** One thing a review found: untrusted text, and where in the Working copy it is, when it says. */
+export const phaseFindingSchema = z.strictObject({
+  text: z.string().min(1).max(2000),
+  file: z.string().min(1).max(512).optional(),
+  line: z.int().positive().optional(),
+});
+export type PhaseFinding = z.infer<typeof phaseFindingSchema>;
+
 /**
  * The structured result a Run step ends with: `done`, or `needs_input` with the question (it
  * pauses the Run) and the session reference the answer resumes. The whole result stays within
@@ -647,6 +669,23 @@ export const runStepResultSchema = z
       .strictObject({ title: z.string().min(1).max(256), body: z.string().max(65_536) })
       .optional(),
     checks: z.array(runCheckSchema).max(100).optional(),
+    /** A review Phase's `done` carries the Verdict; a work Phase's result has none. */
+    verdict: z.enum(PHASE_VERDICTS).optional(),
+    findings: z.array(phaseFindingSchema).max(PHASE_FINDINGS_MAX).optional(),
+  })
+  .refine((result) => result.verdict !== undefined || result.findings === undefined, {
+    path: ['findings'],
+    message: 'Findings come with a Verdict.',
+  })
+  .refine(
+    (result) =>
+      result.verdict !== 'changes_requested' ||
+      (result.findings !== undefined && result.findings.length > 0),
+    { path: ['findings'], message: 'A Verdict of changes requested carries at least one finding.' },
+  )
+  .refine((result) => result.outcome !== 'needs_input' || result.verdict === undefined, {
+    path: ['verdict'],
+    message: 'A needs_input result carries no Verdict.',
   })
   .refine((result) => result.outcome !== 'needs_input' || result.question !== undefined, {
     path: ['question'],

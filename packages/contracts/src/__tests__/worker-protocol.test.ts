@@ -47,6 +47,7 @@ import {
   RUN_EVENT_TEXT_MAX_BYTES,
   runnerEventSchema,
   runPayloadSchema,
+  runPhasePayloadSchema,
   RUN_STATES,
   runStatesRequestSchema,
   runStatesResponseSchema,
@@ -842,6 +843,69 @@ describe('structured result of a Run step', () => {
         checks: [{ name: 'x', result: 'green' }],
       }).success,
     ).toBe(false);
+  });
+});
+
+describe('the Verdict of a review Phase', () => {
+  const done = { outcome: 'done', summary: 'Reviewed.' } as const;
+  const valid = (result: object) => runStepResultSchema.safeParse(result).success;
+
+  it('accepts approved, with or without findings', () => {
+    expect(valid({ ...done, verdict: 'approved' })).toBe(true);
+    expect(valid({ ...done, verdict: 'approved', findings: [{ text: 'A nit.' }] })).toBe(true);
+  });
+
+  it('needs at least one finding for changes requested', () => {
+    expect(valid({ ...done, verdict: 'changes_requested' })).toBe(false);
+    expect(valid({ ...done, verdict: 'changes_requested', findings: [] })).toBe(false);
+    expect(
+      valid({
+        ...done,
+        verdict: 'changes_requested',
+        findings: [{ text: 'Wrong.', file: 'src/a.ts', line: 3 }],
+      }),
+    ).toBe(true);
+  });
+
+  it('refuses an unknown Verdict, findings without a Verdict and a Verdict with a question', () => {
+    expect(valid({ ...done, verdict: 'rejected' })).toBe(false);
+    expect(valid({ ...done, findings: [{ text: 'A nit.' }] })).toBe(false);
+    expect(
+      valid({
+        outcome: 'needs_input',
+        summary: 'Stuck.',
+        question: { text: 'Which?' },
+        sessionRef: 's-1',
+        verdict: 'approved',
+      }),
+    ).toBe(false);
+  });
+
+  it('bounds the findings in number and size', () => {
+    const verdict = 'changes_requested';
+    const one = (finding: object) => valid({ ...done, verdict, findings: [finding] });
+    expect(one({ text: 'x'.repeat(2000) })).toBe(true);
+    expect(one({ text: 'x'.repeat(2001) })).toBe(false);
+    expect(one({ text: '' })).toBe(false);
+    expect(one({ text: 'a', file: 'f'.repeat(512) })).toBe(true);
+    expect(one({ text: 'a', file: 'f'.repeat(513) })).toBe(false);
+    expect(one({ text: 'a', line: 1 })).toBe(true);
+    expect(one({ text: 'a', line: 0 })).toBe(false);
+    expect(one({ text: 'a', line: -1 })).toBe(false);
+    expect(one({ text: 'a', line: 1.5 })).toBe(false);
+    expect(one({ text: 'a', extra: true })).toBe(false);
+    const many = (count: number) =>
+      valid({ ...done, verdict, findings: Array.from({ length: count }, () => ({ text: 'a' })) });
+    expect(many(50)).toBe(true);
+    expect(many(51)).toBe(false);
+  });
+
+  it('names the kind of a Phase in the claim; absent means work', () => {
+    const phase = { position: 1, itemId: 'review', count: 2, final: true };
+    expect(runPhasePayloadSchema.parse(phase)).toEqual(phase);
+    const review = { ...phase, kind: 'review', endsOnChangesRequested: true };
+    expect(runPhasePayloadSchema.parse(review)).toEqual(review);
+    expect(runPhasePayloadSchema.safeParse({ ...phase, kind: 'checkpoint' }).success).toBe(false);
   });
 });
 

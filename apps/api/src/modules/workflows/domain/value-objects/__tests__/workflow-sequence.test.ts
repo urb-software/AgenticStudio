@@ -33,6 +33,28 @@ describe('the order of the Phases of a Workflow', () => {
     const items = [work, work];
     expect(WorkflowSequence.of(items).after(0)).toEqual(WorkflowSequence.of([...items]).after(0));
   });
+
+  describe('after a review Phase', () => {
+    const flow = WorkflowSequence.of([{ kind: 'work' }, { kind: 'review' }, { kind: 'work' }]);
+
+    it('goes on after approved, and ends after the last Phase', () => {
+      expect(flow.after(1, 'approved')).toEqual({ kind: 'phase', position: 2 });
+      expect(flow.after(2, 'approved')).toEqual({ kind: 'end' });
+    });
+
+    it('ends the Workflow on changes requested, whatever follows the review', () => {
+      expect(flow.after(1, 'changes_requested')).toEqual({ kind: 'end' });
+      expect(
+        WorkflowSequence.of([{ kind: 'work' }, { kind: 'review' }]).after(1, 'changes_requested'),
+      ).toEqual({
+        kind: 'end',
+      });
+    });
+
+    it('treats done as it always did', () => {
+      expect(flow.after(0, 'done')).toEqual({ kind: 'phase', position: 1 });
+    });
+  });
 });
 
 describe('a Checkpoint in the order of a Workflow', () => {

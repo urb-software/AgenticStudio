@@ -205,12 +205,16 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         // Started with an agent: no Workflow.
         workflow: null,
         workflowName: null,
+        reviewNotPassed: false,
         // One Phase with that agent; the list leaves the Phases out.
         phases: [
           {
             position: 0,
             itemId: null,
+            kind: 'work',
             state: 'pending',
+            verdict: null,
+            findings: [],
             summary: null,
             agent: {
               name: 'default-codex',

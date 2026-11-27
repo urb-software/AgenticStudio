@@ -169,6 +169,21 @@ export const runWorkflowResponseSchema = z
   })
   .meta({ id: 'RunWorkflow' });
 
+export const runPhaseVerdictSchema = z
+  .enum(['approved', 'changes_requested'])
+  .describe("A review Phase's Verdict.");
+
+export const runPhaseFindingSchema = z
+  .object({
+    text: z.string().describe("The reviewer's text, plain text: never Markdown or HTML."),
+    file: z
+      .string()
+      .optional()
+      .describe('The file the finding names, as the reviewer wrote it; check it before use.'),
+    line: z.int().positive().optional(),
+  })
+  .meta({ id: 'RunPhaseFinding' });
+
 export const runPhaseResponseSchema = z
   .object({
     position: z.int().min(0).describe('0 for the first Phase, then 1, 2, … in order.'),
@@ -176,7 +191,14 @@ export const runPhaseResponseSchema = z
       .string()
       .nullable()
       .describe('The Workflow item the Phase came from; null for a Run started with an agent.'),
+    kind: z.enum(['work', 'review']).describe('A review Phase ends with a Verdict.'),
     state: runPhaseStateSchema,
+    verdict: runPhaseVerdictSchema
+      .nullable()
+      .describe('The Verdict of a review Phase; null before one, and for a work Phase.'),
+    findings: z
+      .array(runPhaseFindingSchema)
+      .describe('What the review found, in the reviewer’s order; empty without findings.'),
     summary: z
       .string()
       .nullable()
@@ -203,6 +225,9 @@ export const runResponseSchema = z
       .nullable()
       .optional()
       .describe('The Workflow as the Run recorded it; null for a Run started with an agent.'),
+    reviewNotPassed: z
+      .boolean()
+      .describe('A review Phase asked for changes: the Workflow ended as "review not passed".'),
     task: z.string(),
     state: runStateSchema,
     startCommit: z.string(),
@@ -341,10 +366,14 @@ export function toRunResponse(
         | { id: string; kind: 'checkpoint'; text: string }
       )[];
     } | null;
+    reviewNotPassed: boolean;
     phases: readonly {
       position: number;
       itemId: string | null;
+      kind: 'work' | 'review';
       state: z.infer<typeof runPhaseStateSchema>;
+      verdict: z.infer<typeof runPhaseVerdictSchema> | null;
+      findings: readonly { text: string; file?: string; line?: number }[];
       summary: string | null;
       agent: {
         name: string;
@@ -469,10 +498,14 @@ export function toRunResponse(
             commit: run.workflow.commit,
             items: run.workflow.items.map((item) => ({ ...item })),
           },
+    reviewNotPassed: run.reviewNotPassed,
     phases: run.phases.map((phase) => ({
       position: phase.position,
       itemId: phase.itemId,
+      kind: phase.kind,
       state: phase.state,
+      verdict: phase.verdict,
+      findings: phase.findings.map((finding) => ({ ...finding })),
       summary: phase.summary,
       agent: {
         name: phase.agent.name,

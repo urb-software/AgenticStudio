@@ -11,10 +11,12 @@ import {
 } from '../../domain/value-objects/run-state.js';
 import { PROVIDERS, type Provider } from '../../domain/value-objects/provider.js';
 import type { RunAgentSource } from '../../domain/value-objects/run-agent.js';
+import type { RunPhaseFinding } from '../../domain/value-objects/run-phase-finding.js';
 import type {
   RunPhaseData,
   RunPhaseKind,
   RunPhaseState,
+  RunPhaseVerdict,
 } from '../../domain/value-objects/run-phase.js';
 import type { RunWorkflowData, RunWorkflowItem } from '../../domain/value-objects/run-workflow.js';
 import {
@@ -53,6 +55,7 @@ const PHASE_LIST_FIELDS = {
   itemId: true,
   kind: true,
   state: true,
+  verdict: true,
   agentName: true,
   agentSource: true,
   agentCommit: true,
@@ -142,6 +145,7 @@ const RUN_FIELDS = {
       ...PHASE_LIST_FIELDS,
       agentInstructions: true,
       summary: true,
+      findings: true,
       checkpointComment: true,
     },
     orderBy: { position: 'asc' },
@@ -174,6 +178,10 @@ interface PhaseRow {
   state: string;
   /** Left out of a list of Runs. */
   summary?: string | null;
+  /** The verdict is read in a list of Runs (it marks one whose review did not pass). */
+  verdict: string | null;
+  /** Left out of a list of Runs. */
+  findings?: Prisma.JsonValue;
   checkpointComment?: string | null;
   agentName: string;
   agentSource: string;
@@ -350,6 +358,9 @@ function toPhaseData(phase: PhaseRow): RunPhaseData {
     state: phase.state as RunPhaseState,
     sessionRef: phase.sessionRef,
     summary: phase.summary ?? null,
+    // The CHECK constraint keeps the list; Studio wrote the findings from a validated result.
+    verdict: phase.verdict as RunPhaseVerdict | null,
+    findings: (phase.findings ?? []) as unknown as RunPhaseFinding[],
     checkpointComment: phase.checkpointComment ?? null,
     agent: {
       name: phase.agentName,
@@ -922,6 +933,12 @@ export class PrismaRunRepository implements RunRepository {
         data: {
           ...(update.state === undefined ? {} : { state: update.state }),
           ...(update.summary === undefined ? {} : { summary: update.summary }),
+          ...(update.verdict === undefined
+            ? {}
+            : {
+                verdict: update.verdict,
+                findings: (update.findings ?? []) as unknown as Prisma.InputJsonValue,
+              }),
           ...(update.sessionRef === undefined ? {} : { sessionRef: update.sessionRef }),
           ...(update.checkpointComment === undefined
             ? {}

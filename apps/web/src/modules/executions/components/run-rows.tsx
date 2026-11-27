@@ -1,6 +1,12 @@
 'use client';
 
-import { CircleCheckIcon, CircleXIcon, FlagIcon, GitPullRequestIcon } from 'lucide-react';
+import {
+  CircleCheckIcon,
+  CircleXIcon,
+  FlagIcon,
+  GitPullRequestIcon,
+  TriangleAlertIcon,
+} from 'lucide-react';
 import Link from 'next/link';
 import { StatusPill } from '@/shared/components/status-pill';
 import { formatExactTime, formatTimeAgo } from '@/shared/lib/relative-time';
@@ -82,6 +88,16 @@ export function RunRows({ runs, now, label, projectNames }: RunRowsProps) {
                   >
                     {run.workflowName}
                   </span>
+                </span>
+              ) : null}
+              {run.reviewNotPassed ? (
+                // A review asked for changes: the Run still delivered, with its findings open.
+                <span
+                  data-testid="review-not-passed-marker"
+                  className="inline-flex items-center gap-1 font-medium text-run-awaiting"
+                >
+                  <TriangleAlertIcon aria-hidden="true" className="size-3.5" />
+                  Review not passed
                 </span>
               ) : null}
               {run.state === 'waiting_for_operator' && run.waiting?.reason === 'checkpoint' ? (

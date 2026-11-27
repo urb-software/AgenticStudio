@@ -732,6 +732,10 @@ export type RunOutput = {
      * The Workflow as the Run recorded it; null for a Run started with an agent.
      */
     workflow?: RunWorkflowOutput | null;
+    /**
+     * A review Phase asked for changes: the Workflow ended as "review not passed".
+     */
+    reviewNotPassed: boolean;
     task: string;
     state: 'queued' | 'preparing' | 'running' | 'waiting_for_operator' | 'succeeded' | 'failed' | 'cancelled' | 'timed_out';
     startCommit: string;
@@ -811,9 +815,21 @@ export type RunPhaseOutput = {
      */
     itemId: string | null;
     /**
+     * A review Phase ends with a Verdict.
+     */
+    kind: 'work' | 'review';
+    /**
      * Whether the Phase waits, works, is done or ended without finishing.
      */
     state: 'pending' | 'running' | 'done' | 'failed';
+    /**
+     * The Verdict of a review Phase; null before one, and for a work Phase.
+     */
+    verdict: 'approved' | 'changes_requested' | null;
+    /**
+     * What the review found, in the reviewer’s order; empty without findings.
+     */
+    findings: Array<RunPhaseFindingOutput>;
     /**
      * What the Phase's last Run step reported, plain text; null before one.
      */
@@ -842,6 +858,18 @@ export type RunPhaseOutput = {
      * The Run steps taken in the Phase.
      */
     stepsUsed: number;
+};
+
+export type RunPhaseFindingOutput = {
+    /**
+     * The reviewer's text, plain text: never Markdown or HTML.
+     */
+    text: string;
+    /**
+     * The file the finding names, as the reviewer wrote it; check it before use.
+     */
+    file?: string;
+    line?: number;
 };
 
 export type RunWorkflowOutput = {

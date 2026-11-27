@@ -14,7 +14,8 @@ function from(items: readonly PlannedItem[], index: number): NextStep {
 /** The sequential decision `workflows` makes over a recorded plan; it resolves nothing. */
 export const SEQUENTIAL_PLANS: WorkflowPlans = {
   resolve: () => Promise.resolve({ status: 'unknown' }),
-  next: (plan, position) => {
+  next: (plan, position, outcome) => {
+    if (outcome === 'changes_requested') return { kind: 'end' };
     const phases = plan.items
       .map((item, index) => ({ item, index }))
       .filter(({ item }) => item.kind !== 'checkpoint');

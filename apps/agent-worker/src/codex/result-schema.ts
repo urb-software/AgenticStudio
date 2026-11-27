@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { agentResultSchema } from '../agent-definition/index.js';
+import { agentResultSchema, reviewResultObject } from '../agent-definition/index.js';
 
 /**
  * The result's JSON Schema for Codex (`--output-schema`): strict structured output needs every
@@ -47,6 +47,11 @@ export function strictSchema(schema: unknown): unknown {
 /** {@link agentResultSchema} as a strict JSON Schema for Codex's `--output-schema`, as JSON. */
 export const CODEX_RESULT_JSON_SCHEMA = JSON.stringify(
   strictSchema(z.toJSONSchema(agentResultSchema, { target: 'draft-7' })),
+);
+
+/** The review Phase's result as a strict JSON Schema for Codex, as JSON. */
+export const CODEX_REVIEW_RESULT_JSON_SCHEMA = JSON.stringify(
+  strictSchema(z.toJSONSchema(reviewResultObject, { target: 'draft-7' })),
 );
 
 /** `value` with every `null` property removed (at any depth): a strict output's absent fields. */

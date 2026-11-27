@@ -51,8 +51,7 @@ export class DefinitionsWorkflowPlans implements WorkflowPlans {
   }
 
   next(plan: WorkflowPlan, position: number, outcome: PhaseOutcome): NextStep {
-    void outcome;
-    return WorkflowSequence.of(plan.items).after(position);
+    return WorkflowSequence.of(plan.items).after(position, outcome);
   }
 
   afterCheckpoint(plan: WorkflowPlan, item: number): NextStep {

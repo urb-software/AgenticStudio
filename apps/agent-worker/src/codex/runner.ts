@@ -55,7 +55,7 @@ import {
   userLevelFilesProblem,
 } from '../user-level-files.js';
 import { codexInstallProblem } from './install-check.js';
-import { CODEX_RESULT_JSON_SCHEMA } from './result-schema.js';
+import { CODEX_RESULT_JSON_SCHEMA, CODEX_REVIEW_RESULT_JSON_SCHEMA } from './result-schema.js';
 import { CodexStream, type ResultSource } from './stream.js';
 
 const PROVIDER: Provider = 'codex';
@@ -155,7 +155,11 @@ export class CodexRunner implements Runner {
     let args: string[];
     let stdinFile: string;
     if (resumed === undefined) {
-      await writeFile(files.schemaFile, CODEX_RESULT_JSON_SCHEMA, { mode: 0o600 });
+      await writeFile(
+        files.schemaFile,
+        run.phase?.kind === 'review' ? CODEX_REVIEW_RESULT_JSON_SCHEMA : CODEX_RESULT_JSON_SCHEMA,
+        { mode: 0o600 },
+      );
       await rm(files.resultFile, { force: true });
       // The CLI does not load an untrusted project's AGENTS.md (0.169.0), so the worker injects
       // its text (read at the start commit).
@@ -217,7 +221,7 @@ export class CodexRunner implements Runner {
       resumed === undefined
         ? { kind: 'file', text: await readFile(files.resultFile, 'utf8').catch(() => undefined) }
         : { kind: 'last-message' };
-    const stream = new CodexStream(resumed?.sessionRef);
+    const stream = new CodexStream(resumed?.sessionRef, run.phase);
     return yield* this.execute(args, env, workspace.repoDir, stdinFile, processes, signal, {
       stream,
       source,

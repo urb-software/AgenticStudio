@@ -7,6 +7,7 @@ interface StepResultText {
   question?: { text: string; options?: string[]; recommendation?: string };
   pullRequest?: { title: string; body: string };
   checks?: { name: string; detail?: string }[];
+  findings?: { text: string; file?: string; line?: number }[];
 }
 
 export class LogRedaction {
@@ -65,6 +66,15 @@ export class LogRedaction {
               ...check,
               name: redact(check.name),
               ...(check.detail === undefined ? {} : { detail: redact(check.detail) }),
+            })),
+          }),
+      ...(result.findings === undefined
+        ? {}
+        : {
+            findings: result.findings.map((finding) => ({
+              ...finding,
+              text: redact(finding.text),
+              ...(finding.file === undefined ? {} : { file: redact(finding.file) }),
             })),
           }),
     };

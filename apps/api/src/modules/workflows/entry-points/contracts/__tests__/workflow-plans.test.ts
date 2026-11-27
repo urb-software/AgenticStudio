@@ -109,6 +109,22 @@ describe('the Workflow plans', () => {
     expect(plans.next(plan, 1, 'done')).toEqual({ kind: 'end' });
   });
 
+  it('goes on after an approval and ends the Workflow when changes are requested', () => {
+    const { plans } = scripted({});
+    const plan = {
+      name: 'ship',
+      commit: COMMIT,
+      items: [
+        { id: 'a', kind: 'work' as const, agent: 'x' },
+        { id: 'b', kind: 'review' as const, agent: 'y' },
+        { id: 'c', kind: 'work' as const, agent: 'x' },
+      ],
+    };
+
+    expect(plans.next(plan, 1, 'approved')).toEqual({ kind: 'phase', position: 2 });
+    expect(plans.next(plan, 1, 'changes_requested')).toEqual({ kind: 'end' });
+  });
+
   it('reads Workflows only at the published commit, so one that exists only in a Draft is unknown', async () => {
     const fake = scripted({
       agents: OK_AGENTS,

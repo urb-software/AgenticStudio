@@ -95,7 +95,13 @@ function Counts({ additions, deletions }: { additions: number; deletions: number
   );
 }
 
-export function RunChanges({ run }: { run: RunOutput }) {
+/** A file the page asks the Changes tab to show; a new request has a new `at`. */
+export interface FocusedFile {
+  path: string;
+  at: number;
+}
+
+export function RunChanges({ run, focus }: { run: RunOutput; focus?: FocusedFile | null }) {
   const [scope, setScope] = useState<Scope>('run');
   return (
     <div className="flex min-w-0 flex-col gap-4">
@@ -105,12 +111,20 @@ export function RunChanges({ run }: { run: RunOutput }) {
         value={scope}
         onChange={setScope}
       />
-      <ScopeChanges key={scope} run={run} scope={scope} />
+      <ScopeChanges key={scope} run={run} scope={scope} focus={focus ?? null} />
     </div>
   );
 }
 
-function ScopeChanges({ run, scope }: { run: RunOutput; scope: Scope }) {
+function ScopeChanges({
+  run,
+  scope,
+  focus,
+}: {
+  run: RunOutput;
+  scope: Scope;
+  focus: FocusedFile | null;
+}) {
   const diff = useRunDiff(run, scope);
   const refreshFiles = useRefreshRunDiffFiles(run.id, scope);
   // A new result replaces the diff: the patches of its files are read again.
@@ -209,6 +223,7 @@ function ScopeChanges({ run, scope }: { run: RunOutput; scope: Scope }) {
         truncated={data.truncated}
         // A link to the file in the pull request only when every change shown there is pushed.
         pullRequest={data.includesUnpushed === false ? run.pullRequest : undefined}
+        focus={focus}
       />
     </div>
   );
@@ -260,16 +275,23 @@ export function ChangedFiles({
   files,
   truncated,
   pullRequest,
+  focus,
 }: {
   source: PatchSource;
   files: readonly ChangedFile[];
   truncated: boolean;
   pullRequest: { url: string; number: number } | undefined;
+  /** A file the page asks to show: selected when it is one of `files`, ignored otherwise. */
+  focus?: FocusedFile | null;
 }) {
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(
-    () => new Set(files.slice(0, EXPANDED_FILES).map((file) => file.path)),
-  );
-  const [selected, setSelected] = useState<string | null>(null);
+  const wanted = (path: string | undefined) =>
+    path !== undefined && files.some((file) => file.path === path) ? path : null;
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => {
+    const first = new Set(files.slice(0, EXPANDED_FILES).map((file) => file.path));
+    const shown = wanted(focus?.path);
+    return shown === null ? first : first.add(shown);
+  });
+  const [selected, setSelected] = useState<string | null>(() => wanted(focus?.path));
   const sections = useRef(new Map<string, HTMLElement>());
 
   const toggle = (path: string) =>
@@ -290,6 +312,16 @@ export function ChangedFiles({
         ?.focus({ preventScroll: true });
     });
   };
+
+  // A request made while this list is on screen; one made before it mounted is the initial state.
+  const asked = useRef(focus?.at);
+  useEffect(() => {
+    const shown = wanted(focus?.path);
+    if (focus && asked.current !== focus.at && shown !== null) select(shown);
+    asked.current = focus?.at;
+    // `select` and `wanted` only read this render's files and set state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus]);
 
   return (
     <div className="flex min-w-0 flex-col gap-4">

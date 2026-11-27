@@ -243,4 +243,59 @@ describe('the claims of a Run started with a Workflow', () => {
     expect(claimed?.id).toBe(plain.id);
     expect(claimed).not.toHaveProperty('phase');
   });
+
+  it('says of a review Phase that it is one, and that both Verdicts end the Workflow here', async () => {
+    runId = (
+      await runs.start({
+        projectId: '4a3c9d2f-5e6b-4c7d-8e9f-0a1b2c3d4e5f',
+        provider: 'codex',
+        agent: phaseAgent('builder'),
+        workflow: {
+          record: {
+            ...WORKFLOW_RECORD,
+            items: [
+              { id: 'build', kind: 'work', agent: 'builder' },
+              { id: 'check', kind: 'review', agent: 'reviewer' },
+            ],
+          },
+          phaseAgents: [phaseAgent('builder'), phaseAgent('reviewer', 'claude_code')],
+        },
+        task: 'Add a health check',
+        startCommit: 'a',
+        remoteUrl: 'https://git.example.test/a.git',
+        limits: { stepMinutes: 60, maxSteps: 3, waitingDays: 14, maxTotalSteps: 20 },
+        integrationBranch: 'dev',
+      })
+    ).id;
+    await handler.execute({ workerId: WORKER });
+    await handler.execute({ workerId: WORKER });
+    await runs.change(runId, (run) => {
+      run.reportState(WORKER, { state: 'running', failure: null }, T0);
+      run.reportStep(
+        WORKER,
+        { kind: 'start', index: 1, result: { outcome: 'done', summary: 'Built.' } },
+        WORKING_COPY,
+        [],
+        T0,
+        { kind: 'phase', position: 1 },
+      );
+    });
+
+    const claimed = await handler.execute({ workerId: WORKER });
+
+    expect(claimed?.phase).toMatchObject({
+      position: 1,
+      itemId: 'check',
+      kind: 'review',
+      final: true,
+      endsOnChangesRequested: true,
+    });
+  });
+
+  it('says of a work Phase that it is one, without a word about a Verdict', async () => {
+    const claimed = await handler.execute({ workerId: WORKER });
+
+    expect(claimed?.phase).toMatchObject({ kind: 'work' });
+    expect(claimed?.phase).not.toHaveProperty('endsOnChangesRequested');
+  });
 });

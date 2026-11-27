@@ -49,6 +49,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   REVIEWER_ASSET,
   HELPER_FILE,
+  IMPLEMENT_REVIEW_FILE,
   REVIEWER_FILE,
   TWO_PHASES_FILE,
   REVIEWER_SCRIPT,
@@ -220,6 +221,7 @@ async function createAgentFixtures(root) {
     [`skills/${SKILL_NAME}/SKILL.md`]: SKILL_FILE,
     'agents/helper/AGENT.md': HELPER_FILE,
     'workflows/two-phases/WORKFLOW.md': TWO_PHASES_FILE,
+    'workflows/implement-review/WORKFLOW.md': IMPLEMENT_REVIEW_FILE,
     'workflows/plan-then-build/WORKFLOW.md': PLAN_THEN_BUILD_FILE,
   });
   return {
