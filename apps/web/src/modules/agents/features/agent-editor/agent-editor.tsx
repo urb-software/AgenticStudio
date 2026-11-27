@@ -15,13 +15,16 @@ import type {
   AgentDraftOutput,
   AgentSummaryOutput,
   SkillSummaryOutput,
+  WorkflowSummaryOutput,
 } from '../../../../platform/api';
 import {
+  useAgent,
   useAgentFile,
   useAgentFiles,
   useAgents,
   useEditorAgents,
   useEditorSkills,
+  useEditorWorkflows,
   useProviders,
   useReloadEditor,
 } from '../../api/agents-queries';
@@ -46,6 +49,7 @@ import {
   LeaveDialog,
   NewAgentDialog,
   NewSkillDialog,
+  NewWorkflowDialog,
   type FileContent,
 } from './draft-dialogs';
 import {
@@ -81,6 +85,19 @@ import {
 import { PublishDialog } from './publish-dialog';
 import { useDebouncedValue } from './use-debounced-value';
 import { useLeaveGuard } from './use-leave-guard';
+import {
+  agentStandings,
+  diagramItems,
+  namedWorkflows,
+  newWorkflowFile,
+  validateWorkflowLive,
+  workflowEntryPath,
+  workflowOfPath,
+  workflowsNaming,
+  workflowsWarning,
+  writtenWorkflowEntries,
+} from './workflow-model';
+import { WorkflowPanel, type PanelState } from './workflow-panel';
 
 const TITLE_ID = 'agent-editor-title';
 
@@ -100,6 +117,13 @@ function skillStateOf(skill: SkillSummaryOutput | undefined): string | undefined
   return count === 0 ? 'Not valid' : `${count} ${count === 1 ? 'problem' : 'problems'}`;
 }
 
+function workflowStateOf(workflow: WorkflowSummaryOutput | undefined): string | undefined {
+  if (!workflow) return undefined;
+  if (workflow.valid) return 'Valid';
+  const count = workflow.problems.length;
+  return count === 0 ? 'Not valid' : `${count} ${count === 1 ? 'problem' : 'problems'}`;
+}
+
 function agentStateOfCount(count: number): string {
   if (count === 0) return 'Valid';
   return `${count} ${count === 1 ? 'problem' : 'problems'}`;
@@ -116,6 +140,7 @@ type DialogKind =
   | 'discard'
   | 'new-agent'
   | 'new-skill'
+  | 'new-workflow'
   | 'confirm-save'
   | 'publish';
 
@@ -139,6 +164,7 @@ function EditorBody() {
   const files = useAgentFiles();
   const marks = useEditorAgents();
   const skillMarks = useEditorSkills();
+  const workflowMarks = useEditorWorkflows();
   const latest = useAgents();
   const draftQuery = useDraft();
   const providers = useProviders();
@@ -159,7 +185,11 @@ function EditorBody() {
   const [editing, setEditing] = useState(() => Object.keys(readBuffers()).length > 0);
   const [accepted, setAccepted] = useState<AgentDraftOutput>();
   const [dialog, setDialog] = useState<DialogKind | undefined>(() =>
-    params.get('new') === 'skill' ? 'new-skill' : undefined,
+    params.get('new') === 'skill'
+      ? 'new-skill'
+      : params.get('new') === 'workflow'
+        ? 'new-workflow'
+        : undefined,
   );
   const [failure, setFailure] = useState<DraftFailure>();
   const [stale, setStale] = useState(false);
@@ -238,6 +268,13 @@ function EditorBody() {
       new Map<string, SkillSummaryOutput>((skillMarks.data?.skills ?? []).map((s) => [s.name, s])),
     [skillMarks.data],
   );
+  const baseWorkflows = useMemo(
+    () =>
+      new Map<string, WorkflowSummaryOutput>(
+        (workflowMarks.data?.workflows ?? []).map((w) => [w.name, w]),
+      ),
+    [workflowMarks.data],
+  );
   const baseAgents = useMemo(
     () =>
       new Map<string, AgentSummaryOutput>(
@@ -259,6 +296,7 @@ function EditorBody() {
   // The open agent or skill is validated here while it is edited; elsewhere the API's answer stands.
   const agentOpen = path === undefined ? null : agentOfPath(path);
   const skillOpen = path === undefined ? null : skillOfPath(path);
+  const workflowOpen = path === undefined ? null : workflowOfPath(path);
   const touchedByDraft = useMemo(
     () =>
       new Set(
@@ -279,22 +317,36 @@ function EditorBody() {
       ),
     [draft?.files],
   );
+  const touchedWorkflowsByDraft = useMemo(
+    () =>
+      new Set(
+        (draft?.files ?? []).flatMap((item) => {
+          const workflow = workflowOfPath(item.path);
+          return workflow === null ? [] : [workflow];
+        }),
+      ),
+    [draft?.files],
+  );
   const touched = new Set(touchedByDraft);
   const touchedSkills = new Set(touchedSkillsByDraft);
+  const touchedWorkflows = new Set(touchedWorkflowsByDraft);
   const bufferedPaths = Object.keys(buffers);
   const liveWanted =
     (agentOpen !== null &&
       (touched.has(agentOpen) || bufferedPaths.some((item) => agentOfPath(item) === agentOpen))) ||
     (skillOpen !== null &&
       (touchedSkills.has(skillOpen) ||
-        bufferedPaths.some((item) => skillOfPath(item) === skillOpen)));
+        bufferedPaths.some((item) => skillOfPath(item) === skillOpen))) ||
+    workflowOpen !== null;
   const entryPath = !liveWanted
     ? undefined
     : agentOpen !== null
       ? `agents/${agentOpen}/AGENT.md`
       : skillOpen !== null
         ? `skills/${skillOpen}/SKILL.md`
-        : undefined;
+        : workflowOpen !== null
+          ? `workflows/${workflowOpen}/WORKFLOW.md`
+          : undefined;
   const entryEntry = entries.find((candidate) => candidate.path === entryPath);
   const entryWritten = entryEntry?.change === 'added' || entryEntry?.change === 'modified';
   const entryReadable =
@@ -313,6 +365,18 @@ function EditorBody() {
     touchedSkills.size > 0 || skillEntryPath !== null || skillOpen !== null
       ? draftAgentEntries
       : [],
+    draft?.version ?? 0,
+  );
+
+  // The workflows that name the open agent, as the Draft leaves them, are read for a rename or delete.
+  const agentEntryOpen =
+    path === undefined ? null : (/^agents\/([^/]+)\/AGENT\.md$/.exec(path)?.[1] ?? null);
+  const openAgentDetail = useAgent(
+    agentEntryOpen ?? '',
+    agentEntryOpen !== null && entry?.change !== 'added',
+  );
+  const draftWorkflowTexts = useAgentDraftTexts(
+    agentEntryOpen === null ? [] : writtenWorkflowEntries(entries),
     draft?.version ?? 0,
   );
 
@@ -415,6 +479,48 @@ function EditorBody() {
       !listedSkills.has(skill) &&
       !touchedSkills.has(skill),
   );
+  // The open workflow is judged here against the agents as the Draft leaves them.
+  const agentStands = agentStandings({
+    entries,
+    baseAgents,
+    touched,
+    withProblems: new Set((draft?.problems ?? []).map((item) => item.agent)),
+    live: live && agentOpen !== null ? { agent: agentOpen, valid: live.length === 0 } : undefined,
+  });
+  const liveWorkflow =
+    workflowOpen !== null && entryPath !== undefined
+      ? validateWorkflowLive(workflowOpen, entries, knownTexts.get(entryPath), sizes, agentStands)
+      : undefined;
+  if (liveWorkflow && workflowOpen !== null) touchedWorkflows.add(workflowOpen);
+  const namedWorkflowSet = namedWorkflows(
+    workflowMarks.data?.workflows ?? [],
+    draft?.workflowProblems ?? [],
+    touchedWorkflows,
+    touched,
+  );
+  const diagram = liveWorkflow?.definition
+    ? {
+        items: diagramItems(liveWorkflow.definition, agentStands, baseAgents),
+        sendBacks: liveWorkflow.definition.sendBacks,
+      }
+    : undefined;
+  const diagramKey =
+    diagram && workflowOpen !== null ? `${workflowOpen}:${JSON.stringify(diagram)}` : undefined;
+  const [lastValid, setLastValid] = useState<{
+    key: string;
+    workflow: string;
+    state: PanelState;
+  }>();
+  if (
+    diagram &&
+    diagramKey !== undefined &&
+    workflowOpen !== null &&
+    lastValid?.key !== diagramKey
+  ) {
+    setLastValid({ key: diagramKey, workflow: workflowOpen, state: diagram });
+  }
+  const panelShown =
+    diagram ?? (lastValid?.workflow === workflowOpen ? lastValid?.state : undefined);
   const problems = listProblems({
     base: marks.data?.agents ?? [],
     baseSkills: skillMarks.data?.skills ?? [],
@@ -426,6 +532,14 @@ function EditorBody() {
     kept: keptChecks,
     live: live && agentOpen !== null ? { agent: agentOpen, problems: live } : undefined,
     liveSkill,
+    baseWorkflows: workflowMarks.data?.workflows ?? [],
+    draftWorkflows: draft?.workflowProblems ?? [],
+    touchedWorkflows,
+    namedWorkflows: namedWorkflowSet,
+    liveWorkflow:
+      liveWorkflow && workflowOpen !== null
+        ? { workflow: workflowOpen, problems: liveWorkflow.problems }
+        : undefined,
   });
 
   const states = new Map<string, string>();
@@ -448,6 +562,15 @@ function EditorBody() {
         (touchedSkills.has(item.skill)
           ? agentStateOfCount(count)
           : skillStateOf(baseSkills.get(item.skill))) ?? '',
+      );
+    }
+    if (item.workflow !== null && !states.has(`workflows/${item.workflow}`)) {
+      const count = problems.filter((problem) => problem.workflow === item.workflow).length;
+      states.set(
+        `workflows/${item.workflow}`,
+        (touchedWorkflows.has(item.workflow) || namedWorkflowSet.has(item.workflow)
+          ? agentStateOfCount(count)
+          : workflowStateOf(baseWorkflows.get(item.workflow))) ?? '',
       );
     }
   }
@@ -536,6 +659,13 @@ function EditorBody() {
     setEditing(true);
   }
 
+  async function newWorkflow(name: string) {
+    const target = workflowEntryPath(name);
+    await save.mutateAsync({ path: target, text: newWorkflowFile(name) });
+    open(target);
+    setEditing(true);
+  }
+
   async function newAgent(name: string, provider: string) {
     const target = `agents/${name}/AGENT.md`;
     await save.mutateAsync({ path: target, text: newAgentFile(name, provider) });
@@ -543,7 +673,13 @@ function EditorBody() {
     setEditing(true);
   }
 
-  if (files.isPending || marks.isPending || skillMarks.isPending || draftQuery.isPending) {
+  if (
+    files.isPending ||
+    marks.isPending ||
+    skillMarks.isPending ||
+    workflowMarks.isPending ||
+    draftQuery.isPending
+  ) {
     return (
       <div
         role="status"
@@ -560,6 +696,7 @@ function EditorBody() {
     files.isError ||
     marks.isError ||
     skillMarks.isError ||
+    workflowMarks.isError ||
     draftQuery.isError ||
     draft === undefined
   ) {
@@ -570,11 +707,17 @@ function EditorBody() {
         title="Couldn't load the files"
         description={
           <span className="font-mono text-small">
-            {skillMarks.isError && !files.isError && !marks.isError && !draftQuery.isError
-              ? 'GET /api/skills'
-              : draftQuery.isError && !files.isError && !marks.isError
-                ? 'GET /api/agents/definitions-repository/draft'
-                : 'GET /api/agents/definitions-repository/files'}
+            {workflowMarks.isError &&
+            !files.isError &&
+            !marks.isError &&
+            !skillMarks.isError &&
+            !draftQuery.isError
+              ? 'GET /api/workflows'
+              : skillMarks.isError && !files.isError && !marks.isError && !draftQuery.isError
+                ? 'GET /api/skills'
+                : draftQuery.isError && !files.isError && !marks.isError
+                  ? 'GET /api/agents/definitions-repository/draft'
+                  : 'GET /api/agents/definitions-repository/files'}
           </span>
         }
         action={
@@ -584,6 +727,7 @@ function EditorBody() {
               files.isRefetching ||
               marks.isRefetching ||
               skillMarks.isRefetching ||
+              workflowMarks.isRefetching ||
               draftQuery.isRefetching
             }
             onClick={() => {
@@ -618,6 +762,24 @@ function EditorBody() {
       candidate.skill === null || candidate.change === 'deleted' ? [] : [candidate.skill],
     ),
   );
+  const takenWorkflows = new Set(
+    entries.flatMap((candidate) =>
+      candidate.workflow === null || candidate.change === 'deleted' ? [] : [candidate.workflow],
+    ),
+  );
+  const workflowUsers =
+    agentEntryOpen === null
+      ? []
+      : workflowsNaming(
+          agentEntryOpen,
+          openAgentDetail.data?.usedByWorkflows ?? [],
+          entries,
+          draftWorkflowTexts,
+        );
+  const workflowsWarningText = workflowsWarning(
+    workflowUsers,
+    openAgentDetail.data?.usedByWorkflowsTruncated ?? false,
+  );
   // Taking the entry file of a skill away makes the agents that name it invalid.
   const skillUsers =
     skillEntryPath === null
@@ -632,6 +794,8 @@ function EditorBody() {
     skillUsers.length === 0
       ? undefined
       : `${skillUsers.length === 1 ? 'This agent names' : 'These agents name'} this skill and would become invalid: ${skillUsers.join(', ')}.`;
+  // Renaming or deleting an agent's entry file makes the workflows that name it invalid.
+  const warning = [usersWarning, workflowsWarningText].filter(Boolean).join(' ') || undefined;
   const existing = new Set(entries.filter((c) => c.change !== 'deleted').map((c) => c.path));
   const deletedPaths = new Set(entries.filter((c) => c.change === 'deleted').map((c) => c.path));
   const working =
@@ -678,7 +842,9 @@ function EditorBody() {
   const draftProblemCount = problems.filter(
     (problem) =>
       (problem.agent !== null && (touched.has(problem.agent) || named.has(problem.agent))) ||
-      (problem.skill !== null && touchedSkills.has(problem.skill)),
+      (problem.skill !== null && touchedSkills.has(problem.skill)) ||
+      (problem.workflow != null &&
+        (touchedWorkflows.has(problem.workflow) || namedWorkflowSet.has(problem.workflow))),
   ).length;
   // Why Publish is not offered now; the dialog and the API judge again.
   const publishBlock = dirty
@@ -699,8 +865,8 @@ function EditorBody() {
   const openFileKind = pane.kind === 'file' ? pane.file.kind : undefined;
   const closeDialog = () => {
     setDialog(undefined);
-    // The Skills view's link must not reopen the step after it was cancelled.
-    if (params.get('new') === 'skill') {
+    // The Skills and Workflows views' links must not reopen the step after it was cancelled.
+    if (params.get('new') === 'skill' || params.get('new') === 'workflow') {
       router.replace(pathRef.current ? editorUrl(pathRef.current) : '/agents/editor', {
         scroll: false,
       });
@@ -859,6 +1025,9 @@ function EditorBody() {
                 <Button size="sm" onClick={() => setDialog('new-skill')}>
                   New skill
                 </Button>
+                <Button size="sm" onClick={() => setDialog('new-workflow')}>
+                  New workflow
+                </Button>
                 <Button size="sm" onClick={() => setDialog('add')}>
                   New file
                 </Button>
@@ -1005,35 +1174,43 @@ function EditorBody() {
                     onOpen={(next) => open(next)}
                   />
                 </nav>
-                <div className="min-w-0 flex-1 md:h-[70vh]">
-                  {entry ? (
-                    <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
-                      <span className="min-w-0 flex-1 font-mono text-code break-all">
-                        {entry.path}
-                      </span>
-                      {entry.openable && entry.change !== 'deleted' ? (
-                        <>
-                          <Button size="sm" onClick={() => setDialog('rename')}>
-                            Rename
+                <div className="flex min-w-0 flex-1 flex-col lg:flex-row">
+                  <div className="min-w-0 flex-1 md:h-[70vh]">
+                    {entry ? (
+                      <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
+                        <span className="min-w-0 flex-1 font-mono text-code break-all">
+                          {entry.path}
+                        </span>
+                        {entry.openable && entry.change !== 'deleted' ? (
+                          <>
+                            <Button size="sm" onClick={() => setDialog('rename')}>
+                              Rename
+                            </Button>
+                            <Button size="sm" onClick={() => setDialog('delete')}>
+                              Delete
+                            </Button>
+                          </>
+                        ) : null}
+                        {openFileKind === 'binary' || openFileKind === 'too_large' ? (
+                          <Button size="sm" onClick={() => setDialog('replace')}>
+                            Replace file
                           </Button>
-                          <Button size="sm" onClick={() => setDialog('delete')}>
-                            Delete
+                        ) : null}
+                        {entry.change ? (
+                          <Button size="sm" onClick={() => setDialog('revert')}>
+                            Revert
                           </Button>
-                        </>
-                      ) : null}
-                      {openFileKind === 'binary' || openFileKind === 'too_large' ? (
-                        <Button size="sm" onClick={() => setDialog('replace')}>
-                          Replace file
-                        </Button>
-                      ) : null}
-                      {entry.change ? (
-                        <Button size="sm" onClick={() => setDialog('revert')}>
-                          Revert
-                        </Button>
-                      ) : null}
-                    </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    <EditorPane state={pane} onChange={edited} />
+                  </div>
+                  {workflowOpen !== null && path === workflowEntryPath(workflowOpen) ? (
+                    <WorkflowPanel
+                      shown={panelShown}
+                      stale={diagram === undefined && liveWorkflow !== undefined}
+                    />
                   ) : null}
-                  <EditorPane state={pane} onChange={edited} />
                 </div>
               </div>
             )}
@@ -1061,7 +1238,7 @@ function EditorBody() {
           initialPath={path}
           existing={existing}
           deleted={deletedPaths}
-          warning={usersWarning}
+          warning={warning}
           action={(target) => renameFile(target)}
         />
       ) : null}
@@ -1086,6 +1263,15 @@ function EditorBody() {
           action={newSkill}
         />
       ) : null}
+      {dialog === 'new-workflow' ? (
+        <NewWorkflowDialog
+          open
+          onOpenChange={closeDialog}
+          onReload={reloadFromServer}
+          taken={takenWorkflows}
+          action={newWorkflow}
+        />
+      ) : null}
       {dialog === 'new-agent' ? (
         <NewAgentDialog
           open
@@ -1106,6 +1292,7 @@ function EditorBody() {
           confirmLabel="Delete file"
           consequences={[
             ...(usersWarning ? [usersWarning] : []),
+            ...(workflowsWarningText ? [workflowsWarningText] : []),
             ...(entry?.change === 'added'
               ? [
                   'This file exists only in the Draft: its content is removed for good.',

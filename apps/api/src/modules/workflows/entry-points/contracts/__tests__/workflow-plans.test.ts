@@ -108,4 +108,23 @@ describe('the Workflow plans', () => {
     expect(plans.next(plan, 0, 'done')).toEqual({ kind: 'phase', position: 1 });
     expect(plans.next(plan, 1, 'done')).toEqual({ kind: 'end' });
   });
+
+  it('reads Workflows only at the published commit, so one that exists only in a Draft is unknown', async () => {
+    const fake = scripted({
+      agents: OK_AGENTS,
+      tree: listed(file(ENTRY)),
+      files: { [ENTRY]: workflowText('ship') },
+    });
+
+    expect(await fake.plans.resolve('p', 'draft-only')).toEqual({ status: 'unknown' });
+    expect(await fake.plans.resolve('p', 'ship')).toMatchObject({
+      status: 'resolved',
+      plan: { commit: COMMIT },
+    });
+    // Every read names the published commit; the plans have no way to ask for a Draft.
+    for (const [commit] of fake.definitions.listTree.mock.calls as unknown as [string][]) {
+      expect(commit).toBe(COMMIT);
+    }
+    for (const [commit] of fake.definitions.readFiles.mock.calls) expect(commit).toBe(COMMIT);
+  });
 });

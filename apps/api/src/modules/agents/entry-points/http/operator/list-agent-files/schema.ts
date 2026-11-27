@@ -23,6 +23,10 @@ export const agentFileEntrySchema = z
       .string()
       .nullable()
       .describe('The skill folder the entry is in; null for any other part of the Repository.'),
+    workflow: z
+      .string()
+      .nullable()
+      .describe('The workflow folder the entry is in; null for any other part of the Repository.'),
   })
   .meta({ id: 'AgentFileEntry' });
 

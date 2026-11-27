@@ -61,7 +61,7 @@ describe('toPublishHttpError', () => {
     expect(detail).toMatch(/write access/i);
   });
 
-  it('lists the paths outside agents/ and skills/ in the answer', () => {
+  it('lists the paths outside agents/, skills/ and workflows/ in the answer', () => {
     const problem = problemOf(
       toPublishHttpError(new PublishPathOutsideDefinitionsError(['.github/ci.yml', 'README.md'])),
     );
@@ -83,7 +83,7 @@ describe('toPublishHttpError', () => {
     const problem = problemOf(toPublishHttpError(new PublishProblemsError(problems)));
 
     expect(problem).toMatchObject({ status: 422, type: AGENTS_PROBLEM_TYPES.publishProblems });
-    expect(problem.extensions).toEqual({ problems, skillProblems: [] });
+    expect(problem.extensions).toEqual({ problems, skillProblems: [], workflowProblems: [] });
   });
 
   it('lists the problems of the skills beside those of the agents', () => {
@@ -100,7 +100,26 @@ describe('toPublishHttpError', () => {
     const problem = problemOf(toPublishHttpError(new PublishProblemsError([], skillProblems)));
 
     expect(problem).toMatchObject({ status: 422, type: AGENTS_PROBLEM_TYPES.publishProblems });
-    expect(problem.extensions).toEqual({ problems: [], skillProblems });
+    expect(problem.extensions).toEqual({ problems: [], skillProblems, workflowProblems: [] });
+  });
+
+  it('lists the problems of the workflows beside the others', () => {
+    const workflowProblems = [
+      {
+        workflow: 'ship',
+        code: 'phase_agent_missing' as const,
+        path: 'workflows/ship/WORKFLOW.md',
+        key: 'ghost',
+        message: 'The phase "p0" names the agent "ghost", which does not exist.',
+      },
+    ];
+
+    const problem = problemOf(
+      toPublishHttpError(new PublishProblemsError([], [], workflowProblems)),
+    );
+
+    expect(problem).toMatchObject({ status: 422, type: AGENTS_PROBLEM_TYPES.publishProblems });
+    expect(problem.extensions).toEqual({ problems: [], skillProblems: [], workflowProblems });
   });
 
   it('answers a bad message as a field error on the message', () => {

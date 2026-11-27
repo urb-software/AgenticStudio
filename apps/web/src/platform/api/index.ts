@@ -81,6 +81,7 @@ export type {
   WorkflowProblemOutput,
   WorkflowSummaryOutput,
   AgentDraftSkillProblemOutput,
+  AgentDraftWorkflowProblemOutput,
   SkillProblemOutput,
   SkillSummaryOutput,
   AgentDetailOutput,

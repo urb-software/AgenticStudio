@@ -17,6 +17,11 @@ export function workflowEditorHref(name: string): string {
   return editorHref(`workflows/${name}/WORKFLOW.md`);
 }
 
+/** The editor on its "New workflow" step. */
+export function newWorkflowHref(): string {
+  return '/agents/editor?new=workflow';
+}
+
 /** The Agents page with one definitions agent open. */
 export function agentHref(name: string): string {
   return `/agents?${new URLSearchParams({ open: name })}`;

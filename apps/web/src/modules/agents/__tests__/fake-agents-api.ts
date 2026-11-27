@@ -12,8 +12,21 @@ import type {
   ProviderAvailabilityOutput,
   ProjectOutput,
   RepositoryOutput,
+  WorkflowListOutput,
 } from '../../../platform/api';
+import { skillOfPath } from '../features/agent-editor/skill-model';
+import { workflowOfPath } from '../features/agent-editor/workflow-model';
 import { skillList } from './fake-skills-api';
+
+/** What `GET /api/workflows` answers when a test lists none. */
+export function emptyWorkflowList(commit: string | null = null): WorkflowListOutput {
+  return {
+    commit,
+    repository: commit === null ? null : { state: 'ready', note: null },
+    truncated: false,
+    workflows: [],
+  };
+}
 
 /** What `GET /api/providers` answers: each Provider with the models an agent may name. */
 export const PROVIDERS: ProviderAvailabilityOutput[] = [
@@ -112,6 +125,8 @@ export function fakeAgentsApi(
     draft?: Partial<AgentDraftOutput>;
     /** The skills as `GET /api/skills` lists them. */
     skills?: SkillListOutput;
+    /** The Workflows as `GET /api/workflows` lists them. */
+    workflows?: WorkflowListOutput;
   } = {},
 ) {
   let list = agents.list ?? agentList();
@@ -140,6 +155,7 @@ export function fakeAgentsApi(
     files: [],
     problems: [],
     skillProblems: [],
+    workflowProblems: [],
     judged: true,
     notJudgedReason: null,
     movedUpstream: [],
@@ -172,6 +188,9 @@ export function fakeAgentsApi(
     const response = request.method === 'GET' ? scripted.shift() : undefined;
     if (response) return json(response.status, response.body);
 
+    if (pathname === '/api/workflows' && request.method === 'GET') {
+      return json(200, agents.workflows ?? emptyWorkflowList(files?.tree.commit ?? null));
+    }
     if (pathname === '/api/skills' && request.method === 'GET') {
       return json(200, agents.skills ?? skillList());
     }
@@ -198,7 +217,16 @@ export function fakeAgentsApi(
       if (draftPath === '' && request.method === 'GET') return json(200, draft);
       if (draftPath === '' && request.method === 'DELETE') {
         draftTexts.clear();
-        return json(200, touch({ files: [], problems: [], skillProblems: [], movedUpstream: [] }));
+        return json(
+          200,
+          touch({
+            files: [],
+            problems: [],
+            skillProblems: [],
+            workflowProblems: [],
+            movedUpstream: [],
+          }),
+        );
       }
       if (draftPath === '/files/content') {
         const path = search_.get('path') ?? '';
@@ -224,6 +252,7 @@ export function fakeAgentsApi(
           files: [],
           problems: [],
           skillProblems: [],
+          workflowProblems: [],
           judged: true,
           notJudgedReason: null,
           movedUpstream: [],
@@ -247,7 +276,8 @@ export function fakeAgentsApi(
             path,
             size,
             movedFrom: null,
-            skill: null,
+            skill: skillOfPath(path),
+            workflow: workflowOfPath(path),
             change: change ?? (inTree(path) ? 'modified' : 'added'),
           }),
         );
@@ -260,7 +290,14 @@ export function fakeAgentsApi(
         }
         return json(
           200,
-          upsert({ path, size: 0, movedFrom: null, skill: null, change: 'deleted' }),
+          upsert({
+            path,
+            size: 0,
+            movedFrom: null,
+            skill: null,
+            workflow: null,
+            change: 'deleted',
+          }),
         );
       }
       if (draftPath === '/files/revert') {
@@ -272,10 +309,24 @@ export function fakeAgentsApi(
         const { from, to } = body as { from: string; to: string };
         const text = draftTexts.get(from) ?? '';
         draftTexts.set(to, text);
-        upsert({ path: from, size: 0, movedFrom: null, skill: null, change: 'deleted' });
+        upsert({
+          path: from,
+          size: 0,
+          movedFrom: null,
+          skill: null,
+          workflow: null,
+          change: 'deleted',
+        });
         return json(
           200,
-          upsert({ path: to, size: text.length, movedFrom: from, skill: null, change: 'added' }),
+          upsert({
+            path: to,
+            size: text.length,
+            movedFrom: from,
+            skill: null,
+            workflow: null,
+            change: 'added',
+          }),
         );
       }
       return json(404, problem(404, 'Not Found'));

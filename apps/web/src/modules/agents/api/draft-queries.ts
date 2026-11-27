@@ -222,10 +222,11 @@ const PUBLISH_PROBLEMS = {
   notJudged: 'urn:agentic-studio:problem:draft-not-judged',
 } as const;
 
-/** One problem of the Draft, as a refused publish lists it: of an agent or of a skill. */
+/** One problem of the Draft, as a refused publish lists it: of an agent, a skill or a workflow. */
 export type PublishProblem = {
   agent: string | null;
   skill: string | null;
+  workflow: string | null;
   path: string;
   key: string | null;
   message: string;
@@ -263,7 +264,7 @@ function listMember(problem: unknown, member: string): unknown[] {
 }
 
 function publishProblemsOf(problem: unknown): PublishProblem[] {
-  const read = (member: string, owner: 'agent' | 'skill') =>
+  const read = (member: string, owner: 'agent' | 'skill' | 'workflow') =>
     listMember(problem, member).flatMap((item) => {
       if (typeof item !== 'object' || item === null) return [];
       const { path, key, message, ...rest } = item as Record<string, unknown>;
@@ -274,13 +275,18 @@ function publishProblemsOf(problem: unknown): PublishProblem[] {
         {
           agent: owner === 'agent' ? owned : null,
           skill: owner === 'skill' ? owned : null,
+          workflow: owner === 'workflow' ? owned : null,
           path,
           key: typeof key === 'string' ? key : null,
           message,
         },
       ];
     });
-  return [...read('problems', 'agent'), ...read('skillProblems', 'skill')];
+  return [
+    ...read('problems', 'agent'),
+    ...read('skillProblems', 'skill'),
+    ...read('workflowProblems', 'workflow'),
+  ];
 }
 
 /** What a failed publish says. Each refusal of the API has its own plain message. */
@@ -349,7 +355,7 @@ export function publishFailureOf(error: unknown): PublishFailure {
       return {
         kind: 'outside-definitions',
         message:
-          'Publishing writes only below agents/ and skills/. Revert the changes outside them, or make them with your own Git.',
+          'Publishing writes only below agents/, skills/ and workflows/. Revert the changes outside them, or make them with your own Git.',
         paths: listMember(problem, 'paths').filter((p): p is string => typeof p === 'string'),
       };
     default:

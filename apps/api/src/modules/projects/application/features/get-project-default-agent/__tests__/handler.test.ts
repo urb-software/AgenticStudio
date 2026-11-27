@@ -17,6 +17,7 @@ describe('GetProjectDefaultAgentHandler', () => {
       status: 'found',
       kind: 'code',
       agent: null,
+      workflow: null,
     });
     const stored = projects.projects.get(CODE)!;
     projects.projects.set(CODE, stored.withDefaultAgent(AgentName.of('reviewer')));
@@ -25,6 +26,7 @@ describe('GetProjectDefaultAgentHandler', () => {
       status: 'found',
       kind: 'code',
       agent: 'reviewer',
+      workflow: null,
     });
   });
 

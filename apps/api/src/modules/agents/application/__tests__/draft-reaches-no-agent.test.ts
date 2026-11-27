@@ -23,10 +23,11 @@ const bytes = (text: string) => new TextEncoder().encode(text);
 // Run, the hand-over of its folder and the file tree read only the Clone, so none of them changes
 // after a Draft write.
 describe('a Draft reaches no agent', () => {
-  function setup() {
+  function setup(more: Record<string, string> = {}) {
     const definitions = new FakeDefinitionsFiles({
       'agents/reviewer/AGENT.md': agentFile('reviewer', 'Review the change.'),
       'agents/reviewer/notes.txt': 'notes\n',
+      ...more,
     });
     const repository = new InMemoryAgentDraftRepository();
     const reader = new AgentDraftReader(definitions, repository);
@@ -82,6 +83,35 @@ describe('a Draft reaches no agent', () => {
     expect(before.added).toEqual({ status: 'unknown' });
     expect(before.folder).toMatchObject({ status: 'found' });
     expect(before.draftedFolder).toEqual({ status: 'unavailable' });
+  });
+
+  // A workflow in the Draft is no workflow: the agents list, the resolution of an agent for a Run,
+  // the hand-over of its folder and the file tree read only the Clone.
+  it('leaves the agents list, a resolution for a Run, the hand-over and the file tree unchanged after a workflow write', async () => {
+    const workflow = `---\nname: ship\ndescription: Does ship\nsequence:\n  - id: build\n    kind: work\n    agent: reviewer\n---\nNotes.\n`;
+    const { list, resolutions, folders, files, save, remove } = setup({
+      'workflows/ship/WORKFLOW.md': workflow,
+    });
+    const before = {
+      list: await list.execute(),
+      resolved: await resolutions.resolveForRun('reviewer'),
+      folder: await folders.folderAt('reviewer', BASE_COMMIT),
+      tree: await files.execute(),
+    };
+
+    await save.execute({
+      path: 'workflows/ship/WORKFLOW.md',
+      content: bytes(workflow.replace('Notes.', 'Changed in the Draft.')),
+    });
+    await save.execute({ path: 'workflows/drafted/WORKFLOW.md', content: bytes(workflow) });
+    await remove.execute({ path: 'agents/reviewer/notes.txt' });
+
+    await expect(list.execute()).resolves.toEqual(before.list);
+    await expect(resolutions.resolveForRun('reviewer')).resolves.toEqual(before.resolved);
+    await expect(folders.folderAt('reviewer', BASE_COMMIT)).resolves.toEqual(before.folder);
+    await expect(files.execute()).resolves.toEqual(before.tree);
+    expect(before.tree.entries.map((entry) => entry.workflow)).toContain('ship');
+    expect(before.resolved).toMatchObject({ status: 'resolved' });
   });
 
   // A skill in the Draft is no skill: the list of skills, the skills an agent names for a Run, the

@@ -32,6 +32,22 @@ const linux = process.platform === 'linux';
 const agentFile = (name: string, instructions = `Work as ${name}.\n`) =>
   `---\nname: ${name}\ndescription: Does the ${name} work\nprovider: codex\n---\n${instructions}`;
 
+const FLOW = [
+  '---',
+  'name: flow',
+  'description: Does the flow',
+  'sequence:',
+  '  - id: build',
+  '    kind: work',
+  '    agent: reviewer',
+  '  - id: check',
+  '    kind: review',
+  '    agent: reviewer',
+  '---',
+  'Notes.',
+  '',
+].join('\n');
+
 const FILES: Record<string, FixtureFile> = {
   'README.md': '# Agents\n',
   'agents/reviewer/AGENT.md': agentFile('reviewer', 'Review the change.\n'),
@@ -271,7 +287,7 @@ describe.runIf(linux)('publishing the Draft (PostgreSQL + Redis via Testcontaine
     expect(gitIn(fixture.bare, ['rev-parse', 'refs/heads/dev'])).toBe(commit);
   });
 
-  it('refuses a Draft that changes a path outside agents/ and skills/, listing it, and publishes nothing', async () => {
+  it('refuses a Draft that changes a path outside agents/, skills/ and workflows/, listing it, and publishes nothing', async () => {
     const { fixture, commit } = await connected('publish-outside');
     expect((await put('agents/helper/AGENT.md', agentFile('helper'))).status).toBe(200);
     expect((await put('.github/workflows/ci.yml', 'name: ci')).status).toBe(200);
@@ -283,6 +299,80 @@ describe.runIf(linux)('publishing the Draft (PostgreSQL + Redis via Testcontaine
     expect(refused.body.type).toBe('urn:agentic-studio:problem:publish-path-outside-definitions');
     expect(refused.body.paths).toEqual(['.github/workflows/ci.yml']);
     expect(gitIn(fixture.bare, ['rev-parse', 'refs/heads/dev'])).toBe(commit);
+  });
+
+  it('refuses a configuration file, a README and a dot-folder even beside a workflow', async () => {
+    const { fixture, commit } = await connected('publish-outside-more');
+    expect((await put('workflows/flow/WORKFLOW.md', FLOW)).status).toBe(200);
+    for (const path of ['README.md', '.claude/x', '.github/workflows/ci.yml']) {
+      expect((await put(path, 'x')).status).toBe(200);
+    }
+    const draft = (await getDraft()).body;
+
+    const refused = await publish(body(draft));
+
+    expect(refused.status).toBe(422);
+    expect(refused.body.type).toBe('urn:agentic-studio:problem:publish-path-outside-definitions');
+    expect([...refused.body.paths].sort()).toEqual(
+      ['.claude/x', '.github/workflows/ci.yml', 'README.md'].sort(),
+    );
+    expect(gitIn(fixture.bare, ['rev-parse', 'refs/heads/dev'])).toBe(commit);
+  });
+
+  it('shows the problems of a workflow in the Draft and refuses to publish it, listing them', async () => {
+    const { fixture, commit } = await connected('publish-workflow-problems');
+    expect(
+      (await put('workflows/flow/WORKFLOW.md', FLOW.replace('sequence:', 'tools: Bash\nsequence:')))
+        .status,
+    ).toBe(200);
+    expect(
+      (
+        await put(
+          'workflows/ghosts/WORKFLOW.md',
+          FLOW.replace('name: flow', 'name: ghosts').replace('reviewer', 'ghost'),
+        )
+      ).status,
+    ).toBe(200);
+    const shown = (await getDraft()).body;
+
+    expect(shown.judged).toBe(true);
+    expect(shown.workflowProblems).toEqual([
+      expect.objectContaining({ workflow: 'flow', code: 'forbidden_key', key: 'tools' }),
+      expect.objectContaining({
+        workflow: 'ghosts',
+        code: 'phase_agent_missing',
+        key: 'ghost',
+      }),
+    ]);
+    expect(shown.files).toContainEqual(
+      expect.objectContaining({ path: 'workflows/flow/WORKFLOW.md', workflow: 'flow' }),
+    );
+
+    const refused = await publish(body(shown));
+
+    expect(refused.status).toBe(422);
+    expect(refused.body.type).toBe('urn:agentic-studio:problem:publish-problems');
+    expect(refused.body.workflowProblems).toHaveLength(2);
+    expect(gitIn(fixture.bare, ['rev-parse', 'refs/heads/dev'])).toBe(commit);
+  });
+
+  it('pushes a new workflow and the agent it names together', async () => {
+    const { fixture } = await connected('publish-workflow-ok');
+    expect((await put('agents/helper/AGENT.md', agentFile('helper'))).status).toBe(200);
+    expect(
+      (await put('workflows/flow/WORKFLOW.md', FLOW.replace('agent: reviewer', 'agent: helper')))
+        .status,
+    ).toBe(200);
+    const draft = (await getDraft()).body;
+    expect(draft.workflowProblems).toEqual([]);
+
+    const published = await publish(body(draft));
+
+    expect(published.status).toBe(200);
+    const next = published.body.commit as string;
+    expect(gitIn(fixture.bare, ['ls-tree', '-r', '--name-only', next])).toContain(
+      'workflows/flow/WORKFLOW.md',
+    );
   });
 
   it('shows the problems of a skill in the Draft and refuses to publish it, listing them', async () => {

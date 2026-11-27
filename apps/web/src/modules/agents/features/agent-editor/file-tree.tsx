@@ -22,7 +22,7 @@ interface FileTreeProps {
   /** The open file's path. */
   selected: string | undefined;
   expanded: ReadonlySet<string>;
-  /** The validation state of each agent and skill folder by folder path, as shown beside it. */
+  /** The validation state of each agent, skill and workflow folder by folder path, as shown beside it. */
   states: ReadonlyMap<string, string>;
   /** Paths with edits that are not saved to the Draft. */
   unsaved: ReadonlySet<string>;
@@ -48,7 +48,8 @@ export function FileTree({
       {nodes.map((node) => {
         if (node.kind === 'folder') {
           const open = expanded.has(node.path);
-          const state = node.agent || node.skill ? states.get(node.path) : undefined;
+          const state =
+            node.agent || node.skill || node.workflow ? states.get(node.path) : undefined;
           return (
             <li key={node.path}>
               <button

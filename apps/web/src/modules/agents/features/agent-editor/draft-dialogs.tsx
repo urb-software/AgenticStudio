@@ -22,6 +22,7 @@ import { draftFailureOf, type DraftFailure } from '../../api/draft-queries';
 import { formatSize } from '../../components/format-size';
 import { agentNameError, pathError } from './draft-model';
 import { skillNameError } from './skill-model';
+import { workflowNameError } from './workflow-model';
 
 /** The file content a dialog hands on: text, or bytes as base64. */
 export type FileContent = { text: string } | { contentBase64: string };
@@ -408,6 +409,73 @@ export function NewSkillDialog({
             </DialogClose>
             <Button type="submit" variant="primary" loading={pending}>
               Create skill
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+interface NewWorkflowDialogProps extends DialogShellProps {
+  /** The names of the workflow folders that exist, in the Repository or the Draft. */
+  taken: ReadonlySet<string>;
+  action: (name: string) => Promise<void>;
+}
+
+/** Asks for a name; the new `WORKFLOW.md` comes from an "implement, then review" template. */
+export function NewWorkflowDialog({
+  open,
+  onOpenChange,
+  onReload,
+  taken,
+  action,
+}: NewWorkflowDialogProps) {
+  const { pending, errorBanner, run, changeOpen } = useDialogAction(onOpenChange, onReload);
+  const [name, setName] = useState('');
+  const [touched, setTouched] = useState(false);
+  const nameProblem = workflowNameError(name, taken);
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    setTouched(true);
+    if (nameProblem) return;
+    void run(() => action(name));
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={changeOpen}>
+      <DialogContent>
+        <form onSubmit={submit} noValidate>
+          <DialogHeader>
+            <DialogTitle>New workflow</DialogTitle>
+            <DialogDescription>
+              Creates <code className="text-code">workflows/&lt;name&gt;/WORKFLOW.md</code> in the
+              Draft: an implement phase, then a review phase. Replace the placeholder agent names
+              with agents of the Repository.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody>
+            {errorBanner}
+            <TextField
+              label="Name"
+              mono
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              error={touched ? nameProblem : undefined}
+              help="Lower-case letters, digits and hyphens."
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </DialogBody>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="ghost" disabled={pending}>
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button type="submit" variant="primary" loading={pending}>
+              Create workflow
             </Button>
           </DialogFooter>
         </form>

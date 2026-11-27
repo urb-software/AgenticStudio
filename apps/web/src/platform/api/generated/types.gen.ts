@@ -205,6 +205,10 @@ export type AgentFileEntryOutput = {
      * The skill folder the entry is in; null for any other part of the Repository.
      */
     skill: string | null;
+    /**
+     * The workflow folder the entry is in; null for any other part of the Repository.
+     */
+    workflow: string | null;
 };
 
 export type AgentFilesOutput = {
@@ -276,6 +280,10 @@ export type AgentDraftFileOutput = {
      * The skill folder the path is in (`skills/<name>/...`); null for any other path.
      */
     skill: string | null;
+    /**
+     * The workflow folder the path is in (`workflows/<name>/...`); null for any other path.
+     */
+    workflow: string | null;
 };
 
 export type AgentDraftProblemOutput = {
@@ -318,6 +326,26 @@ export type AgentDraftSkillProblemOutput = {
     message: string;
 };
 
+export type AgentDraftWorkflowProblemOutput = {
+    /**
+     * The workflow folder the problem is in.
+     */
+    workflow: string;
+    code: 'entry_missing' | 'entry_unreadable' | 'front_matter_missing' | 'front_matter_malformed' | 'front_matter_too_large' | 'key_missing' | 'key_invalid' | 'name_invalid' | 'name_mismatch' | 'name_reserved' | 'unknown_key' | 'forbidden_key' | 'instructions_too_large' | 'too_many_files' | 'file_too_large' | 'folder_too_large' | 'path_outside_folder' | 'nested_git' | 'symlink_refused' | 'kind_refused' | 'duplicate_path' | 'size_invalid' | 'cli_config_path' | 'short_name' | 'shell_line' | 'workflow_extra_file' | 'workflow_forbidden_key' | 'item_invalid' | 'item_id_duplicate' | 'send_backs_out_of_range' | 'sequence_too_long' | 'phase_agent_reserved' | 'no_phase' | 'review_first' | 'review_before_work' | 'checkpoint_first' | 'checkpoint_last' | 'checkpoints_adjacent' | 'phase_agent_missing' | 'phase_agent_invalid';
+    /**
+     * The file or folder the problem is about, relative to the Repository root.
+     */
+    path: string;
+    /**
+     * The front matter key, when the problem is about one; for the agent reasons, the agent name.
+     */
+    key: string | null;
+    /**
+     * Fixed wording per code; it may quote a key, an item id or an agent name, never other values or file content.
+     */
+    message: string;
+};
+
 export type AgentDraftOutput = {
     /**
      * The commit the changes were made against; null while the Draft is empty.
@@ -341,7 +369,11 @@ export type AgentDraftOutput = {
      */
     skillProblems: Array<AgentDraftSkillProblemOutput>;
     /**
-     * False when the Draft could not be judged: `problems` and `skillProblems` are then empty without meaning that the Draft is clean, and a publish is refused.
+     * What the shared validation finds in each workflow folder the Draft touches and in each workflow that names an agent the Draft changes, with the Draft laid over the base tree; an agent that is missing or invalid in the Draft gives `phase_agent_missing` or `phase_agent_invalid`. Empty when the Clone cannot be read.
+     */
+    workflowProblems: Array<AgentDraftWorkflowProblemOutput>;
+    /**
+     * False when the Draft could not be judged: `problems`, `skillProblems` and `workflowProblems` are then empty without meaning that the Draft is clean, and a publish is refused.
      */
     judged: boolean;
     /**
@@ -2466,7 +2498,7 @@ export type PublishAgentDraftErrors = {
      */
     409: ProblemDetails;
     /**
-     * The Draft has problems; the `problems` member lists each (urn:agentic-studio:problem:publish-problems), `skillProblems` those of skills, or changes paths outside agents/ and skills/, listed in `paths` (urn:agentic-studio:problem:publish-path-outside-definitions)
+     * The Draft has problems; the `problems` member lists each (urn:agentic-studio:problem:publish-problems), `skillProblems` those of skills, `workflowProblems` those of workflows, or changes paths outside agents/, skills/ and workflows/, listed in `paths` (urn:agentic-studio:problem:publish-path-outside-definitions)
      */
     422: ProblemDetails;
     /**

@@ -1,4 +1,8 @@
-import type { ProblemCode, SkillProblemCode } from '@agentic-studio/agent-definitions';
+import type {
+  ProblemCode,
+  SkillProblemCode,
+  WorkflowProblemCode,
+} from '@agentic-studio/agent-definitions';
 
 /** One problem the shared validation found in an agent folder the Draft touches. */
 export interface PublishProblem {
@@ -13,6 +17,15 @@ export interface PublishProblem {
 export interface PublishSkillProblem {
   skill: string;
   code: SkillProblemCode;
+  path: string;
+  key: string | null;
+  message: string;
+}
+
+/** One problem the shared validation found in a workflow folder the Draft touches or that names a changed agent. */
+export interface PublishWorkflowProblem {
+  workflow: string;
+  code: WorkflowProblemCode;
   path: string;
   key: string | null;
   message: string;
@@ -58,21 +71,22 @@ export class WriteRefusedError extends Error {
   }
 }
 
-/** The Draft would make skills or agents that fail the shared validation: any problem blocks a publish. */
+/** The Draft would make skills, agents or workflows that fail the shared validation: any problem blocks a publish. */
 export class PublishProblemsError extends Error {
   constructor(
     readonly problems: readonly PublishProblem[],
     readonly skillProblems: readonly PublishSkillProblem[] = [],
+    readonly workflowProblems: readonly PublishWorkflowProblem[] = [],
   ) {
     super('The Draft has problems that block a publish.');
     this.name = 'PublishProblemsError';
   }
 }
 
-/** The Draft changes a path outside `agents/` and `skills/`: Studio writes no other file to the Git host. */
+/** The Draft changes a path outside `agents/`, `skills/` and `workflows/`: Studio writes no other file to the Git host. */
 export class PublishPathOutsideDefinitionsError extends Error {
   constructor(readonly paths: readonly string[]) {
-    super('The Draft changes paths outside agents/ and skills/.');
+    super('The Draft changes paths outside agents/, skills/ and workflows/.');
     this.name = 'PublishPathOutsideDefinitionsError';
   }
 }

@@ -497,7 +497,100 @@ describe('PublishAgentDraftHandler', () => {
     expect(repository.stored.files).toHaveLength(4);
   });
 
-  it('refuses any changed path outside agents/ and skills/, listing them, and publishes nothing', async () => {
+  describe('workflows', () => {
+    const workflowFile = (name: string, agents: string[], extra = '') =>
+      `---\nname: ${name}\ndescription: Does the ${name} flow\n${extra}sequence:\n${agents
+        .map((agent, index) => `  - id: p${index}\n    kind: work\n    agent: ${agent}`)
+        .join('\n')}\n---\nNotes.\n`;
+
+    beforeEach(() => {
+      definitions.commit(BASE_COMMIT, {
+        ...BASE_FILES,
+        'workflows/ship/WORKFLOW.md': workflowFile('ship', ['reviewer', 'user']),
+      });
+    });
+
+    it('accepts a path under workflows/ and publishes a new workflow with the agent it names', async () => {
+      const version = await draftWith(
+        (draft, f) => {
+          draft.put({ ...f, path: 'agents/fresh/AGENT.md', size: 1 });
+          draft.put({ ...f, path: 'workflows/fresh/WORKFLOW.md', size: 1 });
+        },
+        {
+          'agents/fresh/AGENT.md': agentFile('fresh'),
+          'workflows/fresh/WORKFLOW.md': workflowFile('fresh', ['fresh', 'reviewer']),
+        },
+      );
+
+      await expect(handler.execute(request(version))).resolves.toEqual({ commit: PUBLISHED });
+
+      const sent = publisher.publish.mock.calls[0]![0] as DefinitionsPublishInput;
+      expect(sent.changes.map((change) => change.path)).toEqual([
+        'agents/fresh/AGENT.md',
+        'workflows/fresh/WORKFLOW.md',
+      ]);
+    });
+
+    it('refuses a workflow with a forbidden key, naming it, and publishes nothing', async () => {
+      const version = await draftWith(
+        (draft, f) => {
+          draft.put({ ...f, path: 'workflows/ship/WORKFLOW.md', size: 1 });
+        },
+        { 'workflows/ship/WORKFLOW.md': workflowFile('ship', ['reviewer'], 'tools: Bash\n') },
+      );
+
+      const error = await handler.execute(request(version)).catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(PublishProblemsError);
+      expect(
+        (error as PublishProblemsError).workflowProblems.map((p) => [p.workflow, p.code, p.key]),
+      ).toEqual([['ship', 'forbidden_key', 'tools']]);
+      expect(publisher.publish).not.toHaveBeenCalled();
+      expect(repository.stored.files).toHaveLength(1);
+    });
+
+    it('refuses a Draft that deletes an agent a workflow names, though the workflow is untouched', async () => {
+      const version = await draftWith((draft, f) => {
+        draft.delete({ ...f, path: 'agents/user/AGENT.md' });
+      });
+
+      const error = await handler.execute(request(version)).catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(PublishProblemsError);
+      expect(
+        (error as PublishProblemsError).workflowProblems.map((p) => [p.workflow, p.code, p.key]),
+      ).toEqual([['ship', 'phase_agent_missing', 'user']]);
+      expect(publisher.publish).not.toHaveBeenCalled();
+    });
+
+    it('refuses a new workflow that names an agent the Draft does not have', async () => {
+      const version = await draftWith(
+        (draft, f) => {
+          draft.put({ ...f, path: 'workflows/new/WORKFLOW.md', size: 1 });
+        },
+        { 'workflows/new/WORKFLOW.md': workflowFile('new', ['ghost']) },
+      );
+
+      await expect(handler.execute(request(version))).rejects.toBeInstanceOf(PublishProblemsError);
+    });
+
+    it('does not let a workflow already invalid at the base block a Draft that leaves it alone', async () => {
+      definitions.commit(BASE_COMMIT, {
+        ...BASE_FILES,
+        'workflows/old/WORKFLOW.md': workflowFile('old', ['ghost']),
+      });
+      const version = await draftWith(
+        (draft, f) => {
+          draft.put({ ...f, path: 'agents/reviewer/notes.txt', size: 1 });
+        },
+        { 'agents/reviewer/notes.txt': 'b' },
+      );
+
+      await expect(handler.execute(request(version))).resolves.toEqual({ commit: PUBLISHED });
+    });
+  });
+
+  it('refuses any changed path outside agents/, skills/ and workflows/, listing them, and publishes nothing', async () => {
     const version = await draftWith(
       (draft, f) => {
         draft.put({ ...f, path: 'agents/new/AGENT.md', size: agentFile('new').length });
@@ -517,8 +610,16 @@ describe('PublishAgentDraftHandler', () => {
     expect(publisher.publish).not.toHaveBeenCalled();
   });
 
-  it('keeps the path rule to agents/ and skills/ exactly: no prefix, no other case', async () => {
-    const paths = ['skills-evil/x.md', 'Skills/x.md', 'agentsX/y.md', 'Agents/z.md'];
+  it('keeps the path rule to agents/, skills/ and workflows/ exactly: no prefix, no other case', async () => {
+    const paths = [
+      'skills-evil/x.md',
+      'Skills/x.md',
+      'agentsX/y.md',
+      'Agents/z.md',
+      'workflows-x/a.md',
+      'Workflows/b.md',
+      'workflows',
+    ];
     const version = await draftWith(
       (draft, f) => {
         for (const path of paths) draft.put({ ...f, path, size: 1 });
