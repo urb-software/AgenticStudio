@@ -4,7 +4,12 @@ import { type RunQuestion } from '../../../domain/value-objects/run-question.js'
 import { type RunStepOutcome } from '../../../domain/entities/run-step-facts.js';
 import { type RunStepKind } from '../../../domain/value-objects/run-step-kind.js';
 import { type RunWorkingCopy } from '../../../domain/value-objects/run-working-copy.js';
-import { StepLimitReachedError, RunNotFoundError } from '../../../domain/errors/run-errors.js';
+import {
+  StepLimitReachedError,
+  RunNotFoundError,
+  ReviewVerdictMissingError,
+} from '../../../domain/errors/run-errors.js';
+import type { RunPhaseVerdict } from '../../../domain/value-objects/run-phase.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import { LogRedaction } from '../../../domain/value-objects/log-redaction.js';
@@ -26,6 +31,9 @@ export interface ReportRunStepInput {
     sessionRef?: string;
     pullRequest?: { title: string; body: string };
     checks?: { name: string; result: 'passed' | 'failed' | 'not_run'; detail?: string }[];
+    /** A review Phase's Verdict and findings; a work Phase's are ignored. */
+    verdict?: RunPhaseVerdict;
+    findings?: { text: string; file?: string; line?: number }[];
   };
   workingCopy: RunWorkingCopy;
 }
@@ -56,10 +64,15 @@ export class ReportRunStepHandler {
     // The session reference is an opaque id the resume needs exactly: not redacted, not in the
     // stored result.
     const { sessionRef, ...shown } = input.result;
-    const result = redaction.runStepResult(shown);
-    const question = questionOf(result);
+    const redacted = redaction.runStepResult(shown);
     let outcome: RunStepOutcome | undefined;
     const saved = await this.runs.change(input.runId, (run) => {
+      // Only a review Phase has a Verdict: what a work Phase's result says of one is dropped.
+      const review = run.currentPhaseView.kind === 'review';
+      const { verdict, findings, ...plain } = redacted;
+      const result = review ? redacted : plain;
+      const question = questionOf(result);
+      const phaseVerdict = review && input.result.outcome === 'done' ? verdict : undefined;
       outcome = run.reportStep(
         input.workerId,
         {
@@ -68,19 +81,23 @@ export class ReportRunStepHandler {
           ...(input.index === undefined ? {} : { index: input.index }),
           ...(question ? { question } : {}),
           ...(typeof sessionRef === 'string' ? { sessionRef } : {}),
+          ...(phaseVerdict === undefined
+            ? {}
+            : { verdict: phaseVerdict, findings: findings ?? [] }),
         },
         redaction.workingCopy(input.workingCopy),
         failingChecks(result),
         this.clock.now(),
         // Decided in the same transaction that stores the result, from the plan the Run recorded;
-        // a Run started with an agent never asks.
-        run.workflow !== null && input.result.outcome === 'done'
-          ? this.plans.next(run.workflow.toData(), run.currentPhase, 'done')
+        // a Run started with an agent never asks, nor does a review Phase without a Verdict.
+        run.workflow !== null && input.result.outcome === 'done' && (!review || phaseVerdict)
+          ? this.plans.next(run.workflow.toData(), run.currentPhase, phaseVerdict ?? 'done')
           : undefined,
       );
     });
     if (!saved || !outcome) throw new RunNotFoundError();
     if (outcome.status === 'step_limit') throw new StepLimitReachedError();
+    if (outcome.status === 'verdict_missing') throw new ReviewVerdictMissingError();
     return { index: outcome.index };
   }
 }

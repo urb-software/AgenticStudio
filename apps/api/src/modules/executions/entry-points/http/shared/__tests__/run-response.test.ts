@@ -47,11 +47,15 @@ const run = {
     skills: [] as string[],
   },
   workflow: null,
+  reviewNotPassed: false,
   phases: [
     {
       position: 0,
       itemId: null,
+      kind: 'work' as const,
       state: 'running' as const,
+      verdict: null,
+      findings: [] as { text: string; file?: string; line?: number }[],
       summary: null,
       agent: {
         name: 'default-codex',
@@ -188,7 +192,10 @@ describe('Run response: Phases', () => {
       {
         position: 0,
         itemId: null,
+        kind: 'work',
         state: 'running',
+        verdict: null,
+        findings: [],
         summary: null,
         agent: {
           name: 'default-codex',

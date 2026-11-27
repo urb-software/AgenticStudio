@@ -87,7 +87,8 @@ export type AppendStepOutcome =
   | { status: 'stored'; index: number; duplicate?: boolean }
   | { status: 'out_of_order'; expected: number }
   | { status: 'not_held' }
-  | { status: 'step_limit' };
+  | { status: 'step_limit' }
+  | { status: 'verdict_missing' };
 
 /** The built-in Default agent of a Provider, as a Run records it. */
 export const defaultAgentOf = (provider: Provider): RunAgentData => ({

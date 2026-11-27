@@ -31,6 +31,8 @@ describe('the Phases of a Run', () => {
         agent: START.agent,
         sessionRef: null,
         summary: null,
+        verdict: null,
+        findings: [],
         stepsUsed: 0,
       },
     ]);

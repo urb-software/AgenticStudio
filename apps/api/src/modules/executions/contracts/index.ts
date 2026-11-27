@@ -42,8 +42,8 @@ export type WorkflowResolution =
 /** What follows a Phase's result: the position of the next Phase, or the end of the Workflow. */
 export type NextPhase = { kind: 'phase'; position: number } | { kind: 'end' };
 
-/** How a Phase ended; only `done` exists until review Phases do. */
-export type PhaseOutcome = 'done';
+/** How a Phase ended: a work Phase is `done`, a review Phase gives its Verdict. */
+export type PhaseOutcome = 'done' | 'approved' | 'changes_requested';
 
 /** Implemented by `workflows`: `executions` imports nothing from it. */
 export interface WorkflowPlans {

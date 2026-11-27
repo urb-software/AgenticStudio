@@ -486,6 +486,7 @@ describe('OpenAPI document', () => {
         'provider',
         'agent',
         'workflowName',
+        'reviewNotPassed',
         'task',
         'state',
         'startCommit',

@@ -78,3 +78,26 @@ describe('LogRedaction.text', () => {
     expect(performance.now() - started).toBeLessThan(1000);
   });
 });
+
+describe('LogRedaction.runStepResult for the findings of a review', () => {
+  it('redacts the text and the file of every finding, and keeps the line and the Verdict', () => {
+    const secret = 'hunter2-known-value';
+    const result = LogRedaction.of([secret]).runStepResult({
+      summary: 'Reviewed.',
+      verdict: 'changes_requested',
+      findings: [
+        { text: `Leaks ${secret}.`, file: `src/${secret}.ts`, line: 7 },
+        { text: 'Fine.' },
+      ],
+    });
+
+    expect(result).toEqual({
+      summary: 'Reviewed.',
+      verdict: 'changes_requested',
+      findings: [
+        { text: `Leaks ${REDACTED}.`, file: `src/${REDACTED}.ts`, line: 7 },
+        { text: 'Fine.' },
+      ],
+    });
+  });
+});

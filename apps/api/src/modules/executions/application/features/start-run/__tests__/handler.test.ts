@@ -369,16 +369,33 @@ describe('StartRunHandler', () => {
       expect(runs.runs).toEqual([]);
     });
 
-    it.each([
-      ['a review Phase', [{ id: 'check', kind: 'review', agent: 'coder' }]],
-      ['a Checkpoint', [{ id: 'wait', kind: 'checkpoint', text: 'Look at it.' }]],
-    ] as const)('refuses a Workflow with %s until it is supported', async (_case, extra) => {
-      workflows['flow'] = plan([{ id: 'build', kind: 'work', agent: 'coder' }, ...extra]);
+    it('refuses a Workflow with a Checkpoint until it is supported', async () => {
+      workflows['flow'] = plan([
+        { id: 'build', kind: 'work', agent: 'coder' },
+        { id: 'wait', kind: 'checkpoint', text: 'Look at it.' },
+      ]);
 
       await expect(startWith({ workflow: 'flow' })).rejects.toEqual(
         new WorkflowNotUsableError(WORKFLOW_ITEMS_NOT_SUPPORTED),
       );
       expect(runs.runs).toEqual([]);
+    });
+
+    it('starts a Workflow with a review Phase, recording the Phase as a review', async () => {
+      workflows['flow'] = plan([
+        { id: 'build', kind: 'work', agent: 'coder' },
+        { id: 'check', kind: 'review', agent: 'builder' },
+      ]);
+
+      const { id } = await startWith({ workflow: 'flow' });
+
+      const run = runs.runs.find((candidate) => candidate.id === id)!;
+      expect(
+        (run.phases ?? []).map((phase) => [phase.itemId, phase.kind, phase.agent.name]),
+      ).toEqual([
+        ['build', 'work', 'coder'],
+        ['check', 'review', 'builder'],
+      ]);
     });
 
     it('refuses a Workflow whose Phase names an agent that cannot be used at its commit', async () => {

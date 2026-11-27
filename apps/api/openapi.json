@@ -6306,6 +6306,10 @@
               }
             ]
           },
+          "reviewNotPassed": {
+            "type": "boolean",
+            "description": "A review Phase asked for changes: the Workflow ended as \"review not passed\"."
+          },
           "task": {
             "type": "string"
           },
@@ -6494,6 +6498,7 @@
           "provider",
           "agent",
           "workflowName",
+          "reviewNotPassed",
           "task",
           "state",
           "startCommit",
@@ -6575,6 +6580,14 @@
               "null"
             ]
           },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "work",
+              "review"
+            ],
+            "description": "A review Phase ends with a Verdict."
+          },
           "state": {
             "type": "string",
             "enum": [
@@ -6584,6 +6597,29 @@
               "failed"
             ],
             "description": "Whether the Phase waits, works, is done or ended without finishing."
+          },
+          "verdict": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "approved",
+                  "changes_requested"
+                ],
+                "description": "A review Phase's Verdict."
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Verdict of a review Phase; null before one, and for a work Phase."
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RunPhaseFinding_Output"
+            },
+            "description": "What the review found, in the reviewer’s order; empty without findings."
           },
           "summary": {
             "description": "What the Phase's last Run step reported, plain text; null before one.",
@@ -6652,10 +6688,35 @@
         "required": [
           "position",
           "itemId",
+          "kind",
           "state",
+          "verdict",
+          "findings",
           "summary",
           "agent",
           "stepsUsed"
+        ],
+        "additionalProperties": false
+      },
+      "RunPhaseFinding_Output": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The reviewer's text, plain text: never Markdown or HTML."
+          },
+          "file": {
+            "description": "The file the finding names, as the reviewer wrote it; check it before use.",
+            "type": "string"
+          },
+          "line": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "text"
         ],
         "additionalProperties": false
       },

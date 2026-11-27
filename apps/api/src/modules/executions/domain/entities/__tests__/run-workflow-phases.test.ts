@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defaultAgentOf } from '../../repositories/__tests__/in-memory-run-repository.js';
 import { HandOutRule } from '../../value-objects/hand-out-rule.js';
-import { Task } from '../../value-objects/task.js';
 import { Run } from '../run.js';
 import { workflowRun } from './workflow-run-fixtures.js';
 
@@ -55,35 +53,6 @@ describe('a Run started with a Workflow', () => {
       ['polish', 'polisher', 'pending'],
       ['finish', 'finisher', 'pending'],
     ]);
-  });
-
-  it('refuses a Workflow with a review Phase', () => {
-    const builder = { ...defaultAgentOf('codex'), name: 'builder' };
-    expect(() =>
-      Run.start({
-        id: '0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a1b',
-        projectId: '3a5c7e9b-2d4f-4a6c-8e0b-1d3f5a7c9e2b',
-        provider: builder.provider,
-        agent: builder,
-        workflow: {
-          record: {
-            name: 'w',
-            commit: 'c'.repeat(40),
-            items: [
-              { id: 'build', kind: 'work', agent: 'builder' },
-              { id: 'check', kind: 'review', agent: 'builder' },
-            ],
-          },
-          phaseAgents: [builder, builder],
-        },
-        task: Task.of('x'),
-        startCommit: 'a',
-        remoteUrl: 'https://git.example.test/a.git',
-        integrationBranch: 'dev',
-        limits: { stepMinutes: 60, maxSteps: 3, waitingDays: 14, maxTotalSteps: 20 },
-        now: AT,
-      }),
-    ).toThrow(TypeError);
   });
 
   it('marks the first Phase running when the worker reports it', () => {

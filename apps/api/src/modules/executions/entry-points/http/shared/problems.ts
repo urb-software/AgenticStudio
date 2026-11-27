@@ -442,6 +442,16 @@ export function runNotHeld(): ProblemException {
   });
 }
 
+/** A review Phase reported no valid Verdict: the Run failed, so the worker no longer holds it. */
+export function reviewVerdictMissing(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: EXECUTIONS_PROBLEM_TYPES.runNotHeld,
+    title: 'Run not held',
+    detail:
+      'The review Phase reported no valid Verdict, so the run has failed. Stop working on it.',
+  });
+}
+
 export function agentFolderUnavailable(): ProblemException {
   return new ProblemException(HttpStatus.CONFLICT, {
     type: EXECUTIONS_PROBLEM_TYPES.agentFolderUnavailable,
