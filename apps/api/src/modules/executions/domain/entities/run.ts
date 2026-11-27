@@ -55,6 +55,7 @@ import { Lease } from '../value-objects/lease.js';
 import { WorkerPresence } from '../value-objects/worker-presence.js';
 import type { LookupKind } from '../value-objects/lookup-kind.js';
 import { RunAgent } from '../value-objects/run-agent.js';
+import type { RunPhaseData } from '../value-objects/run-phase.js';
 import { RunStep } from './run-step.js';
 
 type RunPatch = Partial<
@@ -65,6 +66,7 @@ type RunPatch = Partial<
     | 'projectId'
     | 'provider'
     | 'agent'
+    | 'phases'
     | 'task'
     | 'startCommit'
     | 'remoteUrl'
@@ -95,6 +97,7 @@ const WORKING_COPY_REMOVED = RunFailure.of(
 );
 
 const CHANGES = new WeakMap<Run, RunChanges>();
+const PHASES = new WeakMap<Run, readonly RunPhaseData[]>();
 
 /**
  * The store saves {@link Run.pendingChanges} in one transaction under the
@@ -105,6 +108,7 @@ export class Run {
   declare readonly projectId: RunData['projectId'];
   declare readonly provider: RunData['provider'];
   declare readonly agent: RunAgent;
+  declare private readonly storedPhases: readonly RunPhaseData[];
   declare readonly task: RunData['task'];
   declare readonly startCommit: RunData['startCommit'];
   /** Never a credential. */
@@ -145,6 +149,35 @@ export class Run {
       failingChecks: [...data.failingChecks],
     });
     CHANGES.set(this, { fields: {}, messages: [] });
+    PHASES.set(this, Run.checkedPhases(data));
+  }
+
+  private static checkedPhases(data: RunData): readonly RunPhaseData[] {
+    const phases = data.phases ?? [{ position: 0, agent: data.agent, stepsUsed: data.stepCount }];
+    const current = phases.at(-1);
+    if (
+      current === undefined ||
+      phases.some((phase, index) => phase.position !== index) ||
+      current.agent.name !== data.agent.name
+    ) {
+      throw new TypeError(
+        'The Phases of a Run are numbered from 0 and end with its current agent.',
+      );
+    }
+    return phases.map((phase) => ({ ...phase, agent: RunAgent.restore(phase.agent).toData() }));
+  }
+
+  /**
+   * The Run's Phases in order. The current Phase has taken the Run steps the earlier ones did not.
+   */
+  get phases(): readonly RunPhaseData[] {
+    const stored = PHASES.get(this)!;
+    const earlier = stored.slice(0, -1);
+    const used = earlier.reduce((sum, phase) => sum + phase.stepsUsed, 0);
+    const current = stored.at(-1)!;
+    return [...earlier, { ...current, stepsUsed: Math.max(0, this.progress.stepCount - used) }].map(
+      (phase) => ({ ...phase, agent: { ...phase.agent, skills: [...phase.agent.skills] } }),
+    );
   }
 
   static start(input: RunStartInput): Run {

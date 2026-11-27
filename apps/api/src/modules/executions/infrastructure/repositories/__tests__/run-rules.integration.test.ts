@@ -74,13 +74,13 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
     fresh: () => ({ state: 'queued' }),
     answered: (w: string) => ({
       state: 'queued',
-      sessionRef: 'session-1',
+      hasSession: true,
       lastClaimedBy: w,
       startedAt: T,
     }),
     followUp: (w: string) => ({
       state: 'queued',
-      sessionRef: 'session-1',
+      hasSession: true,
       lastClaimedBy: w,
       startedAt: T,
       followUpQueued: true,
@@ -163,15 +163,25 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
     const ids: string[] = [];
     for (const [n, spec] of specs.entries()) {
       if (!projects.has(spec.project)) projects.set(spec.project, await project());
+      const columns = { ...KINDS[spec.kind](spec.worker ?? W1), ...spec.overrides } as {
+        hasSession?: boolean;
+      };
+      const hasSession = columns.hasSession === true;
       const created = await db().run.create({
         data: {
           projectId: projects.get(spec.project)!,
           provider: 'codex',
-          agentName: 'default-codex',
-          agentSource: 'built_in',
-          agentProvider: 'codex',
-          agentModel: 'default',
-          agentInstructions: '',
+          phases: {
+            create: {
+              position: 0,
+              agentName: 'default-codex',
+              agentSource: 'built_in',
+              agentProvider: 'codex',
+              agentModel: 'default',
+              agentInstructions: '',
+              ...(hasSession ? { sessionRef: 'session-1' } : {}),
+            },
+          },
           task: 'Add a health check',
           startCommit: 'a'.repeat(40),
           remoteUrl: 'https://git.example.test/acme/shop.git',
@@ -180,8 +190,7 @@ describe('the store follows the rules of the domain (PostgreSQL + Redis via Test
           limitMaxSteps: 5,
           limitWaitingDays: 14,
           createdAt: new Date(T.getTime() - 3600_000 + n * 1000),
-          ...KINDS[spec.kind](spec.worker ?? W1),
-          ...spec.overrides,
+          ...columns,
         } as RunData,
         select: { id: true },
       });

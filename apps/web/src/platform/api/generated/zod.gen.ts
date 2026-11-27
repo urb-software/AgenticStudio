@@ -513,6 +513,19 @@ export const zRunAgentOutput = z.object({
     instructions: z.string().optional()
 });
 
+export const zRunPhaseOutput = z.object({
+    position: z.int().gte(0).lte(9007199254740991),
+    agent: z.object({
+        name: z.string(),
+        source: z.enum(['built_in', 'definitions']),
+        commit: z.string().nullable(),
+        provider: z.enum(['claude_code', 'codex']),
+        model: z.string(),
+        skills: z.array(z.string())
+    }),
+    stepsUsed: z.int().gte(0).lte(9007199254740991)
+});
+
 export const zRunLimitsOutput = z.object({
     stepMinutes: z.int().gte(1).lte(9007199254740991),
     maxSteps: z.int().gte(1).lte(9007199254740991),
@@ -727,6 +740,7 @@ export const zRunOutput = z.object({
     projectId: z.uuid().regex(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/),
     provider: z.enum(['claude_code', 'codex']),
     agent: zRunAgentOutput,
+    phases: z.array(zRunPhaseOutput).optional(),
     task: z.string(),
     state: z.enum([
         'queued',

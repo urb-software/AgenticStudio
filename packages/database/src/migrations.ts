@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
-import { readdir } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -19,6 +20,49 @@ export async function deployMigrations(databaseUrl: string): Promise<void> {
     cwd: packageRoot,
     env: { ...process.env, DATABASE_URL: databaseUrl },
   });
+}
+
+/**
+ * Applies the committed migrations up to and including `lastMigration`, in a copy of the
+ * migrations folder, so a test can seed a database as it was at that point and apply the rest with
+ * {@link deployMigrations}. Only for throwaway databases.
+ */
+export async function deployMigrationsUpTo(
+  databaseUrl: string,
+  lastMigration: string,
+): Promise<void> {
+  const names = await committedMigrations();
+  const last = names.indexOf(lastMigration);
+  if (last < 0) throw new Error(`Unknown migration: ${lastMigration}`);
+  const folder = await mkdtemp(path.join(tmpdir(), 'studio-migrations-'));
+  try {
+    const copy = path.join(folder, 'migrations');
+    await mkdir(copy);
+    for (const name of names.slice(0, last + 1)) {
+      await cp(path.join(migrationsDir, name), path.join(copy, name), { recursive: true });
+    }
+    await cp(
+      path.join(migrationsDir, 'migration_lock.toml'),
+      path.join(copy, 'migration_lock.toml'),
+    );
+    const config = path.join(folder, 'prisma.config.mjs');
+    const settings = {
+      schema: path.join(packageRoot, 'prisma', 'schema.prisma'),
+      migrations: { path: copy },
+    };
+    await writeFile(
+      config,
+      `export default { ...${JSON.stringify(settings)}, datasource: { url: process.env.DATABASE_URL } };
+`,
+    );
+    const prismaCli = createRequire(import.meta.url).resolve('prisma/build/index.js');
+    await execFileAsync(process.execPath, [prismaCli, 'migrate', 'deploy', '--config', config], {
+      cwd: packageRoot,
+      env: { ...process.env, DATABASE_URL: databaseUrl },
+    });
+  } finally {
+    await rm(folder, { recursive: true, force: true });
+  }
 }
 
 /** Names of the committed migrations (`prisma/migrations/<name>/`), in apply order. */
