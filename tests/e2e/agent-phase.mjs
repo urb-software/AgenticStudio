@@ -277,7 +277,10 @@ async function runWorkflowPhase({ call, projectId, definitionsCommit }) {
 
   const started = await call(`/api/projects/${projectId}/runs`, {
     method: 'POST',
-    body: JSON.stringify({ task: 'Work through the Workflow', workflow: 'two-phases' }),
+    body: JSON.stringify({
+      task: 'Work through the Workflow [fake:dirty]',
+      workflow: 'two-phases',
+    }),
   });
   assert(started.status === 201, `starting the Workflow Run answered ${started.status}`);
   const runId = started.body.id;
@@ -311,6 +314,16 @@ async function runWorkflowPhase({ call, projectId, definitionsCommit }) {
     finished.phases[0].summary === 'The fake agent finished the task. (Phase first)' &&
       finished.phases[1].summary === 'The fake agent finished the task. (Phase second)',
     `the Phases reported ${JSON.stringify(finished.phases.map((phase) => phase.summary))}`,
+  );
+  // Delivery happened once, after the last Phase: one pull request, and the one commit holds the
+  // change both Phases left in the Working copy (nothing was committed or pushed between them).
+  assert(
+    finished.delivery === 'delivered' && finished.pullRequest?.number >= 1,
+    `the Workflow Run delivered ${finished.delivery} with ${JSON.stringify(finished.pullRequest)}`,
+  );
+  assert(
+    finished.commits?.length === 1 && finished.commits[0].pushed === true,
+    `the Workflow Run has the commits ${JSON.stringify(finished.commits)}`,
   );
   assert(finished.agent.name === 'helper', 'the Run does not show the agent of its last Phase');
 

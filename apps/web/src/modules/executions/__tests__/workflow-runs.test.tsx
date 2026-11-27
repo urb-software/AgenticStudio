@@ -58,6 +58,34 @@ describe('New run: agents and Workflows in one chooser', () => {
     await expect(document.body).toHaveNoAxeViolations();
   });
 
+  it("says why the project's default Workflow is not the one chosen when it cannot start a run", async () => {
+    const api = fakeRunsApi([]);
+    api.setWorkflows([
+      summary('slow', {
+        usable: false,
+        notUsableReason: 'The phase "check" uses Codex, which is off.',
+      }),
+      summary('ship'),
+    ]);
+    api.respondNext('project', 200, { ...PROJECT, defaultWorkflow: 'slow' });
+    await openDialog();
+
+    expect(within(dialog()).getByTestId('agent-fallback-note').textContent).toContain(
+      'The Workflow slow cannot start a run now (The phase "check" uses Codex, which is off.)',
+    );
+    expect(chooser().value).not.toBe('workflow:slow');
+  });
+
+  it('chooses the default Workflow when it can start a run, with no note', async () => {
+    const api = fakeRunsApi([]);
+    api.setWorkflows([summary('ship')]);
+    api.respondNext('project', 200, { ...PROJECT, defaultWorkflow: 'ship' });
+    await openDialog();
+
+    expect(chooser().value).toBe('workflow:ship');
+    expect(within(dialog()).queryByTestId('agent-fallback-note')).toBeNull();
+  });
+
   it('offers no Workflows group when there is none', async () => {
     fakeRunsApi([]);
     await openDialog();

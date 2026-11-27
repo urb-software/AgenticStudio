@@ -168,7 +168,11 @@ export function NewRunDialog({
     [availability.data],
   );
   const offered = agents.data?.agents ?? [];
-  const workflows = useMemo(() => workflowList.data ?? [], [workflowList.data]);
+  const allWorkflows = workflowList.data;
+  const workflows = useMemo(
+    () => (allWorkflows ?? []).filter((workflow) => workflow.usable),
+    [allWorkflows],
+  );
   const noneUsable =
     offered.every((agent) => unavailable.has(agent.provider)) && workflows.length === 0;
 
@@ -213,19 +217,28 @@ export function NewRunDialog({
   const wantedWorkflow = initialValues.workflow
     ? `${WORKFLOW_PREFIX}${initialValues.workflow}`
     : '';
-  const wanted = wantedWorkflow || initialValues.agent || agents.data?.preselected;
+  const defaultWorkflow = project.data?.defaultWorkflow ?? null;
+  const wanted =
+    wantedWorkflow ||
+    initialValues.agent ||
+    (defaultWorkflow ? `${WORKFLOW_PREFIX}${defaultWorkflow}` : agents.data?.preselected);
   const hasChoice = chosen !== undefined || chosenWorkflow !== undefined;
   const fallbackFrom = picked || !hasChoice || !wanted || wanted === chosenName ? null : wanted;
   const wantedWhy =
     fallbackFrom && !fallbackFrom.startsWith(WORKFLOW_PREFIX)
       ? offered.find((agent) => agent.name === fallbackFrom)
       : undefined;
+  const wantedFlow = fallbackFrom?.startsWith(WORKFLOW_PREFIX)
+    ? allWorkflows?.find((workflow) => workflow.name === fallbackFrom.slice(WORKFLOW_PREFIX.length))
+    : undefined;
   const label = (choice: string) =>
     choice.startsWith(WORKFLOW_PREFIX) ? choice.slice(WORKFLOW_PREFIX.length) : choice;
   const fallbackNote = fallbackFrom
-    ? wantedWhy && unavailable.has(wantedWhy.provider)
-      ? `${fallbackFrom} cannot start a run now (${PROVIDER_LABEL[wantedWhy.provider]}: ${unavailable.get(wantedWhy.provider)}), so ${label(chosenName)} is chosen.`
-      : `${label(fallbackFrom)} is not offered any more, so ${label(chosenName)} is chosen.`
+    ? wantedFlow
+      ? `The Workflow ${wantedFlow.name} cannot start a run now (${wantedFlow.notUsableReason ?? 'it has problems or is not valid'}), so ${label(chosenName)} is chosen.`
+      : wantedWhy && unavailable.has(wantedWhy.provider)
+        ? `${fallbackFrom} cannot start a run now (${PROVIDER_LABEL[wantedWhy.provider]}: ${unavailable.get(wantedWhy.provider)}), so ${label(chosenName)} is chosen.`
+        : `${label(fallbackFrom)} is not offered any more, so ${label(chosenName)} is chosen.`
     : null;
 
   const submitting = isSubmitting || startRun.isPending;

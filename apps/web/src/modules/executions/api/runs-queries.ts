@@ -197,8 +197,8 @@ export function useRunAgents(projectId: string, opening: number, enabled: boolea
 }
 
 /**
- * The Workflows a Run can start with are the usable ones of the list. Own entry per opening, like
- * the agents; the API judges the Providers again at the start.
+ * The Workflows as listed (the dialog offers the usable ones and says why another is not). Own
+ * entry per opening, like the agents; the API judges the Providers again at the start.
  */
 export function useRunWorkflows(opening: number, enabled: boolean) {
   return useQuery({
@@ -208,7 +208,7 @@ export function useRunWorkflows(opening: number, enabled: boolean) {
     staleTime: Infinity,
     gcTime: 0,
     retry: false,
-    select: (list) => list.workflows.filter((workflow) => workflow.usable),
+    select: (list) => list.workflows,
   });
 }
 

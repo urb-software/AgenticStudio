@@ -40,15 +40,15 @@ export function RunPhases({ run }: { run: RunOutput }) {
                 className="flex flex-col gap-1.5 border-b border-border pb-3 last:border-b-0 last:pb-0"
               >
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <span className="font-medium">
+                  <span className="min-w-0 font-medium break-all">
                     {phase.position + 1}.{' '}
-                    <span className="font-mono text-code">{phase.itemId}</span>
+                    <span className="font-mono text-code break-all">{phase.itemId}</span>
                   </span>
                   <StatusPill status={view.pill}>{view.label}</StatusPill>
                   <span className="text-small text-text-muted">
-                    <span className="font-mono text-code">{phase.agent.name}</span> ·{' '}
+                    <span className="font-mono text-code break-all">{phase.agent.name}</span> ·{' '}
                     {PROVIDER_LABEL[phase.agent.provider]} · model{' '}
-                    <span className="font-mono text-code">{phase.agent.model}</span> ·{' '}
+                    <span className="font-mono text-code break-all">{phase.agent.model}</span> ·{' '}
                     {phase.stepsUsed} {phase.stepsUsed === 1 ? 'run step' : 'run steps'}
                   </span>
                 </div>
