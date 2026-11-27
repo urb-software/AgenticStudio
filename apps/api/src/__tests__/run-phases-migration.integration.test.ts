@@ -198,7 +198,7 @@ describe('the migration that gives every Run a Phase (PostgreSQL via Testcontain
       return `$${params.length}`;
     });
     const [created] = await db.$queryRawUnsafe<{ id: string }[]>(
-      `INSERT INTO ${table} (${names.map((name) => `"${name}"`).join(', ')}) VALUES (${values.join(', ')}) RETURNING id`,
+      `INSERT INTO ${table} (${names.map((name) => `"${name}"`).join(', ')}) VALUES (${values.join(', ')}) RETURNING *`,
       ...params,
     );
     return created!.id;
