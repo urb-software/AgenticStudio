@@ -488,7 +488,7 @@ describe('operator operations racing each other and the agent worker (PostgreSQL
           const places = await db().$queryRaw<{ active: number }[]>`
             SELECT count(*)::int AS active FROM runs
             WHERE state IN ('preparing', 'running', 'waiting_for_operator')
-               OR (state = 'queued' AND session_ref IS NOT NULL)`;
+               OR (state = 'queued' AND has_session)`;
           expect(places[0]!.active).toBe(1);
         }
       },

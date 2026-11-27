@@ -2,6 +2,7 @@ import type { Provider } from '../value-objects/provider.js';
 import type { RunAgentData } from '../value-objects/run-agent.js';
 import type { RunConversationData } from '../value-objects/run-conversation.js';
 import type { RunDeliveryData } from '../value-objects/run-delivery.js';
+import type { RunPhaseData } from '../value-objects/run-phase.js';
 import type { RunLifecycleData } from '../value-objects/run-lifecycle.js';
 import type { RunProgressData } from '../value-objects/run-progress.js';
 import type { RunPullRequestStatusData } from '../value-objects/run-pull-request-status-data.js';
@@ -21,6 +22,11 @@ export interface RunData
   provider: Provider;
   /** Its provider equals `provider`. Set at start, never changed. */
   agent: RunAgentData;
+  /**
+   * The Run's Phases in order, the last one being the current Phase whose agent is `agent`; left
+   * out, the one Phase of that agent. The current Phase's steps are counted from `stepCount`.
+   */
+  phases?: readonly RunPhaseData[];
   task: string;
   startCommit: string;
   /** Never a credential. */

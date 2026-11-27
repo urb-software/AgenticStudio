@@ -667,6 +667,7 @@ export type RunOutput = {
     projectId: string;
     provider: 'claude_code' | 'codex';
     agent: RunAgentOutput;
+    phases?: Array<RunPhaseOutput>;
     task: string;
     state: 'queued' | 'preparing' | 'running' | 'waiting_for_operator' | 'succeeded' | 'failed' | 'cancelled' | 'timed_out';
     startCommit: string;
@@ -730,6 +731,37 @@ export type RunAgentOutput = {
      * A copy of the definition instructions, plain text. Single-Run answers only; lists leave it out.
      */
     instructions?: string;
+};
+
+export type RunPhaseOutput = {
+    /**
+     * 0 for the first Phase, then 1, 2, … in order.
+     */
+    position: number;
+    agent: {
+        name: string;
+        /**
+         * A built-in Default agent, or a folder.
+         */
+        source: 'built_in' | 'definitions';
+        /**
+         * The definitions Repository commit the agent was read at; null for a built-in one.
+         */
+        commit: string | null;
+        provider: 'claude_code' | 'codex';
+        /**
+         * The model the definition named; `default` is the CLI own.
+         */
+        model: string;
+        /**
+         * The names of the skills the agent had when the Run started, at the recorded commit; empty for none.
+         */
+        skills: Array<string>;
+    };
+    /**
+     * The Run steps taken in the Phase.
+     */
+    stepsUsed: number;
 };
 
 export type RunLimitsOutput = {
