@@ -40,6 +40,7 @@ import { NewRunDialog } from '../new-run/new-run-dialog';
 import { RunChanges } from '../run-changes/run-changes';
 import { RunLog, type RunLogHandle } from '../run-log/run-log';
 import { RunMergeReview } from '../run-merge-review/run-merge-review';
+import { RunCheckpoint } from './run-checkpoint';
 import { AnswerQuestion, RunConversation } from './run-conversation';
 import { RunCommits, RunDelivery } from './run-delivery';
 import { RunFollowUp } from './run-follow-up';
@@ -404,6 +405,15 @@ export function RunDetail({ runId }: { runId: string }) {
       ) : null}
       {run.question && run.state === 'waiting_for_operator' ? (
         <AnswerQuestion run={run} question={run.question} />
+      ) : null}
+      {run.waiting?.reason === 'checkpoint' &&
+      run.waiting.checkpoint &&
+      run.state === 'waiting_for_operator' ? (
+        <RunCheckpoint
+          run={run}
+          checkpoint={run.waiting.checkpoint}
+          onShowChanges={() => setTab('changes')}
+        />
       ) : null}
       {run.state === 'queued' ? <QueuedReason run={run} /> : null}
       {run.failure ? <Failure failure={run.failure} /> : null}

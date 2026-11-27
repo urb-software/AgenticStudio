@@ -13,6 +13,8 @@ import type {
   AgentListOutput,
   AgentWorkerOutput,
   AnswerRunRequest,
+  ContinueFromCheckpointRequest,
+  StopAtCheckpointRequest,
   BringUpToDateRequest,
   CancelRunResponseOutput,
   ClosePullRequestResponseOutput,
@@ -97,6 +99,8 @@ export type {
   AgentWorkerDiskOutput,
   AgentWorkerOutput,
   AnswerRunRequest,
+  ContinueFromCheckpointRequest,
+  StopAtCheckpointRequest,
   BringUpToDateRequest,
   CancelRunResponseOutput,
   ClosePullRequestResponseOutput,
@@ -464,6 +468,21 @@ export const api = {
   answerRun: async (runId: string, body: AnswerRunRequest): Promise<void> => {
     await unwrap(sdk.answerRun({ path: { runId }, body }));
   },
+  /**
+   * Lets a Workflow go on past the Checkpoint the Run waits at (202, the Run). The note, at most
+   * 4,000 characters, reaches the next Phase as text. A Run that is not at that Checkpoint answers
+   * 409; a too long note 422.
+   */
+  continueRunFromCheckpoint: (
+    runId: string,
+    body: ContinueFromCheckpointRequest,
+  ): Promise<RunOutput> => unwrap(sdk.continueRunFromCheckpoint({ path: { runId }, body })),
+  /**
+   * Ends the Workflow at the Checkpoint the Run waits at (202, the Run): the Run delivers what
+   * exists. A Run that is not at that Checkpoint answers 409.
+   */
+  stopRunAtCheckpoint: (runId: string, body: StopAtCheckpointRequest): Promise<RunOutput> =>
+    unwrap(sdk.stopRunAtCheckpoint({ path: { runId }, body })),
   /**
    * Sends a Follow-up to a finished Run (202, no body). A Run that cannot take one answers 409
    * saying why; an empty or too long text 422.
