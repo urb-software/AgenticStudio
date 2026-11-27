@@ -49,8 +49,8 @@ Conceptual diagram. The exact network, queue, auth, and deployment boundaries mu
 | --- | --- | --- |
 | `projects` | Project lifecycle, repository connection, the Clone and its fetch, Git branches, the merge method setting | Agent definitions, raw Docker privilege, the pull request, its review and merge |
 | `agents` | Agent definitions read from the definitions Repository's Integration branch, the list of agents with their validation, the Default agents, drafts and publishing; Skill definitions (a model distinct from Agent definitions, [ADR 0006](adr/0006-skill-definitions.md)) | The Repository connection and the Clone, Runs and their queue, Git credentials |
-| `workflows` | Workflow definitions, step dependencies, ordering, conditions, human approval semantics | Individual worker/process execution plumbing |
-| `executions` | Runs, their working copies, state transitions, queue scheduling, progress/log/result records, the pull request, its review diff, the Merge approval and the merge | Direct Docker host control or unrelated project Git internals |
+| `workflows` | Workflow definitions (files in the definitions Repository, read through the public face of `agents`), their Phases and their order, which Phase comes next, the Verdict and the Checkpoint ([ADR 0007](adr/0007-workflows.md)) | Runs and Run steps, individual worker/process execution plumbing |
+| `executions` | Runs, their working copies, state transitions, queue scheduling, progress/log/result records, the pull request, its review diff, the Merge approval and the merge; it reports the result of each Run step and imports nothing from `workflows` | Direct Docker host control, unrelated project Git internals, which Phase of a Workflow comes next |
 | `environments` | A Project's Preview settings, the shared Preview and its states, builds and their logs, Compose stack abstraction | CLI agent definitions, Runs, the Project's Clone |
 | `mcp` | Reusable MCP server definitions, bindings, validation/connection checks, CLI tool configuration | Project repository internals or a full gateway in MVP |
 
@@ -129,7 +129,7 @@ Sequencing, exact bootstrap commands and role ownership: [Bootstrap](../engineer
 - Outcome of the per-provider CLI terms/auth validation, provider credential handling and throttling (the CLI-only approach and its acceptance gate are decided; see [Security](../engineering/security.md) §2).
 - External identity integration (OAuth/SSO, multi-operator RBAC) and precise production domain/TLS topology; the minimal single-operator session strategy above is **not deferred**.
 - Exact scope and configuration semantics of MCP management in the first release.
-- Workflow versioning/step state machine and failure/compensation policies.
+- Branches, parallel Phases and failure/compensation policies for Workflows. (A Workflow's Phases, Verdict, send-back and Checkpoint are decided: [ADR 0007](adr/0007-workflows.md).)
 - Scalability, multi-workspace API gateways, deployment stages and microVM sandboxes.
 
 ## 11. References
