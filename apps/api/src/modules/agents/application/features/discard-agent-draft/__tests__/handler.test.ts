@@ -38,6 +38,7 @@ describe('DiscardAgentDraftHandler', () => {
       files: [],
       problems: [],
       skillProblems: [],
+      workflowProblems: [],
       judged: true,
       notJudgedReason: null,
       movedUpstream: [],

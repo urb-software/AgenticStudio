@@ -62,6 +62,7 @@ describe('GetAgentDraftHandler', () => {
       files: [],
       problems: [],
       skillProblems: [],
+      workflowProblems: [],
       judged: true,
       notJudgedReason: null,
       movedUpstream: [],
@@ -88,15 +89,30 @@ describe('GetAgentDraftHandler', () => {
       movedUpstream: [],
     });
     expect(view.files).toEqual([
-      { path: 'README.md', change: 'deleted', size: 0, movedFrom: null, skill: null },
+      {
+        path: 'README.md',
+        change: 'deleted',
+        size: 0,
+        movedFrom: null,
+        skill: null,
+        workflow: null,
+      },
       {
         path: 'agents/new/AGENT.md',
         change: 'added',
         size: agentFile('new').length,
         movedFrom: null,
         skill: null,
+        workflow: null,
       },
-      { path: 'docs/README.md', change: 'added', size: 4, movedFrom: 'README.md', skill: null },
+      {
+        path: 'docs/README.md',
+        change: 'added',
+        size: 4,
+        movedFrom: 'README.md',
+        skill: null,
+        workflow: null,
+      },
     ]);
   });
 
@@ -562,6 +578,192 @@ describe('GetAgentDraftHandler', () => {
       definitions.commits.delete(NEXT_COMMIT);
 
       await expect(handler.execute()).resolves.toMatchObject({ movedUpstream: [] });
+    });
+  });
+
+  describe('workflows', () => {
+    const workflowFile = (name: string, agents: string[], extra = '') =>
+      `---\nname: ${name}\ndescription: Does the ${name} flow\n${extra}sequence:\n${agents
+        .map((agent, index) => `  - id: p${index}\n    kind: work\n    agent: ${agent}`)
+        .join('\n')}\n---\nNotes.\n`;
+    const WORKFLOW_FILES: Record<string, FakeCommitFile> = {
+      ...BASE_FILES,
+      'agents/builder/AGENT.md': agentFile('builder'),
+      'workflows/ship/WORKFLOW.md': workflowFile('ship', ['builder', 'reviewer']),
+    };
+
+    beforeEach(() => {
+      definitions = new FakeDefinitionsFiles(WORKFLOW_FILES);
+      handler = new GetAgentDraftHandler(repository, new AgentDraftReader(definitions, repository));
+    });
+
+    const put = (path: string, text: string) =>
+      draftWith(
+        (draft, facts) => {
+          draft.put({ ...facts, baseEntries: entriesOf(WORKFLOW_FILES), path, size: text.length });
+        },
+        { [path]: text },
+      );
+    const remove = (...paths: string[]) =>
+      draftWith((draft, facts) => {
+        for (const path of paths) {
+          draft.delete({ ...facts, baseEntries: entriesOf(WORKFLOW_FILES), path });
+        }
+      });
+
+    it('names the workflow each Draft path belongs to', async () => {
+      await draftWith(
+        (draft, facts) => {
+          const f = { ...facts, baseEntries: entriesOf(WORKFLOW_FILES) };
+          draft.put({ ...f, path: 'workflows/new/WORKFLOW.md', size: 1 });
+          draft.put({ ...f, path: 'workflows/new/deep/a.md', size: 1 });
+          draft.put({ ...f, path: 'agents/new/AGENT.md', size: 1 });
+        },
+        {
+          'workflows/new/WORKFLOW.md': 'x',
+          'workflows/new/deep/a.md': 'x',
+          'agents/new/AGENT.md': 'x',
+        },
+      );
+
+      const { files } = await handler.execute();
+
+      expect(files.map((file) => [file.path, file.workflow])).toEqual([
+        ['agents/new/AGENT.md', null],
+        ['workflows/new/WORKFLOW.md', 'new'],
+        ['workflows/new/deep/a.md', 'new'],
+      ]);
+    });
+
+    it('has no workflow problem for a valid workflow whose agents the Draft holds', async () => {
+      await draftWith(
+        (draft, facts) => {
+          const f = { ...facts, baseEntries: entriesOf(WORKFLOW_FILES) };
+          draft.put({ ...f, path: 'agents/fresh/AGENT.md', size: 1 });
+          draft.put({ ...f, path: 'workflows/fresh/WORKFLOW.md', size: 1 });
+        },
+        {
+          'agents/fresh/AGENT.md': agentFile('fresh'),
+          'workflows/fresh/WORKFLOW.md': workflowFile('fresh', ['fresh', 'builder']),
+        },
+      );
+
+      const view = await handler.execute();
+
+      expect(view.workflowProblems).toEqual([]);
+      expect(view.problems).toEqual([]);
+      expect(view.judged).toBe(true);
+    });
+
+    it('flags a workflow with a forbidden key, which is saved all the same', async () => {
+      await put('workflows/ship/WORKFLOW.md', workflowFile('ship', ['builder'], 'model: gpt\n'));
+
+      const { workflowProblems, files } = await handler.execute();
+
+      expect(files).toHaveLength(1);
+      expect(workflowProblems).toEqual([
+        {
+          workflow: 'ship',
+          code: 'workflow_forbidden_key',
+          path: 'workflows/ship/WORKFLOW.md',
+          key: 'model',
+          message: expect.stringContaining('model'),
+        },
+      ]);
+    });
+
+    it('flags a workflow that names an agent missing from the Draft', async () => {
+      await put('workflows/new/WORKFLOW.md', workflowFile('new', ['builder', 'ghost']));
+
+      const { workflowProblems } = await handler.execute();
+
+      expect(workflowProblems.map((p) => [p.workflow, p.code, p.key])).toEqual([
+        ['new', 'phase_agent_missing', 'ghost'],
+      ]);
+    });
+
+    it('flags a workflow that names an agent invalid in the Draft', async () => {
+      await draftWith(
+        (draft, facts) => {
+          const f = { ...facts, baseEntries: entriesOf(WORKFLOW_FILES) };
+          draft.put({ ...f, path: 'agents/new/AGENT.md', size: 1 });
+          draft.put({ ...f, path: 'workflows/new/WORKFLOW.md', size: 1 });
+        },
+        {
+          'agents/new/AGENT.md': 'broken',
+          'workflows/new/WORKFLOW.md': workflowFile('new', ['new']),
+        },
+      );
+
+      const { workflowProblems } = await handler.execute();
+
+      expect(workflowProblems.map((p) => [p.workflow, p.code, p.key])).toEqual([
+        ['new', 'phase_agent_invalid', 'new'],
+      ]);
+    });
+
+    it('flags an untouched workflow whose agent the Draft deletes', async () => {
+      await remove('agents/builder/AGENT.md');
+
+      const { workflowProblems, problems } = await handler.execute();
+
+      expect(workflowProblems.map((p) => [p.workflow, p.code, p.key, p.path])).toEqual([
+        ['ship', 'phase_agent_missing', 'builder', 'workflows/ship/WORKFLOW.md'],
+      ]);
+      expect(problems).toEqual([]);
+    });
+
+    it('flags an untouched workflow whose agent the Draft renames', async () => {
+      await draftWith(
+        (draft, facts) => {
+          const f = { ...facts, baseEntries: entriesOf(WORKFLOW_FILES) };
+          draft.delete({ ...f, path: 'agents/builder/AGENT.md' });
+          draft.put({ ...f, path: 'agents/maker/AGENT.md', size: 1 });
+        },
+        { 'agents/maker/AGENT.md': agentFile('maker') },
+      );
+
+      const { workflowProblems } = await handler.execute();
+
+      expect(workflowProblems.map((p) => [p.workflow, p.code, p.key])).toEqual([
+        ['ship', 'phase_agent_missing', 'builder'],
+      ]);
+    });
+
+    it('flags an untouched workflow whose agent a deleted skill makes invalid', async () => {
+      const files = {
+        ...WORKFLOW_FILES,
+        'skills/lint/SKILL.md': '---\nname: lint\ndescription: Does lint\n---\nSteps.\n',
+        'agents/builder/AGENT.md': agentFile('builder', 'skills:\n  - lint\n'),
+      };
+      definitions = new FakeDefinitionsFiles(files);
+      handler = new GetAgentDraftHandler(repository, new AgentDraftReader(definitions, repository));
+
+      await draftWith((draft, facts) => {
+        draft.delete({ ...facts, baseEntries: entriesOf(files), path: 'skills/lint/SKILL.md' });
+      });
+
+      const { workflowProblems } = await handler.execute();
+
+      expect(workflowProblems.map((p) => [p.workflow, p.code, p.key])).toEqual([
+        ['ship', 'phase_agent_invalid', 'builder'],
+      ]);
+    });
+
+    it('does not judge a workflow the Draft leaves alone with its agents', async () => {
+      await put('README.md', 'x');
+
+      await expect(handler.execute()).resolves.toMatchObject({ workflowProblems: [] });
+    });
+
+    it('has none, and says it was not judged, when the Clone cannot be read', async () => {
+      await put('workflows/new/WORKFLOW.md', 'bad');
+      definitions.unavailable = 'failed';
+
+      await expect(handler.execute()).resolves.toMatchObject({
+        workflowProblems: [],
+        judged: false,
+      });
     });
   });
 

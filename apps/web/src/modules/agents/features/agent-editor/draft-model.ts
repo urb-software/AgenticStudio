@@ -13,12 +13,15 @@ import {
   NAMES_TOUCHED_SKILL,
   skillCheckProblems,
 } from './skill-model';
+import { fromBaseWorkflow, fromDraftWorkflow, NAMES_CHANGED_AGENT } from './workflow-model';
 import type {
   AgentDraftFileOutput,
   AgentDraftProblemOutput,
   AgentDraftSkillProblemOutput,
+  AgentDraftWorkflowProblemOutput,
   AgentSummaryOutput,
   SkillSummaryOutput,
+  WorkflowSummaryOutput,
 } from '../../../../platform/api';
 import {
   placedKey,
@@ -60,6 +63,7 @@ export function overlayDraft(
       openable: true,
       agent: agentOfPath(changed.path),
       skill: changed.skill,
+      workflow: changed.workflow,
       change: changed.change,
       movedFrom: changed.movedFrom,
     });
@@ -104,8 +108,8 @@ export function pathError(
   if (path === '') return 'Enter the path of the file.';
   const [refusal] = validateAgentFiles([{ path, kind: 'file', size: 0 }]);
   if (refusal) return refusal.message;
-  if (!/^(agents|skills)\/[^/]+\/.+/.test(path)) {
-    return 'Files live under agents/<name>/ or skills/<name>/: publishing refuses any other path.';
+  if (!/^(agents|skills|workflows)\/[^/]+\/.+/.test(path)) {
+    return 'Files live under agents/<name>/, skills/<name>/ or workflows/<name>/: publishing refuses any other path.';
   }
   if (existing.has(path) && !deleted.has(path)) return 'A file is already at this path.';
   return undefined;
@@ -223,6 +227,16 @@ export interface ProblemSources {
   live?: { agent: string; problems: readonly ListedProblem[] };
   /** Problems the browser keeps from the API beside its own (see `keptSkillCheckProblems`). */
   kept?: readonly ListedProblem[];
+  /** The workflows as listed at the commit the editor reads. */
+  baseWorkflows?: readonly WorkflowSummaryOutput[];
+  /** What the API found in the workflow folders the Draft touches and in workflows naming a changed agent. */
+  draftWorkflows?: readonly AgentDraftWorkflowProblemOutput[];
+  /** The workflow folders the Draft touches. */
+  touchedWorkflows?: ReadonlySet<string>;
+  /** The workflows the Draft does not touch that name an agent it changes: judged with the Draft. */
+  namedWorkflows?: ReadonlySet<string>;
+  /** The open workflow as the browser judges it, which is newer than the API's. */
+  liveWorkflow?: { workflow: string; problems: readonly ListedProblem[] };
   /** The same for the open skill, with the agents that name it judged against it. */
   liveSkill?: {
     skill: string;
@@ -248,6 +262,11 @@ export function listProblems({
   kept = [],
   live,
   liveSkill,
+  baseWorkflows = [],
+  draftWorkflows = [],
+  touchedWorkflows = new Set(),
+  namedWorkflows = new Set(),
+  liveWorkflow,
 }: ProblemSources): ListedProblem[] {
   const listed: ListedProblem[] = [];
   for (const agent of base) {
@@ -282,5 +301,17 @@ export function listProblems({
     listed.push(...liveSkill.problems, ...(liveSkill.kept ?? []));
     for (const problems of liveSkill.naming.values()) listed.push(...problems);
   }
+  for (const workflow of baseWorkflows) {
+    if (touchedWorkflows.has(workflow.name) || namedWorkflows.has(workflow.name)) continue;
+    listed.push(...fromBaseWorkflow(workflow));
+  }
+  for (const problem of draftWorkflows) {
+    if (problem.workflow === liveWorkflow?.workflow) continue;
+    const item = fromDraftWorkflow(problem);
+    const indirect =
+      namedWorkflows.has(problem.workflow) && !touchedWorkflows.has(problem.workflow);
+    listed.push(indirect ? { ...item, note: NAMES_CHANGED_AGENT } : item);
+  }
+  if (liveWorkflow) listed.push(...liveWorkflow.problems);
   return listed;
 }
