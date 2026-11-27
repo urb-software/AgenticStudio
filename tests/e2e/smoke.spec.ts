@@ -1926,12 +1926,11 @@ test('the workflows view lists Workflows with their state and draws the diagram,
   await expect(
     order.getByText('Changes requested go back to build, at most 2 times.').first(),
   ).toBeVisible();
-  await expectInBothThemes(page, page.getByRole('region', { name: 'Workflows' }));
-
-  // A link from an agent opens its Workflow without a click.
+  // A link from an agent opens its Workflow without a click; every reload of the theme check
+  // keeps it open, so the diagram is scanned in both themes.
   await page.goto('/workflows?open=ship');
-  await expect(
-    page.getByRole('list', { name: 'Phases and checkpoints in order' }).getByRole('listitem'),
-  ).toHaveCount(4);
+  const diagram = page.getByRole('list', { name: 'Phases and checkpoints in order' });
+  await expect(diagram.getByRole('listitem')).toHaveCount(4);
+  await expectInBothThemes(page, diagram);
   expect(foreign, 'a request left the Studio origin').toEqual([]);
 });

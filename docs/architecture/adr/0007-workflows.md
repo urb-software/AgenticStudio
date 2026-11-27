@@ -35,7 +35,7 @@ Until now one Run is one agent. A **Workflow** lets the operator describe a smal
 - **Limits.** Every Phase gets the Run-step allowance a Run has today; the Run's total limit bounds the whole Workflow. A Workflow raises no limit.
 - **A version is a commit.** A Run records the Workflow, its Phases and their agents at its start, and a later change to the definition changes nothing for it.
 - **Choosing.** At a Run's start the operator chooses an agent or a Workflow in one place; a Project's default may be either. A Run started with an agent, without a Workflow, is unchanged.
-- **Ownership.** `workflows` owns the definition and decides which Phase comes next. `executions` owns the Run and its Run steps and reports each result. `workflows` reads definition files through the public face of `agents`, and `executions` imports nothing from `workflows`. **How a Run starts under this rule:** the start of a Run with a Workflow goes through `workflows`. It resolves the Workflow at the definitions commit and asks `executions`, through its public face, to create the Run with its ordered Phases. `executions` reports each Run step result through a port or event that `workflows` handles to decide the next Phase. A Project default that names a Workflow is resolved the same way.
+- **Ownership.** `workflows` owns the definition and decides which Phase comes next. `executions` owns the Run and its Run steps and reports each result. `workflows` reads Workflow files of the Clone through the public face of `projects`, as `agents` does; it judges the agents its Phases name through the public face of `agents` and Provider availability through the public face of `executions`, and `executions` imports nothing from `workflows`. **How a Run starts under this rule:** the start of a Run with a Workflow goes through `workflows`. It resolves the Workflow at the definitions commit and asks `executions`, through its public face, to create the Run with its ordered Phases. `executions` reports each Run step result through a port or event that `workflows` handles to decide the next Phase. A Project default that names a Workflow is resolved the same way.
 - **No CLI command changes, so neither [Provider compliance record](../../engineering/provider-compliance/README.md) is amended.** Each Phase runs as ordinary Run steps under the Mode already approved: no new CLI command, option or credential is added, and the approved mode, options and credentials stay exactly as recorded. Both records limit what may start a Run to the operator's action and already allow a run "from a workflow the operator started": the Phases, send-backs and review re-runs all happen inside a Run the operator started. The restore after a review is done by the agent worker on the Working copy, not by a CLI option.
 
 ## Considered Options
@@ -68,6 +68,10 @@ Execution:
 - **A Phase's agent may disagree with a review that is wrong.** The limit ends the argument; the operator reads the open findings and decides at the merge.
 - **A Workflow costs more Run steps** than one agent. The per-Phase allowance and the Run's total limit bound it.
 - **A new model in `workflows`** to validate, list, run and test.
+
+## Amendment, 2026-11-27
+
+As built in the first Workflow list: `workflows` reads the definitions Clone through the public face of `projects`, as `agents` does, because the Clone belongs to `projects` and the public face of `agents` may not re-export another module's types. It judges the agents its Phases name through the public face of `agents`, and Provider availability through the public face of `executions`. No module imports another's private files, and `executions` still imports nothing from `workflows`.
 
 ## Upgrade paths
 

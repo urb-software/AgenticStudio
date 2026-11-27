@@ -4,7 +4,7 @@ export interface SendBackPath {
   review: number;
   /** The index of the work phase it goes back to. */
   target: number;
-  /** The column the path is drawn in, so paths that overlap do not run on top of each other. */
+  /** The column the path is drawn in: the lowest one no overlapping path uses. */
   lane: number;
 }
 
@@ -17,7 +17,18 @@ export function sendBackPaths(items: readonly { kind: string }[]): SendBackPath[
     const target = before.lastIndexOf('work');
     if (target !== -1) paths.push({ review, target });
   });
-  return paths.map((path, lane) => ({ ...path, lane }));
+  const placed: SendBackPath[] = [];
+  for (const path of paths) {
+    const taken = new Set(
+      placed
+        .filter((other) => other.target <= path.review && path.target <= other.review)
+        .map((other) => other.lane),
+    );
+    let lane = 0;
+    while (taken.has(lane)) lane += 1;
+    placed.push({ ...path, lane });
+  }
+  return placed;
 }
 
 /** The sentence under a review phase: where "changes requested" goes and how often. */

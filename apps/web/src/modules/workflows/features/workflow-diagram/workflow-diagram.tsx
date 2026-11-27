@@ -90,7 +90,8 @@ export function WorkflowDiagram({
   sendBacks: number;
 }) {
   const paths = sendBackPaths(items);
-  const gutter = paths.length === 0 ? 0 : LANE_BASE_PX + paths.length * LANE_STEP_PX;
+  const lanes = paths.reduce((most, path) => Math.max(most, path.lane + 1), 0);
+  const gutter = lanes === 0 ? 0 : LANE_BASE_PX + lanes * LANE_STEP_PX;
   return (
     <ol
       role="list"

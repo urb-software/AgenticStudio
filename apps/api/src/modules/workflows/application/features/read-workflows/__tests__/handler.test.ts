@@ -160,6 +160,27 @@ describe('ReadWorkflowsHandler', () => {
     ]);
   });
 
+  it('refuses a phase that names a built-in agent, with the reason that says so', async () => {
+    const { handler } = handlerOf({
+      tree: listed(file('workflows/ship/WORKFLOW.md')),
+      files: {
+        'workflows/ship/WORKFLOW.md': workflowText('ship', [
+          phase('build', 'work', 'default-claude-code'),
+        ]),
+      },
+    });
+
+    const { workflows } = await handler.execute();
+
+    expect(workflows[0]).toMatchObject({ valid: false, usable: false });
+    expect(workflows[0]?.problems).toEqual([
+      expect.objectContaining({
+        code: 'phase_agent_reserved',
+        message: expect.stringContaining('reserves') as string,
+      }),
+    ]);
+  });
+
   it('is valid but not usable, with the Phase and the Provider named, when a Provider is off', async () => {
     const { handler } = handlerOf({
       tree: listed(file('workflows/ship/WORKFLOW.md')),

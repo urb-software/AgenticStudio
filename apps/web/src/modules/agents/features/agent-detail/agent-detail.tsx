@@ -139,7 +139,7 @@ export function AgentDetail({ agent }: { agent: AgentSummaryOutput }) {
           )}
           {query.data.usedByWorkflowsTruncated ? (
             <p className="m-0 text-small text-text-muted">
-              More Workflow folders exist than were checked, so this list may be incomplete.
+              Not every Workflow folder could be checked, so this list may be incomplete.
             </p>
           ) : null}
         </section>

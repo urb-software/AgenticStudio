@@ -1,3 +1,4 @@
+import { WORKFLOW_MAX_ITEMS } from '@agentic-studio/agent-definitions';
 import { createHash, createSecretKey, randomBytes, randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -273,7 +274,7 @@ describe('workflows API (PostgreSQL + Redis via Testcontainers)', () => {
 
     it('reads a Workflow of the largest allowed number of items', async () => {
       const items = Array.from(
-        { length: 12 },
+        { length: WORKFLOW_MAX_ITEMS },
         (_, index) => `  - id: p${index}\n    kind: work\n    agent: builder`,
       ).join('\n');
       await connectedWith('largest', {
@@ -285,7 +286,7 @@ describe('workflows API (PostgreSQL + Redis via Testcontainers)', () => {
 
       expect(response.status).toBe(200);
       expect(response.body).toMatchObject({ valid: true, usable: true });
-      expect(response.body.items).toHaveLength(12);
+      expect(response.body.items).toHaveLength(WORKFLOW_MAX_ITEMS);
     });
 
     it('bounds the list at 200 Workflow folders and says so, and still shows one beyond them', async () => {

@@ -1,3 +1,4 @@
+import { WORKFLOW_MAX_ITEMS } from '@agentic-studio/agent-definitions';
 import { focusManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -155,12 +156,12 @@ describe('WorkflowDiagram', () => {
   });
 
   it('shows a Workflow of the largest allowed size as one ordered list', async () => {
-    const many = Array.from({ length: 12 }, (_, index) =>
+    const many = Array.from({ length: WORKFLOW_MAX_ITEMS }, (_, index) =>
       index % 2 === 0 ? work(`p${index}`, 'builder') : review(`p${index}`, 'reviewer'),
     );
     const { container } = render(<WorkflowDiagram items={many} sendBacks={2} />);
 
-    expect(within(order()).getAllByRole('listitem')).toHaveLength(12);
+    expect(within(order()).getAllByRole('listitem')).toHaveLength(WORKFLOW_MAX_ITEMS);
     await expect(container).toHaveNoAxeViolations();
   });
 });
