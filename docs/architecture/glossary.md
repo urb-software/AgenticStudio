@@ -65,7 +65,7 @@ The one Repository, a Project of its own kind, that holds the Agent definitions,
 _Avoid_: Agents repo, config repo
 
 **Default agent**:
-The agent preselected when a Run starts: the Project's named default, or the built-in Default for the Provider. An agent is always chosen. A built-in "Default" agent per Provider exists without any Repository; each Project can name its own Default agent.
+The agent or Workflow preselected when a Run starts: the Project's named default (an agent or a Workflow), or the built-in Default agent for the Provider. An agent or a Workflow is always chosen. A built-in "Default" agent per Provider exists without any Repository; each Project can name its own Default agent.
 _Avoid_: Standard agent
 
 **Model**:
