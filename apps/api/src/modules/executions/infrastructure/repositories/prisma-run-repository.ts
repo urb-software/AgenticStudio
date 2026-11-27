@@ -42,7 +42,7 @@ import type {
   RunStateView,
 } from '../../domain/repositories/run-repository.js';
 
-/** What a Phase holds, less the agent's text, which a list of Runs never shows or hands out. */
+/** A list of Runs never reads the agent's instructions. */
 const PHASE_LIST_FIELDS = {
   position: true,
   agentName: true,
@@ -511,7 +511,7 @@ const CHANGED_COLUMNS: {
   pushedCommit: (pushedCommit) => ({ pushedCommit }),
   failingChecks: (failingChecks) => ({ failingChecks: [...(failingChecks ?? [])] }),
   // Held by the current Phase; the Run keeps whether it is set.
-  sessionRef: (sessionRef) => ({ hasSession: sessionRef !== null }),
+  sessionRef: (sessionRef) => (sessionRef === undefined ? {} : { hasSession: sessionRef !== null }),
   workingCopyRemovedAt: (workingCopyRemovedAt) => ({ workingCopyRemovedAt }),
   environmentFileSupplied: (supplied) => ({ environmentFileSupplied: supplied! }),
   environmentFilePath: (environmentFilePath) => ({ environmentFilePath }),
@@ -561,15 +561,16 @@ function changedColumns(fields: RunChanges['fields']): Prisma.RunUncheckedUpdate
   return data;
 }
 
-async function currentPhaseOf(tx: Prisma.TransactionClient, runId: string) {
+async function currentPhaseOf(tx: Prisma.TransactionClient, runId: string): Promise<string> {
   const { currentPhase } = await tx.run.findUniqueOrThrow({
     where: { id: runId },
     select: { currentPhase: true },
   });
-  return tx.runPhase.findUniqueOrThrow({
+  const phase = await tx.runPhase.findUniqueOrThrow({
     where: { runId_position: { runId, position: currentPhase } },
     select: { id: true },
   });
+  return phase.id;
 }
 
 /**
@@ -823,16 +824,17 @@ export class PrismaRunRepository implements RunRepository {
         await tx.runMessage.create({ data: { runId: run.id, seq: ++seq, ...messageRow(message) } });
       }
     }
-    const phase = () => currentPhaseOf(tx, run.id);
+    let phaseId: Promise<string> | undefined;
+    const phase = () => (phaseId ??= currentPhaseOf(tx, run.id));
     const phaseData = changedPhaseColumns(changes.fields);
     if (phaseData !== null) {
-      await tx.runPhase.update({ where: { id: (await phase()).id }, data: phaseData });
+      await tx.runPhase.update({ where: { id: await phase() }, data: phaseData });
     }
     for (const step of changes.steps ?? []) {
       await tx.runStep.create({
         data: {
           runId: run.id,
-          phaseId: (await phase()).id,
+          phaseId: await phase(),
           index: step.index,
           kind: step.kind,
           result: step.result as Prisma.InputJsonValue,

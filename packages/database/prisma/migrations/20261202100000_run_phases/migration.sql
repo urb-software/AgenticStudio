@@ -61,6 +61,9 @@ WHERE "run_phases"."run_id" = "run_steps"."run_id" AND "run_phases"."position" =
 
 ALTER TABLE "run_steps" ALTER COLUMN "phase_id" SET NOT NULL;
 
+-- CreateIndex
+CREATE INDEX "run_steps_phase_id_idx" ON "run_steps"("phase_id");
+
 -- AddForeignKey
 ALTER TABLE "run_steps" ADD CONSTRAINT "run_steps_phase_id_fkey" FOREIGN KEY ("phase_id") REFERENCES "run_phases"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 

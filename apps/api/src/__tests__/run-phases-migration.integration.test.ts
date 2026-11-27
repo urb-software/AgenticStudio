@@ -349,6 +349,13 @@ describe('the migration that gives every Run a Phase (PostgreSQL via Testcontain
     expect(counts).toEqual({ runs: RUNS.length, phases: RUNS.length, orphans: 0 });
   });
 
+  it('indexes the Phase of a Run step, which every count of a Phase reads', async () => {
+    const indexes = await db.$queryRaw<{ indexname: string }[]>`
+      SELECT indexname FROM pg_indexes WHERE indexname = 'run_steps_phase_id_idx'`;
+
+    expect(indexes).toHaveLength(1);
+  });
+
   it('removes the columns that moved from the Run', async () => {
     const columns = await db.$queryRaw<{ column_name: string }[]>`
       SELECT column_name FROM information_schema.columns
