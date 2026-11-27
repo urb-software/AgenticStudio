@@ -11,6 +11,7 @@ export interface ProjectView {
   kind: ProjectKind;
   /** `null` when the Project names none. */
   defaultAgent: string | null;
+  defaultWorkflow: string | null;
   createdAt: Date;
 }
 
@@ -21,6 +22,7 @@ export function projectView(project: Project): ProjectView {
     mergeMethod: project.mergeMethod,
     kind: project.kind,
     defaultAgent: project.defaultAgent,
+    defaultWorkflow: project.defaultWorkflow,
     createdAt: new Date(project.createdAt),
   };
 }

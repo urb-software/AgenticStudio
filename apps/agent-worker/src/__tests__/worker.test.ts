@@ -2880,3 +2880,209 @@ describe('the processes of a step with skills', () => {
     }
   });
 });
+
+describe('AgentWorker: a Run of a Workflow', () => {
+  const PROVIDERS = ['claude_code', 'codex'] as const;
+
+  const phaseRun = (
+    provider: (typeof PROVIDERS)[number],
+    claim: Partial<RunPayload> & { phase: NonNullable<RunPayload['phase']> },
+  ): RunPayload => ({
+    ...payload('Add a feature'),
+    provider,
+    ...agentFields(provider),
+    ...claim,
+  });
+
+  const next = (
+    provider: (typeof PROVIDERS)[number],
+    phase: NonNullable<RunPayload['phase']>,
+    more: Partial<RunPayload> = {},
+  ): RunPayload =>
+    phaseRun(provider, {
+      kind: 'next_phase',
+      runBranch: REPORT.runBranch,
+      nextSeq: 5,
+      completedSteps: 1,
+      stepsBeforePart: 1,
+      phase,
+      ...more,
+    });
+
+  const messages = (api: RecordingApi) => api.events().map((event) => event.text);
+
+  describe.each(PROVIDERS)('with %s', (provider) => {
+    it('hands the Working copy on after a Phase that is not the last: nothing is committed or delivered', async () => {
+      const run = phaseRun(provider, {
+        phase: { position: 0, itemId: 'build', count: 2, final: false },
+      });
+      const api = new RecordingApi([run]);
+      const deliveries = new FakeDeliveries();
+      startWorker(api, undefined, undefined, deliveries);
+
+      await until(() => api.reportsWithDiffs().length === 3);
+      await delay(30);
+
+      expect(deliveries.calls).toEqual([]);
+      // The diffs go before the step that ends the Phase, which releases the Run; no state follows.
+      expect(api.reportsWithDiffs().map(([kind]) => kind)).toEqual(['state', 'diff', 'step']);
+      expect(api.reports().map(([kind]) => kind)).toEqual(['state', 'step']);
+      expect(messages(api)).toEqual(
+        expect.arrayContaining([
+          expect.stringMatching(/^Phase build \(1\/2\): agent default-.+, (Claude Code|Codex)$/),
+          'Phase build (1/2) ended: done',
+        ]),
+      );
+    });
+
+    it('starts the next Phase in the kept Working copy, with a session of its own, and delivers once after the last', async () => {
+      const run = next(provider, {
+        position: 1,
+        itemId: 'polish',
+        count: 2,
+        final: true,
+        previous: { itemId: 'build', agent: 'builder', summary: 'Built the endpoint.' },
+      });
+      const api = new RecordingApi([run]);
+      const deliveries = new FakeDeliveries();
+      const copies = new FakeWorkingCopies();
+      startWorker(api, undefined, copies, deliveries);
+
+      await until(() => api.reports().length === 3);
+
+      expect(copies.located).toEqual([run.runId]);
+      expect(copies.prepared).toEqual([]);
+      expect(api.reports()[1]).toEqual([
+        'step',
+        run.runId,
+        {
+          index: 2,
+          kind: 'start',
+          result: expect.objectContaining({
+            outcome: 'done',
+            sessionRef: fakeSessionRef(run.runId, 1),
+          }),
+          workingCopy: REPORT,
+        },
+      ]);
+      expect(api.reports()[2]).toEqual([
+        'state',
+        run.runId,
+        { state: 'succeeded', delivery: DELIVERED },
+      ]);
+      expect(deliveries.calls.map(([step]) => step)).toEqual(['commit', 'deliver']);
+      expect(messages(api)).toEqual(
+        expect.arrayContaining([
+          'fake runner: told by phase build: Built the endpoint.',
+          'Phase polish (2/2) ended: done',
+        ]),
+      );
+    });
+
+    it('resumes the session the Phase had in an earlier round', async () => {
+      const run = next(
+        provider,
+        { position: 1, itemId: 'polish', count: 2, final: true },
+        {
+          sessionRef: fakeSessionRef('0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a11', 1),
+          answer: 'Add a test too.',
+          resumeReason: 'follow_up',
+          followUpNumber: 1,
+        },
+      );
+      const api = new RecordingApi([run]);
+      startWorker(api);
+
+      await until(() => api.reports().length === 3);
+
+      expect(api.reports()[1]?.[2]).toMatchObject({
+        kind: 'resume',
+        result: { sessionRef: fakeSessionRef(run.runId, 1) },
+      });
+    });
+
+    it('does not start a Phase whose Provider was switched off, saying which Phase it was', async () => {
+      const run = next(provider, { position: 1, itemId: 'polish', count: 2, final: true });
+      const api = new RecordingApi([run]);
+      const copies = new FakeWorkingCopies();
+      const runner = new FakeRunner();
+      const started = vi.spyOn(runner, 'start');
+      startWorker(api, runner, copies, {
+        gate: {
+          assertEnabled: () => {
+            throw new ProviderDisabledError(provider);
+          },
+        },
+      });
+
+      await until(() => api.reports().length === 1);
+
+      expect(api.reports()[0]).toEqual([
+        'state',
+        run.runId,
+        {
+          state: 'failed',
+          failure: {
+            code: 'provider_disabled',
+            detail: expect.stringMatching(/^Phase polish \(2\/2\) did not start: /),
+          },
+        },
+      ]);
+      expect(started).not.toHaveBeenCalled();
+      expect(copies.located).toEqual([]);
+    });
+
+    it('gives the Phase its own Run step allowance', async () => {
+      const run = next(
+        provider,
+        { position: 1, itemId: 'polish', count: 2, final: true },
+        { completedSteps: 4, stepsBeforePart: 1, limits: { stepMinutes: 60, maxSteps: 3 } },
+      );
+      const api = new RecordingApi([run]);
+      startWorker(api);
+
+      await until(() => api.reports().length === 1);
+
+      expect(api.reports()[0]?.[2]).toMatchObject({
+        state: 'failed',
+        failure: { code: 'step_limit' },
+      });
+    });
+  });
+
+  it('ends the Run at a Phase that fails, with the end of the Phase in the log and no delivery', async () => {
+    const run = phaseRun('codex', {
+      phase: { position: 0, itemId: 'build', count: 2, final: false },
+    });
+    const api = new RecordingApi([run]);
+    const deliveries = new FakeDeliveries();
+    const runner: Runner = {
+      start: () => {
+        throw new AgentFailedError('The agent gave up.');
+      },
+      resume: () => {
+        throw new AgentFailedError('The agent gave up.');
+      },
+    };
+    startWorker(api, runner, undefined, deliveries);
+
+    await until(() => api.reports().length === 2);
+
+    expect(api.reports()[1]?.[2]).toMatchObject({
+      state: 'failed',
+      failure: { code: 'agent_failed' },
+    });
+    expect(deliveries.calls).toEqual([]);
+    expect(messages(api)).toContain('Phase build (1/2) ended: failed');
+  });
+
+  it('claims a Run started with an agent exactly as before: no Phase notice', async () => {
+    const run = payload('Add a feature');
+    const api = new RecordingApi([run]);
+    startWorker(api);
+
+    await until(() => api.reports().length === 3);
+
+    expect(messages(api).filter((text) => text.startsWith('Phase '))).toEqual([]);
+  });
+});

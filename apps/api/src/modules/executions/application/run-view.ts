@@ -1,7 +1,8 @@
 import type { Run } from '../domain/entities/run.js';
 import type { Provider } from '../domain/value-objects/provider.js';
 import type { RunAgentData } from '../domain/value-objects/run-agent.js';
-import type { RunPhaseData } from '../domain/value-objects/run-phase.js';
+import type { RunPhaseView } from '../domain/value-objects/run-phase-view.js';
+import type { RunWorkflowData } from '../domain/value-objects/run-workflow.js';
 import type { RunCancelledBy } from '../domain/value-objects/run-cancelled-by.js';
 import type { RunDeliveryState } from '../domain/value-objects/run-delivery.js';
 import type { RunFailureCode } from '../domain/value-objects/run-failure-code.js';
@@ -23,7 +24,9 @@ export interface RunView {
   /** Without its instructions in a list of Runs. */
   agent: RunAgentData;
   /** In order; shown in a single-Run answer only. */
-  phases: readonly RunPhaseData[];
+  phases: readonly RunPhaseView[];
+  /** What the Run recorded of its Workflow; `null` for a Run started with an agent. */
+  workflow: RunWorkflowData | null;
   task: string;
   state: RunState;
   startCommit: string;
@@ -82,6 +85,7 @@ export function runView(run: Run, facts: RunViewFacts): RunView {
     provider: run.provider,
     agent: run.agent.toData(),
     phases: run.phases,
+    workflow: run.workflow === null ? null : run.workflow.toData(),
     task: run.task,
     state: lifecycle.state,
     startCommit: run.startCommit,

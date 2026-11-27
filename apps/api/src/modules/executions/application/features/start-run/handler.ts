@@ -1,20 +1,30 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
-import { AGENT_RESOLUTION, type AgentResolutions } from '../../../../agents/contracts/index.js';
 import {
+  AGENT_RESOLUTION,
+  type AgentResolutions,
+  type ResolvedAgent,
+} from '../../../../agents/contracts/index.js';
+import {
+  PROJECT_DEFAULT_AGENTS,
+  type ProjectDefaultAgents,
   PROJECT_KINDS,
   type ProjectKinds,
   RUN_START_POINTS,
   type RunStartPoints,
 } from '../../../../projects/contracts/index.js';
 import { type Provider } from '../../../domain/value-objects/provider.js';
+import { WORKFLOW_PLANS, type WorkflowPlans } from '../../../contracts/index.js';
 import {
+  AgentNotChosenError,
   AgentNotUsableError,
   AgentUnknownError,
   DefinitionsProjectRunError,
   RepositoryNotReadyError,
   RunProjectNotFoundError,
   ProviderUnavailableError,
+  WorkflowNotUsableError,
+  WorkflowUnknownError,
 } from '../../../domain/errors/run-errors.js';
 import { Run } from '../../../domain/entities/run.js';
 import { RunAgentChoice } from '../../../domain/value-objects/run-agent-choice.js';
@@ -28,10 +38,15 @@ import { RUN_LIMITS, type RunLimitsSetting } from '../../ports/run-limits.js';
 import { WORKER_LEASE, type WorkerLease } from '../../ports/worker-lease.js';
 import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-status-store.js';
 
+/** Why a Workflow with a review Phase or a Checkpoint cannot start a Run yet. */
+export const WORKFLOW_ITEMS_NOT_SUPPORTED = 'review Phases and Checkpoints are not supported yet';
+
 export interface StartRunInput {
   projectId: string;
   /** The agent by name; absent, the Default agent of `provider`. */
   agent?: string;
+  /** A Workflow by name, in place of an agent. With neither, the Project's default. */
+  workflow?: string;
   /** With an `agent`, the Provider the agent must belong to. */
   provider?: Provider;
   task: string;
@@ -42,9 +57,9 @@ export interface StartRunResult {
 }
 
 /**
- * Copies the agent as it stands now onto the Run. A provider known to be unavailable from the
- * latest worker status is refused; the worker's own check stays authoritative. Throws the Run and
- * agent refusals of `run-errors.ts`, {@link RunProjectNotFoundError} and `InvalidTaskError`.
+ * Copies the agent, or the Workflow with each Phase's agent read at one commit, onto the Run. A
+ * Provider known to be unavailable is refused (the worker's check stays authoritative). Throws the
+ * refusals of `run-errors.ts`, {@link RunProjectNotFoundError} and `InvalidTaskError`.
  */
 @Injectable()
 export class StartRunHandler {
@@ -57,10 +72,12 @@ export class StartRunHandler {
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(WORKER_LEASE) private readonly lease: WorkerLease,
     @Inject(RUN_LIMITS) private readonly limits: RunLimitsSetting,
+    @Inject(WORKFLOW_PLANS) private readonly plans: WorkflowPlans,
+    @Inject(PROJECT_DEFAULT_AGENTS) private readonly defaults: ProjectDefaultAgents,
   ) {}
 
   async execute(input: StartRunInput): Promise<StartRunResult> {
-    const choice = RunAgentChoice.of(input);
+    const requested = await this.requested(input);
     if ((await this.kinds.kindOf(input.projectId)) === 'definitions') {
       throw new DefinitionsProjectRunError();
     }
@@ -73,6 +90,13 @@ export class StartRunHandler {
       case 'repository_not_ready':
         throw new RepositoryNotReadyError('not_ready');
       case 'ready': {
+        if (requested.workflow !== undefined) {
+          return this.startWorkflow(input, requested.workflow, startPoint);
+        }
+        const choice = RunAgentChoice.of({
+          ...(requested.agent === undefined ? {} : { agent: requested.agent }),
+          ...(input.provider === undefined ? {} : { provider: input.provider }),
+        });
         const resolution = await this.agents.resolveForRun(choice.name);
         if (resolution.status !== 'resolved') {
           throw resolution.status === 'unknown'
@@ -102,6 +126,84 @@ export class StartRunHandler {
         };
       }
     }
+  }
+
+  /**
+   * What the request asks for: an agent or a Workflow by name, or, when it names neither an agent
+   * nor a Provider, the Project's default. Throws {@link AgentNotChosenError} when there is none.
+   */
+  private async requested(input: StartRunInput): Promise<{ agent?: string; workflow?: string }> {
+    if (input.workflow !== undefined) return { workflow: input.workflow };
+    if (input.agent !== undefined || input.provider !== undefined) {
+      return input.agent === undefined ? {} : { agent: input.agent };
+    }
+    const stored = await this.defaults.forProject(input.projectId);
+    if (stored.status === 'found') {
+      if (stored.workflow != null) return { workflow: stored.workflow };
+      if (stored.agent !== null) return { agent: stored.agent };
+    }
+    throw new AgentNotChosenError();
+  }
+
+  private async startWorkflow(
+    input: StartRunInput,
+    name: string,
+    startPoint: Extract<Awaited<ReturnType<RunStartPoints['forProject']>>, { status: 'ready' }>,
+  ): Promise<StartRunResult> {
+    const resolution = await this.plans.resolve(input.projectId, name);
+    if (resolution.status === 'unknown') throw new WorkflowUnknownError(name);
+    if (resolution.status === 'not_usable') throw new WorkflowNotUsableError(resolution.reason);
+    const { plan } = resolution;
+    if (plan.items.some((item) => item.kind !== 'work')) {
+      throw new WorkflowNotUsableError(WORKFLOW_ITEMS_NOT_SUPPORTED);
+    }
+    const phaseAgents: ResolvedAgent[] = [];
+    for (const item of plan.items) {
+      if (item.kind === 'checkpoint') continue;
+      const resolved = await this.agents.resolveAt(plan.commit, item.agent);
+      if (resolved.status !== 'resolved') {
+        throw new WorkflowNotUsableError(
+          `The Phase "${item.id}" names the agent "${item.agent}", which cannot be used at the ` +
+            "Workflow's commit.",
+        );
+      }
+      phaseAgents.push(resolved.agent);
+    }
+    for (const provider of new Set(phaseAgents.map((agent) => agent.provider))) {
+      try {
+        this.assertAvailable(provider);
+      } catch (error) {
+        if (error instanceof ProviderUnavailableError) {
+          throw new WorkflowNotUsableError(
+            `A Phase of the Workflow uses ${provider}, which is not available: ${error.reason}`,
+          );
+        }
+        throw error;
+      }
+    }
+    const first = phaseAgents[0]!;
+    return {
+      id: (
+        await this.runs.add(
+          Run.start({
+            id: randomUUID(),
+            projectId: input.projectId,
+            provider: first.provider,
+            agent: first,
+            workflow: {
+              record: { name: plan.name, commit: plan.commit, items: plan.items },
+              phaseAgents,
+            },
+            task: Task.of(input.task),
+            startCommit: startPoint.startCommit,
+            remoteUrl: startPoint.remoteUrl,
+            integrationBranch: startPoint.integrationBranch,
+            limits: { ...this.limits },
+            now: this.clock.now(),
+          }),
+        )
+      ).id,
+    };
   }
 
   private assertAvailable(provider: Provider): void {

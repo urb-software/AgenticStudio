@@ -90,6 +90,22 @@ export class StepLimitReachedError extends Error {
   }
 }
 
+/** No Workflow has the name at the definitions commit. */
+export class WorkflowUnknownError extends Error {
+  constructor(readonly workflow: string) {
+    super(`No Workflow is named ${workflow}.`);
+    this.name = 'WorkflowUnknownError';
+  }
+}
+
+/** The Workflow cannot be used to start a Run; `reason` says why, for the operator. */
+export class WorkflowNotUsableError extends Error {
+  constructor(readonly reason: string) {
+    super(reason);
+    this.name = 'WorkflowNotUsableError';
+  }
+}
+
 export class RunProjectNotFoundError extends Error {
   constructor() {
     super('The project does not exist.');

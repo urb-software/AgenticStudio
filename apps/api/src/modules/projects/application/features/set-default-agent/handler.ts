@@ -10,14 +10,16 @@ import { isProjectId } from '../../../domain/value-objects/project-id.js';
 
 export interface SetDefaultAgentInput {
   projectId: string;
-  /** `null` clears the default. */
-  agent: string | null;
+  /** `null` clears the default agent. */
+  agent?: string | null;
+  /** A Workflow in place of an agent; at most one of the two is named. */
+  workflow?: string | null;
 }
 
 export type SetDefaultAgentResult = ProjectView;
 
 /**
- * Names the agent a Run of the Project offers first. Only the name's syntax is judged: usability
+ * Names the agent or the Workflow a Run of the Project offers first. Only the name's syntax is judged: usability
  * is judged where the default is read. Throws {@link ProjectNotFoundError},
  * `DefinitionsProjectError` or `InvalidAgentNameError`.
  */
@@ -29,9 +31,13 @@ export class SetDefaultAgentHandler {
     if (!isProjectId(input.projectId)) throw new ProjectNotFoundError();
     const project = await this.projects.findById(input.projectId);
     if (!project) throw new ProjectNotFoundError();
-    const changed = project.withDefaultAgent(
-      input.agent === null ? null : AgentName.of(input.agent),
-    );
+    const workflow = input.workflow ?? null;
+    const changed =
+      workflow === null
+        ? project.withDefaultAgent(
+            input.agent === undefined || input.agent === null ? null : AgentName.of(input.agent),
+          )
+        : project.withDefaultWorkflow(AgentName.of(workflow));
     if (!(await this.projects.saveDefaultAgent(changed))) throw new ProjectNotFoundError();
     return projectView(changed);
   }

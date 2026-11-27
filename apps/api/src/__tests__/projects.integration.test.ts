@@ -112,6 +112,7 @@ describe('projects API (PostgreSQL + Redis via Testcontainers)', () => {
         kind: 'code',
         // No default agent is named yet.
         defaultAgent: null,
+        defaultWorkflow: null,
         createdAt: expect.stringMatching(ISO_8601),
       });
       expect(await listedNames()).toEqual(['Agentic Studio']);

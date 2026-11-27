@@ -10,7 +10,7 @@ import {
   scripted,
   workflowText,
 } from '../../../__tests__/scripted.js';
-import { MAX_READ_BYTES } from '../../../workflows-reader.js';
+import { MAX_READ_BYTES } from '../../../workflow-definitions.js';
 import { MAX_LISTED_WORKFLOWS, ReadWorkflowsHandler } from '../handler.js';
 
 const handlerOf = (script: Parameters<typeof scripted>[0]) => {

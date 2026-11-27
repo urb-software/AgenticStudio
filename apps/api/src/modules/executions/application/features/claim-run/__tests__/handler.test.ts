@@ -1,3 +1,4 @@
+import { SEQUENTIAL_PLANS } from '../../../ports/__tests__/fake-workflow-plans.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentSkills } from '../../../../../agents/contracts/index.js';
 import type { EnvironmentFile } from '@agentic-studio/contracts';
@@ -85,6 +86,7 @@ describe('ClaimRunHandler', () => {
       },
       diffs,
       { describe: describeSkills, files: () => Promise.reject(new Error('not used')) },
+      SEQUENTIAL_PLANS,
     );
   });
 
@@ -843,6 +845,7 @@ describe('ClaimRunHandler with Environment files', () => {
         describe: () => Promise.resolve({ status: 'found', skills: [] }),
         files: () => Promise.reject(new Error('not used')),
       },
+      SEQUENTIAL_PLANS,
     );
   });
 

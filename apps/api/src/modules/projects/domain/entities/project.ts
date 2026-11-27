@@ -10,6 +10,7 @@ export class Project {
   readonly mergeMethod: MergeMethod;
   readonly kind: ProjectKind;
   readonly defaultAgent: string | null;
+  readonly defaultWorkflow: string | null;
   readonly createdAt: Date;
 
   private constructor(data: ProjectData) {
@@ -18,6 +19,7 @@ export class Project {
     this.mergeMethod = data.mergeMethod;
     this.kind = data.kind;
     this.defaultAgent = data.defaultAgent;
+    this.defaultWorkflow = data.defaultWorkflow ?? null;
     this.createdAt = new Date(data.createdAt);
   }
 
@@ -40,6 +42,7 @@ export class Project {
       mergeMethod,
       kind: this.kind,
       defaultAgent: this.defaultAgent,
+      defaultWorkflow: this.defaultWorkflow,
       createdAt: this.createdAt,
     });
   }
@@ -56,6 +59,24 @@ export class Project {
       mergeMethod: this.mergeMethod,
       kind: this.kind,
       defaultAgent: agent?.value ?? null,
+      defaultWorkflow: null,
+      createdAt: this.createdAt,
+    });
+  }
+
+  /**
+   * The same Project with a Workflow as its default, which clears the default agent. Throws
+   * {@link DefinitionsProjectError}: the definitions Repository accepts no Run.
+   */
+  withDefaultWorkflow(workflow: AgentName): Project {
+    if (this.kind === 'definitions') throw new DefinitionsProjectError();
+    return new Project({
+      id: this.id,
+      name: this.name,
+      mergeMethod: this.mergeMethod,
+      kind: this.kind,
+      defaultAgent: null,
+      defaultWorkflow: workflow.value,
       createdAt: this.createdAt,
     });
   }

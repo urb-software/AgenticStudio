@@ -25,6 +25,7 @@ import type { RunHandOut } from '../../../domain/value-objects/run-hand-out.js';
 import type { RunState } from '../../../domain/value-objects/run-state.js';
 import { RunFailure } from '../../../domain/value-objects/run-failure.js';
 import { RUN_LOG, type RunLog } from '../../ports/run-log.js';
+import { WORKFLOW_PLANS, type WorkflowPlans } from '../../../contracts/index.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import { CLOCK, type Clock } from '../../ports/clock.js';
 import {
@@ -61,6 +62,18 @@ export interface ClaimedDiffState {
   pushedCommit?: string;
 }
 
+/** The Phase of a Workflow Run a claim is for. */
+export interface ClaimedPhase {
+  position: number;
+  itemId: string;
+  count: number;
+  /** The Workflow ends after this Phase's `done`: the Run delivers then. */
+  final: boolean;
+  instructions?: string;
+  /** What the Phase before reported; only for a Phase after the first. */
+  previous?: { itemId: string; agent: string; summary: string };
+}
+
 /** What the agent worker needs to prepare and run a claimed Run. */
 export interface ClaimedRun {
   id: string;
@@ -83,6 +96,8 @@ export interface ClaimedRun {
   stepsBeforePart: number;
   limits: { stepMinutes: number; maxSteps: number };
   handOut: Exclude<RunHandOut, { kind: 'refused' }>;
+  /** Only for a Run started with a Workflow. */
+  phase?: ClaimedPhase;
   /** Test values only; goes to the claiming worker, never logged. */
   environmentFile: { path: string; content: string } | null;
   replaceEnvironmentFile: boolean;
@@ -102,6 +117,7 @@ type ClaimExtras = Pick<
   | 'nextSeq'
   | 'diffState'
   | 'skills'
+  | 'phase'
 >;
 
 const claimedRun = (run: Run, handOut: ClaimedRun['handOut'], extras: ClaimExtras): ClaimedRun => ({
@@ -160,6 +176,7 @@ export class ClaimRunHandler {
     @Inject(ENVIRONMENT_FILE_SNAPSHOTS) private readonly snapshots: EnvironmentFileSnapshots,
     @Inject(RUN_DIFF_REPOSITORY) private readonly diffs: RunDiffRepository,
     @Inject(AGENT_SKILLS) private readonly agentSkills: AgentSkills,
+    @Inject(WORKFLOW_PLANS) private readonly plans: WorkflowPlans,
   ) {}
 
   async execute(input: ClaimRunInput): Promise<ClaimRunResult> {
@@ -185,6 +202,16 @@ export class ClaimRunHandler {
       const run = await this.runs.claimNext(workerId, now, excluded);
       if (!run) return null;
       const handOut = run.handOut();
+      // The total bounds the Phases of a Workflow together: no Phase starts beyond it.
+      if (
+        run.workflow !== null &&
+        handOut.kind !== 'refused' &&
+        handOut.kind !== 'deliver' &&
+        run.progress.reachedStepTotal
+      ) {
+        await this.fail(run, workerId, run.progress.totalStepLimitFailure(), now);
+        continue;
+      }
       switch (handOut.kind) {
         case 'refused':
           if (handOut.as === 'delivery') {
@@ -206,6 +233,19 @@ export class ClaimRunHandler {
             ...(await this.progress(run)),
           });
         }
+        case 'next_phase': {
+          const skills = await this.describeSkills(run, workerId, now, 'step');
+          if (skills === SKILLS_FAILED) continue;
+          // The Working copy and its Environment file are the ones the Phase before used.
+          return claimedRun(run, handOut, {
+            skills,
+            environmentFile: null,
+            replaceEnvironmentFile: false,
+            studioPaths: studioPathsOf(run),
+            ...this.phaseOf(run),
+            ...(await this.progress(run)),
+          });
+        }
         case 'resume': {
           const skills = await this.describeSkills(run, workerId, now, 'step');
           if (skills === SKILLS_FAILED) continue;
@@ -215,6 +255,7 @@ export class ClaimRunHandler {
               environmentFile: null,
               replaceEnvironmentFile: false,
               studioPaths: studioPathsOf(run),
+              ...this.phaseOf(run),
               ...(await this.progress(run)),
             });
           }
@@ -231,6 +272,7 @@ export class ClaimRunHandler {
                 ...(environmentFile ? [environmentFile.path] : []),
               ]),
             ],
+            ...this.phaseOf(run),
             ...(await this.progress(run)),
           });
         }
@@ -244,12 +286,46 @@ export class ClaimRunHandler {
             environmentFile,
             replaceEnvironmentFile: false,
             studioPaths: environmentFile ? [environmentFile.path] : [],
+            ...this.phaseOf(run),
             completedSteps: 0,
             nextSeq: 1,
           });
         }
       }
     }
+  }
+
+  /**
+   * The Phase a Workflow Run's claim is for; the Workflow decides whether this Phase is the last,
+   * from the plan the Run recorded. Nothing for a Run started with an agent.
+   */
+  private phaseOf(run: Run): { phase?: ClaimedPhase } {
+    const { workflow } = run;
+    if (workflow === null) return {};
+    const position = run.currentPhase;
+    const item = workflow.phases[position]!;
+    const next = this.plans.next(workflow.toData(), position, 'done');
+    const before = position > 0 ? run.phases[position - 1] : undefined;
+    return {
+      phase: {
+        position,
+        itemId: item.id,
+        count: run.phases.length,
+        final: next.kind === 'end',
+        ...(item.instructions === undefined || item.instructions === ''
+          ? {}
+          : { instructions: item.instructions }),
+        ...(before === undefined
+          ? {}
+          : {
+              previous: {
+                itemId: before.itemId ?? '',
+                agent: before.agent.name,
+                summary: cutReport(before.summary ?? ''),
+              },
+            }),
+      },
+    };
   }
 
   /**
@@ -379,6 +455,15 @@ export class ClaimRunHandler {
       preparing.failPreparation(workerId, failure, now);
     });
   }
+}
+
+/** Redaction can lengthen a stored summary; the claim carries at most the protocol's limit. */
+const REPORT_MAX_LENGTH = 20_000;
+const REPORT_CUT_NOTE = '\n[... cut: the report reached the limit of Studio]';
+
+function cutReport(summary: string): string {
+  if (summary.length <= REPORT_MAX_LENGTH) return summary;
+  return summary.slice(0, REPORT_MAX_LENGTH - REPORT_CUT_NOTE.length) + REPORT_CUT_NOTE;
 }
 
 function errorName(error: unknown): string {

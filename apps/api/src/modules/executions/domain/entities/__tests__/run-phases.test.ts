@@ -22,7 +22,18 @@ describe('the Phases of a Run', () => {
   it('are one Phase with the agent of the Run when it starts', () => {
     const run = Run.start(START);
 
-    expect(run.phases).toEqual([{ position: 0, agent: START.agent, stepsUsed: 0 }]);
+    expect(run.phases).toEqual([
+      {
+        position: 0,
+        itemId: null,
+        kind: 'work',
+        state: 'pending',
+        agent: START.agent,
+        sessionRef: null,
+        summary: null,
+        stepsUsed: 0,
+      },
+    ]);
   });
 
   it('count the Run steps taken so far in the only Phase', () => {
@@ -31,24 +42,42 @@ describe('the Phases of a Run', () => {
     expect(run.phases.map((phase) => phase.stepsUsed)).toEqual([4]);
   });
 
-  it('are restored as stored, the current agent being the last Phase', () => {
+  it('are restored as stored, the current agent being the one at the current position', () => {
     const first = { position: 0, agent: defaultAgentOf('codex'), stepsUsed: 2 };
     const second = {
       position: 1,
       agent: { ...defaultAgentOf('codex'), name: 'next' },
       stepsUsed: 1,
     };
+    const workflow = {
+      name: 'flow',
+      commit: 'c'.repeat(40),
+      items: [
+        { id: 'one', kind: 'work' as const, agent: 'default-codex' },
+        { id: 'two', kind: 'work' as const, agent: 'next' },
+      ],
+    };
     const run = Run.restore(
-      runData({ stepCount: 3, phases: [first, second], agent: second.agent }),
+      runData({
+        stepCount: 3,
+        workflow,
+        phases: [
+          { ...first, itemId: 'one' },
+          { ...second, itemId: 'two' },
+        ],
+        currentPhase: 1,
+        agent: second.agent,
+      }),
     );
 
     expect(run.phases.map((phase) => [phase.position, phase.agent.name, phase.stepsUsed])).toEqual([
       [0, 'default-codex', 2],
       [1, 'next', 1],
     ]);
+    expect(run.agent.name).toBe('next');
   });
 
-  it('refuse a list that is empty, out of order or ends with another agent than the Run has', () => {
+  it('refuse a list that is empty, out of order or has another agent at the current position', () => {
     const agent = defaultAgentOf('codex');
     expect(() => Run.restore(runData({ phases: [] }))).toThrow(TypeError);
     expect(() => Run.restore(runData({ phases: [{ position: 1, agent, stepsUsed: 0 }] }))).toThrow(

@@ -25,6 +25,7 @@ export const zProjectOutput = z.object({
     mergeMethod: z.enum(['squash', 'merge_commit']),
     kind: z.enum(['code', 'definitions']),
     defaultAgent: z.string().nullable(),
+    defaultWorkflow: z.string().nullable(),
     createdAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/)
 });
 
@@ -57,6 +58,7 @@ export const zProjectDetailOutput = z.object({
     mergeMethod: z.enum(['squash', 'merge_commit']),
     kind: z.enum(['code', 'definitions']),
     defaultAgent: z.string().nullable(),
+    defaultWorkflow: z.string().nullable(),
     createdAt: z.iso.datetime().regex(/^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$/),
     repository: zRepositorySummaryOutput.nullable()
 });
@@ -121,7 +123,8 @@ export const zSetMergeMethodRequest = z.object({
 });
 
 export const zSetDefaultAgentRequest = z.object({
-    agent: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/).nullable()
+    agent: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/).nullish(),
+    workflow: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/).nullish()
 });
 
 export const zDefinitionsRepositoryOutput = z.object({
@@ -550,6 +553,7 @@ export const zSkillDetailOutput = z.object({
 export const zStartRunRequest = z.object({
     task: z.string().min(1).max(20000),
     agent: z.string().min(1).max(64).optional(),
+    workflow: z.string().min(1).max(64).optional(),
     provider: z.enum(['claude_code', 'codex']).optional()
 });
 
@@ -569,6 +573,14 @@ export const zRunAgentOutput = z.object({
 
 export const zRunPhaseOutput = z.object({
     position: z.int().gte(0).lte(9007199254740991),
+    itemId: z.string().nullable(),
+    state: z.enum([
+        'pending',
+        'running',
+        'done',
+        'failed'
+    ]),
+    summary: z.string().nullable(),
     agent: z.object({
         name: z.string(),
         source: z.enum(['built_in', 'definitions']),
@@ -578,6 +590,24 @@ export const zRunPhaseOutput = z.object({
         skills: z.array(z.string())
     }),
     stepsUsed: z.int().gte(0).lte(9007199254740991)
+});
+
+export const zRunWorkflowItemOutput = z.object({
+    id: z.string(),
+    kind: z.enum([
+        'work',
+        'review',
+        'checkpoint'
+    ]),
+    agent: z.string().optional(),
+    instructions: z.string().optional(),
+    text: z.string().optional()
+});
+
+export const zRunWorkflowOutput = z.object({
+    name: z.string(),
+    commit: z.string(),
+    items: z.array(zRunWorkflowItemOutput)
 });
 
 export const zRunLimitsOutput = z.object({
@@ -795,6 +825,8 @@ export const zRunOutput = z.object({
     provider: z.enum(['claude_code', 'codex']),
     agent: zRunAgentOutput,
     phases: z.array(zRunPhaseOutput).optional(),
+    workflowName: z.string().nullable(),
+    workflow: zRunWorkflowOutput.nullish(),
     task: z.string(),
     state: z.enum([
         'queued',

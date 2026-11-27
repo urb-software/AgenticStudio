@@ -92,6 +92,7 @@ export const DEFINITIONS_PROJECT: ProjectOutput = {
   mergeMethod: 'squash',
   kind: 'definitions',
   defaultAgent: null,
+  defaultWorkflow: null,
   createdAt: '2026-11-12T09:00:00.000Z',
 };
 

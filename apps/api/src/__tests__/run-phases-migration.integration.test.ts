@@ -292,6 +292,10 @@ describe('the migration that gives every Run a Phase (PostgreSQL via Testcontain
           agent_skills: string[];
           session_ref: string | null;
           steps_before_part: number;
+          item_id: string | null;
+          kind: string;
+          state: string;
+          summary: string | null;
         }[]
       >`SELECT * FROM run_phases WHERE run_id = ${id}::uuid`;
       expect(phases).toEqual([
@@ -308,6 +312,11 @@ describe('the migration that gives every Run a Phase (PostgreSQL via Testcontain
           agent_skills: run.agent.skills,
           session_ref: run.sessionRef,
           steps_before_part: run.stepsBeforePart,
+          // Added by the Workflow migration, which also gives the Phase the state of its Run.
+          item_id: null,
+          kind: 'work',
+          state: expect.stringMatching(/^(pending|running|done|failed)$/),
+          summary: null,
         },
       ]);
 

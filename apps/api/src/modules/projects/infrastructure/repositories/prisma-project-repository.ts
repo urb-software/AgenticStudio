@@ -21,6 +21,7 @@ const PROJECT_FIELDS = {
   mergeMethod: true,
   kind: true,
   defaultAgent: true,
+  defaultWorkflow: true,
   createdAt: true,
 } as const;
 
@@ -30,6 +31,7 @@ function toProject(row: {
   mergeMethod: string;
   kind: string;
   defaultAgent: string | null;
+  defaultWorkflow: string | null;
   createdAt: Date;
 }): Project {
   // The column's CHECK constraint keeps the list; a value outside it is a broken record.
@@ -41,6 +43,7 @@ function toProject(row: {
     mergeMethod: row.mergeMethod,
     kind: row.kind,
     defaultAgent: row.defaultAgent,
+    defaultWorkflow: row.defaultWorkflow,
     createdAt: row.createdAt,
   });
 }
@@ -134,7 +137,7 @@ export class PrismaProjectRepository implements ProjectRepository {
   async saveDefaultAgent(project: Project): Promise<boolean> {
     const { count } = await this.db.project.updateMany({
       where: { id: project.id },
-      data: { defaultAgent: project.defaultAgent },
+      data: { defaultAgent: project.defaultAgent, defaultWorkflow: project.defaultWorkflow },
     });
     return count > 0;
   }

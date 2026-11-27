@@ -12,6 +12,12 @@ export interface RunStepRecord {
   sessionRef?: string;
 }
 
+/**
+ * What follows a Phase's `done` result, as the Workflow decided it: the position of the next Phase,
+ * or the end of the Workflow.
+ */
+export type PhaseNext = { kind: 'phase'; position: number } | { kind: 'end' };
+
 /** What storing a reported Run step did. */
 export type RunStepOutcome =
   /** Stored now, or (`duplicate`) already stored by an earlier delivery of the same report. */

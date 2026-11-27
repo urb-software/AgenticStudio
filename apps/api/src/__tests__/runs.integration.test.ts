@@ -202,10 +202,16 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
           skills: [],
           instructions: '',
         },
+        // Started with an agent: no Workflow.
+        workflow: null,
+        workflowName: null,
         // One Phase with that agent; the list leaves the Phases out.
         phases: [
           {
             position: 0,
+            itemId: null,
+            state: 'pending',
+            summary: null,
             agent: {
               name: 'default-codex',
               source: 'built_in',
@@ -252,12 +258,14 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       const {
         messages: _messages,
         phases: _phases,
+        workflow: _workflow,
         followUp: _followUp,
         merge: _merge,
         integrationBranch: _integrationBranch,
         ...listed
       } = read;
       void _phases;
+      void _workflow;
       void _messages;
       void _followUp;
       void _merge;

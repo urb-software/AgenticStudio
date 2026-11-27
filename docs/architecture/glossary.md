@@ -90,6 +90,10 @@ _Avoid_: Pipeline, flow, graph
 One part of a Workflow: it names one Agent definition and is either work (it may change the Working copy) or review (it ends with a Verdict). A Phase takes one or more Run steps.
 _Avoid_: Step (a Run step is one execution of the agent CLI), stage, task
 
+**Hand-over**:
+What a Phase after the first is told besides its agent's instructions: the Task and what the Phase before it reported, as untrusted text after Studio's base rules.
+_Avoid_: Context, handoff
+
 **Verdict**:
 How a review Phase ends: approved, or changes requested with findings.
 _Avoid_: Result (a Run step ends with a result), approval (see Merge approval), score

@@ -217,7 +217,8 @@ export class AgentsReader {
     return { standings, settled };
   }
 
-  async read(name: string | undefined): Promise<AgentsRead> {
+  async read(name: string | undefined, atCommit?: string): Promise<AgentsRead> {
+    if (atCommit !== undefined) return this.readAt(atCommit, name);
     const snapshot = await this.definitions.snapshot();
     if (!snapshot) {
       return { commit: null, repository: null, truncated: false, agents: builtIns(name) };
@@ -242,6 +243,20 @@ export class AgentsReader {
         state: snapshot.state,
         note: stateNote ? `${stateNote} These are the agents at the last fetched commit.` : null,
       },
+      truncated: read.truncated,
+      agents: [...builtIns(name), ...read.agents],
+    };
+  }
+
+  /** The agents at one commit, with no regard for the Repository's state. */
+  private async readAt(commit: string, name: string | undefined): Promise<AgentsRead> {
+    const read = await this.readMemoised(commit, name);
+    if (read.status !== 'read') {
+      return { commit: null, repository: null, truncated: false, agents: builtIns(name) };
+    }
+    return {
+      commit,
+      repository: null,
       truncated: read.truncated,
       agents: [...builtIns(name), ...read.agents],
     };

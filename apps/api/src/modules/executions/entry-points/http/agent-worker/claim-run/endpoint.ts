@@ -42,6 +42,7 @@ export class ClaimRunEndpoint {
       ...(run.environmentFile ? { environmentFile: run.environmentFile } : {}),
       ...(run.replaceEnvironmentFile ? { replaceEnvironmentFile: true as const } : {}),
       ...kindOf(run),
+      ...(run.phase === undefined ? {} : { phase: run.phase }),
       limits: { stepMinutes: run.limits.stepMinutes, maxSteps: run.limits.maxSteps },
       completedSteps: run.completedSteps,
       stepsBeforePart: run.stepsBeforePart,
@@ -62,6 +63,26 @@ function kindOf(run: ClaimedRun) {
           : { mergedIntegrationCommit: handOut.mergedIntegrationCommit }),
         kind: 'deliver' as const,
         runBranch: handOut.runBranch,
+        nextSeq: run.nextSeq,
+        ...(handOut.pullRequestNumber === undefined
+          ? {}
+          : { pullRequestNumber: handOut.pullRequestNumber }),
+      };
+    case 'next_phase':
+      return {
+        ...(handOut.mergedIntegrationCommit === undefined
+          ? {}
+          : { mergedIntegrationCommit: handOut.mergedIntegrationCommit }),
+        kind: 'next_phase' as const,
+        runBranch: handOut.runBranch,
+        ...(handOut.session === undefined
+          ? {}
+          : {
+              sessionRef: handOut.session.sessionRef,
+              answer: handOut.session.answer,
+              resumeReason: handOut.session.reason,
+            }),
+        ...(handOut.followUpNumber === undefined ? {} : { followUpNumber: handOut.followUpNumber }),
         nextSeq: run.nextSeq,
         ...(handOut.pullRequestNumber === undefined
           ? {}

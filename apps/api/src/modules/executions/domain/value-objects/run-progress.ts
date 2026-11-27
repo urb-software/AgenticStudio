@@ -85,6 +85,15 @@ export class RunProgress {
     return index <= this.stepsBeforePart + this.limits.maxSteps;
   }
 
+  /** The Run's total allowance, which bounds a Workflow's Phases together. */
+  totalStepLimitFailure(): RunFailure {
+    const { maxTotalSteps } = this.limits;
+    return RunFailure.of(
+      'step_limit',
+      `The run reached its total limit of ${maxTotalSteps} run ${maxTotalSteps === 1 ? 'step' : 'steps'}; no further step was started.`,
+    );
+  }
+
   stepLimitFailure(): RunFailure {
     const { maxSteps } = this.limits;
     const steps = `${maxSteps} run ${maxSteps === 1 ? 'step' : 'steps'}`;

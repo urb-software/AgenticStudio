@@ -9,6 +9,7 @@ import {
 import { REDACTED } from '../../../../domain/value-objects/log-redaction.js';
 import { ReportRunStepHandler, type ReportRunStepInput } from '../handler.js';
 import { RunNotFoundError } from '../../../../domain/errors/run-errors.js';
+import { SEQUENTIAL_PLANS } from '../../../ports/__tests__/fake-workflow-plans.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const WORKER = '6f1c2a4e-9b7d-4c3a-8e21-0d5f6a7b8c9d';
@@ -38,6 +39,7 @@ describe('ReportRunStepHandler', () => {
       runs,
       { now: () => T1 },
       { forRun: () => Promise.resolve(['known-secret-value']) },
+      SEQUENTIAL_PLANS,
     );
     await runs.start({
       projectId: PROJECT,
@@ -96,6 +98,7 @@ describe('ReportRunStepHandler', () => {
         // Environment file values may be any word, e.g. `done` or `passed`.
         forRun: () => Promise.resolve(['done', 'passed', 'needs_input']),
       },
+      SEQUENTIAL_PLANS,
     );
     await running();
     const result: StepResult = {
