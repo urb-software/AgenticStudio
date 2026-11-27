@@ -33,3 +33,15 @@ describe('the skill API', () => {
     expect(definitions.SHELL_LINE).toBeInstanceOf(RegExp);
   });
 });
+
+describe('the workflow API', () => {
+  it('exports the validation, the finder, the agent check and the limits', () => {
+    expect(typeof definitions.validateWorkflowFolder).toBe('function');
+    expect(typeof definitions.findWorkflowFolders).toBe('function');
+    expect(typeof definitions.checkWorkflowAgents).toBe('function');
+    expect(definitions.WORKFLOW_MAX_ITEMS).toBe(12);
+    expect(definitions.WORKFLOW_DEFAULT_SEND_BACKS).toBe(2);
+    expect(definitions.WORKFLOW_PROBLEM_CODES).toContain('no_phase');
+    expect(definitions.PROBLEM_CODES).not.toContain('no_phase');
+  });
+});

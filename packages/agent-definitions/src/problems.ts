@@ -1,4 +1,9 @@
-import { MAX_AGENT_SKILLS, MAX_QUOTED_LENGTH } from './limits.js';
+import {
+  MAX_AGENT_SKILLS,
+  MAX_QUOTED_LENGTH,
+  WORKFLOW_DEFAULT_SEND_BACKS,
+  WORKFLOW_MAX_ITEMS,
+} from './limits.js';
 
 /** The reasons both an agent folder and a skill folder can be refused for. */
 export const SHARED_PROBLEM_CODES = [
@@ -68,21 +73,59 @@ export interface Problem<Code extends string = ProblemCode> {
 }
 
 /** A path or key is quoted shortened, so a very long one cannot flood a message. */
-function quote(text: string): string {
+export function quote(text: string): string {
   const shown = text.length > MAX_QUOTED_LENGTH ? `${text.slice(0, MAX_QUOTED_LENGTH)}...` : text;
   return `"${shown}"`;
 }
 
 /** What a message calls the folder and its entry file. */
 export interface Subject {
-  noun: 'agent' | 'skill';
+  noun: 'agent' | 'skill' | 'workflow';
   entry: string;
 }
 export const AGENT_SUBJECT: Subject = { noun: 'agent', entry: 'AGENT.md' };
 export const SKILL_SUBJECT: Subject = { noun: 'skill', entry: 'SKILL.md' };
+export const WORKFLOW_SUBJECT: Subject = { noun: 'workflow', entry: 'WORKFLOW.md' };
+
+/** The reasons only a workflow folder can be refused for, judged on the folder alone. */
+export const WORKFLOW_ONLY_PROBLEM_CODES = [
+  'shell_line',
+  'workflow_extra_file',
+  'workflow_forbidden_key',
+  'item_invalid',
+  'item_id_duplicate',
+  'send_backs_out_of_range',
+  'sequence_too_long',
+  'phase_agent_reserved',
+  'no_phase',
+  'review_first',
+  'review_before_work',
+  'checkpoint_first',
+  'checkpoint_last',
+  'checkpoints_adjacent',
+] as const;
+
+/** The reasons the agents a workflow names refuse it: judged against the agents, not the folder. */
+export const WORKFLOW_AGENT_CHECK_CODES = ['phase_agent_missing', 'phase_agent_invalid'] as const;
+
+type WorkflowSharedCode = Exclude<SharedProblemCode, 'provider_unknown' | 'model_unknown'>;
+
+export type WorkflowProblemCode =
+  | WorkflowSharedCode
+  | (typeof WORKFLOW_ONLY_PROBLEM_CODES)[number]
+  | (typeof WORKFLOW_AGENT_CHECK_CODES)[number];
+
+/** Every reason a workflow folder is refused; a workflow has no Provider or model to get wrong. */
+export const WORKFLOW_PROBLEM_CODES: readonly WorkflowProblemCode[] = [
+  ...(SHARED_PROBLEM_CODES.filter(
+    (code) => code !== 'provider_unknown' && code !== 'model_unknown',
+  ) as WorkflowSharedCode[]),
+  ...WORKFLOW_ONLY_PROBLEM_CODES,
+  ...WORKFLOW_AGENT_CHECK_CODES,
+];
 
 const MESSAGES: Record<
-  ProblemCode | SkillProblemCode,
+  ProblemCode | SkillProblemCode | WorkflowProblemCode,
   (place: string, subject: Subject) => string
 > = {
   entry_missing: (_, s) => `The ${s.noun} folder has no ${s.entry} entry file.`,
@@ -109,7 +152,10 @@ const MESSAGES: Record<
   forbidden_key: (key) =>
     `The key ${key} asks for tools, permissions, hooks, MCP servers, memory or isolation, ` +
     'which a definition cannot set.',
-  instructions_too_large: () => 'The instructions are larger than the size limit.',
+  instructions_too_large: (_, s) =>
+    s.noun === 'workflow'
+      ? 'The Markdown body (documentation) is larger than the size limit.'
+      : 'The instructions are larger than the size limit.',
   too_many_files: (_, s) => `The ${s.noun} folder holds more files than the limit.`,
   file_too_large: (path) => `The file ${path} is larger than the size limit.`,
   folder_too_large: (_, s) => `The ${s.noun} folder is larger in total than the size limit.`,
@@ -128,7 +174,31 @@ const MESSAGES: Record<
     `The path ${path} is a hidden file or folder, or a file ` +
     `${s.noun === 'agent' ? 'an agent CLI' : 'a CLI'} reads settings, skills or memory from, ` +
     'which a definition cannot carry.',
-  shell_line: (path) => `The file ${path} holds an inline shell line, which a skill cannot carry.`,
+  shell_line: (path, s) =>
+    `The file ${path} holds an inline shell line, which ${
+      s.noun === 'workflow' ? 'a workflow' : 'a skill'
+    } cannot carry.`,
+  workflow_extra_file: (path) =>
+    `The file ${path} is not allowed: a workflow folder holds the entry file only.`,
+  workflow_forbidden_key: (key) =>
+    `The key ${key} configures a model, Provider, skills, limits or a command, which a ` +
+    'workflow cannot set.',
+  item_invalid: () =>
+    'Every item of sequence must be a mapping with an id (1 to 64 characters: lower-case ' +
+    'letters, digits and "-") and a kind of work, review or checkpoint.',
+  item_id_duplicate: (id) => `The item id ${id} is used more than once.`,
+  send_backs_out_of_range: () =>
+    `The key send-backs must be a whole number from 0 to ${WORKFLOW_DEFAULT_SEND_BACKS}.`,
+  sequence_too_long: () => `A workflow has at most ${WORKFLOW_MAX_ITEMS} items.`,
+  phase_agent_reserved: () => 'A phase must name an agent definition, not a name Studio reserves.',
+  no_phase: () => 'A workflow needs at least one work or review phase.',
+  review_first: () => 'The first item cannot be a review phase.',
+  review_before_work: () => 'A review phase needs a work phase before it.',
+  checkpoint_first: () => 'The first item cannot be a checkpoint.',
+  checkpoint_last: () => 'The last item cannot be a checkpoint.',
+  checkpoints_adjacent: () => 'Two checkpoints cannot follow each other.',
+  phase_agent_missing: (name) => `The agent ${name} does not exist.`,
+  phase_agent_invalid: (name) => `The agent ${name} is not valid.`,
   skills_invalid: () => 'The key skills must be a list of skill names.',
   skill_name_invalid: (name) =>
     `The skill name ${name} must be 1 to 64 characters: lower-case letters, digits and "-", ` +
@@ -139,7 +209,7 @@ const MESSAGES: Record<
   skill_invalid: (name) => `The skill ${name} is not valid.`,
 };
 
-function build<Code extends ProblemCode | SkillProblemCode>(
+function build<Code extends ProblemCode | SkillProblemCode | WorkflowProblemCode>(
   code: Code,
   path: string,
   key: string | undefined,
@@ -171,4 +241,18 @@ export function skillProblem(
   key?: string,
 ): Problem<SkillProblemCode> {
   return build(code, path, key, SKILL_SUBJECT);
+}
+
+/**
+ * The same for a workflow folder. A message given by the caller replaces the fixed one, for the
+ * reasons about an item or a phase, which quote the item id and the agent name.
+ */
+export function workflowProblem(
+  code: WorkflowProblemCode,
+  path: string,
+  key?: string,
+  message?: string,
+): Problem<WorkflowProblemCode> {
+  const built = build(code, path, key, WORKFLOW_SUBJECT);
+  return message === undefined ? built : { ...built, message };
 }
