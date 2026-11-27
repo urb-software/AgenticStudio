@@ -58,6 +58,7 @@ import {
   SKILL_NAME,
 } from './agent-phase.mjs';
 import { PLAN_THEN_BUILD_FILE } from './checkpoint-phase.mjs';
+import { REVIEW_THEN_LOOK_FILE, STRICT_REVIEW_FILE } from './send-back-phase.mjs';
 import { COMPOSE, runControllerPhase } from './controller-phase.mjs';
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
@@ -223,6 +224,8 @@ async function createAgentFixtures(root) {
     'workflows/two-phases/WORKFLOW.md': TWO_PHASES_FILE,
     'workflows/implement-review/WORKFLOW.md': IMPLEMENT_REVIEW_FILE,
     'workflows/plan-then-build/WORKFLOW.md': PLAN_THEN_BUILD_FILE,
+    'workflows/strict-review/WORKFLOW.md': STRICT_REVIEW_FILE,
+    'workflows/review-then-look/WORKFLOW.md': REVIEW_THEN_LOOK_FILE,
   });
   return {
     codeUrl: code.url,
