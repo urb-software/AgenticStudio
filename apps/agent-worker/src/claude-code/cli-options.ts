@@ -150,6 +150,7 @@ export function claudePrompt(kind: 'task' | ResumeReason, text: string): string 
   if (kind === 'bring_up_to_date') {
     return `Studio's instruction to bring the branch up to date:\n\n${text}`;
   }
+  if (kind === 'send_back') return `Studio's instruction after a review:\n\n${text}`;
   return `The operator's answer:\n\n${text}`;
 }
 

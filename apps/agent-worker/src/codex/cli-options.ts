@@ -185,5 +185,6 @@ export function codexAnswer(answer: string, reason: ResumeReason = 'answer'): st
   if (reason === 'bring_up_to_date') {
     return `Studio's instruction to bring the branch up to date:\n\n${answer}\n`;
   }
+  if (reason === 'send_back') return `Studio's instruction after a review:\n\n${answer}\n`;
   return `The operator's answer:\n\n${answer}\n`;
 }

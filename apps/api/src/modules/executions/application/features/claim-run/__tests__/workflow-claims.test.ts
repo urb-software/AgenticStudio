@@ -257,6 +257,7 @@ describe('the claims of a Run started with a Workflow', () => {
               { id: 'build', kind: 'work', agent: 'builder' },
               { id: 'check', kind: 'review', agent: 'reviewer' },
             ],
+            sendBacks: 0,
           },
           phaseAgents: [phaseAgent('builder'), phaseAgent('reviewer', 'claude_code')],
         },

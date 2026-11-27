@@ -34,6 +34,7 @@ describe('the Phases of a Run', () => {
         verdict: null,
         findings: [],
         checkpointComment: null,
+        rounds: [],
         stepsUsed: 0,
       },
     ]);

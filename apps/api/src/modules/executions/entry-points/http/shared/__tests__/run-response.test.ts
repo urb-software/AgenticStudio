@@ -47,6 +47,7 @@ const run = {
     skills: [] as string[],
   },
   workflow: null,
+  sendBack: null as { used: number; limit: number } | null,
   reviewNotPassed: false,
   phases: [
     {
@@ -57,6 +58,12 @@ const run = {
       verdict: null,
       findings: [] as { text: string; file?: string; line?: number }[],
       summary: null,
+      rounds: [] as {
+        round: number;
+        summary: string | null;
+        verdict: 'approved' | 'changes_requested' | null;
+        findings: { text: string; file?: string; line?: number }[];
+      }[],
       agent: {
         name: 'default-codex',
         source: 'built_in' as const,
@@ -244,6 +251,7 @@ describe('Run response: Phases', () => {
         verdict: null,
         findings: [],
         summary: null,
+        rounds: [],
         agent: {
           name: 'default-codex',
           source: 'built_in',
@@ -254,6 +262,59 @@ describe('Run response: Phases', () => {
         },
         stepsUsed: 3,
       },
+    ]);
+  });
+
+  it('shows no send-backs for a Run started with an agent, and the count and limit for a Workflow Run', () => {
+    expect(runResponseSchema.parse(toRunResponse(run)).sendBacks).toBeNull();
+
+    const flow = { name: 'flow', commit: 'c'.repeat(40), items: [] };
+    const counted = runResponseSchema.parse(
+      toRunResponse({ ...run, workflow: flow, sendBack: { used: 1, limit: 2 } }),
+    );
+
+    expect(counted.sendBacks).toEqual({ used: 1, limit: 2 });
+    expect(toRunListItem(run)).not.toHaveProperty('sendBacks');
+  });
+
+  it('lists the rounds of a Phase: the earlier ones, then the current one when it has a result', () => {
+    const finding = { text: 'Fix it.', file: 'a.ts', line: 2 };
+    const reviewed = {
+      ...run.phases[0]!,
+      kind: 'review' as const,
+      state: 'done' as const,
+      verdict: 'approved' as const,
+      findings: [] as { text: string }[],
+      summary: 'Looks right now.',
+      rounds: [
+        {
+          round: 1,
+          summary: 'Not yet.',
+          verdict: 'changes_requested' as const,
+          findings: [finding],
+        },
+      ],
+    };
+
+    const { phases } = runResponseSchema.parse(toRunResponse({ ...run, phases: [reviewed] }));
+
+    expect(phases![0]!.rounds).toEqual([
+      { round: 1, summary: 'Not yet.', verdict: 'changes_requested', findings: [finding] },
+      { round: 2, summary: 'Looks right now.', verdict: 'approved', findings: [] },
+    ]);
+  });
+
+  it('lists no current round for a Phase that has no result yet in its round', () => {
+    const waiting = {
+      ...run.phases[0]!,
+      state: 'running' as const,
+      rounds: [{ round: 1, summary: 'Built.', verdict: null, findings: [] }],
+    };
+
+    const { phases } = runResponseSchema.parse(toRunResponse({ ...run, phases: [waiting] }));
+
+    expect(phases![0]!.rounds).toEqual([
+      { round: 1, summary: 'Built.', verdict: null, findings: [] },
     ]);
   });
 

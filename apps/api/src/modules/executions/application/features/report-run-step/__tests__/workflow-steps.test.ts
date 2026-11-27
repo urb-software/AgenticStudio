@@ -91,7 +91,9 @@ describe('ReportRunStepHandler for a Run started with a Workflow', () => {
   it('asks the Workflow what follows a Phase that is done, with the plan the Run recorded', async () => {
     await report(runId);
 
-    expect(asked).toEqual([[WORKFLOW_RECORD, 0, 'done']]);
+    expect(asked).toEqual([
+      [{ ...WORKFLOW_RECORD, sendBacks: 2 }, 0, 'done', { used: 0, returnTo: null }],
+    ]);
   });
 
   it('uses the plan the Run recorded when the Workflow was changed or removed after the start', async () => {
@@ -121,7 +123,9 @@ describe('ReportRunStepHandler for a Run started with a Workflow', () => {
     });
 
     expect(resolve).not.toHaveBeenCalled();
-    expect(asked).toEqual([[WORKFLOW_RECORD, 0, 'done']]);
+    expect(asked).toEqual([
+      [{ ...WORKFLOW_RECORD, sendBacks: 2 }, 0, 'done', { used: 0, returnTo: null }],
+    ]);
     expect((await runs.findById(runId))?.currentPhase).toBe(1);
   });
 
@@ -341,6 +345,8 @@ describe('ReportRunStepHandler for a review Phase', () => {
               { id: 'build', kind: 'work', agent: 'builder' },
               { id: 'check', kind: 'review', agent: 'reviewer' },
             ],
+            // No send-back: changes requested end the Workflow, as the tests below describe.
+            sendBacks: 0,
           },
           phaseAgents: [phaseAgent('builder'), phaseAgent('reviewer', 'claude_code')],
         },
@@ -430,5 +436,154 @@ describe('ReportRunStepHandler for a review Phase', () => {
     expect(run.phases[0]).toMatchObject({ verdict: null, findings: [], state: 'done' });
     expect(run.currentPhase).toBe(1);
     expect(JSON.stringify(runs.steps)).not.toContain('Not a review');
+  });
+});
+
+describe('ReportRunStepHandler for a review that asks for changes', () => {
+  let runs: InMemoryRunRepository;
+  let handler: ReportRunStepHandler;
+  let asked: Parameters<WorkflowPlans['next']>[];
+  let runId: string;
+  const SECRET = 'ghp_0123456789abcdefghijklmnopqrstuvwxyz';
+
+  const plans: WorkflowPlans = {
+    ...SEQUENTIAL_PLANS,
+    next: (...args) => {
+      asked.push(args);
+      return SEQUENTIAL_PLANS.next(...args);
+    },
+  };
+
+  const claimAndRun = async () => {
+    await runs.claimNext(WORKER, T0);
+    await runs.change(runId, (run) =>
+      run.reportState(WORKER, { state: 'running', failure: null }, T0),
+    );
+  };
+
+  const report = (extra: Partial<Parameters<ReportRunStepHandler['execute']>[0]['result']> = {}) =>
+    handler.execute({
+      runId,
+      workerId: WORKER,
+      kind: 'start',
+      result: { outcome: 'done', summary: 'Reported.', sessionRef: 's-x', ...extra },
+      workingCopy: WORKING_COPY,
+    });
+
+  const changes = (text: string) =>
+    report({ verdict: 'changes_requested', findings: [{ text, file: 'src/a.ts', line: 4 }] });
+
+  const start = async (sendBacks?: number) => {
+    runId = (
+      await runs.start({
+        projectId: PROJECT,
+        provider: 'codex',
+        agent: phaseAgent('builder'),
+        workflow: {
+          record: {
+            ...WORKFLOW_RECORD,
+            items: [
+              { id: 'build', kind: 'work', agent: 'builder' },
+              { id: 'check', kind: 'review', agent: 'reviewer' },
+            ],
+            ...(sendBacks === undefined ? {} : { sendBacks }),
+          },
+          phaseAgents: [phaseAgent('builder'), phaseAgent('reviewer', 'claude_code')],
+        },
+        task: 'x',
+        startCommit: 'a',
+        remoteUrl: 'https://git.example.test/a.git',
+        limits: LIMITS,
+        integrationBranch: 'dev',
+      })
+    ).id;
+    await claimAndRun();
+    await report();
+    await claimAndRun();
+  };
+
+  beforeEach(() => {
+    runs = new InMemoryRunRepository();
+    asked = [];
+    handler = new ReportRunStepHandler(
+      runs,
+      { now: () => T0 },
+      { forRun: () => Promise.resolve([SECRET]) },
+      plans,
+    );
+  });
+
+  it('asks with the count the Run has used, and sends the work back while the limit allows it', async () => {
+    await start();
+
+    await changes('Needs a test.');
+
+    expect(asked.at(-1)).toEqual([
+      expect.objectContaining({ sendBacks: 2 }),
+      1,
+      'changes_requested',
+      { used: 0, returnTo: null },
+    ]);
+    const run = (await runs.findById(runId))!;
+    expect(run).toMatchObject({ currentPhase: 0, phasePending: true, sendBacksUsed: 1 });
+    expect(run.lifecycle.state).toBe('queued');
+    expect(run.reviewNotPassed).toBe(false);
+  });
+
+  it('keeps the findings of the round, redacted, with the review Phase', async () => {
+    await start();
+
+    await changes(`Leaks ${SECRET}.`);
+
+    const run = (await runs.findById(runId))!;
+    const [round] = run.phases[1]!.rounds;
+    expect(round).toMatchObject({ round: 1, verdict: 'changes_requested' });
+    expect(round!.findings[0]).toMatchObject({ file: 'src/a.ts', line: 4 });
+    expect(round!.findings[0]!.text).not.toContain(SECRET);
+    expect(JSON.stringify(runs.steps)).not.toContain(SECRET);
+  });
+
+  it('asks the Workflow to return to the review once the work Phase is done again', async () => {
+    await start();
+    await changes('Needs a test.');
+    await claimAndRun();
+
+    await report();
+
+    expect(asked.at(-1)).toEqual([expect.anything(), 0, 'done', { used: 1, returnTo: 1 }]);
+    expect((await runs.findById(runId))!.currentPhase).toBe(1);
+  });
+
+  it('ends the Workflow as "review not passed" at the limit, with the open findings of the last review', async () => {
+    await start(1);
+    await changes('First.');
+    await claimAndRun();
+    await report();
+    await claimAndRun();
+
+    await changes('Still open.');
+
+    const run = (await runs.findById(runId))!;
+    expect(run.reviewNotPassed).toBe(true);
+    expect(run).toMatchObject({ sendBacksUsed: 1, phasePending: false });
+    expect(run.phases[1]!.findings).toMatchObject([{ text: 'Still open.' }]);
+    expect(run.lifecycle.state).toBe('running');
+  });
+
+  it('takes the limit from the recorded plan alone: a Run with no number has two, never more', async () => {
+    await start();
+    for (const round of ['one', 'two']) {
+      await changes(round);
+      await claimAndRun();
+      await report();
+      await claimAndRun();
+    }
+
+    await changes('three');
+
+    const run = (await runs.findById(runId))!;
+    expect(run.sendBacksUsed).toBe(2);
+    expect(run.reviewNotPassed).toBe(true);
+    expect(run.phasePending).toBe(false);
   });
 });

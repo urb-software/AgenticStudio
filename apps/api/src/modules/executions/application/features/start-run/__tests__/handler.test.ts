@@ -345,6 +345,7 @@ describe('StartRunHandler', () => {
         name: 'flow',
         commit: 'f'.repeat(40),
         items: TWO_PHASES,
+        sendBacks: 2,
       });
       expect(run.phases.map((phase) => [phase.itemId, phase.agent.name, phase.state])).toEqual([
         ['build', 'coder', 'pending'],
@@ -352,6 +353,23 @@ describe('StartRunHandler', () => {
       ]);
       expect(run.agent.name).toBe('coder');
       expect(run.provider).toBe('codex');
+    });
+
+    it('records the number of send-backs the Workflow names, and never more than two', async () => {
+      workflows['flow'] = {
+        status: 'resolved',
+        plan: { name: 'flow', commit: 'f'.repeat(40), items: TWO_PHASES, sendBacks: 1 },
+      };
+      const lowered = (await runs.findById((await startWith({ workflow: 'flow' })).id))!;
+
+      workflows['flow'] = {
+        status: 'resolved',
+        plan: { name: 'flow', commit: 'f'.repeat(40), items: TWO_PHASES, sendBacks: 7 },
+      };
+      const raised = (await runs.findById((await startWith({ workflow: 'flow' })).id))!;
+
+      expect(lowered.workflow?.sendBacks).toBe(1);
+      expect(raised.workflow?.sendBacks).toBe(2);
     });
 
     it('refuses an unknown Workflow, starting nothing', async () => {

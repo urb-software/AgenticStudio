@@ -12,6 +12,7 @@ import {
 import { PROVIDERS, type Provider } from '../../domain/value-objects/provider.js';
 import type { RunAgentSource } from '../../domain/value-objects/run-agent.js';
 import type { RunPhaseFinding } from '../../domain/value-objects/run-phase-finding.js';
+import type { RunPhaseRound } from '../../domain/value-objects/run-phase-round.js';
 import type {
   RunPhaseData,
   RunPhaseKind,
@@ -76,6 +77,9 @@ const LIST_FIELDS = {
   workflowCommit: true,
   // A list shows where a Run waits, which needs the recorded items.
   workflowItems: true,
+  workflowSendBacks: true,
+  sendBacksUsed: true,
+  sendBackReview: true,
   phasePending: true,
   checkpointItem: true,
   workflowEnded: true,
@@ -147,6 +151,7 @@ const RUN_FIELDS = {
       summary: true,
       findings: true,
       checkpointComment: true,
+      rounds: true,
     },
     orderBy: { position: 'asc' },
   },
@@ -183,6 +188,8 @@ interface PhaseRow {
   /** Left out of a list of Runs. */
   findings?: Prisma.JsonValue;
   checkpointComment?: string | null;
+  /** Left out of a list of Runs. */
+  rounds?: Prisma.JsonValue;
   agentName: string;
   agentSource: string;
   agentCommit: string | null;
@@ -204,6 +211,9 @@ interface RunRow {
   workflowName: string | null;
   workflowCommit: string | null;
   workflowItems: Prisma.JsonValue;
+  workflowSendBacks: number | null;
+  sendBacksUsed: number;
+  sendBackReview: number | null;
   phasePending: boolean;
   checkpointItem: number | null;
   workflowEnded: boolean;
@@ -362,6 +372,8 @@ function toPhaseData(phase: PhaseRow): RunPhaseData {
     verdict: phase.verdict as RunPhaseVerdict | null,
     findings: (phase.findings ?? []) as unknown as RunPhaseFinding[],
     checkpointComment: phase.checkpointComment ?? null,
+    // Written by Studio from the Phase's own results.
+    rounds: (phase.rounds ?? []) as unknown as RunPhaseRound[],
     agent: {
       name: phase.agentName,
       // The CHECK constraint keeps the list; the Run's own check judges the rest.
@@ -381,7 +393,12 @@ function toWorkflow(row: RunRow): RunWorkflowData | null {
   if (row.workflowName === null || row.workflowCommit === null) return null;
   // Written by Studio from a validated plan.
   const items = row.workflowItems as unknown as RunWorkflowItem[];
-  return { name: row.workflowName, commit: row.workflowCommit, items };
+  return {
+    name: row.workflowName,
+    commit: row.workflowCommit,
+    items,
+    ...(row.workflowSendBacks === null ? {} : { sendBacks: row.workflowSendBacks }),
+  };
 }
 
 function toRun(row: RunRow): Run {
@@ -417,6 +434,8 @@ function toRun(row: RunRow): Run {
     phasePending: row.phasePending,
     checkpointItem: row.checkpointItem,
     workflowEnded: row.workflowEnded,
+    sendBacksUsed: row.sendBacksUsed,
+    sendBackReview: row.sendBackReview,
     task: row.task,
     state: row.state as RunState,
     startCommit: row.startCommit,
@@ -607,6 +626,8 @@ const CHANGED_COLUMNS: {
   phasePending: (phasePending) => ({ phasePending: phasePending! }),
   checkpointItem: (checkpointItem) => ({ checkpointItem: checkpointItem! }),
   workflowEnded: (workflowEnded) => ({ workflowEnded: workflowEnded! }),
+  sendBacksUsed: (sendBacksUsed) => ({ sendBacksUsed: sendBacksUsed! }),
+  sendBackReview: (sendBackReview) => ({ sendBackReview: sendBackReview! }),
   // Saved on the Phases.
   phaseUpdates: () => ({}),
 };
@@ -673,6 +694,7 @@ export class PrismaRunRepository implements RunRepository {
               workflowName: run.workflow.name,
               workflowCommit: run.workflow.commit,
               workflowItems: run.workflow.items as unknown as Prisma.InputJsonValue,
+              workflowSendBacks: run.workflow.sendBacks,
             }),
         phases: {
           create: run.phases.map((phase) => ({
@@ -937,8 +959,15 @@ export class PrismaRunRepository implements RunRepository {
             ? {}
             : {
                 verdict: update.verdict,
-                findings: (update.findings ?? []) as unknown as Prisma.InputJsonValue,
+                // No Verdict, no findings: a CHECK keeps the two together.
+                findings:
+                  update.verdict === null
+                    ? Prisma.DbNull
+                    : ((update.findings ?? []) as unknown as Prisma.InputJsonValue),
               }),
+          ...(update.rounds === undefined
+            ? {}
+            : { rounds: update.rounds as unknown as Prisma.InputJsonValue }),
           ...(update.sessionRef === undefined ? {} : { sessionRef: update.sessionRef }),
           ...(update.checkpointComment === undefined
             ? {}

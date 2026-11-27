@@ -14,11 +14,24 @@ function from(items: readonly PlannedItem[], index: number): NextStep {
 /** The sequential decision `workflows` makes over a recorded plan; it resolves nothing. */
 export const SEQUENTIAL_PLANS: WorkflowPlans = {
   resolve: () => Promise.resolve({ status: 'unknown' }),
-  next: (plan, position, outcome) => {
-    if (outcome === 'changes_requested') return { kind: 'end' };
+  next: (plan, position, outcome, sendBacks = { used: 0 }) => {
     const phases = plan.items
       .map((item, index) => ({ item, index }))
       .filter(({ item }) => item.kind !== 'checkpoint');
+    if (outcome === 'changes_requested') {
+      const limit = Math.min(Math.max(plan.sendBacks ?? 2, 0), 2);
+      if (phases[position]?.item.kind !== 'review' || sendBacks.used >= limit) {
+        return { kind: 'end' };
+      }
+      for (let at = position - 1; at >= 0; at -= 1) {
+        if (phases[at]!.item.kind === 'work') return { kind: 'send_back', position: at };
+      }
+      return { kind: 'end' };
+    }
+    const returnTo = sendBacks.returnTo ?? null;
+    if (outcome === 'done' && returnTo !== null && returnTo > position) {
+      return { kind: 'phase', position: returnTo };
+    }
     const at = phases[position];
     return at === undefined ? { kind: 'end' } : from(plan.items, at.index + 1);
   },

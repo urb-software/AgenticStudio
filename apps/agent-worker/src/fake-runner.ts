@@ -39,11 +39,18 @@ export type FakeScenario = (typeof FAKE_SCENARIOS)[number];
 const MARKER = /\[fake:([a-z-]+)\]/;
 
 /**
- * What a fake review Phase does, chosen by `[fake-review:<verdict>]` in the Task (a work Phase
- * ignores it): approve, ask for changes, end without a Verdict, change the Working copy and commit
- * it as a careless reviewer could (then approve), or ask a question.
+ * What a fake review Phase does, from `[fake-review:<verdict>]` in the Task (a work Phase ignores
+ * it): approve, ask for changes (always, or `changes-once`), end without a Verdict, edit and
+ * commit as a careless reviewer could (then approve), or ask a question.
  */
-export const FAKE_REVIEW_SCENARIOS = ['approved', 'changes', 'none', 'edits', 'question'] as const;
+export const FAKE_REVIEW_SCENARIOS = [
+  'approved',
+  'changes',
+  'changes-once',
+  'none',
+  'edits',
+  'question',
+] as const;
 export type FakeReviewScenario = (typeof FAKE_REVIEW_SCENARIOS)[number];
 
 const REVIEW_MARKER = /\[fake-review:([a-z-]+)\]/;
@@ -153,6 +160,16 @@ export function fakePhaseLines(run: Pick<StartRunStepInput['run'], 'phase'>): st
   }
   if (phase.checkpointComment !== undefined) {
     lines.push(`fake runner: told by the operator: ${phase.checkpointComment}`);
+  }
+  if (phase.sendBack !== undefined) {
+    lines.push(`fake runner: send-back round ${phase.sendBack.round} of ${phase.sendBack.limit}`);
+    for (const finding of phase.sendBack.findings) {
+      const where =
+        finding.file === undefined
+          ? ''
+          : `${finding.file}${finding.line === undefined ? '' : `:${finding.line}`}: `;
+      lines.push(`fake runner: told by the review: ${where}${finding.text.replace(/\s+/g, ' ')}`);
+    }
   }
   return lines;
 }
@@ -367,15 +384,20 @@ export class FakeRunner implements Runner {
       case 'none':
         return { outcome: 'done', summary: 'The fake review forgot its Verdict.' };
       case 'changes':
-        return {
-          outcome: 'done',
-          summary: 'The fake review asks for changes.',
-          verdict: 'changes_requested',
-          findings: FAKE_REVIEW_FINDINGS.map((finding) => ({ ...finding })),
-        };
+      case 'changes-once':
+        return this.changesRequested();
       case 'approved':
         return { outcome: 'done', summary: 'The fake review approved it.', verdict: 'approved' };
     }
+  }
+
+  private changesRequested(): RunStepResult {
+    return {
+      outcome: 'done',
+      summary: 'The fake review asks for changes.',
+      verdict: 'changes_requested',
+      findings: FAKE_REVIEW_FINDINGS.map((finding) => ({ ...finding })),
+    };
   }
 
   /**
@@ -485,7 +507,12 @@ export class FakeRunner implements Runner {
     const scenario = fakeScenarioOf(run.task);
     yield {
       type: 'message',
-      text: reason === 'follow_up' ? 'fake runner: follow-up' : 'fake runner: resume',
+      text:
+        reason === 'follow_up'
+          ? 'fake runner: follow-up'
+          : reason === 'send_back'
+            ? 'fake runner: send-back'
+            : 'fake runner: resume',
     };
     const agentLine = fakeAgentLine(run);
     if (agentLine !== null) yield { type: 'message', text: agentLine };
@@ -504,6 +531,15 @@ export class FakeRunner implements Runner {
       );
     }
     if (answer.trim() === '') throw new AgentFailedError('The fake agent got no answer.');
+    if (reason === 'send_back') {
+      if (run.phase?.kind === 'review') {
+        // The review runs again: `changes-once` is satisfied by now, `changes` never is.
+        return fakeReviewScenarioOf(run.task) === 'changes'
+          ? this.changesRequested()
+          : { outcome: 'done', summary: 'The fake review approved it.', verdict: 'approved' };
+      }
+      return yield* this.play(scenario, run, workspace, signal, true);
+    }
     if (run.phase?.kind === 'review' && reason === 'answer') {
       yield { type: 'output', text: `answer received: ${answer}` };
       return { outcome: 'done', summary: 'The fake review approved it.', verdict: 'approved' };

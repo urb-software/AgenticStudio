@@ -323,6 +323,8 @@ describe('the migration that gives every Run a Phase (PostgreSQL via Testcontain
           findings: null,
           // Added by the Checkpoint migration.
           checkpoint_comment: null,
+          // Added by the send-back migration.
+          rounds: [],
         },
       ]);
 
