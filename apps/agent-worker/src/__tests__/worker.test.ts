@@ -43,10 +43,16 @@ import {
   AgentWorker,
   type AgentFolderPort,
   type AgentWorkerOptions,
+  type ReviewGuardPort,
   type RunSkillsPort,
   SHUTDOWN_FAILURE,
   type WorkerApi,
 } from '../worker.js';
+import {
+  RestoreFailedError,
+  type RestoreReport,
+  type WorkingCopySnapshot,
+} from '../review-guard.js';
 import { PreparationFailedError, type PreparedRun, type WorkingCopyPort } from '../working-copy.js';
 import { agentFields } from './agent-fixtures.js';
 
@@ -421,6 +427,7 @@ interface Extras {
   disk?: { snapshot(): unknown };
   agentFolders?: AgentFolderPort;
   skills?: RunSkillsPort;
+  reviewGuard?: ReviewGuardPort;
 }
 
 function startWorker(
@@ -448,6 +455,7 @@ function startWorker(
     ...(extras.lookups ? { lookups: extras.lookups } : {}),
     ...(extras.agentFolders ? { agentFolders: extras.agentFolders } : {}),
     ...(extras.skills ? { skills: extras.skills } : {}),
+    ...(extras.reviewGuard ? { reviewGuard: extras.reviewGuard } : {}),
     ...(extras.disk ? { disk: extras.disk as AgentWorkerOptions['disk'] } : {}),
     pollMs: 5,
     heartbeatMs: 10,
@@ -3084,5 +3092,255 @@ describe('AgentWorker: a Run of a Workflow', () => {
     await until(() => api.reports().length === 3);
 
     expect(messages(api).filter((text) => text.startsWith('Phase '))).toEqual([]);
+  });
+});
+
+/** A recording fake of the guard of a review Phase (the real one: review-phase.linux.test.ts). */
+class FakeReviewGuard implements ReviewGuardPort {
+  /** `capture` and `restore`, in order. */
+  readonly calls: string[] = [];
+  /** What the restore says it did. */
+  report: RestoreReport = { restored: false, headMoved: false, added: 0, changed: 0 };
+  restoreFailure: Error | undefined;
+  onCall: ((step: string) => void) | undefined;
+
+  async capture(prepared: PreparedRun): Promise<WorkingCopySnapshot> {
+    this.calls.push('capture');
+    this.onCall?.('capture');
+    return {
+      repoDir: prepared.repoDir,
+      runDir: prepared.runDir,
+      headRef: 'refs/heads/run',
+      headCommit: 'a'.repeat(40),
+      tree: 'b'.repeat(40),
+      indexCopy: null,
+      indexFile: `${prepared.repoDir}/.git/index`,
+    };
+  }
+
+  async restore(): Promise<RestoreReport> {
+    this.calls.push('restore');
+    this.onCall?.('restore');
+    if (this.restoreFailure) throw this.restoreFailure;
+    return this.report;
+  }
+}
+
+describe('AgentWorker: a review Phase', () => {
+  const PROVIDERS = ['claude_code', 'codex'] as const;
+  const PREVIOUS = { itemId: 'build', agent: 'builder', summary: 'Built the endpoint.' };
+
+  const reviewRun = (
+    provider: (typeof PROVIDERS)[number],
+    task: string,
+    phase: Partial<NonNullable<RunPayload['phase']>> = {},
+  ): RunPayload => ({
+    ...payload(task),
+    provider,
+    ...agentFields(provider),
+    kind: 'next_phase',
+    runBranch: REPORT.runBranch,
+    nextSeq: 5,
+    completedSteps: 1,
+    stepsBeforePart: 1,
+    phase: {
+      position: 1,
+      itemId: 'check',
+      count: 2,
+      kind: 'review',
+      final: true,
+      endsOnChangesRequested: true,
+      previous: PREVIOUS,
+      ...phase,
+    },
+  });
+
+  const messages = (api: RecordingApi) => api.events().map((event) => event.text);
+
+  describe.each(PROVIDERS)('with %s', (provider) => {
+    it('records the Working copy before the step and restores it after, then delivers once what the Phase before reported', async () => {
+      const run = reviewRun(provider, 'Add a feature [fake-review:approved]');
+      const api = new RecordingApi([run]);
+      const deliveries = new FakeDeliveries();
+      const guard = new FakeReviewGuard();
+      const order: string[] = [];
+      guard.onCall = (step) => order.push(step);
+      deliveries.onCall = (step) => order.push(step);
+      startWorker(api, undefined, undefined, deliveries, { reviewGuard: guard });
+
+      await until(() => api.reports().length === 3);
+
+      expect(order).toEqual(['capture', 'restore', 'commit', 'deliver']);
+      expect(api.reports()[1]?.[2]).toMatchObject({
+        result: { outcome: 'done', verdict: 'approved' },
+      });
+      expect(api.reports()[2]?.[2]).toEqual({ state: 'succeeded', delivery: DELIVERED });
+      // The commit and the pull request describe the change, not the review.
+      expect(deliveries.calls[0]).toEqual(['commit', 'Built the endpoint.']);
+      expect(messages(api)).toContain('Phase check (2/2) ended: done, approved');
+    });
+
+    it('delivers after changes requested, and reports the findings with the Verdict', async () => {
+      const run = reviewRun(provider, 'Add a feature [fake-review:changes]');
+      const api = new RecordingApi([run]);
+      const deliveries = new FakeDeliveries();
+      startWorker(api, undefined, undefined, deliveries, { reviewGuard: new FakeReviewGuard() });
+
+      await until(() => api.reports().length === 3);
+
+      expect(api.reports()[1]?.[2]).toMatchObject({
+        result: {
+          verdict: 'changes_requested',
+          findings: [{ text: expect.any(String), file: 'FAKE_CHANGE.md', line: 1 }, {}],
+        },
+      });
+      expect(deliveries.calls.map(([step]) => step)).toEqual(['commit', 'deliver']);
+      expect(api.reports()[2]?.[2]).toMatchObject({ state: 'succeeded' });
+      expect(messages(api)).toContain('Phase check (2/2) ended: done, changes requested');
+    });
+
+    it('hands the Working copy on after an approval that is not the last Phase, delivering nothing', async () => {
+      const run = reviewRun(provider, 'Add a feature', { final: false, count: 3 });
+      const api = new RecordingApi([run]);
+      const deliveries = new FakeDeliveries();
+      startWorker(api, undefined, undefined, deliveries, { reviewGuard: new FakeReviewGuard() });
+
+      await until(() => api.reports().length === 2);
+      await delay(30);
+
+      expect(deliveries.calls).toEqual([]);
+      expect(api.reports().map(([kind]) => kind)).toEqual(['state', 'step']);
+    });
+
+    it('fails the Phase with a clear reason, delivering nothing, when the review has no Verdict', async () => {
+      const run = reviewRun(provider, 'Add a feature [fake-review:none]');
+      const api = new RecordingApi([run]);
+      const deliveries = new FakeDeliveries();
+      const guard = new FakeReviewGuard();
+      startWorker(api, undefined, undefined, deliveries, { reviewGuard: guard });
+
+      await until(() => api.reports().length === 2);
+
+      expect(api.reports()[1]?.[2]).toMatchObject({
+        state: 'failed',
+        failure: {
+          code: 'agent_failed',
+          detail: 'The review Phase ended without a valid Verdict.',
+        },
+      });
+      expect(api.reports().some(([kind]) => kind === 'step')).toBe(false);
+      expect(deliveries.calls).toEqual([]);
+      // Restored all the same.
+      expect(guard.calls).toEqual(['capture', 'restore']);
+      expect(messages(api)).toContain('Phase check (2/2) ended: failed');
+    });
+
+    it('restores the Working copy when the review step fails too', async () => {
+      const run = reviewRun(provider, 'Add a feature');
+      const api = new RecordingApi([run]);
+      const guard = new FakeReviewGuard();
+      const runner: Runner = {
+        start: () => {
+          throw new AgentFailedError('The agent gave up.');
+        },
+        resume: () => {
+          throw new AgentFailedError('The agent gave up.');
+        },
+      };
+      startWorker(api, runner, undefined, new FakeDeliveries(), { reviewGuard: guard });
+
+      await until(() => api.reports().length === 2);
+
+      expect(guard.calls).toEqual(['capture', 'restore']);
+    });
+
+    it('says in the Run log what was restored', async () => {
+      const run = reviewRun(provider, 'Add a feature');
+      const api = new RecordingApi([run]);
+      const guard = new FakeReviewGuard();
+      guard.report = { restored: true, headMoved: true, added: 2, changed: 1 };
+      startWorker(api, undefined, undefined, new FakeDeliveries(), { reviewGuard: guard });
+
+      await until(() => api.reports().length === 3);
+
+      expect(messages(api)).toContain(
+        'The review Phase changed the working copy; it was restored (2 added file(s) removed, 1 changed or deleted file(s) written back, HEAD and the Run branch moved back)',
+      );
+    });
+
+    it('ends the Run, delivering nothing, when the Working copy cannot be restored', async () => {
+      const run = reviewRun(provider, 'Add a feature');
+      const api = new RecordingApi([run]);
+      const deliveries = new FakeDeliveries();
+      const guard = new FakeReviewGuard();
+      guard.restoreFailure = new RestoreFailedError('it still differs from the state before.');
+      startWorker(api, undefined, undefined, deliveries, { reviewGuard: guard });
+
+      await until(() => api.reports().length === 2);
+
+      expect(api.reports()[1]?.[2]).toMatchObject({
+        state: 'failed',
+        failure: { code: 'agent_failed', detail: expect.stringContaining('could not be restored') },
+      });
+      expect(deliveries.calls).toEqual([]);
+    });
+
+    it('does not start a review Phase on a worker without a guard', async () => {
+      const run = reviewRun(provider, 'Add a feature');
+      const api = new RecordingApi([run]);
+      const runner = new FakeRunner();
+      const started = vi.spyOn(runner, 'start');
+      startWorker(api, runner);
+
+      await until(() => api.reports().length === 2);
+
+      expect(api.reports()[1]?.[2]).toMatchObject({
+        state: 'failed',
+        failure: { code: 'agent_failed' },
+      });
+      expect(started).not.toHaveBeenCalled();
+    });
+
+    it('does not guard a work Phase, and drops a Verdict it reports', async () => {
+      const run: RunPayload = {
+        ...reviewRun(provider, 'Add a feature'),
+        phase: { position: 0, itemId: 'build', count: 2, final: false },
+      };
+      const api = new RecordingApi([run]);
+      const guard = new FakeReviewGuard();
+      const runner: Runner = {
+        // eslint-disable-next-line require-yield
+        start: async function* () {
+          return { outcome: 'done', summary: 'Built.', verdict: 'approved' } as const;
+        },
+        // eslint-disable-next-line require-yield
+        resume: async function* () {
+          return { outcome: 'done', summary: 'Built.' } as const;
+        },
+      };
+      startWorker(api, runner, undefined, new FakeDeliveries(), { reviewGuard: guard });
+
+      await until(() => api.reports().some(([kind]) => kind === 'step'));
+
+      expect(guard.calls).toEqual([]);
+      expect(api.reports().find(([kind]) => kind === 'step')?.[2]).toMatchObject({
+        result: { outcome: 'done', summary: 'Built.' },
+      });
+      expect(JSON.stringify(api.reports())).not.toContain('verdict');
+    });
+  });
+
+  it('hands on after changes requested only when Studio says the Workflow goes on', async () => {
+    const run = reviewRun('codex', 'Add a feature [fake-review:changes]', {
+      endsOnChangesRequested: false,
+    });
+    const api = new RecordingApi([run]);
+    const deliveries = new FakeDeliveries();
+    startWorker(api, undefined, undefined, deliveries, { reviewGuard: new FakeReviewGuard() });
+
+    await until(() => api.reports().length === 2);
+    await delay(30);
+
+    expect(deliveries.calls).toEqual([]);
   });
 });

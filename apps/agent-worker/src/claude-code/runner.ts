@@ -1,10 +1,10 @@
-import type { Provider } from '@agentic-studio/contracts';
+import type { Provider, RunPayload } from '@agentic-studio/contracts';
 import { randomBytes } from 'node:crypto';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
-import { AGENT_RESULT_JSON_SCHEMA } from '../agent-definition/index.js';
+import { AGENT_RESULT_JSON_SCHEMA, REVIEW_RESULT_JSON_SCHEMA } from '../agent-definition/index.js';
 import { GIT_TIMEOUTS, GitCommandError, type GitRunner } from '../git.js';
 import {
   AgentFailedError,
@@ -135,7 +135,8 @@ export class ClaudeCodeRunner implements Runner {
       settingsFile: guardrails.settingsFile,
       instructionsFile: files.instructionsFile,
       maxTurns: this.options.maxTurns,
-      jsonSchema: AGENT_RESULT_JSON_SCHEMA,
+      jsonSchema:
+        run.phase?.kind === 'review' ? REVIEW_RESULT_JSON_SCHEMA : AGENT_RESULT_JSON_SCHEMA,
       model: run.agent.model,
       ...(plugin.dir === null ? {} : { pluginDir: plugin.dir }),
       ...(sessionRef === undefined ? {} : { sessionRef }),
@@ -145,7 +146,15 @@ export class ClaudeCodeRunner implements Runner {
       tmpDir: files.tmpDir,
       composeProjectName: workspace.env.COMPOSE_PROJECT_NAME,
     });
-    return yield* this.execute(args, env, workspace.repoDir, processes, signal, run.agent.model);
+    return yield* this.execute(
+      args,
+      env,
+      workspace.repoDir,
+      processes,
+      signal,
+      run.agent.model,
+      run.phase,
+    );
   }
 
   private async *execute(
@@ -155,6 +164,7 @@ export class ClaudeCodeRunner implements Runner {
     processes: ProcessGroupRegistry,
     signal: AbortSignal,
     model: string,
+    phase: RunPayload['phase'],
   ): RunStep {
     const child = spawnProviderCli(
       this.options.cli,
@@ -173,7 +183,7 @@ export class ClaudeCodeRunner implements Runner {
     child.stderr?.setEncoding('utf8').on('data', (chunk: string) => {
       stderr = (stderr + chunk).slice(-STDERR_MAX);
     });
-    const stream = new ClaudeStream();
+    const stream = new ClaudeStream(phase);
     if (child.stdout) {
       for await (const line of createInterface({ input: child.stdout, crlfDelay: Infinity })) {
         for (const event of stream.accept(line)) yield event;

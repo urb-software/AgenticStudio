@@ -1,6 +1,6 @@
 import { runStepResultSchema } from '@agentic-studio/contracts';
 import { describe, expect, it } from 'vitest';
-import { AGENT_RESULT_JSON_SCHEMA } from '../agent-definition/index.js';
+import { AGENT_RESULT_JSON_SCHEMA, REVIEW_RESULT_JSON_SCHEMA } from '../agent-definition/index.js';
 
 // The schema carries no `$schema` and draft-07 keywords only: CLI 2.1.325 refuses draft 2020-12.
 
@@ -84,8 +84,17 @@ describe('the structured result JSON Schema (--json-schema)', () => {
     });
   });
 
-  it('describes only results the worker protocol accepts', () => {
+  it('describes only results the worker protocol accepts, a work step without the Verdict', () => {
     expect(Object.keys(schema.properties as object).sort()).toEqual(
+      Object.keys(runStepResultSchema.shape)
+        .filter((key) => !['sessionRef', 'verdict', 'findings'].includes(key))
+        .sort(),
+    );
+  });
+
+  it('describes for a review step every key the worker protocol accepts but the session', () => {
+    const review = JSON.parse(REVIEW_RESULT_JSON_SCHEMA) as { properties: object };
+    expect(Object.keys(review.properties).sort()).toEqual(
       Object.keys(runStepResultSchema.shape)
         .filter((key) => key !== 'sessionRef')
         .sort(),

@@ -9,7 +9,14 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { FakeRunner, fakeAgentLine, fakeScenarioOf, fakeSessionRef } from '../fake-runner.js';
+import {
+  FAKE_REVIEW_FINDINGS,
+  FakeRunner,
+  fakeAgentLine,
+  fakeReviewScenarioOf,
+  fakeScenarioOf,
+  fakeSessionRef,
+} from '../fake-runner.js';
 import { AgentFailedError, drainRunStep } from '../runner.js';
 import { agentFields } from './agent-fixtures.js';
 
@@ -479,5 +486,64 @@ describe('the fake runner in a Workflow Run', () => {
       (event) => events.push(event),
     );
     expect(plain).toMatchObject({ summary: 'The fake agent finished the task.' });
+  });
+});
+
+describe('the fake review Phase', () => {
+  const reviewing = async (task: string) => {
+    const base = run(task);
+    const phase = { position: 1, itemId: 'check', count: 2, kind: 'review' as const, final: true };
+    return drainRunStep(
+      new FakeRunner({ slowMs: 10, slowLineMs: 2 }).start({
+        run: { ...base, kind: 'next_phase', phase },
+        workspace,
+        signal: new AbortController().signal,
+        processes,
+      }),
+      () => undefined,
+    );
+  };
+
+  it.each([
+    ['Review it', 'approved'],
+    ['[fake-review:changes]', 'changes'],
+    ['[fake-review:none]', 'none'],
+    ['[fake-review:edits]', 'edits'],
+    ['[fake-review:question]', 'question'],
+    ['[fake-review:unknown]', 'approved'],
+    ['[fake:fail]', 'approved'],
+  ])('plays %s as the %s review', (task, scenario) => {
+    expect(fakeReviewScenarioOf(task)).toBe(scenario);
+  });
+
+  it('approves by default, with a Verdict and a session of its own', async () => {
+    const result = await reviewing('Add a feature');
+
+    expect(runStepResultSchema.parse(result)).toMatchObject({
+      outcome: 'done',
+      verdict: 'approved',
+      sessionRef: fakeSessionRef(run('x').runId, 1),
+    });
+    expect(result.pullRequest).toBeUndefined();
+  });
+
+  it('asks for changes with findings, one naming a file and one with markup in its text', async () => {
+    const result = await reviewing('Add a feature [fake-review:changes]');
+
+    expect(runStepResultSchema.parse(result)).toMatchObject({
+      verdict: 'changes_requested',
+      findings: FAKE_REVIEW_FINDINGS,
+    });
+  });
+
+  it('can end without a Verdict, and can ask a question', async () => {
+    expect(await reviewing('[fake-review:none]')).not.toHaveProperty('verdict');
+    expect(await reviewing('[fake-review:question]')).toMatchObject({ outcome: 'needs_input' });
+  });
+
+  it('a work Phase takes no part in a review marker', async () => {
+    const result = await start('Add a feature [fake-review:changes]');
+
+    expect(result.result).not.toHaveProperty('verdict');
   });
 });
