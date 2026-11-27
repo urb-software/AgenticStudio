@@ -31,7 +31,11 @@ import type { WorkerStatusData } from '../../../../domain/value-objects/worker-s
 import type { WorkerStatusStore } from '../../../ports/worker-status-store.js';
 import { FakeProjectKinds } from '../../../ports/__tests__/fake-project-kinds.js';
 import { SEQUENTIAL_PLANS } from '../../../ports/__tests__/fake-workflow-plans.js';
-import { StartRunHandler, WORKFLOW_ITEMS_NOT_SUPPORTED } from '../handler.js';
+import {
+  FIRST_ITEM_NOT_A_PHASE,
+  StartRunHandler,
+  WORKFLOW_ITEMS_NOT_SUPPORTED,
+} from '../handler.js';
 
 const PROJECT = '3f2b8c1e-4d5a-4b6c-9d7e-8f9a0b1c2d3e';
 const HEAD = 'd'.repeat(40);
@@ -398,21 +402,16 @@ describe('StartRunHandler', () => {
       expect(run.waiting).toBeNull();
     });
 
-    it('starts a Workflow whose first item is a Checkpoint waiting for the operator', async () => {
+    it('refuses a Workflow whose first item is a Checkpoint, starting nothing', async () => {
       workflows['flow'] = plan([
         { id: 'wait', kind: 'checkpoint', text: 'Ready to start?' },
         { id: 'build', kind: 'work', agent: 'coder' },
       ]);
 
-      const run = (await runs.findById((await startWith({ workflow: 'flow' })).id))!;
-
-      expect(run.lifecycle.state).toBe('waiting_for_operator');
-      expect(run.progress.waitingSince).toEqual(NOW);
-      expect(run.waiting).toEqual({
-        reason: 'checkpoint',
-        checkpoint: { id: 'wait', text: 'Ready to start?' },
-      });
-      expect(run.workingCopy).toBeNull();
+      await expect(startWith({ workflow: 'flow' })).rejects.toEqual(
+        new WorkflowNotUsableError(FIRST_ITEM_NOT_A_PHASE),
+      );
+      expect(runs.runs).toEqual([]);
     });
 
     it('refuses a Workflow whose Phase names an agent that cannot be used at its commit', async () => {

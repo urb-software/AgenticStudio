@@ -14,7 +14,6 @@ import {
   projectNotFound,
   providerUnavailable,
   repositoryNotReady,
-  startSlotTaken,
   workflowNotUsable,
   workflowUnknown,
 } from '../../shared/problems.js';
@@ -26,7 +25,6 @@ import {
   DefinitionsProjectRunError,
   RepositoryNotReadyError,
   RunProjectNotFoundError,
-  RunSlotTakenError,
   ProviderUnavailableError,
   InvalidTaskError,
   WorkflowNotUsableError,
@@ -56,10 +54,8 @@ export class StartRunEndpoint {
       'or its definition has problems ' +
       `(${EXECUTIONS_PROBLEM_TYPES.agentNotUsable}; reason: agent_not_usable), ` +
       `or no Workflow has the name (${EXECUTIONS_PROBLEM_TYPES.workflowUnknown}; reason: workflow_unknown), ` +
-      'or the Workflow cannot be used, for instance because it has problems or a review Phase ' +
-      `(${EXECUTIONS_PROBLEM_TYPES.workflowNotUsable}; reason: workflow_not_usable), ` +
-      'or the Workflow waits at a Checkpoint before its first Phase and another run of the ' +
-      `project is active (${EXECUTIONS_PROBLEM_TYPES.startSlotTaken})`,
+      'or the Workflow cannot be used, for instance because it has problems or a review Phase or starts with a Checkpoint ' +
+      `(${EXECUTIONS_PROBLEM_TYPES.workflowNotUsable}; reason: workflow_not_usable)`,
     422: 'Invalid request body (field errors), also for a request naming both an agent and a Workflow, a Workflow with a provider, no choice at all while the project has no default, or an agent of another provider than the one named',
   })
   async start(@Param('id') projectId: string, @Body() body: unknown) {
@@ -80,7 +76,6 @@ export class StartRunEndpoint {
       if (error instanceof ProviderUnavailableError) {
         throw providerUnavailable(error.reason, 'provider_disabled');
       }
-      if (error instanceof RunSlotTakenError) throw startSlotTaken();
       if (error instanceof WorkflowUnknownError) throw workflowUnknown();
       if (error instanceof WorkflowNotUsableError) throw workflowNotUsable(error.reason);
       if (error instanceof AgentUnknownError) throw agentUnknown();

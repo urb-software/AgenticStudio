@@ -11,12 +11,7 @@ export interface RunStartInput {
   /** The agent of the first Phase when `workflow` is set. */
   agent: RunAgentData;
   /** A Run of a Workflow: what it recorded, and the agent of each Phase in order. */
-  workflow?: {
-    record: RunWorkflowData;
-    phaseAgents: readonly RunAgentData[];
-    /** The place of a Checkpoint that comes before the first Phase: the Run waits there at once. */
-    startsAtCheckpoint?: number;
-  };
+  workflow?: { record: RunWorkflowData; phaseAgents: readonly RunAgentData[] };
   task: Task;
   startCommit: string;
   remoteUrl: string;

@@ -32,7 +32,7 @@ describe('the claims of a Run of a Workflow with a Checkpoint', () => {
   let handler: ClaimRunHandler;
   let runId: string;
 
-  const startRun = (record: RunWorkflowData, startsAtCheckpoint?: number) =>
+  const startRun = (record: RunWorkflowData) =>
     runs.start({
       projectId: PROJECT,
       provider: 'codex',
@@ -40,7 +40,6 @@ describe('the claims of a Run of a Workflow with a Checkpoint', () => {
       workflow: {
         record,
         phaseAgents: [phaseAgent('builder'), phaseAgent('polisher', 'claude_code')],
-        ...(startsAtCheckpoint === undefined ? {} : { startsAtCheckpoint }),
       },
       task: 'Add a health check',
       startCommit: 'a',
@@ -161,33 +160,6 @@ describe('the claims of a Run of a Workflow with a Checkpoint', () => {
       });
       expect(claimed).not.toHaveProperty('phase');
       expect(await handler.execute({ workerId: WORKER })).toBeNull();
-    });
-  });
-
-  describe('before the first Phase', () => {
-    it('starts the first Phase as a new Run once the operator continued, with the comment and no hand-over', async () => {
-      runId = (
-        await startRun(
-          {
-            ...WORKFLOW_RECORD,
-            items: [{ id: 'ready', kind: 'checkpoint', text: 'Ready?' }, ...PLAN_THEN_BUILD.items],
-          },
-          0,
-        )
-      ).id;
-      expect(await handler.execute({ workerId: WORKER })).toBeNull();
-      await runs.change(runId, (run) =>
-        run.continueFromCheckpoint({ kind: 'phase', position: 0 }, 'Take care.', T0),
-      );
-
-      const claimed = await handler.execute({ workerId: OTHER_WORKER });
-
-      expect(claimed).toMatchObject({
-        id: runId,
-        handOut: { kind: 'start' },
-        phase: { position: 0, itemId: 'plan', checkpointComment: 'Take care.' },
-      });
-      expect(claimed?.phase).not.toHaveProperty('previous');
     });
   });
 });

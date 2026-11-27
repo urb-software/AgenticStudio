@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import type { StartRunHandler } from '../../../../../application/features/start-run/handler.js';
 import {
   AgentNotChosenError,
-  RunSlotTakenError,
   WorkflowNotUsableError,
   WorkflowUnknownError,
 } from '../../../../../domain/errors/run-errors.js';
@@ -71,20 +70,6 @@ describe('POST /api/projects/:id/runs with a Workflow', () => {
       extensions: { reason: 'workflow_not_usable' },
     });
     expect(problem.problem.detail).toContain(reason);
-  });
-
-  it('answers 409 start_slot_taken when a Workflow that waits first meets an active Run of the project', async () => {
-    const { error } = await startWith(
-      { task: 'x', workflow: 'ship' },
-      new RunSlotTakenError('project'),
-    );
-
-    const problem = error as ProblemException;
-    expect(problem.getStatus()).toBe(HttpStatus.CONFLICT);
-    expect(problem.problem).toMatchObject({
-      type: 'urn:agentic-studio:problem:start-slot-taken',
-    });
-    expect(problem.problem.detail).toContain('Another run of this project is active');
   });
 
   it.each([

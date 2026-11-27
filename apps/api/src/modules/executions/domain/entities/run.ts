@@ -272,12 +272,7 @@ export class Run {
       ) {
         throw new TypeError('A Run records one agent per work Phase of its Workflow.');
       }
-      const first = planned.startsAtCheckpoint;
-      if (first !== undefined && record.items[first]?.kind !== 'checkpoint') {
-        throw new TypeError('A Run starts at a Checkpoint of its Workflow.');
-      }
     }
-    const waitingAt = input.workflow?.startsAtCheckpoint;
     return new Run({
       id: input.id,
       projectId: input.projectId,
@@ -305,15 +300,6 @@ export class Run {
       ...RunDelivery.start(input.integrationBranch).toData(),
       ...RunWorkerClaim.none().toData(),
       ...RunProgress.start(input.limits, input.now).toData(),
-      ...(waitingAt === undefined
-        ? {}
-        : {
-            state: 'waiting_for_operator' as const,
-            // The Workflow began: a waiting Run always has its start.
-            startedAt: input.now,
-            waitingSince: input.now,
-            checkpointItem: waitingAt,
-          }),
       messages: [],
       workingCopy: null,
       failingChecks: [],
@@ -617,11 +603,6 @@ export class Run {
       return;
     }
     this.lifecycle.assertTransitionTo('queued');
-    // A Phase that was never started begins as a new Run does; any other follows the Working copy.
-    if (next.position === this.currentPhase) {
-      this.apply({ state: 'queued', waitingSince: null, lastActivityAt: now });
-      return;
-    }
     this.queuePhase(next.position, this.claim.releasedBy);
   }
 
@@ -631,17 +612,6 @@ export class Run {
   }
 
   private endWorkflow(now: Date): void {
-    if (this.workingCopy === null) {
-      // No Phase ran, so there is nothing to deliver: the Run is over without a pull request.
-      this.lifecycle.assertTransitionTo('succeeded');
-      this.apply({
-        state: 'succeeded',
-        waitingSince: null,
-        finishedAt: now,
-        ...this.delivery.outcomePatch({ outcome: 'none' }),
-      });
-      return;
-    }
     this.lifecycle.assertTransitionTo('queued');
     this.apply({ state: 'queued', waitingSince: null, lastActivityAt: now });
     this.applyPosition({ phasePending: true, workflowEnded: true });
@@ -1410,7 +1380,7 @@ export class Run {
     const phase = PHASES.get(this)![this.currentPhase]!;
     if (state === 'running' && phase.state !== 'running') {
       this.updatePhase(phase.position, { state: 'running' });
-    } else if (state === 'succeeded' && phase.state === 'running') {
+    } else if (state === 'succeeded' && (phase.state === 'running' || phase.state === 'failed')) {
       this.updatePhase(phase.position, { state: 'done' });
     } else if (FAILED_END_STATES.includes(state) && phase.state === 'running') {
       this.updatePhase(phase.position, { state: 'failed' });
