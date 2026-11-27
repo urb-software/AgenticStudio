@@ -16,9 +16,15 @@ export interface ReadAgentsInput {
   name?: string;
   /** Also answers the agents a Run of this Project offers, and the one to preselect. */
   projectId?: string;
+  /** With a `name`: also names the workflows at the same commit that list the agent. */
+  workflowUsers?: boolean;
 }
 
 export interface ReadAgentsResult extends AgentsRead {
+  /** The workflows that list the agent in a phase, valid or not; empty unless asked for. */
+  usedByWorkflows: string[];
+  /** True when workflows beyond those read were not checked, so `usedByWorkflows` may be incomplete. */
+  usedByWorkflowsTruncated: boolean;
   /** Only with a `projectId`. */
   forRun?:
     | {
@@ -45,9 +51,19 @@ export class ReadAgentsHandler {
   ) {}
 
   async execute(input: ReadAgentsInput = {}): Promise<ReadAgentsResult> {
-    const result = await this.reader.read(input.name);
+    const read = await this.reader.read(input.name);
+    const result = { ...read, ...(await this.workflowUsers(input, read)) };
     if (input.projectId === undefined) return result;
     return { ...result, forRun: await this.offeredFor(input.projectId, result.agents) };
+  }
+
+  private async workflowUsers(input: ReadAgentsInput, read: AgentsRead) {
+    const none = { usedByWorkflows: [], usedByWorkflowsTruncated: false };
+    const agent = read.agents[0];
+    if (!input.workflowUsers || input.name === undefined || read.commit === null) return none;
+    if (agent?.source !== 'definitions') return none;
+    const { users, truncated } = await this.reader.workflowUsers(read.commit, input.name);
+    return { usedByWorkflows: users, usedByWorkflowsTruncated: truncated };
   }
 
   private async offeredFor(

@@ -1,4 +1,4 @@
-import type { Problem } from '@agentic-studio/agent-definitions';
+import type { Problem, Provider } from '@agentic-studio/agent-definitions';
 
 export const AGENT_RESOLUTION = Symbol('AGENT_RESOLUTION');
 
@@ -92,4 +92,29 @@ export interface AgentSkills {
   describe(names: readonly string[], commit: string): Promise<RunSkillDescriptionsRead>;
   /** The files of each named skill at `commit`, in the order of `names`, from Git only. */
   files(names: readonly string[], commit: string): Promise<RunSkillFilesRead>;
+}
+
+export const AGENT_STANDINGS = Symbol('AGENT_STANDINGS');
+
+/** What the definitions agents of a commit look like to a module that names them. */
+export interface DefinitionAgentStanding {
+  /** True when the agent's definition and the skills it names are all valid. */
+  valid: boolean;
+  /** `null` for an agent that is not valid. */
+  provider: Provider | null;
+}
+
+export interface DefinitionAgentStandings {
+  /** A definitions agent that exists, valid or not; a name that does not exist is absent. */
+  standings: ReadonlyMap<string, DefinitionAgentStanding>;
+  /** False after a transient read failure: the answer must not be kept for the commit. */
+  settled: boolean;
+}
+
+export interface AgentStandings {
+  /**
+   * The named definitions agents at `commit` (built-in agents are not definitions). An agent that
+   * cannot be judged counts as invalid, never as missing.
+   */
+  at(commit: string, names: readonly string[]): Promise<DefinitionAgentStandings>;
 }

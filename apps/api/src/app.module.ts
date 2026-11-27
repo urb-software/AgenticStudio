@@ -9,6 +9,7 @@ import {
   type ExecutionsModuleOptions,
 } from './modules/executions/executions.module.js';
 import { ProjectsModule, type ProjectsModuleOptions } from './modules/projects/projects.module.js';
+import { WorkflowsModule } from './modules/workflows/workflows.module.js';
 import { AuthModule } from './platform/auth/auth.module.js';
 import type { AppConfig } from './platform/config/config.js';
 import { ConfigModule } from './platform/config/config.module.js';
@@ -30,11 +31,18 @@ export class AppModule {
       environments?: EnvironmentsModuleOptions;
     } = {},
   ): DynamicModule {
-    // One instance each: `executions`, `environments` and `agents` import `projects`, and
-    // `executions` imports `environments` and `agents`, to reach their public contracts.
+    // One instance each: `executions`, `environments`, `agents` and `workflows` import `projects`;
+    // `executions` imports `environments` and `agents`, and `workflows` imports `agents` and
+    // `executions`, to reach their public contracts.
     const projects = ProjectsModule.register(options.projects);
     const agents = AgentsModule.register(projects);
     const environments = EnvironmentsModule.register(projects, options.environments);
+    const executions = ExecutionsModule.register(
+      projects,
+      environments,
+      agents,
+      options.executions,
+    );
     return {
       module: AppModule,
       imports: [
@@ -47,8 +55,9 @@ export class AppModule {
         AuthModule,
         projects,
         agents,
-        ExecutionsModule.register(projects, environments, agents, options.executions),
+        executions,
         environments,
+        WorkflowsModule.register(projects, agents, executions),
       ],
     };
   }

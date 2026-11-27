@@ -22,6 +22,16 @@ export const agentDetailResponseSchema = z
           .describe('Every file of the agent folder with its size in bytes; empty for a built-in.'),
       })
       .meta({ id: 'AgentDetailAgent' }),
+    usedByWorkflows: z
+      .array(z.string())
+      .describe(
+        'The workflows at the same commit whose sequence names this agent, valid or not, sorted by name.',
+      ),
+    usedByWorkflowsTruncated: z
+      .boolean()
+      .describe(
+        'True when workflows beyond those read were not checked: the list may be incomplete.',
+      ),
   })
   .meta({ id: 'AgentDetail' });
 
