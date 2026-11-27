@@ -2052,7 +2052,7 @@ test('a Workflow Run: the New run dialog, the Phases and the default card, in bo
     route.request().method() === 'GET' ? route.fulfill(answer([run])) : route.continue(),
   );
   await page.route(new RegExp(`/api/runs/${runId}$`), (route) => route.fulfill(answer(run)));
-  await page.route(new RegExp(`/api/runs/${runId}/events\?`), (route) =>
+  await page.route(new RegExp(`/api/runs/${runId}/events\\?`), (route) =>
     route.fulfill(answer({ events: [] })),
   );
   await page.route(new RegExp(`/api/runs/${runId}/steps$`), (route) =>
@@ -2065,7 +2065,7 @@ test('a Workflow Run: the New run dialog, the Phases and the default card, in bo
     for (const theme of ['light', 'dark']) {
       await page.evaluate((value) => localStorage.setItem('theme', value), theme);
       await page.reload();
-      await expect(page.locator('html')).toHaveClass(new RegExp(`(^|\s)${theme}(\s|$)`));
+      await expect(page.locator('html')).toHaveClass(new RegExp(`(^|\\s)${theme}(\\s|$)`));
       await scenario();
       await expectNoHorizontalScroll(page);
       await expectNoAxeViolations(page);
