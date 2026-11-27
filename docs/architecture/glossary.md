@@ -99,7 +99,7 @@ How a review Phase ends: approved, or changes requested with findings.
 _Avoid_: Result (a Run step ends with a result), approval (see Merge approval), score
 
 **Checkpoint**:
-A place in a Workflow where the Run waits for the operator, who continues or stops it and may add a comment for the next Phase.
+A place in a Workflow where the Run waits for the operator, who continues or stops it and may add a comment for the next Phase. Stopping delivers what exists, once; with no change the Run finishes without a pull request.
 _Avoid_: Gate, approval, pause
 
 ### `executions`

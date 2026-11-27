@@ -146,6 +146,10 @@ class FakeDeliveries implements DeliveryPort {
     this.onCall?.('commit');
     if (this.commitFailure) throw this.commitFailure;
   }
+  async keep(_prepared: PreparedRun, result: RunStepResult) {
+    this.calls.push(['keep', result.summary]);
+    this.onCall?.('keep');
+  }
   /** When set, delivering waits until it is aborted (a slow push). */
   deliverHangs = false;
   /** When set, delivering resolves only once this promise does. */
@@ -2318,6 +2322,7 @@ describe('AgentWorker', () => {
         const seen: RunPayload[] = [];
         const recording: DeliveryPort = {
           commit: (prepared, payload, result) => deliveries.commit(prepared, payload, result),
+          keep: (prepared, result) => deliveries.keep(prepared, result),
           deliver: (prepared, payload, result, signal) => {
             seen.push(payload);
             return deliveries.deliver(prepared, payload, result, signal);
@@ -2912,7 +2917,7 @@ describe('AgentWorker: a Run of a Workflow', () => {
   const messages = (api: RecordingApi) => api.events().map((event) => event.text);
 
   describe.each(PROVIDERS)('with %s', (provider) => {
-    it('hands the Working copy on after a Phase that is not the last: nothing is committed or delivered', async () => {
+    it('hands the Working copy on after a Phase that is not the last: nothing is committed or delivered, its result is kept', async () => {
       const run = phaseRun(provider, {
         phase: { position: 0, itemId: 'build', count: 2, final: false },
       });
@@ -2923,7 +2928,8 @@ describe('AgentWorker: a Run of a Workflow', () => {
       await until(() => api.reportsWithDiffs().length === 3);
       await delay(30);
 
-      expect(deliveries.calls).toEqual([]);
+      // Kept, so that a delivery after a Checkpoint can write the pull request from it.
+      expect(deliveries.calls.map(([step]) => step)).toEqual(['keep']);
       // The diffs go before the step that ends the Phase, which releases the Run; no state follows.
       expect(api.reportsWithDiffs().map(([kind]) => kind)).toEqual(['state', 'diff', 'step']);
       expect(api.reports().map(([kind]) => kind)).toEqual(['state', 'step']);

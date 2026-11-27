@@ -254,6 +254,12 @@ model Run {
   /// A Workflow Run whose next Phase has not been claimed yet: queued, it holds its place and goes
   /// only to the worker that holds its Working copy, like an answered Run does.
   phasePending                  Boolean              @default(false) @map("phase_pending")
+  /// The place, among workflow_items, of the Checkpoint the Run waits at; set only while the Run is
+  /// waiting_for_operator (a CHECK keeps that), and null while it waits for an Answer.
+  checkpointItem                Int?                 @map("checkpoint_item")
+  /// The operator stopped at a Checkpoint, or continued past the last one: the Workflow is over and
+  /// the Run, queued, is handed out only to deliver what exists.
+  workflowEnded                 Boolean              @default(false) @map("workflow_ended")
   /// Issue #141: how many Follow-ups the operator sent to the Run.
   followUpCount                 Int                  @default(0) @map("follow_up_count")
   /// Issue #141: the Run is queued for a Follow-up its agent worker has not claimed yet. Unlike an
@@ -355,6 +361,9 @@ model RunPhase {
   /// The summary the Phase's last Run step reported (redacted): what the next Phase is told and
   /// the Run page shows. Null until a Run step of the Phase is done.
   summary           String?
+  /// What the operator wrote on "Continue" at the Checkpoint before the Phase: untrusted text the
+  /// Phase is told after its instructions. Null when there was none.
+  checkpointComment String?   @map("checkpoint_comment")
   /// The agent's name, `built_in` | `definitions` (a CHECK holds the list and that agent_commit is
   /// set exactly for `definitions`), the definitions Repository's commit, the Provider, the model
   /// the definition named and the instructions' text. Treated like the task: never logged in full.

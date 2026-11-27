@@ -31,6 +31,7 @@ export const EXECUTIONS_PROBLEM_TYPES = {
   stepOutOfOrder: 'urn:agentic-studio:problem:step-out-of-order',
   deliveryNotRetryable: 'urn:agentic-studio:problem:delivery-not-retryable',
   runNotWaiting: 'urn:agentic-studio:problem:run-not-waiting',
+  runNotAtCheckpoint: 'urn:agentic-studio:problem:run-not-at-checkpoint',
   runNotResumable: 'urn:agentic-studio:problem:run-not-resumable',
   resumeSlotTaken: 'urn:agentic-studio:problem:resume-slot-taken',
   followUpNotAllowed: 'urn:agentic-studio:problem:follow-up-not-allowed',
@@ -560,5 +561,16 @@ export function runNotWaiting(state: string): ProblemException {
     type: EXECUTIONS_PROBLEM_TYPES.runNotWaiting,
     title: 'Run not waiting for an answer',
     detail: NOT_WAITING_DETAILS[state] ?? 'The run is not waiting for an answer.',
+  });
+}
+
+/** 409 `not_at_checkpoint`: the Run does not wait at a Checkpoint, or not at the one named. */
+export function runNotAtCheckpoint(): ProblemException {
+  return new ProblemException(HttpStatus.CONFLICT, {
+    type: EXECUTIONS_PROBLEM_TYPES.runNotAtCheckpoint,
+    title: 'Run not at a Checkpoint',
+    detail:
+      'The run is not waiting at this Checkpoint: it may have gone on already, or been cancelled.',
+    extensions: { reason: 'not_at_checkpoint' },
   });
 }

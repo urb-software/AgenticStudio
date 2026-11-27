@@ -2020,7 +2020,7 @@
             }
           },
           "409": {
-            "description": "The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: run), or the project's repository is missing or not ready (urn:agentic-studio:problem:repository-not-ready), or the provider is switched off on the agent worker or no agent worker is connected (urn:agentic-studio:problem:provider-unavailable; reason: provider_disabled), or no agent has the name (urn:agentic-studio:problem:agent-unknown; reason: agent_unknown), or its definition has problems (urn:agentic-studio:problem:agent-not-usable; reason: agent_not_usable), or no Workflow has the name (urn:agentic-studio:problem:workflow-unknown; reason: workflow_unknown), or the Workflow cannot be used, for instance because it has problems or a review Phase or Checkpoint (urn:agentic-studio:problem:workflow-not-usable; reason: workflow_not_usable)",
+            "description": "The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: run), or the project's repository is missing or not ready (urn:agentic-studio:problem:repository-not-ready), or the provider is switched off on the agent worker or no agent worker is connected (urn:agentic-studio:problem:provider-unavailable; reason: provider_disabled), or no agent has the name (urn:agentic-studio:problem:agent-unknown; reason: agent_unknown), or its definition has problems (urn:agentic-studio:problem:agent-not-usable; reason: agent_not_usable), or no Workflow has the name (urn:agentic-studio:problem:workflow-unknown; reason: workflow_unknown), or the Workflow cannot be used, for instance because it has problems or a review Phase or starts with a Checkpoint (urn:agentic-studio:problem:workflow-not-usable; reason: workflow_not_usable)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2384,6 +2384,168 @@
           },
           "409": {
             "description": "The run is not waiting for an answer (urn:agentic-studio:problem:run-not-waiting)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request body (field errors)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/runs/{runId}/checkpoint/continue": {
+      "post": {
+        "operationId": "continueRunFromCheckpoint",
+        "parameters": [
+          {
+            "name": "runId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContinueFromCheckpointRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run_Output"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown run (urn:agentic-studio:problem:run-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The run does not wait at a Checkpoint (urn:agentic-studio:problem:run-not-at-checkpoint; reason: not_at_checkpoint)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request body (field errors), also for a comment of more than 4,000 characters",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (RFC 9457 problem details)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "summary": "",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/runs/{runId}/checkpoint/stop": {
+      "post": {
+        "operationId": "stopRunAtCheckpoint",
+        "parameters": [
+          {
+            "name": "runId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StopAtCheckpointRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run_Output"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown run (urn:agentic-studio:problem:run-not-found)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The run does not wait at a Checkpoint (urn:agentic-studio:problem:run-not-at-checkpoint; reason: not_at_checkpoint)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6481,6 +6643,10 @@
           "question": {
             "$ref": "#/components/schemas/RunQuestion_Output"
           },
+          "waiting": {
+            "description": "Only while the Run is waiting_for_operator: for an answer, or at a Checkpoint.",
+            "$ref": "#/components/schemas/RunWaiting_Output"
+          },
           "messages": {
             "type": "array",
             "items": {
@@ -7160,6 +7326,41 @@
         ],
         "additionalProperties": false
       },
+      "RunWaiting_Output": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "enum": [
+              "question",
+              "checkpoint"
+            ]
+          },
+          "checkpoint": {
+            "description": "Only for the reason `checkpoint`.",
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "The id of the Checkpoint among the items of the Workflow."
+              },
+              "text": {
+                "type": "string",
+                "description": "What the Checkpoint tells the operator, plain text."
+              }
+            },
+            "required": [
+              "id",
+              "text"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "additionalProperties": false
+      },
       "RunMessage_Output": {
         "type": "object",
         "properties": {
@@ -7330,6 +7531,35 @@
         "required": [
           "text"
         ],
+        "additionalProperties": false
+      },
+      "ContinueFromCheckpointRequest": {
+        "type": "object",
+        "properties": {
+          "comment": {
+            "description": "A note for the next Phase, given to the agent as untrusted text.",
+            "type": "string",
+            "maxLength": 4000
+          },
+          "checkpoint": {
+            "description": "The id of the Checkpoint the operator saw; another one is refused as not_at_checkpoint, so a repeated request cannot pass the next Checkpoint.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "additionalProperties": false
+      },
+      "StopAtCheckpointRequest": {
+        "type": "object",
+        "properties": {
+          "checkpoint": {
+            "description": "The id of the Checkpoint the operator saw; another one is refused as not_at_checkpoint.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
         "additionalProperties": false
       },
       "FollowUpRunRequest": {

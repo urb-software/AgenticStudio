@@ -34,6 +34,10 @@ export interface RunData
   workflow?: RunWorkflowData | null;
   /** A Workflow Run whose next Phase has not been claimed yet. */
   phasePending?: boolean;
+  /** The place, among the Workflow's items, of the Checkpoint the Run waits at; `null` for none. */
+  checkpointItem?: number | null;
+  /** The Workflow is over and the Run is queued only to deliver what exists. */
+  workflowEnded?: boolean;
   task: string;
   startCommit: string;
   /** Never a credential. */

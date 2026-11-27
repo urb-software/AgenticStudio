@@ -71,7 +71,11 @@ const LIST_FIELDS = {
   currentPhase: true,
   workflowName: true,
   workflowCommit: true,
+  // A list shows where a Run waits, which needs the recorded items.
+  workflowItems: true,
   phasePending: true,
+  checkpointItem: true,
+  workflowEnded: true,
   phases: { select: PHASE_LIST_FIELDS, orderBy: { position: 'asc' } },
   task: true,
   state: true,
@@ -133,9 +137,13 @@ const LIST_FIELDS = {
 
 const RUN_FIELDS = {
   ...LIST_FIELDS,
-  workflowItems: true,
   phases: {
-    select: { ...PHASE_LIST_FIELDS, agentInstructions: true, summary: true },
+    select: {
+      ...PHASE_LIST_FIELDS,
+      agentInstructions: true,
+      summary: true,
+      checkpointComment: true,
+    },
     orderBy: { position: 'asc' },
   },
   messages: {
@@ -166,6 +174,7 @@ interface PhaseRow {
   state: string;
   /** Left out of a list of Runs. */
   summary?: string | null;
+  checkpointComment?: string | null;
   agentName: string;
   agentSource: string;
   agentCommit: string | null;
@@ -186,9 +195,10 @@ interface RunRow {
   currentPhase: number;
   workflowName: string | null;
   workflowCommit: string | null;
-  /** Left out of a list of Runs. */
-  workflowItems?: Prisma.JsonValue;
+  workflowItems: Prisma.JsonValue;
   phasePending: boolean;
+  checkpointItem: number | null;
+  workflowEnded: boolean;
   phases: PhaseRow[];
   task: string;
   state: string;
@@ -340,6 +350,7 @@ function toPhaseData(phase: PhaseRow): RunPhaseData {
     state: phase.state as RunPhaseState,
     sessionRef: phase.sessionRef,
     summary: phase.summary ?? null,
+    checkpointComment: phase.checkpointComment ?? null,
     agent: {
       name: phase.agentName,
       // The CHECK constraint keeps the list; the Run's own check judges the rest.
@@ -354,21 +365,11 @@ function toPhaseData(phase: PhaseRow): RunPhaseData {
   };
 }
 
-/**
- * The recorded Workflow of a Run; a list of Runs does not read the items, so they are rebuilt from
- * the Phases (their ids and agents), which is all a list shows.
- */
+/** The recorded Workflow of a Run. */
 function toWorkflow(row: RunRow): RunWorkflowData | null {
   if (row.workflowName === null || row.workflowCommit === null) return null;
-  const items =
-    row.workflowItems === undefined
-      ? row.phases.map((phase): RunWorkflowItem => ({
-          id: phase.itemId ?? '',
-          kind: 'work',
-          agent: phase.agentName,
-        }))
-      : // Written by Studio from a validated plan.
-        (row.workflowItems as unknown as RunWorkflowItem[]);
+  // Written by Studio from a validated plan.
+  const items = row.workflowItems as unknown as RunWorkflowItem[];
   return { name: row.workflowName, commit: row.workflowCommit, items };
 }
 
@@ -403,6 +404,8 @@ function toRun(row: RunRow): Run {
     currentPhase: row.currentPhase,
     workflow: toWorkflow(row),
     phasePending: row.phasePending,
+    checkpointItem: row.checkpointItem,
+    workflowEnded: row.workflowEnded,
     task: row.task,
     state: row.state as RunState,
     startCommit: row.startCommit,
@@ -591,6 +594,8 @@ const CHANGED_COLUMNS: {
   currentPhase: (currentPhase) => ({ currentPhase: currentPhase! }),
   provider: (provider) => ({ provider: provider! }),
   phasePending: (phasePending) => ({ phasePending: phasePending! }),
+  checkpointItem: (checkpointItem) => ({ checkpointItem: checkpointItem! }),
+  workflowEnded: (workflowEnded) => ({ workflowEnded: workflowEnded! }),
   // Saved on the Phases.
   phaseUpdates: () => ({}),
 };
@@ -918,6 +923,9 @@ export class PrismaRunRepository implements RunRepository {
           ...(update.state === undefined ? {} : { state: update.state }),
           ...(update.summary === undefined ? {} : { summary: update.summary }),
           ...(update.sessionRef === undefined ? {} : { sessionRef: update.sessionRef }),
+          ...(update.checkpointComment === undefined
+            ? {}
+            : { checkpointComment: update.checkpointComment }),
         },
       });
     }

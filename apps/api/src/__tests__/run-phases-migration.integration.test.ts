@@ -296,6 +296,7 @@ describe('the migration that gives every Run a Phase (PostgreSQL via Testcontain
           kind: string;
           state: string;
           summary: string | null;
+          checkpoint_comment: string | null;
         }[]
       >`SELECT * FROM run_phases WHERE run_id = ${id}::uuid`;
       expect(phases).toEqual([
@@ -317,6 +318,8 @@ describe('the migration that gives every Run a Phase (PostgreSQL via Testcontain
           kind: 'work',
           state: expect.stringMatching(/^(pending|running|done|failed)$/),
           summary: null,
+          // Added by the Checkpoint migration.
+          checkpoint_comment: null,
         },
       ]);
 

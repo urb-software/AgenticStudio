@@ -120,6 +120,8 @@ export class InMemoryRunRepository implements RunRepository {
       currentPhase: run.currentPhase,
       workflow: run.workflow === null ? null : run.workflow.toData(),
       phasePending: false,
+      checkpointItem: null,
+      workflowEnded: false,
       task: run.task,
       startCommit: run.startCommit,
       remoteUrl: run.remoteUrl,

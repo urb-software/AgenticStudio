@@ -19,5 +19,7 @@ export interface RunPhaseData {
   sessionRef?: string | null;
   /** What the Phase's last Run step reported as its summary (redacted); `null` before one. */
   summary?: string | null;
+  /** What the operator wrote at the Checkpoint before the Phase: untrusted; `null` for none. */
+  checkpointComment?: string | null;
   stepsUsed: number;
 }

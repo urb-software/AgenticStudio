@@ -558,6 +558,9 @@ export class AgentWorker {
             if (!(error instanceof DeliveryFailedError)) throw error;
             commitFailure = error;
           });
+      } else if (handsOn) {
+        // A Checkpoint may follow: the operator may then ask for a delivery of what exists.
+        await this.options.deliveries.keep(prepared, result);
       }
       const workingCopy = await this.options.workingCopies.report(prepared, abort.signal);
       const sendStep = () =>
@@ -723,7 +726,10 @@ export class AgentWorker {
     );
     await outbox.drain();
     if (outbox.lost) logger.error(`Run ${run.runId} is no longer held by this worker.`);
-    else logger.info(`Run ${run.runId} delivered on retry: ${delivery.outcome}.`);
+    else
+      logger.info(
+        `Run ${run.runId} delivery finished (a retry, or a stop at a Checkpoint): ${delivery.outcome}.`,
+      );
   }
 
   /**

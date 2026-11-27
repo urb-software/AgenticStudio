@@ -9,7 +9,13 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { FakeRunner, fakeAgentLine, fakeScenarioOf, fakeSessionRef } from '../fake-runner.js';
+import {
+  FakeRunner,
+  fakeAgentLine,
+  fakePhaseLines,
+  fakeScenarioOf,
+  fakeSessionRef,
+} from '../fake-runner.js';
 import { AgentFailedError, drainRunStep } from '../runner.js';
 import { agentFields } from './agent-fixtures.js';
 
@@ -441,6 +447,16 @@ describe('the fake runner in a Workflow Run', () => {
         'fake runner: told by phase build: Built it.',
       ]),
     );
+  });
+
+  it('logs the note the operator wrote at a Checkpoint, also for a first Phase', () => {
+    const first = { position: 0, itemId: 'build', count: 2, final: false };
+
+    expect(fakePhaseLines({ phase: { ...first, checkpointComment: 'Take care.' } })).toEqual([
+      'fake runner: phase build (1/2)',
+      'fake runner: told by the operator: Take care.',
+    ]);
+    expect(fakePhaseLines({ phase: first })).toEqual(['fake runner: phase build (1/2)']);
   });
 
   it('gives each Phase a session of its own, the first one the Run always had', () => {

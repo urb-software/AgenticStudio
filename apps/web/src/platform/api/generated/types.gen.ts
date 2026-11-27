@@ -769,6 +769,10 @@ export type RunOutput = {
     resumable?: true;
     failingChecks?: Array<string>;
     question?: RunQuestionOutput;
+    /**
+     * Only while the Run is waiting_for_operator: for an answer, or at a Checkpoint.
+     */
+    waiting?: RunWaitingOutput;
     messages?: Array<RunMessageOutput>;
 };
 
@@ -958,6 +962,23 @@ export type RunQuestionOutput = {
     recommendation?: string;
 };
 
+export type RunWaitingOutput = {
+    reason: 'question' | 'checkpoint';
+    /**
+     * Only for the reason `checkpoint`.
+     */
+    checkpoint?: {
+        /**
+         * The id of the Checkpoint among the items of the Workflow.
+         */
+        id: string;
+        /**
+         * What the Checkpoint tells the operator, plain text.
+         */
+        text: string;
+    };
+};
+
 export type RunMessageOutput = {
     role: 'operator' | 'agent' | 'studio';
     kind: 'task' | 'question' | 'answer' | 'follow_up' | 'part_end';
@@ -991,6 +1012,24 @@ export type CancelRunResponseOutput = {
 
 export type AnswerRunRequest = {
     text: string;
+};
+
+export type ContinueFromCheckpointRequest = {
+    /**
+     * A note for the next Phase, given to the agent as untrusted text.
+     */
+    comment?: string;
+    /**
+     * The id of the Checkpoint the operator saw; another one is refused as not_at_checkpoint, so a repeated request cannot pass the next Checkpoint.
+     */
+    checkpoint?: string;
+};
+
+export type StopAtCheckpointRequest = {
+    /**
+     * The id of the Checkpoint the operator saw; another one is refused as not_at_checkpoint.
+     */
+    checkpoint?: string;
 };
 
 export type FollowUpRunRequest = {
@@ -2702,7 +2741,7 @@ export type StartRunErrors = {
      */
     404: ProblemDetails;
     /**
-     * The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: run), or the project's repository is missing or not ready (urn:agentic-studio:problem:repository-not-ready), or the provider is switched off on the agent worker or no agent worker is connected (urn:agentic-studio:problem:provider-unavailable; reason: provider_disabled), or no agent has the name (urn:agentic-studio:problem:agent-unknown; reason: agent_unknown), or its definition has problems (urn:agentic-studio:problem:agent-not-usable; reason: agent_not_usable), or no Workflow has the name (urn:agentic-studio:problem:workflow-unknown; reason: workflow_unknown), or the Workflow cannot be used, for instance because it has problems or a review Phase or Checkpoint (urn:agentic-studio:problem:workflow-not-usable; reason: workflow_not_usable)
+     * The project is the definitions Repository (urn:agentic-studio:problem:definitions-project; refused: run), or the project's repository is missing or not ready (urn:agentic-studio:problem:repository-not-ready), or the provider is switched off on the agent worker or no agent worker is connected (urn:agentic-studio:problem:provider-unavailable; reason: provider_disabled), or no agent has the name (urn:agentic-studio:problem:agent-unknown; reason: agent_unknown), or its definition has problems (urn:agentic-studio:problem:agent-not-usable; reason: agent_not_usable), or no Workflow has the name (urn:agentic-studio:problem:workflow-unknown; reason: workflow_unknown), or the Workflow cannot be used, for instance because it has problems or a review Phase or starts with a Checkpoint (urn:agentic-studio:problem:workflow-not-usable; reason: workflow_not_usable)
      */
     409: ProblemDetails;
     /**
@@ -2896,6 +2935,78 @@ export type AnswerRunResponses = {
      */
     202: unknown;
 };
+
+export type ContinueRunFromCheckpointData = {
+    body?: ContinueFromCheckpointRequest;
+    path: {
+        runId: string;
+    };
+    query?: never;
+    url: '/api/runs/{runId}/checkpoint/continue';
+};
+
+export type ContinueRunFromCheckpointErrors = {
+    /**
+     * Unknown run (urn:agentic-studio:problem:run-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * The run does not wait at a Checkpoint (urn:agentic-studio:problem:run-not-at-checkpoint; reason: not_at_checkpoint)
+     */
+    409: ProblemDetails;
+    /**
+     * Invalid request body (field errors), also for a comment of more than 4,000 characters
+     */
+    422: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type ContinueRunFromCheckpointError = ContinueRunFromCheckpointErrors[keyof ContinueRunFromCheckpointErrors];
+
+export type ContinueRunFromCheckpointResponses = {
+    202: RunOutput;
+};
+
+export type ContinueRunFromCheckpointResponse = ContinueRunFromCheckpointResponses[keyof ContinueRunFromCheckpointResponses];
+
+export type StopRunAtCheckpointData = {
+    body?: StopAtCheckpointRequest;
+    path: {
+        runId: string;
+    };
+    query?: never;
+    url: '/api/runs/{runId}/checkpoint/stop';
+};
+
+export type StopRunAtCheckpointErrors = {
+    /**
+     * Unknown run (urn:agentic-studio:problem:run-not-found)
+     */
+    404: ProblemDetails;
+    /**
+     * The run does not wait at a Checkpoint (urn:agentic-studio:problem:run-not-at-checkpoint; reason: not_at_checkpoint)
+     */
+    409: ProblemDetails;
+    /**
+     * Invalid request body (field errors)
+     */
+    422: ProblemDetails;
+    /**
+     * Error (RFC 9457 problem details)
+     */
+    default: ProblemDetails;
+};
+
+export type StopRunAtCheckpointError = StopRunAtCheckpointErrors[keyof StopRunAtCheckpointErrors];
+
+export type StopRunAtCheckpointResponses = {
+    202: RunOutput;
+};
+
+export type StopRunAtCheckpointResponse = StopRunAtCheckpointResponses[keyof StopRunAtCheckpointResponses];
 
 export type ResumeRunData = {
     body?: never;
