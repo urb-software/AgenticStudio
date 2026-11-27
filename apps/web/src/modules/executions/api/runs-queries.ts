@@ -236,6 +236,35 @@ export function useAnswerRun(runId: string) {
   });
 }
 
+/** A 409 (the Run is no longer at that Checkpoint) reads the Run again at once. */
+function useCheckpointAction<Request>(
+  runId: string,
+  send: (runId: string, request: Request) => Promise<RunOutput>,
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: Request) => send(runId, request),
+    onSuccess: (run) => {
+      // The answer is the Run as it now stands: show it without waiting for the next poll.
+      queryClient.setQueryData(runKey(runId), run);
+      return queryClient.invalidateQueries({ queryKey: RUNS_KEY });
+    },
+    onError: async (error: unknown) => {
+      if (error instanceof ApiError && error.status === 409) {
+        await queryClient.invalidateQueries({ queryKey: runKey(runId) });
+      }
+    },
+  });
+}
+
+export function useContinueRun(runId: string) {
+  return useCheckpointAction(runId, api.continueRunFromCheckpoint);
+}
+
+export function useStopRun(runId: string) {
+  return useCheckpointAction(runId, api.stopRunAtCheckpoint);
+}
+
 /** A 409 (the Run cannot take one now) reads the Run again at once, so the page says why. */
 export function useFollowUpRun(runId: string) {
   const queryClient = useQueryClient();

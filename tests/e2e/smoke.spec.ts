@@ -2105,3 +2105,149 @@ test('a Workflow Run: the New run dialog, the Phases and the default card, in bo
   });
   expect(foreign, 'a request left the Studio origin').toEqual([]);
 });
+
+// A Run waiting at a Checkpoint in the browser, with routed API answers: the card with the
+// Checkpoint text and the report of the Phase before, long names and a long report, the Stop
+// confirmation and the Runs list marker, in both themes, no sideways scroll, axe clean.
+test('a Run waiting at a Checkpoint: the card, the Stop confirmation and the Runs list, in both themes', async ({
+  page,
+}, testInfo) => {
+  const checkpointId = `look-${'c'.repeat(58)}`;
+  const phaseId = `plan-${'p'.repeat(59)}`;
+  const runId = '00000000-0000-4000-8000-0000000000c2';
+  const commit = EDITOR_SHA;
+  const report = `${'The agent planned the endpoint and wrote the tests. '.repeat(30)}${'u'.repeat(120)}`;
+  const text = `Read the plan before the build starts. ${'It is long on purpose. '.repeat(20)}`;
+
+  await signIn(page);
+  await createAndOpenProject(page, `Checkpoint runs ${testInfo.project.name}`);
+  const projectId = /\/projects\/([0-9a-f-]{36})$/.exec(page.url())![1]!;
+
+  const agent = (name: string) => ({
+    name,
+    source: 'definitions',
+    commit,
+    provider: 'claude_code',
+    model: 'default',
+    skills: [],
+  });
+  let run: Record<string, unknown> = {
+    id: runId,
+    projectId,
+    provider: 'claude_code',
+    agent: agent('builder'),
+    workflowName: 'plan-then-build',
+    workflow: {
+      name: 'plan-then-build',
+      commit,
+      items: [
+        { id: phaseId, kind: 'work', agent: 'planner' },
+        { id: checkpointId, kind: 'checkpoint', text },
+        { id: 'build', kind: 'work', agent: 'builder' },
+      ],
+    },
+    phases: [
+      {
+        position: 0,
+        itemId: phaseId,
+        state: 'done',
+        summary: report,
+        agent: agent('planner'),
+        stepsUsed: 1,
+      },
+      {
+        position: 1,
+        itemId: 'build',
+        state: 'pending',
+        summary: null,
+        agent: agent('builder'),
+        stepsUsed: 0,
+      },
+    ],
+    waiting: { reason: 'checkpoint', checkpoint: { id: checkpointId, text } },
+    task: 'Plan, wait for me, build',
+    state: 'waiting_for_operator',
+    startCommit: commit,
+    createdAt: '2026-11-27T09:00:00.000Z',
+    startedAt: '2026-11-27T09:00:05.000Z',
+    environmentFileSupplied: false,
+    limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
+    steps: { used: 1, usedInPart: 1 },
+    followUps: 0,
+    messages: [
+      {
+        role: 'operator',
+        kind: 'task',
+        text: 'Plan, wait for me, build',
+        at: '2026-11-27T09:00:00.000Z',
+      },
+    ],
+  };
+  const answer = (body: unknown) => ({
+    contentType: 'application/json',
+    body: JSON.stringify(body),
+  });
+  const sent: unknown[] = [];
+  await page.route(new RegExp(`/api/projects/${projectId}/runs$`), (route) =>
+    route.request().method() === 'GET' ? route.fulfill(answer([run])) : route.continue(),
+  );
+  await page.route(new RegExp(`/api/runs/${runId}$`), (route) => route.fulfill(answer(run)));
+  await page.route(new RegExp(`/api/runs/${runId}/events\\?`), (route) =>
+    route.fulfill(answer({ events: [] })),
+  );
+  await page.route(new RegExp(`/api/runs/${runId}/steps$`), (route) =>
+    route.fulfill(answer({ steps: [] })),
+  );
+  await page.route(new RegExp(`/api/runs/${runId}/checkpoint/continue$`), (route) => {
+    sent.push(route.request().postDataJSON());
+    const { waiting: _waiting, ...rest } = run;
+    void _waiting;
+    run = { ...rest, state: 'queued' };
+    return route.fulfill({ status: 202, ...answer(run) });
+  });
+  const foreign = watchForeignRequests(page);
+
+  // Each scenario runs once per theme, after a reload, then is scanned.
+  async function inBothThemes(scenario: () => Promise<void>) {
+    for (const theme of ['light', 'dark']) {
+      await page.evaluate((value) => localStorage.setItem('theme', value), theme);
+      await page.reload();
+      await expect(page.locator('html')).toHaveClass(new RegExp(`(^|\\s)${theme}(\\s|$)`));
+      await scenario();
+      await expectNoHorizontalScroll(page);
+      await expectNoAxeViolations(page);
+    }
+  }
+
+  // The Runs list marks the Run at its Checkpoint, apart from one waiting for an answer.
+  await page.goto(`/projects/${projectId}`);
+  const main = page.getByRole('main', { name: 'Page content' });
+  await inBothThemes(async () => {
+    const list = main.getByRole('region', { name: 'Runs' }).getByRole('list', { name: 'Runs' });
+    await expect(list.getByText('At Checkpoint')).toBeVisible();
+  });
+
+  await page.goto(`/executions/${runId}`);
+  await inBothThemes(async () => {
+    const card = main.getByRole('region', { name: 'Your Workflow is waiting for you' });
+    await expect(card).toContainText('Read the plan before the build starts.');
+    await expect(card.getByTestId('run-checkpoint-report')).toContainText('u'.repeat(120));
+    await expect(card.getByRole('button', { name: 'Continue' })).toBeEnabled();
+    // The Stop confirmation opens and closes from the keyboard.
+    await card.getByRole('button', { name: 'Stop here' }).click();
+    const dialog = page.getByRole('alertdialog', { name: 'Stop here' });
+    await expect(dialog.getByRole('button', { name: 'Stop here and deliver' })).toBeVisible();
+    await expectNoAxeViolations(page);
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+  });
+
+  // Continue with a note: it is sent with the Checkpoint it names, and the card goes.
+  await page.reload();
+  const card = main.getByRole('region', { name: 'Your Workflow is waiting for you' });
+  await card.getByRole('textbox', { name: 'Note for the next Phase (optional)' }).fill('Go on.');
+  await card.getByRole('button', { name: 'Continue' }).click();
+  await expect(card).toHaveCount(0);
+  expect(sent).toEqual([{ comment: 'Go on.', checkpoint: checkpointId }]);
+  expect(foreign, 'a request left the Studio origin').toEqual([]);
+});

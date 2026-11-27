@@ -11,6 +11,7 @@ import {
   SearchXIcon,
   TriangleAlertIcon,
 } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { type ReactNode, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
@@ -48,6 +49,9 @@ import { RunSkills } from './run-skills';
 import { RunPhases } from './run-phases';
 import { RunPullRequest } from './run-pull-request';
 import { ResumeRun } from './run-resume';
+
+// Only a Run waiting at a Checkpoint shows the card, so it stays out of the first load.
+const RunCheckpoint = dynamic(() => import('./run-checkpoint').then((m) => m.RunCheckpoint));
 
 /** The Run page's tabs: its log and what it changed. */
 const RUN_TABS = [
@@ -404,6 +408,15 @@ export function RunDetail({ runId }: { runId: string }) {
       ) : null}
       {run.question && run.state === 'waiting_for_operator' ? (
         <AnswerQuestion run={run} question={run.question} />
+      ) : null}
+      {run.waiting?.reason === 'checkpoint' &&
+      run.waiting.checkpoint &&
+      run.state === 'waiting_for_operator' ? (
+        <RunCheckpoint
+          run={run}
+          checkpoint={run.waiting.checkpoint}
+          onShowChanges={() => setTab('changes')}
+        />
       ) : null}
       {run.state === 'queued' ? <QueuedReason run={run} /> : null}
       {run.failure ? <Failure failure={run.failure} /> : null}
