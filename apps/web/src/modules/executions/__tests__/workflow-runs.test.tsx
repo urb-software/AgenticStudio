@@ -3,8 +3,22 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ProjectRuns, RunDetail } from '..';
-import { summary } from '../../workflows/__tests__/fake-workflows-api';
+import type { WorkflowSummaryOutput } from '../../../platform/api';
 import { aRun, fakeRunsApi, problem, PROJECT } from './fake-runs-api';
+
+/** A valid Workflow as the list answers it. */
+const summary = (
+  name: string,
+  overrides: Partial<WorkflowSummaryOutput> = {},
+): WorkflowSummaryOutput => ({
+  name,
+  description: `Does ${name}`,
+  valid: true,
+  usable: true,
+  notUsableReason: null,
+  problems: [],
+  ...overrides,
+});
 
 const push = vi.hoisted(() => vi.fn());
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }));
