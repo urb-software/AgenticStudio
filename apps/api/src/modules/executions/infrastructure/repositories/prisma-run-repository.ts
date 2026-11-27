@@ -698,7 +698,11 @@ export class PrismaRunRepository implements RunRepository {
         state: run.lifecycle.state,
         ...(run.checkpointItem === null
           ? {}
-          : { checkpointItem: run.checkpointItem, waitingSince: run.progress.waitingSince }),
+          : {
+              checkpointItem: run.checkpointItem,
+              startedAt: run.lifecycle.startedAt,
+              waitingSince: run.progress.waitingSince,
+            }),
         limitStepMinutes: run.progress.limits.stepMinutes,
         limitMaxSteps: run.progress.limits.maxSteps,
         limitWaitingDays: run.progress.limits.waitingDays,

@@ -132,7 +132,7 @@ export class InMemoryRunRepository implements RunRepository {
       integrationBranch: run.delivery.integrationBranch,
       state: run.lifecycle.state,
       createdAt: new Date(Date.UTC(2026, 10, 15, 10, 0, this.sequence++)),
-      startedAt: null,
+      startedAt: run.lifecycle.startedAt,
       finishedAt: null,
       failure: null,
       claimedBy: null,
