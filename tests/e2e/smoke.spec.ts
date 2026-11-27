@@ -1830,3 +1830,108 @@ test('the skills view lists skills with their state, opens a detail, in both the
   );
   expect(foreign, 'a request left the Studio origin').toEqual([]);
 });
+
+test('the workflows view lists Workflows with their state and draws the diagram, in both themes', async ({
+  page,
+}) => {
+  const ship = {
+    name: 'ship',
+    description: 'Build, then review',
+    valid: true,
+    usable: true,
+    notUsableReason: null,
+    problems: [],
+  };
+  const slow = {
+    name: 'slow',
+    description: 'Needs Codex',
+    valid: true,
+    usable: false,
+    notUsableReason: 'The phase "check" uses Codex, which is not available: Switched off.',
+    problems: [],
+  };
+  const broken = {
+    name: 'broken',
+    description: null,
+    valid: false,
+    usable: false,
+    notUsableReason: null,
+    problems: [
+      {
+        code: 'checkpoint_first',
+        path: 'WORKFLOW.md',
+        key: 'sequence',
+        message: 'A checkpoint cannot come first.',
+      },
+    ],
+  };
+  const repository = { state: 'ready', note: null };
+  const phase = (kind: string, id: string, agent: string, provider: string) => ({
+    kind,
+    id,
+    agent,
+    agentState: 'valid',
+    provider,
+    usable: true,
+  });
+  await page.route('**/api/workflows', (route) =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        commit: EDITOR_SHA,
+        repository,
+        truncated: false,
+        workflows: [broken, ship, slow],
+      }),
+    }),
+  );
+  await page.route('**/api/workflows/ship', (route) =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        commit: EDITOR_SHA,
+        repository,
+        ...ship,
+        sendBacks: 2,
+        items: [
+          phase('work', 'build', 'implementer', 'claude_code'),
+          { kind: 'checkpoint', id: 'ask', text: 'Look <b>first</b>' },
+          phase('review', 'check', 'reviewer', 'codex'),
+          phase('review', 'second-look', 'reviewer', 'codex'),
+        ],
+      }),
+    }),
+  );
+  const foreign = watchForeignRequests(page);
+
+  await signIn(page);
+  await page.goto('/workflows');
+  const card = page.getByRole('region', { name: 'Workflows' });
+  await expect(card.getByText('Not valid')).toBeVisible();
+  await expect(card.getByText('A checkpoint cannot come first.')).toBeVisible();
+  await expect(card.getByText(/The phase "check" uses Codex/)).toBeVisible();
+  await expect(card.getByRole('link', { name: /^Open in editor \(ship\)/ })).toHaveAttribute(
+    'href',
+    '/agents/editor?path=workflows%2Fship%2FWORKFLOW.md',
+  );
+
+  await card.getByRole('button', { name: 'Show ship' }).click();
+  const order = card.getByRole('list', { name: 'Phases and checkpoints in order' });
+  await expect(order.getByRole('listitem')).toHaveCount(4);
+  await expect(order.getByRole('link', { name: 'implementer' })).toHaveAttribute(
+    'href',
+    '/agents?open=implementer',
+  );
+  await expect(order.getByText('Look <b>first</b>')).toBeVisible();
+  await expect(
+    order.getByText('Changes requested go back to build, at most 2 times.').first(),
+  ).toBeVisible();
+  await expectInBothThemes(page, page.getByRole('region', { name: 'Workflows' }));
+
+  // A link from an agent opens its Workflow without a click.
+  await page.goto('/workflows?open=ship');
+  await expect(
+    page.getByRole('list', { name: 'Phases and checkpoints in order' }).getByRole('listitem'),
+  ).toHaveCount(4);
+  expect(foreign, 'a request left the Studio origin').toEqual([]);
+});
