@@ -733,6 +733,19 @@ export type RunOutput = {
      */
     workflow?: RunWorkflowOutput | null;
     /**
+     * How often review findings went back to the work Phase; null for a Run with an agent.
+     */
+    sendBacks?: {
+        /**
+         * The send-backs the Run used since it started its Workflow.
+         */
+        used: number;
+        /**
+         * The most send-backs the Workflow allows, 0 to 2.
+         */
+        limit: number;
+    } | null;
+    /**
      * A review Phase asked for changes: the Workflow ended as "review not passed".
      */
     reviewNotPassed: boolean;
@@ -855,6 +868,10 @@ export type RunPhaseOutput = {
         skills: Array<string>;
     };
     /**
+     * Each time the Phase ran, oldest first: a send-back runs it again. A Phase that ran once has one round, a Phase not reached none.
+     */
+    rounds: Array<RunPhaseRoundOutput>;
+    /**
      * The Run steps taken in the Phase.
      */
     stepsUsed: number;
@@ -870,6 +887,25 @@ export type RunPhaseFindingOutput = {
      */
     file?: string;
     line?: number;
+};
+
+export type RunPhaseRoundOutput = {
+    /**
+     * 1 the first time the Phase ran, then 2, 3, …
+     */
+    round: number;
+    /**
+     * What the Phase reported at the end of the round, plain text; null for none.
+     */
+    summary: string | null;
+    /**
+     * The Verdict a review Phase gave in the round; null for a work Phase.
+     */
+    verdict: 'approved' | 'changes_requested' | null;
+    /**
+     * What the review found in the round.
+     */
+    findings: Array<RunPhaseFindingOutput>;
 };
 
 export type RunWorkflowOutput = {

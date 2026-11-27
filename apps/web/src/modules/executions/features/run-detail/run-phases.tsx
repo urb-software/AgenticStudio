@@ -1,14 +1,28 @@
 import { FlagIcon } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import { Fragment } from 'react';
 import { StatusPill } from '@/shared/components/status-pill';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/card';
 import type { RunOutput } from '../../../../platform/api';
-import { isWorkingCopyPath } from '../../components/finding-path';
 import { PROVIDER_LABEL } from '../../components/run-presentation';
+import { FindingItem } from './finding-item';
+
+// Only a Run whose review sent work back has Phases with rounds, so they stay out of the first load.
+const PhaseRounds = dynamic(() => import('./phase-rounds'));
 
 type Phase = NonNullable<RunOutput['phases']>[number];
 type PhaseState = Phase['state'];
-type Finding = Phase['findings'][number];
+
+/**
+ * Whether a Phase shows its rounds one by one: it ran more than once, or a send-back moved its
+ * last result to the rounds and the next round has none yet.
+ */
+function showsRounds(phase: Phase): boolean {
+  return (
+    phase.rounds.length > 1 ||
+    (phase.rounds.length === 1 && phase.summary === null && phase.verdict === null)
+  );
+}
 
 /** Each Phase state as a pill: the word is always shown, so colour is never the only signal. */
 const PHASE_STATE: Record<
@@ -27,57 +41,6 @@ const VERDICT_VIEW = {
 } as const;
 
 /**
- * One finding of a review: the reviewer's text as plain text (never Markdown or HTML), and the
- * file and line it names. A file leads to the Changes tab only when it is a relative path inside
- * the Working copy; any other is shown as text and never opened.
- */
-function FindingItem({
-  finding,
-  onShowFile,
-}: {
-  finding: Finding;
-  onShowFile: ((path: string) => void) | undefined;
-}) {
-  const { file, line } = finding;
-  const leads = file !== undefined && onShowFile !== undefined && isWorkingCopyPath(file);
-  return (
-    <li data-testid="run-finding" className="flex min-w-0 flex-col gap-0.5">
-      {file !== undefined ? (
-        <span className="text-small text-text-muted">
-          {leads ? (
-            <button
-              type="button"
-              onClick={() => onShowFile(file)}
-              className="cursor-pointer border-0 bg-transparent p-0 text-left font-mono text-code break-all text-brand underline hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring pointer-coarse:min-h-11"
-            >
-              {file}
-              <span className="sr-only"> (show it on the Changes tab)</span>
-            </button>
-          ) : (
-            <span data-testid="run-finding-file" className="font-mono text-code break-all">
-              {file}
-            </span>
-          )}
-          {line !== undefined ? (
-            <span className="font-mono text-code">
-              <span aria-hidden="true">:</span>
-              <span className="sr-only"> line </span>
-              {line}
-            </span>
-          ) : null}
-        </span>
-      ) : null}
-      <span
-        data-testid="run-finding-text"
-        className="min-w-0 text-small break-words whitespace-pre-wrap text-text"
-      >
-        {finding.text}
-      </span>
-    </li>
-  );
-}
-
-/**
  * The Phases of a Run started with a Workflow, in order: which one works, and each one's agent
  * and what it reported. What a Phase reported, a review's Verdict and its findings are the
  * agents' own text, shown as plain text. `onShowFile` leads a finding's file to the Changes tab.
@@ -89,7 +52,7 @@ export function RunPhases({
   run: RunOutput;
   onShowFile?: (path: string) => void;
 }) {
-  const { phases, workflow } = run;
+  const { phases, workflow, sendBacks } = run;
   if (!workflow || !phases || phases.length === 0) return null;
   // The Checkpoints sit between the Phases, in the order of the Workflow.
   const checkpointsBefore = (position: number) => {
@@ -108,6 +71,11 @@ export function RunPhases({
         </CardTitle>
       </CardHeader>
       <CardContent>
+        {sendBacks ? (
+          <p data-testid="run-send-backs" className="m-0 mb-3 text-small text-text-muted">
+            Send-backs used: {sendBacks.used} of {sendBacks.limit}
+          </p>
+        ) : null}
         <ol className="m-0 flex list-none flex-col gap-3 p-0">
           {phases.map((phase) => {
             const view = PHASE_STATE[phase.state];
@@ -165,7 +133,10 @@ export function RunPhases({
                       {phase.stepsUsed} {phase.stepsUsed === 1 ? 'run step' : 'run steps'}
                     </span>
                   </div>
-                  {phase.summary ? (
+                  {showsRounds(phase) ? (
+                    <PhaseRounds phase={phase} onShowFile={onShowFile} />
+                  ) : null}
+                  {!showsRounds(phase) && phase.summary ? (
                     <p
                       data-testid="run-phase-summary"
                       className="m-0 text-small break-words whitespace-pre-wrap text-text-muted"
@@ -173,7 +144,7 @@ export function RunPhases({
                       {phase.summary}
                     </p>
                   ) : null}
-                  {phase.findings.length > 0 ? (
+                  {!showsRounds(phase) && phase.findings.length > 0 ? (
                     <section
                       aria-label={`Findings of ${phase.itemId}`}
                       className="flex flex-col gap-1.5"

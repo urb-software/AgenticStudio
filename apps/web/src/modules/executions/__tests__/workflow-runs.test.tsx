@@ -159,6 +159,7 @@ describe('Run page: the Phases of a Workflow Run', () => {
     verdict: null,
     findings: [],
     summary: null as string | null,
+    rounds: [],
     agent: {
       name: ['builder', 'polisher'][position]!,
       source: 'definitions' as const,
@@ -268,6 +269,7 @@ describe('Run page: the Verdict and findings of a review Phase', () => {
           verdict: null,
           findings: [],
           summary: 'Built the endpoint.',
+          rounds: [],
           agent: {
             name: 'builder',
             source: 'definitions',
@@ -286,6 +288,7 @@ describe('Run page: the Verdict and findings of a review Phase', () => {
           verdict,
           findings,
           summary: 'Looked at it.',
+          rounds: [],
           agent: {
             name: 'reviewer',
             source: 'definitions',
@@ -455,5 +458,296 @@ describe('Runs list: the Workflow of a Run', () => {
     const [first, second] = within(list).getAllByRole('listitem');
     expect(first!.textContent).toContain('Workflow ship');
     expect(second!.textContent).not.toContain('Workflow');
+  });
+});
+
+describe('Run page: the rounds of a Run whose review sent work back', () => {
+  const FINDINGS = [
+    { text: 'The loop never ends.', file: 'src/loop.ts', line: 12 },
+    { text: '<img src=x onerror=alert(1)> and **not bold**.' },
+    { text: 'Leaves the copy.', file: '../outside/secret.txt' },
+  ];
+  const agent = (name: string, provider: 'codex' | 'claude_code') => ({
+    name,
+    source: 'definitions' as const,
+    commit: 'c'.repeat(40),
+    provider,
+    model: 'default',
+    skills: [] as string[],
+  });
+  type Round = {
+    round: number;
+    summary: string | null;
+    verdict: 'approved' | 'changes_requested' | null;
+    findings: { text: string; file?: string; line?: number }[];
+  };
+
+  /** The Workflow of a work Phase and a review, with what each reported in each round. */
+  const roundsRun = (
+    work: { summary: string | null; rounds: Round[]; state?: 'done' | 'running' | 'pending' },
+    review: {
+      summary: string | null;
+      verdict: 'approved' | 'changes_requested' | null;
+      findings: { text: string; file?: string; line?: number }[];
+      rounds: Round[];
+      state?: 'done' | 'running' | 'pending';
+    },
+    sendBacks: { used: number; limit: number } | null = { used: 1, limit: 2 },
+  ) =>
+    aRun({
+      state: 'running',
+      workflowName: 'ship',
+      sendBacks,
+      workflow: {
+        name: 'ship',
+        commit: 'c'.repeat(40),
+        items: [
+          { id: 'build', kind: 'work', agent: 'builder' },
+          { id: 'check', kind: 'review', agent: 'reviewer' },
+        ],
+      },
+      phases: [
+        {
+          position: 0,
+          itemId: 'build',
+          kind: 'work',
+          state: work.state ?? 'done',
+          verdict: null,
+          findings: [],
+          summary: work.summary,
+          rounds: work.rounds,
+          agent: agent('builder', 'codex'),
+          stepsUsed: 2,
+        },
+        {
+          position: 1,
+          itemId: 'check',
+          kind: 'review',
+          state: review.state ?? 'done',
+          verdict: review.verdict,
+          findings: review.findings,
+          summary: review.summary,
+          rounds: review.rounds,
+          agent: agent('reviewer', 'claude_code'),
+          stepsUsed: 2,
+        },
+      ],
+    });
+
+  /** One send-back, then approved: both Phases ran twice. */
+  const twoRounds = () =>
+    roundsRun(
+      {
+        summary: 'Fixed the loop.',
+        rounds: [
+          { round: 1, summary: 'Built the endpoint.', verdict: null, findings: [] },
+          { round: 2, summary: 'Fixed the loop.', verdict: null, findings: [] },
+        ],
+      },
+      {
+        summary: 'Looks right now.',
+        verdict: 'approved',
+        findings: [],
+        rounds: [
+          {
+            round: 1,
+            summary: 'The loop is wrong.',
+            verdict: 'changes_requested',
+            findings: FINDINGS,
+          },
+          { round: 2, summary: 'Looks right now.', verdict: 'approved', findings: [] },
+        ],
+      },
+    );
+
+  const renderRun = (runId: string) =>
+    render(
+      <QueryClientProvider client={client()}>
+        <RunDetail runId={runId} />
+      </QueryClientProvider>,
+    );
+
+  it('says how many send-backs were used out of the limit', async () => {
+    const run = twoRounds();
+    fakeRunsApi([run]);
+    renderRun(run.id);
+
+    const card = await screen.findByRole('region', { name: 'Phases of ship' });
+    expect(within(card).getByTestId('run-send-backs').textContent).toBe('Send-backs used: 1 of 2');
+  });
+
+  it('shows each review with its Verdict and findings, and what the work Phase reported after them', async () => {
+    const run = twoRounds();
+    fakeRunsApi([run]);
+    renderRun(run.id);
+
+    const card = await screen.findByRole('region', { name: 'Phases of ship' });
+    const [work, review] = within(card).getAllByTestId('run-phase');
+    const workRounds = await within(work!).findAllByTestId('run-phase-round');
+    expect(workRounds.map((item) => item.textContent)).toEqual([
+      'Round 1Built the endpoint.',
+      'Round 2Fixed the loop.',
+    ]);
+    const reviewRounds = await within(review!).findAllByTestId('run-phase-round');
+    expect(reviewRounds).toHaveLength(2);
+    expect(reviewRounds[0]!.textContent).toContain('Verdict: Changes requested');
+    expect(within(reviewRounds[0]!).getAllByTestId('run-finding')).toHaveLength(3);
+    expect(reviewRounds[1]!.textContent).toContain('Verdict: Approved');
+    // The latest result is in its round, not shown a second time on top.
+    expect(within(work!).queryByTestId('run-phase-summary')).toBeNull();
+    expect(within(review!).queryByTestId('run-phase-summary')).toBeNull();
+  });
+
+  it('shows a finding as plain text, never as markup', async () => {
+    const run = twoRounds();
+    fakeRunsApi([run]);
+    renderRun(run.id);
+
+    const card = await screen.findByRole('region', { name: 'Phases of ship' });
+    await within(card).findAllByTestId('run-phase-round');
+    const texts = within(card)
+      .getAllByTestId('run-finding-text')
+      .map((element) => element.textContent);
+    expect(texts[1]).toBe('<img src=x onerror=alert(1)> and **not bold**.');
+    expect(card.querySelector('img, a, strong, b')).toBeNull();
+    expect(
+      within(card)
+        .getAllByTestId('run-finding-file')
+        .map((element) => element.textContent),
+    ).toEqual(['../outside/secret.txt']);
+  });
+
+  it('shows the findings that went back while the work Phase is working on the next round', async () => {
+    const run = roundsRun(
+      {
+        summary: null,
+        state: 'running',
+        rounds: [{ round: 1, summary: 'Built the endpoint.', verdict: null, findings: [] }],
+      },
+      {
+        summary: null,
+        verdict: null,
+        findings: [],
+        state: 'pending',
+        rounds: [
+          {
+            round: 1,
+            summary: 'The loop is wrong.',
+            verdict: 'changes_requested',
+            findings: FINDINGS,
+          },
+        ],
+      },
+    );
+    fakeRunsApi([run]);
+    renderRun(run.id);
+
+    const card = await screen.findByRole('region', { name: 'Phases of ship' });
+    const [work, review] = within(card).getAllByTestId('run-phase');
+    const workRounds = await within(work!).findAllByTestId('run-phase-round');
+    expect(workRounds.map((item) => item.textContent)).toEqual([
+      'Round 1Built the endpoint.',
+      'Round 2Working now',
+    ]);
+    const reviewRounds = await within(review!).findAllByTestId('run-phase-round');
+    expect(reviewRounds[0]!.textContent).toContain('Changes requested');
+    expect(within(reviewRounds[0]!).getAllByTestId('run-finding')).toHaveLength(3);
+    expect(reviewRounds[1]!.textContent).toBe('Round 2Waiting for its turn');
+    await expect(document.body).toHaveNoAxeViolations();
+  });
+
+  it('shows a Phase that ran once as it always did, with no rounds, and the count of none used', async () => {
+    const run = roundsRun(
+      {
+        summary: 'Built the endpoint.',
+        rounds: [{ round: 1, summary: 'Built the endpoint.', verdict: null, findings: [] }],
+      },
+      {
+        summary: 'Fine.',
+        verdict: 'approved',
+        findings: [],
+        rounds: [{ round: 1, summary: 'Fine.', verdict: 'approved', findings: [] }],
+      },
+      { used: 0, limit: 2 },
+    );
+    fakeRunsApi([run]);
+    renderRun(run.id);
+
+    const card = await screen.findByRole('region', { name: 'Phases of ship' });
+    expect(within(card).getByTestId('run-send-backs').textContent).toBe('Send-backs used: 0 of 2');
+    expect(within(card).queryByTestId('run-phase-round')).toBeNull();
+    expect(within(card).getAllByTestId('run-phase-summary')).toHaveLength(2);
+  });
+
+  it('shows "review not passed" after the last round with the limit used', async () => {
+    const run = {
+      ...roundsRun(
+        {
+          summary: 'Tried again.',
+          rounds: [
+            { round: 1, summary: 'Built.', verdict: null, findings: [] },
+            { round: 2, summary: 'Tried again.', verdict: null, findings: [] },
+            { round: 3, summary: 'Tried once more.', verdict: null, findings: [] },
+          ],
+        },
+        {
+          summary: 'Still wrong.',
+          verdict: 'changes_requested',
+          findings: [{ text: 'Still open.' }],
+          rounds: [
+            { round: 1, summary: 'Wrong.', verdict: 'changes_requested', findings: FINDINGS },
+            { round: 2, summary: 'Wrong.', verdict: 'changes_requested', findings: FINDINGS },
+            {
+              round: 3,
+              summary: 'Still wrong.',
+              verdict: 'changes_requested',
+              findings: [{ text: 'Still open.' }],
+            },
+          ],
+        },
+        { used: 2, limit: 2 },
+      ),
+      state: 'succeeded' as const,
+      reviewNotPassed: true,
+    };
+    fakeRunsApi([run]);
+    renderRun(run.id);
+
+    const card = await screen.findByRole('region', { name: 'Phases of ship' });
+    expect(within(card).getByTestId('run-send-backs').textContent).toBe('Send-backs used: 2 of 2');
+    const [, review] = within(card).getAllByTestId('run-phase');
+    expect(await within(review!).findAllByTestId('run-phase-round')).toHaveLength(3);
+    expect(within(card).getByTestId('review-not-passed')).toBeTruthy();
+  });
+
+  it('leaves the rounds out of a Run started with an agent, and has no send-back line for it', async () => {
+    const run = aRun({ state: 'running' });
+    fakeRunsApi([run]);
+    renderRun(run.id);
+
+    await screen.findByRole('heading', { level: 1 });
+    expect(screen.queryByTestId('run-send-backs')).toBeNull();
+    expect(screen.queryByTestId('run-phase-round')).toBeNull();
+  });
+
+  it('can be reached with the keyboard alone: a finding in a round leads to the Changes tab', async () => {
+    const run = twoRounds();
+    const api = fakeRunsApi([run]);
+    api.setDiff(run.id, 'run', {
+      baseCommit: 'a'.repeat(40),
+      includesUnpushed: true,
+      truncated: false,
+      files: [{ path: 'src/loop.ts', status: 'modified', additions: 2, deletions: 1 }],
+    });
+    renderRun(run.id);
+
+    const button = await screen.findByRole('button', { name: /show it on the Changes tab/ });
+    button.focus();
+    expect(document.activeElement).toBe(button);
+    await userEvent.keyboard('{Enter}');
+
+    expect(
+      (await screen.findByRole('tab', { name: 'Changes' })).getAttribute('aria-selected'),
+    ).toBe('true');
   });
 });

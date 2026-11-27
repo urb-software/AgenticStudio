@@ -577,6 +577,13 @@ export const zRunPhaseFindingOutput = z.object({
     line: z.int().gt(0).lte(9007199254740991).optional()
 });
 
+export const zRunPhaseRoundOutput = z.object({
+    round: z.int().gte(1).lte(9007199254740991),
+    summary: z.string().nullable(),
+    verdict: z.enum(['approved', 'changes_requested']).nullable(),
+    findings: z.array(zRunPhaseFindingOutput)
+});
+
 export const zRunPhaseOutput = z.object({
     position: z.int().gte(0).lte(9007199254740991),
     itemId: z.string().nullable(),
@@ -598,6 +605,7 @@ export const zRunPhaseOutput = z.object({
         model: z.string(),
         skills: z.array(z.string())
     }),
+    rounds: z.array(zRunPhaseRoundOutput),
     stepsUsed: z.int().gte(0).lte(9007199254740991)
 });
 
@@ -844,6 +852,10 @@ export const zRunOutput = z.object({
     phases: z.array(zRunPhaseOutput).optional(),
     workflowName: z.string().nullable(),
     workflow: zRunWorkflowOutput.nullish(),
+    sendBacks: z.object({
+        used: z.int().gte(0).lte(9007199254740991),
+        limit: z.int().gte(0).lte(2)
+    }).nullish(),
     reviewNotPassed: z.boolean(),
     task: z.string(),
     state: z.enum([
