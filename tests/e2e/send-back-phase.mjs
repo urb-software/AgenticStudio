@@ -171,7 +171,7 @@ export async function runSendBackPhase({ call, projectId }) {
   );
 
   // A review followed by a Checkpoint: an approval hands on to it, and the Run waits there.
-  const looked = await start('Add a file [fake:commit] [fake-review:approved]', 'review-then-look');
+  const looked = await start('Add a file [fake:dirty] [fake-review:approved]', 'review-then-look');
   const waiting = await until(
     () => read(looked),
     (run) => run.state === 'waiting_for_operator' || FINAL_STATES.includes(run.state),
