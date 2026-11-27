@@ -45,6 +45,7 @@ import { RunCommits, RunDelivery } from './run-delivery';
 import { RunFollowUp } from './run-follow-up';
 import { RunAgentInstructions } from './run-agent-instructions';
 import { RunSkills } from './run-skills';
+import { RunPhases } from './run-phases';
 import { RunPullRequest } from './run-pull-request';
 import { ResumeRun } from './run-resume';
 
@@ -198,7 +199,11 @@ function RunAgain({ run }: { run: RunOutput }) {
       </Button>
       <NewRunDialog
         projectId={run.projectId}
-        initialValues={{ task: run.task, agent: run.agent.name }}
+        initialValues={
+          run.workflowName === null
+            ? { task: run.task, agent: run.agent.name }
+            : { task: run.task, workflow: run.workflowName }
+        }
         open={open}
         onOpenChange={setOpen}
       />
@@ -410,6 +415,8 @@ export function RunDetail({ runId }: { runId: string }) {
         <RunFollowUp run={run} followUp={run.followUp} />
       ) : null}
 
+      <RunPhases run={run} />
+
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[2fr_1fr]">
         {/* Once the agent asked, the Task leads the conversation. */}
         {run.messages && run.messages.length > 1 ? (
@@ -430,6 +437,14 @@ export function RunDetail({ runId }: { runId: string }) {
           </CardHeader>
           <CardContent>
             <dl className="m-0 flex flex-col gap-3.5">
+              {run.workflow ? (
+                <Fact term="Workflow">
+                  <span className="font-mono text-code break-all">{run.workflow.name}</span>
+                  <span className="block text-small text-text-muted">
+                    At commit {run.workflow.commit.slice(0, 8)}
+                  </span>
+                </Fact>
+              ) : null}
               <Fact term="Agent">
                 <span className="font-mono text-code break-all">{run.agent.name}</span>
                 <span className="block text-small text-text-muted">

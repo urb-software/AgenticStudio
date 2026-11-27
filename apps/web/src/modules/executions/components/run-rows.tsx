@@ -72,6 +72,18 @@ export function RunRows({ runs, now, label, projectNames }: RunRowsProps) {
             </Link>
             <span className="col-span-2 row-start-3 flex min-w-0 flex-wrap gap-x-3 text-small text-text-muted md:col-span-1 md:col-start-3 md:row-start-1 md:flex-nowrap">
               <span>{PROVIDER_LABEL[run.provider]}</span>
+              {run.workflowName ? (
+                // A Run of a Workflow names it; a Run with an agent shows nothing here.
+                <span>
+                  <span>Workflow </span>
+                  <span
+                    className="inline-block max-w-[24ch] truncate align-bottom font-mono text-code"
+                    title={run.workflowName}
+                  >
+                    {run.workflowName}
+                  </span>
+                </span>
+              ) : null}
               {/* The model the agent named when the Run started; `default` is the CLI's own. */}
               <span>
                 <span>Model </span>

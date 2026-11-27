@@ -113,7 +113,11 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
           <MergeMethodCard projectId={projectId} mergeMethod={data.mergeMethod} />
         )}
         {definitions ? null : (
-          <DefaultAgentCard projectId={projectId} defaultAgent={data.defaultAgent} />
+          <DefaultAgentCard
+            projectId={projectId}
+            defaultAgent={data.defaultAgent}
+            defaultWorkflow={data.defaultWorkflow}
+          />
         )}
       </div>
       {/* The executions module owns the Runs section; this screen only composes it. */}

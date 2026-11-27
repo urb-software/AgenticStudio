@@ -48,7 +48,9 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   REVIEWER_ASSET,
+  HELPER_FILE,
   REVIEWER_FILE,
+  TWO_PHASES_FILE,
   REVIEWER_SCRIPT,
   runAgentPhase,
   SKILL_FILE,
@@ -215,6 +217,8 @@ async function createAgentFixtures(root) {
     'agents/reviewer/scripts/check.sh': { executable: REVIEWER_SCRIPT },
     'agents/reviewer/assets/logo.bin': REVIEWER_ASSET,
     [`skills/${SKILL_NAME}/SKILL.md`]: SKILL_FILE,
+    'agents/helper/AGENT.md': HELPER_FILE,
+    'workflows/two-phases/WORKFLOW.md': TWO_PHASES_FILE,
   });
   return {
     codeUrl: code.url,

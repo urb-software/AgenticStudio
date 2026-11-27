@@ -40,9 +40,9 @@ function renderDetail(project: ProjectOutput = PROJECT) {
   );
 }
 
-const card = () => screen.findByRole('region', { name: 'Default agent' });
+const card = () => screen.findByRole('region', { name: 'Default agent or Workflow' });
 const select = (region: HTMLElement) =>
-  within(region).getByRole<HTMLSelectElement>('combobox', { name: 'Agent offered first' });
+  within(region).getByRole<HTMLSelectElement>('combobox', { name: 'Offered first' });
 const saveButton = (region: HTMLElement) =>
   within(region).getByRole('button', { name: 'Save default agent' });
 
@@ -96,7 +96,7 @@ describe('Default agent card', () => {
     await userEvent.selectOptions(select(region), 'reviewer');
     await userEvent.click(saveButton(region));
 
-    expect(await screen.findByText('Default agent saved')).toBeTruthy();
+    expect(await screen.findByText('Default saved')).toBeTruthy();
     expect(api.calls('setDefaultAgent')).toEqual([
       expect.objectContaining({ body: { agent: 'reviewer' } }),
     ]);
@@ -148,7 +148,7 @@ describe('Default agent card', () => {
 
     expect(await within(region).findByText('No project has this id.')).toBeTruthy();
     expect(select(region).value).toBe('default-codex');
-    expect(screen.queryByText('Default agent saved')).toBeNull();
+    expect(screen.queryByText('Default saved')).toBeNull();
     await expect(document.body).toHaveNoAxeViolations();
   });
 
@@ -173,7 +173,53 @@ describe('Default agent card', () => {
 
     await screen.findByRole('heading', { level: 1, name: 'Acme Shop' });
 
-    expect(screen.queryByRole('region', { name: 'Default agent' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Default agent or Workflow' })).toBeNull();
     expect(api.calls('runAgents')).toHaveLength(0);
+  });
+
+  it('offers the usable Workflows in a group of their own, and saves a Workflow as the default', async () => {
+    const api = fakeProjectApi(PROJECT);
+    api.state.workflows = [
+      { name: 'ship', description: 'Builds and polishes', usable: true },
+      { name: 'broken', description: null, usable: false },
+    ];
+    renderDetail();
+    const region = await card();
+    await waitFor(() =>
+      expect(within(select(region)).getAllByRole('option').length).toBeGreaterThan(3),
+    );
+
+    const groups = within(select(region)).getAllByRole('group');
+    expect(groups.map((group) => group.getAttribute('label'))).toEqual(['Agents', 'Workflows']);
+    expect(
+      within(groups[1]!)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['ship']);
+    await userEvent.selectOptions(select(region), 'workflow:ship');
+    await userEvent.click(saveButton(region));
+
+    expect(await screen.findByText('Default saved')).toBeTruthy();
+    expect(api.calls('setDefaultAgent')).toEqual([
+      expect.objectContaining({ body: { workflow: 'ship' } }),
+    ]);
+    await waitFor(() => expect(select(region).value).toBe('workflow:ship'));
+    await expect(document.body).toHaveNoAxeViolations();
+  });
+
+  it("shows the Project's default Workflow chosen, and one that is no longer usable as such", async () => {
+    const own = { ...PROJECT, defaultWorkflow: 'gone' };
+    const api = fakeProjectApi(own);
+    api.state.workflows = [{ name: 'ship', description: null, usable: true }];
+    renderDetail(own);
+
+    const region = await card();
+
+    await waitFor(() => expect(select(region).value).toBe('workflow:gone'));
+    expect(
+      within(select(region))
+        .getAllByRole('option')
+        .some((option) => option.textContent === 'gone (not usable)'),
+    ).toBe(true);
   });
 });

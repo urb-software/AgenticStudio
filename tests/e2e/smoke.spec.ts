@@ -1934,3 +1934,174 @@ test('the workflows view lists Workflows with their state and draws the diagram,
   await expectInBothThemes(page, diagram);
   expect(foreign, 'a request left the Studio origin').toEqual([]);
 });
+
+// A Run of a Workflow in the browser, with routed API answers: the New run dialog with a
+// Workflow chosen, the Phases on the Run page and the Project's default card, with 64-character
+// names and a long report, in both themes, no sideways scroll, axe clean.
+test('a Workflow Run: the New run dialog, the Phases and the default card, in both themes', async ({
+  page,
+}, testInfo) => {
+  const flow = `workflow-${'x'.repeat(55)}`;
+  const agentName = `agent-${'y'.repeat(58)}`;
+  const phaseId = `phase-${'z'.repeat(58)}`;
+  const runId = '00000000-0000-4000-8000-0000000000c1';
+  const commit = EDITOR_SHA;
+  const summary = `${'The agent changed the endpoint and ran the checks. '.repeat(40)}${'u'.repeat(120)}`;
+
+  await signIn(page);
+  await createAndOpenProject(page, `Workflow runs ${testInfo.project.name}`);
+  const projectId = /\/projects\/([0-9a-f-]{36})$/.exec(page.url())![1]!;
+
+  const listing = (name: string, usable: boolean, reason: string | null) => ({
+    name,
+    description: `Does ${name}`,
+    valid: true,
+    usable,
+    notUsableReason: reason,
+    problems: [],
+  });
+  const phase = (position: number, state: string, text: string | null) => ({
+    position,
+    itemId: position === 0 ? phaseId : 'polish',
+    state,
+    summary: text,
+    agent: {
+      name: position === 0 ? agentName : 'helper',
+      source: 'definitions',
+      commit,
+      provider: position === 0 ? 'codex' : 'claude_code',
+      model: 'default',
+      skills: [],
+    },
+    stepsUsed: position === 0 ? 1 : 0,
+  });
+  const run = {
+    id: runId,
+    projectId,
+    provider: 'claude_code',
+    agent: phase(1, 'running', null).agent,
+    workflowName: flow,
+    workflow: {
+      name: flow,
+      commit,
+      items: [
+        { id: phaseId, kind: 'work', agent: agentName },
+        { id: 'polish', kind: 'work', agent: 'helper' },
+      ],
+    },
+    phases: [phase(0, 'done', summary), phase(1, 'running', null)],
+    task: 'Add a health check',
+    state: 'queued',
+    startCommit: commit,
+    createdAt: '2026-11-27T09:00:00.000Z',
+    environmentFileSupplied: false,
+    limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
+    steps: { used: 1, usedInPart: 0 },
+    followUps: 0,
+    messages: [
+      {
+        role: 'operator',
+        kind: 'task',
+        text: 'Add a health check',
+        at: '2026-11-27T09:00:00.000Z',
+      },
+    ],
+  };
+  const answer = (body: unknown) => ({
+    contentType: 'application/json',
+    body: JSON.stringify(body),
+  });
+  await page.route('**/api/workflows', (route) =>
+    route.fulfill(
+      answer({
+        commit,
+        repository: { state: 'ready', note: null },
+        truncated: false,
+        workflows: [
+          listing(flow, true, null),
+          listing(
+            'slow',
+            false,
+            'The phase "check" uses Codex, which is not available: Switched off.',
+          ),
+        ],
+      }),
+    ),
+  );
+  await page.route(new RegExp(`/api/projects/${projectId}$`), (route) =>
+    route.request().method() === 'GET'
+      ? route.fulfill(
+          answer({
+            id: projectId,
+            name: `Workflow runs ${testInfo.project.name}`,
+            mergeMethod: 'squash',
+            kind: 'code',
+            defaultAgent: null,
+            defaultWorkflow: 'slow',
+            createdAt: '2026-11-27T08:00:00.000Z',
+            repository: {
+              state: 'ready',
+              url: 'https://git.example.test/acme/shop.git',
+              integrationBranch: 'dev',
+            },
+          }),
+        )
+      : route.continue(),
+  );
+  await page.route(new RegExp(`/api/projects/${projectId}/runs$`), (route) =>
+    route.request().method() === 'GET' ? route.fulfill(answer([run])) : route.continue(),
+  );
+  await page.route(new RegExp(`/api/runs/${runId}$`), (route) => route.fulfill(answer(run)));
+  await page.route(new RegExp(`/api/runs/${runId}/events\\?`), (route) =>
+    route.fulfill(answer({ events: [] })),
+  );
+  await page.route(new RegExp(`/api/runs/${runId}/steps$`), (route) =>
+    route.fulfill(answer({ steps: [] })),
+  );
+  const foreign = watchForeignRequests(page);
+
+  // Each scenario runs once per theme, after a reload, then is scanned.
+  async function inBothThemes(scenario: () => Promise<void>) {
+    for (const theme of ['light', 'dark']) {
+      await page.evaluate((value) => localStorage.setItem('theme', value), theme);
+      await page.reload();
+      await expect(page.locator('html')).toHaveClass(new RegExp(`(^|\\s)${theme}(\\s|$)`));
+      await scenario();
+      await expectNoHorizontalScroll(page);
+      await expectNoAxeViolations(page);
+    }
+  }
+
+  await page.goto(`/projects/${projectId}`);
+  const main = page.getByRole('main', { name: 'Page content' });
+  await inBothThemes(async () => {
+    const card = main.getByRole('region', { name: 'Default agent or Workflow' });
+    await expect(card.getByRole('combobox')).toHaveValue('workflow:slow');
+    await expect(card.getByRole('option', { name: 'slow (not usable)' })).toHaveCount(1);
+    await card.getByRole('combobox').selectOption(`workflow:${flow}`);
+    await expect(card.getByRole('button', { name: 'Save default agent' })).toBeEnabled();
+  });
+
+  await inBothThemes(async () => {
+    await main.getByRole('button', { name: 'New run' }).click();
+    const dialog = page.getByRole('dialog', { name: 'New run' });
+    await expect(dialog.getByText('Checking the agents…')).toHaveCount(0);
+    // The default Workflow is not usable: the dialog says so and why.
+    await expect(dialog.getByTestId('agent-fallback-note')).toContainText(
+      'The phase "check" uses Codex',
+    );
+    await dialog.getByLabel('Agent or Workflow').selectOption(`workflow:${flow}`);
+    await expect(dialog.getByTestId('workflow-facts')).toContainText(flow);
+    await dialog.getByLabel('Task').fill('Add a health check');
+    await expect(dialog.getByRole('button', { name: 'Start run' })).toBeEnabled();
+  });
+
+  await page.goto(`/executions/${runId}`);
+  await inBothThemes(async () => {
+    const phases = main.getByRole('region', { name: `Phases of ${flow}` });
+    await expect(phases.getByTestId('run-phase')).toHaveCount(2);
+    await expect(phases.getByTestId('run-phase').nth(1)).toHaveAttribute('aria-current', 'step');
+    await expect(phases.getByTestId('run-phase-summary')).toContainText('u'.repeat(120));
+  });
+  expect(foreign, 'a request left the Studio origin').toEqual([]);
+});
