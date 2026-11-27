@@ -15,7 +15,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Deliveries } from '../delivery.js';
 import { GitRunner } from '../git.js';
-import { RestoreFailedError, restoreNotice, ReviewGuard } from '../review-guard.js';
+import { RESTORE_RECORD, RestoreFailedError, restoreNotice, ReviewGuard } from '../review-guard.js';
 import { type PreparedRun, WorkingCopies } from '../working-copy.js';
 import { createRemote, type FixtureRemote, git, isolatedGitEnv } from './fixtures/git-fixture.js';
 import { type StubGitHub, startStubGitHub } from './fixtures/stub-github.js';
@@ -249,6 +249,55 @@ describe.skipIf(process.platform !== 'linux')('a review Phase and the Working co
 
     expect(readFileSync(join(outside, 'victim.txt'), 'utf8')).toBe('keep\n');
     expect(existsSync(join(prepared.repoDir, 'linked'))).toBe(false);
+  });
+
+  it('restores from the record a crashed review left, when the next claim asks, and removes it', async () => {
+    const prepared = await prepare(payload('codex'));
+    workLeaves(prepared);
+    const before = stateOf(prepared);
+    await new ReviewGuard(runner()).capture(prepared);
+    carelessReview(prepared);
+    // The worker died here: a new worker, a new guard, only the record in the Run directory.
+    const record = join(prepared.runDir, RESTORE_RECORD);
+    expect(existsSync(record)).toBe(true);
+
+    const report = await new ReviewGuard(runner()).recover(prepared);
+
+    expect(report?.restored).toBe(true);
+    expect(stateOf(prepared)).toEqual(before);
+    expect(existsSync(record)).toBe(false);
+    expect(await new ReviewGuard(runner()).recover(prepared)).toBeNull();
+  });
+
+  it('keeps the record when a restore fails, so every later claim fails too and nothing is delivered', async () => {
+    const prepared = await prepare(payload('claude_code'));
+    const guard = new ReviewGuard(runner());
+    const snapshot = await guard.capture(prepared);
+    write(prepared, 'src/review.ts', 'added\n');
+    const record = join(prepared.runDir, RESTORE_RECORD);
+
+    await expect(guard.restore({ ...snapshot, headCommit: 'f'.repeat(40) })).rejects.toBeInstanceOf(
+      RestoreFailedError,
+    );
+
+    expect(existsSync(record)).toBe(true);
+    // The record is the true one: the next claim restores from it and clears it.
+    expect((await new ReviewGuard(runner()).recover(prepared))?.restored).toBe(true);
+    expect(existsSync(join(prepared.repoDir, 'src/review.ts'))).toBe(false);
+    expect(existsSync(record)).toBe(false);
+  });
+
+  it('refuses a record that is damaged or names another Working copy, and keeps it', async () => {
+    const prepared = await prepare(payload('codex'));
+    const record = join(prepared.runDir, RESTORE_RECORD);
+    for (const text of ['not json', JSON.stringify({ repoDir: '/elsewhere' })]) {
+      writeFileSync(record, text);
+
+      await expect(new ReviewGuard(runner()).recover(prepared)).rejects.toBeInstanceOf(
+        RestoreFailedError,
+      );
+      expect(existsSync(record)).toBe(true);
+    }
   });
 
   it('fails when the Working copy cannot be put back', async () => {

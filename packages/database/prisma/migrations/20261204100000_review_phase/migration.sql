@@ -1,7 +1,7 @@
 -- A Phase may be a review Phase, and a review Phase stores its Verdict and what it found. The
--- Run's "review not passed" is derived from the Phases, so the Run has no new column. ONE-WAY
--- DOOR: once a review Phase exists, narrowing the kind CHECK back to 'work' needs those Runs
--- deleted or changed first.
+-- Run's "review not passed" is derived from the Phases, so the Run has no new column. Additive,
+-- a two-way door while no Run has a review Phase: after that, narrowing the kind CHECK back to
+-- 'work' needs those Runs deleted or changed first.
 -- Rollback: ALTER TABLE "run_phases" DROP CONSTRAINT "run_phases_verdict_check"; DROP COLUMN
 -- "verdict", "findings"; restore run_phases_kind_state_check with "kind" IN ('work') (no Run may
 -- hold a review Phase by then).

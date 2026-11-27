@@ -98,6 +98,11 @@ export interface RunSkillsPort {
 export interface ReviewGuardPort {
   capture(prepared: PreparedRun, signal?: AbortSignal): Promise<WorkingCopySnapshot>;
   restore(snapshot: WorkingCopySnapshot): Promise<RestoreReport>;
+  /**
+   * Restores from the record an earlier review left behind (a crash, a failed restore); `null`
+   * when there is none. Throws {@link RestoreFailedError} when that cannot be verified.
+   */
+  recover(prepared: PreparedRun): Promise<RestoreReport | null>;
 }
 
 export interface AgentWorkerOptions {
@@ -390,6 +395,13 @@ export class AgentWorker {
           ? await this.options.workingCopies.locate(run, abort.signal)
           : await this.options.workingCopies.prepare(run, abort.signal);
       abort.signal.throwIfAborted();
+      // A review that did not end with a verified restore (its worker died, or the restore failed)
+      // is undone first; if that cannot be done, no agent starts and nothing is delivered.
+      const recovered = await this.options.reviewGuard?.recover(prepared);
+      const recoveryNotice = recovered ? restoreNotice(recovered) : null;
+      if (recoveryNotice !== null) {
+        log.push(stepIndex, 'notice', `An earlier review did not finish: ${recoveryNotice}`);
+      }
       // The agent's files are rebuilt from Studio's copy before every step, before anything the
       // agent could act on; a refusal fails the Run before any CLI starts.
       const placed = await this.options.agentFolders?.place(
@@ -749,6 +761,8 @@ export class AgentWorker {
     const { deliveries, workingCopies, api, logger } = this.options;
     const { prepared, result } = await deliveries.locate(run);
     located(prepared);
+    // What an earlier review left is put back before anything is committed or pushed.
+    await this.options.reviewGuard?.recover(prepared);
     await deliveries.commit(prepared, run, result, signal);
     // The diffs again, whatever the delivery's outcome, so a result whose diff report was lost
     // still gets one; once pushed, again as pushed.

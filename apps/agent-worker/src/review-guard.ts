@@ -1,4 +1,4 @@
-import { copyFile, lstat, readdir, rm, rmdir } from 'node:fs/promises';
+import { copyFile, lstat, readdir, readFile, rm, rmdir, writeFile } from 'node:fs/promises';
 import { dirname, posix, resolve } from 'node:path';
 import { GIT_TIMEOUTS, GitCommandError, type GitOptions, type GitRunner } from './git.js';
 import type { PreparedRun } from './working-copy.js';
@@ -49,6 +49,8 @@ export class RestoreFailedError extends Error {
 
 const TEMP_INDEX = 'review-index';
 const SAVED_INDEX = 'review-index-before';
+/** The record of a recorded state, beside the Working copy: gone only after a verified restore. */
+export const RESTORE_RECORD = 'review-restore.json';
 
 export class ReviewGuard {
   constructor(private readonly git: Pick<GitRunner, 'run'>) {}
@@ -87,7 +89,7 @@ export class ReviewGuard {
       },
     );
     const tree = await this.worktreeTree(prepared, hadIndex ? indexCopy : null, signal);
-    return {
+    const snapshot = {
       repoDir,
       runDir,
       headRef,
@@ -96,6 +98,26 @@ export class ReviewGuard {
       indexCopy: hadIndex ? indexCopy : null,
       indexFile,
     };
+    // Written before the review starts, so a crash or a failed restore still leaves the way back.
+    await writeFile(posix.join(runDir, RESTORE_RECORD), JSON.stringify(snapshot), { mode: 0o600 });
+    return snapshot;
+  }
+
+  /**
+   * Restores from the record an earlier review left (its worker died, or its restore failed), and
+   * removes it once the state is verified. `null` when there is none. Throws
+   * {@link RestoreFailedError} when the record cannot be read or the restore cannot be verified.
+   */
+  async recover(prepared: Pick<PreparedRun, 'repoDir' | 'runDir'>): Promise<RestoreReport | null> {
+    const text = await readFile(posix.join(prepared.runDir, RESTORE_RECORD), 'utf8').catch(
+      (error: NodeJS.ErrnoException) => {
+        if (error.code === 'ENOENT') return null;
+        throw new RestoreFailedError('the record of the state before a review cannot be read.');
+      },
+    );
+    if (text === null) return null;
+    const snapshot = parseRecord(text, prepared);
+    return this.restore(snapshot);
   }
 
   /**
@@ -126,6 +148,8 @@ export class ReviewGuard {
       if (after !== snapshot.tree || head.trim() !== snapshot.headCommit) {
         throw new RestoreFailedError('it still differs from the state before the Phase.');
       }
+      await rm(posix.join(runDir, SAVED_INDEX), { force: true });
+      await rm(posix.join(runDir, RESTORE_RECORD), { force: true });
       return { restored: headMoved || added > 0 || changed > 0, headMoved, added, changed };
     } catch (error) {
       if (error instanceof RestoreFailedError) throw error;
@@ -134,7 +158,6 @@ export class ReviewGuard {
       );
     } finally {
       await rm(posix.join(runDir, TEMP_INDEX), { force: true });
-      await rm(posix.join(runDir, SAVED_INDEX), { force: true });
     }
   }
 
@@ -255,6 +278,36 @@ export class ReviewGuard {
       await rmdir(directory).catch(() => undefined);
     }
   }
+}
+
+/** The record as written by {@link ReviewGuard.capture}, for this Working copy and no other. */
+function parseRecord(
+  text: string,
+  prepared: Pick<PreparedRun, 'repoDir' | 'runDir'>,
+): WorkingCopySnapshot {
+  const bad = () => new RestoreFailedError('the record of the state before a review is not valid.');
+  let value: Partial<WorkingCopySnapshot>;
+  try {
+    value = JSON.parse(text) as Partial<WorkingCopySnapshot>;
+  } catch {
+    throw bad();
+  }
+  const id = (field: unknown) => typeof field === 'string' && /^[0-9a-f]{40,64}$/.test(field);
+  if (
+    value.repoDir !== prepared.repoDir ||
+    value.runDir !== prepared.runDir ||
+    !id(value.headCommit) ||
+    !id(value.tree) ||
+    typeof value.indexFile !== 'string' ||
+    !(
+      value.headRef === null ||
+      (typeof value.headRef === 'string' && /^refs\/heads\//.test(value.headRef))
+    ) ||
+    !(value.indexCopy === null || value.indexCopy === posix.join(prepared.runDir, SAVED_INDEX))
+  ) {
+    throw bad();
+  }
+  return value as WorkingCopySnapshot;
 }
 
 /** A path Git listed inside the Working copy: relative, no `..`, no backslash, no control. */

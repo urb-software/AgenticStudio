@@ -3118,6 +3118,18 @@ class FakeReviewGuard implements ReviewGuardPort {
     };
   }
 
+  /** The records `recover` found, in order; what it reports; and what makes it fail. */
+  readonly recovered: string[] = [];
+  recoverReport: RestoreReport | null = null;
+  recoverFailure: Error | undefined;
+
+  async recover(prepared: PreparedRun): Promise<RestoreReport | null> {
+    this.recovered.push(prepared.runId);
+    this.onCall?.('recover');
+    if (this.recoverFailure) throw this.recoverFailure;
+    return this.recoverReport;
+  }
+
   async restore(): Promise<RestoreReport> {
     this.calls.push('restore');
     this.onCall?.('restore');
@@ -3170,7 +3182,7 @@ describe('AgentWorker: a review Phase', () => {
 
       await until(() => api.reports().length === 3);
 
-      expect(order).toEqual(['capture', 'restore', 'commit', 'deliver']);
+      expect(order).toEqual(['recover', 'capture', 'restore', 'commit', 'deliver']);
       expect(api.reports()[1]?.[2]).toMatchObject({
         result: { outcome: 'done', verdict: 'approved' },
       });
@@ -3329,6 +3341,94 @@ describe('AgentWorker: a review Phase', () => {
       expect(JSON.stringify(api.reports())).not.toContain('verdict');
     });
   });
+
+  describe.each(PROVIDERS)(
+    'after a review that did not end with a verified restore, with %s',
+    (provider) => {
+      const followUp = (): RunPayload => ({
+        ...reviewRun(provider, 'Add a feature', {
+          position: 0,
+          final: false,
+          count: 2,
+          kind: 'work',
+        }),
+        sessionRef: fakeSessionRef('0b8e5c2d-1f3a-4d6e-9a7b-2c4d6e8f0a11', 0),
+        answer: 'Add a test too.',
+        resumeReason: 'follow_up',
+        followUpNumber: 1,
+      });
+
+      it('restores from the record before the Follow-up starts its agent, and says so', async () => {
+        const api = new RecordingApi([followUp()]);
+        const guard = new FakeReviewGuard();
+        guard.recoverReport = { restored: true, headMoved: false, added: 1, changed: 0 };
+        const order: string[] = [];
+        guard.onCall = (step) => order.push(step);
+        const runner = new FakeRunner();
+        const start = vi.spyOn(runner, 'resume');
+        start.mockImplementation(function (this: FakeRunner, ...args) {
+          order.push('agent');
+          return FakeRunner.prototype.resume.apply(this, args);
+        });
+        startWorker(api, runner, undefined, new FakeDeliveries(), { reviewGuard: guard });
+
+        await until(() => api.reports().length >= 2);
+
+        expect(order.slice(0, 2)).toEqual(['recover', 'agent']);
+        expect(messages(api)).toContain(
+          'An earlier review did not finish: The review Phase changed the working copy; it was restored (1 added file(s) removed)',
+        );
+      });
+
+      it('fails the claim before any agent starts, and delivers nothing, when the record cannot be restored', async () => {
+        const api = new RecordingApi([followUp()]);
+        const guard = new FakeReviewGuard();
+        guard.recoverFailure = new RestoreFailedError('it still differs from the state before.');
+        const deliveries = new FakeDeliveries();
+        const runner = new FakeRunner();
+        const resumed = vi.spyOn(runner, 'resume');
+        const started = vi.spyOn(runner, 'start');
+        startWorker(api, runner, undefined, deliveries, { reviewGuard: guard });
+
+        await until(() => api.reports().length === 1);
+
+        expect(api.reports()[0]?.[2]).toMatchObject({
+          state: 'failed',
+          failure: {
+            code: 'agent_failed',
+            detail: expect.stringContaining('could not be restored'),
+          },
+        });
+        expect(resumed).not.toHaveBeenCalled();
+        expect(started).not.toHaveBeenCalled();
+        expect(deliveries.calls).toEqual([]);
+        expect(guard.calls).toEqual([]);
+      });
+
+      it('restores before a delivery retry commits anything, and delivers nothing when it cannot', async () => {
+        const retry: RunPayload = {
+          ...payload('Add a feature'),
+          provider,
+          ...agentFields(provider),
+          kind: 'deliver',
+          runBranch: REPORT.runBranch,
+          completedSteps: 1,
+          nextSeq: 5,
+        };
+        const api = new RecordingApi([retry]);
+        const guard = new FakeReviewGuard();
+        guard.recoverFailure = new RestoreFailedError('it still differs from the state before.');
+        const deliveries = new FakeDeliveries();
+        startWorker(api, undefined, undefined, deliveries, { reviewGuard: guard });
+
+        await until(() => api.reports().length === 1);
+
+        expect(api.reports()[0]?.[2]).toMatchObject({ state: 'failed' });
+        expect(guard.recovered).toEqual([retry.runId]);
+        expect(deliveries.calls.map(([step]) => step)).toEqual(['locate']);
+      });
+    },
+  );
 
   it('hands on after changes requested only when Studio says the Workflow goes on', async () => {
     const run = reviewRun('codex', 'Add a feature [fake-review:changes]', {
