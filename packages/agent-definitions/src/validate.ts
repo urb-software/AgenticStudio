@@ -426,7 +426,7 @@ function judgeSkillNames(value: unknown, add: (code: ProblemCode, key?: string) 
 }
 
 /** True when the text is missing, is not UTF-8 or holds a NUL: it cannot be judged as text. */
-export function unreadable(text: string | undefined): boolean {
+function unreadable(text: string | undefined): boolean {
   return text === undefined || text.includes('�') || text.includes('\u0000');
 }
 

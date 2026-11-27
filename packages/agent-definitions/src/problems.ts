@@ -96,6 +96,7 @@ export const WORKFLOW_ONLY_PROBLEM_CODES = [
   'item_id_duplicate',
   'send_backs_out_of_range',
   'sequence_too_long',
+  'phase_agent_reserved',
   'no_phase',
   'review_first',
   'review_before_work',
@@ -151,7 +152,10 @@ const MESSAGES: Record<
   forbidden_key: (key) =>
     `The key ${key} asks for tools, permissions, hooks, MCP servers, memory or isolation, ` +
     'which a definition cannot set.',
-  instructions_too_large: () => 'The instructions are larger than the size limit.',
+  instructions_too_large: (_, s) =>
+    s.noun === 'workflow'
+      ? 'The Markdown body (documentation) is larger than the size limit.'
+      : 'The instructions are larger than the size limit.',
   too_many_files: (_, s) => `The ${s.noun} folder holds more files than the limit.`,
   file_too_large: (path) => `The file ${path} is larger than the size limit.`,
   folder_too_large: (_, s) => `The ${s.noun} folder is larger in total than the size limit.`,
@@ -186,6 +190,7 @@ const MESSAGES: Record<
   send_backs_out_of_range: () =>
     `The key send-backs must be a whole number from 0 to ${WORKFLOW_DEFAULT_SEND_BACKS}.`,
   sequence_too_long: () => `A workflow has at most ${WORKFLOW_MAX_ITEMS} items.`,
+  phase_agent_reserved: () => 'A phase must name an agent definition, not a name Studio reserves.',
   no_phase: () => 'A workflow needs at least one work or review phase.',
   review_first: () => 'The first item cannot be a review phase.',
   review_before_work: () => 'A review phase needs a work phase before it.',

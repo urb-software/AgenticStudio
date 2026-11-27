@@ -15,6 +15,7 @@ import {
   WORKFLOW_FORBIDDEN_KEYS,
   WORKFLOW_KNOWN_KEYS,
   WORKFLOW_MAX_ITEMS,
+  WORKFLOW_PHASE_INSTRUCTIONS_MAX_BYTES,
   WORKFLOW_PROBLEM_CODES,
   WORKFLOWS_DIRECTORY,
   type WorkflowDefinition,
@@ -191,13 +192,63 @@ describe('the format constants', () => {
 });
 
 describe('phase instructions', () => {
-  it('cannot outgrow the front matter limit, which they live in', () => {
-    const front = `${HEAD}
+  it('are bounded at 2 KiB, which fits the front matter they live in', () => {
+    expect(WORKFLOW_PHASE_INSTRUCTIONS_MAX_BYTES).toBe(2048);
+  });
+});
+
+describe('item problems', () => {
+  it('quote each offending key, so two bad keys give two distinct messages', () => {
+    const result = validateWorkflowFolder('ship', [
+      workflowFile(`${HEAD}
 ${sequence(`${WORK}
-    instructions: ${'x'.repeat(8 * 1024 + 1)}`)}`;
-    const result = validateWorkflowFolder('ship', [workflowFile(front)]);
+    colour: a
+    size: b
+    model: c`)}`),
+    ]);
     if (result.ok) throw new Error('accepted');
-    expect(result.problems.map((item) => item.code)).toEqual(['front_matter_too_large']);
+    expect(result.problems.map((item) => [item.code, item.key])).toEqual([
+      ['unknown_key', 'build'],
+      ['unknown_key', 'build'],
+      ['workflow_forbidden_key', 'build'],
+    ]);
+    const messages = result.problems.map((item) => item.message);
+    expect(new Set(messages).size).toBe(3);
+    expect(messages[0]).toContain('"colour"');
+    expect(messages[1]).toContain('"size"');
+    expect(messages[2]).toContain('"model"');
+    expect(messages.every((message) => message.includes('"build"'))).toBe(true);
+  });
+
+  it('shorten a long offending key', () => {
+    const long = `k${'x'.repeat(100)}`;
+    const result = validateWorkflowFolder('ship', [
+      workflowFile(`${HEAD}
+${sequence(`${WORK}
+    ${long}: a`)}`),
+    ]);
+    if (result.ok) throw new Error('accepted');
+    expect(result.problems[0]?.message).not.toContain(long);
+    expect(result.problems[0]?.message).toContain(`${long.slice(0, MAX_QUOTED_LENGTH)}...`);
+  });
+
+  it('call the Markdown body documentation when it is too large', () => {
+    const result = validateWorkflowFolder('ship', [
+      workflowFile(VALID_FRONT, 'x'.repeat(64 * 1024 + 1)),
+    ]);
+    if (result.ok) throw new Error('accepted');
+    expect(result.problems[0]?.message).toContain('documentation');
+  });
+
+  it('name the reserved agent a phase names', () => {
+    const result = validateWorkflowFolder('ship', [
+      workflowFile(
+        `${HEAD}\n${sequence('  - id: build', '    kind: work', '    agent: definitions-repository')}`,
+      ),
+    ]);
+    if (result.ok) throw new Error('accepted');
+    expect(result.problems[0]).toMatchObject({ code: 'phase_agent_reserved', key: 'build' });
+    expect(result.problems[0]?.message).toContain('"definitions-repository"');
   });
 });
 

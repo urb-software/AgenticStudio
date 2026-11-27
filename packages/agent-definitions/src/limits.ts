@@ -156,7 +156,7 @@ export const WORKFLOW_PHASE_KEYS = ['id', 'kind', 'agent', 'instructions'] as co
 export const WORKFLOW_CHECKPOINT_KEYS = ['id', 'kind', 'text'] as const;
 
 /** Longest extra instructions of one phase, in UTF-8 bytes. */
-export const WORKFLOW_PHASE_INSTRUCTIONS_MAX_BYTES = 8 * 1024;
+export const WORKFLOW_PHASE_INSTRUCTIONS_MAX_BYTES = 2 * 1024;
 
 /** Longest checkpoint text, in characters. */
 export const WORKFLOW_CHECKPOINT_TEXT_MAX_LENGTH = 500;

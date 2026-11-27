@@ -87,33 +87,41 @@ const KNOWN = new Set<string>(WORKFLOW_KNOWN_KEYS);
 const PHASE_KEYS = new Set<string>(WORKFLOW_PHASE_KEYS);
 const CHECKPOINT_KEYS = new Set<string>(WORKFLOW_CHECKPOINT_KEYS);
 const ITEM_KINDS = new Set(['work', 'review', 'checkpoint']);
-const FORBIDDEN_WORDING =
-  'asks for tools, permissions, hooks, MCP servers, memory or isolation, which a definition ' +
-  'cannot set';
+const FORBIDDEN_WORDING = 'asks for tools, permissions, hooks, MCP servers, memory or isolation';
 
 type Add = (code: WorkflowProblemCode, key?: string, message?: string) => void;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-/** What an item problem says: it quotes the item id and nothing the item holds. */
-function itemMessage(code: WorkflowProblemCode, id: string): string {
+type ItemCode =
+  | 'key_missing'
+  | 'key_invalid'
+  | 'unknown_key'
+  | 'forbidden_key'
+  | 'workflow_forbidden_key'
+  | 'instructions_too_large'
+  | 'phase_agent_reserved';
+
+/** What an item problem says: it quotes the item id and, where it helps, one key or the agent. */
+function itemMessage(code: ItemCode, id: string, detail: string): string {
   const item = `The item ${quote(id)}`;
+  const named = quote(detail);
   switch (code) {
     case 'key_missing':
       return `${item} lacks a required key.`;
     case 'key_invalid':
       return `${item} has a key with a value of the wrong kind or length.`;
     case 'unknown_key':
-      return `${item} has a key that its kind does not allow.`;
+      return `${item} has the key ${named}, which its kind does not allow.`;
     case 'forbidden_key':
-      return `${item} has a key that ${FORBIDDEN_WORDING}.`;
+      return `${item} has the key ${named}, which ${FORBIDDEN_WORDING}; a definition cannot set it.`;
     case 'workflow_forbidden_key':
-      return `${item} has a key that configures a model, Provider, skills, limits or a command, which a workflow cannot set.`;
+      return `${item} has the key ${named}, which configures a model, Provider, skills, limits or a command; a workflow cannot set it.`;
     case 'instructions_too_large':
-      return `The instructions of ${item.slice(4)} are larger than the size limit.`;
-    default:
-      return `${item} holds an inline shell line, which a workflow cannot carry.`;
+      return `The instructions of the item ${quote(id)} are larger than the size limit.`;
+    case 'phase_agent_reserved':
+      return `${item} names the agent ${named}, which Studio reserves; a phase names an agent definition.`;
   }
 }
 
@@ -275,15 +283,15 @@ function judgeItem(
   carried: unknown[],
 ): WorkflowItem | undefined {
   let ok = true;
-  const report = (code: WorkflowProblemCode) => {
+  const report = (code: ItemCode, detail = '') => {
     ok = false;
-    add(code, id, itemMessage(code, id));
+    add(code, id, itemMessage(code, id, detail));
   };
   const allowed = kind === 'checkpoint' ? CHECKPOINT_KEYS : PHASE_KEYS;
   for (const key of Object.keys(raw)) {
-    if (FORBIDDEN.has(normalise(key))) report('forbidden_key');
-    else if (WORKFLOW_FORBIDDEN.has(normalise(key))) report('workflow_forbidden_key');
-    else if (!allowed.has(key)) report('unknown_key');
+    if (FORBIDDEN.has(normalise(key))) report('forbidden_key', key);
+    else if (WORKFLOW_FORBIDDEN.has(normalise(key))) report('workflow_forbidden_key', key);
+    else if (!allowed.has(key)) report('unknown_key', key);
   }
 
   if (kind === 'checkpoint') {
@@ -304,13 +312,15 @@ function judgeItem(
   const agent = raw['agent'];
   if (agent === undefined || agent === null) report('key_missing');
   else if (typeof agent !== 'string' || !AGENT_NAME_PATTERN.test(agent)) report('key_invalid');
+  else if ((RESERVED_AGENT_NAMES as readonly string[]).includes(agent)) {
+    report('phase_agent_reserved', agent);
+  }
 
   const extra = raw['instructions'];
   carried.push(extra);
   let instructions: string | undefined;
   if (extra !== undefined && extra !== null) {
     if (typeof extra !== 'string') report('key_invalid');
-    // The front matter limit is as large, so this holds only if one of the two limits changes.
     else if (utf8Length(extra) > WORKFLOW_PHASE_INSTRUCTIONS_MAX_BYTES) {
       report('instructions_too_large');
     } else instructions = extra;

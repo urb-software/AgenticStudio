@@ -121,6 +121,16 @@ export const WORKFLOW_FAILING: Record<string, Fixture> = {
   instructions_too_large: only('instructions_too_large', [
     workflowFile(VALID_FRONT, 'x'.repeat(64 * 1024 + 1)),
   ]),
+  'instructions_too_large (a phase)': only('instructions_too_large', [
+    withSequence(
+      `${WORK}
+    instructions: ${'x'.repeat(2 * 1024 + 1)}`,
+      REVIEW,
+    ),
+  ]),
+  phase_agent_reserved: only('phase_agent_reserved', [
+    withSequence('  - id: build', '    kind: work', '    agent: default-codex', REVIEW),
+  ]),
   shell_line: only('shell_line', [workflowFile(VALID_FRONT, 'run !`ls` now\n')]),
   'shell_line (a decoded phase instruction)': only('shell_line', [
     withSequence(`${WORK}\n    instructions: "!\\u0060ls\\u0060"`, REVIEW),
@@ -154,10 +164,7 @@ export const WORKFLOW_FAILING: Record<string, Fixture> = {
     { path: 'sub', kind: 'submodule', size: 0 },
   ]),
   duplicate_path: only('duplicate_path', [workflowFile(VALID_FRONT), workflowFile(VALID_FRONT)]),
-  size_invalid: fixture(
-    [workflowFile(VALID_FRONT), { path: 'x.bin', kind: 'file', size: -1 }],
-    ['size_invalid@x.bin', 'workflow_extra_file@x.bin'],
-  ),
+  size_invalid: only('size_invalid', [{ ...workflowFile(VALID_FRONT), size: -1 }]),
   cli_config_path: only('cli_config_path', [workflowFile(VALID_FRONT), file('CLAUDE.md', 'x')]),
   'cli_config_path (a dot segment)': only('cli_config_path', [
     workflowFile(VALID_FRONT),
@@ -277,7 +284,7 @@ export const WORKFLOW_PASSING: Record<string, Passing> = {
     folder: 'ship',
     entries: [
       withSequence(
-        `${WORK}\n    instructions: ${'x'.repeat(6000)}`,
+        `${WORK}\n    instructions: ${'x'.repeat(2 * 1024)}`,
         item('ask', `    kind: checkpoint\n    text: ${'t'.repeat(500)}`),
         REVIEW,
       ),
