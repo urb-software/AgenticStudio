@@ -184,6 +184,20 @@ export const runPhaseFindingSchema = z
   })
   .meta({ id: 'RunPhaseFinding' });
 
+export const runPhaseRoundResponseSchema = z
+  .object({
+    round: z.int().min(1).describe('1 the first time the Phase ran, then 2, 3, …'),
+    summary: z
+      .string()
+      .nullable()
+      .describe('What the Phase reported at the end of the round, plain text; null for none.'),
+    verdict: runPhaseVerdictSchema
+      .nullable()
+      .describe('The Verdict a review Phase gave in the round; null for a work Phase.'),
+    findings: z.array(runPhaseFindingSchema).describe('What the review found in the round.'),
+  })
+  .meta({ id: 'RunPhaseRound' });
+
 export const runPhaseResponseSchema = z
   .object({
     position: z.int().min(0).describe('0 for the first Phase, then 1, 2, … in order.'),
@@ -204,6 +218,11 @@ export const runPhaseResponseSchema = z
       .nullable()
       .describe("What the Phase's last Run step reported, plain text; null before one."),
     agent: runAgentResponseSchema.omit({ instructions: true }),
+    rounds: z
+      .array(runPhaseRoundResponseSchema)
+      .describe(
+        'Each time the Phase ran, oldest first: a send-back runs it again. A Phase that ran once has one round, a Phase not reached none.',
+      ),
     stepsUsed: z.int().min(0).describe('The Run steps taken in the Phase.'),
   })
   .meta({ id: 'RunPhase' });
@@ -225,6 +244,17 @@ export const runResponseSchema = z
       .nullable()
       .optional()
       .describe('The Workflow as the Run recorded it; null for a Run started with an agent.'),
+    /** Single-Run answers only. */
+    sendBacks: z
+      .object({
+        used: z.int().min(0).describe('The send-backs the Run used since it started its Workflow.'),
+        limit: z.int().min(0).max(2).describe('The most send-backs the Workflow allows, 0 to 2.'),
+      })
+      .nullable()
+      .optional()
+      .describe(
+        'How often review findings went back to the work Phase; null for a Run with an agent.',
+      ),
     reviewNotPassed: z
       .boolean()
       .describe('A review Phase asked for changes: the Workflow ended as "review not passed".'),
@@ -366,6 +396,7 @@ export function toRunResponse(
         | { id: string; kind: 'checkpoint'; text: string }
       )[];
     } | null;
+    sendBack: { used: number; limit: number } | null;
     reviewNotPassed: boolean;
     phases: readonly {
       position: number;
@@ -375,6 +406,13 @@ export function toRunResponse(
       verdict: z.infer<typeof runPhaseVerdictSchema> | null;
       findings: readonly { text: string; file?: string; line?: number }[];
       summary: string | null;
+      /** The rounds before the current one; the current round's result is above. */
+      rounds: readonly {
+        round: number;
+        summary: string | null;
+        verdict: z.infer<typeof runPhaseVerdictSchema> | null;
+        findings: readonly { text: string; file?: string; line?: number }[];
+      }[];
       agent: {
         name: string;
         source: 'built_in' | 'definitions';
@@ -498,6 +536,7 @@ export function toRunResponse(
             commit: run.workflow.commit,
             items: run.workflow.items.map((item) => ({ ...item })),
           },
+    sendBacks: run.sendBack === null ? null : { ...run.sendBack },
     reviewNotPassed: run.reviewNotPassed,
     phases: run.phases.map((phase) => ({
       position: phase.position,
@@ -507,6 +546,23 @@ export function toRunResponse(
       verdict: phase.verdict,
       findings: phase.findings.map((finding) => ({ ...finding })),
       summary: phase.summary,
+      rounds: [
+        ...phase.rounds.map((round) => ({
+          ...round,
+          findings: round.findings.map((finding) => ({ ...finding })),
+        })),
+        // The current round counts once the Phase has a result in it.
+        ...(phase.summary === null && phase.verdict === null
+          ? []
+          : [
+              {
+                round: (phase.rounds.at(-1)?.round ?? 0) + 1,
+                summary: phase.summary,
+                verdict: phase.verdict,
+                findings: phase.findings.map((finding) => ({ ...finding })),
+              },
+            ]),
+      ],
       agent: {
         name: phase.agent.name,
         source: phase.agent.source,
@@ -738,12 +794,14 @@ export function toRunListItem(run: Parameters<typeof toRunResponse>[0]): RunResp
     question: _question,
     phases: _phases,
     workflow: _workflow,
+    sendBacks: _sendBacks,
     ...item
   } = toRunResponse(run);
   void _messages;
   void _question;
   void _phases;
   void _workflow;
+  void _sendBacks;
   const { instructions: _instructions, ...agent } = item.agent;
   void _instructions;
   return { ...item, agent };

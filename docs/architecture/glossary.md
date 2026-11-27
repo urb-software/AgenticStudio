@@ -91,15 +91,22 @@ One part of a Workflow: it names one Agent definition and is either work (it may
 _Avoid_: Step (a Run step is one execution of the agent CLI), stage, task
 
 **Hand-over**:
-What a Phase after the first is told besides its agent's instructions: the Task and what the Phase before it reported, as untrusted text after Studio's base rules.
+What a Phase after the first is told besides its agent's instructions: the Task and what the Phase before it reported, as untrusted text after Studio's base rules. A work Phase sent back is told what the review found in the same block.
 _Avoid_: Context, handoff
 
 **Verdict**:
 How a review Phase ends: approved, or changes requested with findings.
 _Avoid_: Result (a Run step ends with a result), approval (see Merge approval), score
 
+**Send-back**:
+A review's changes requested handed back to the nearest work Phase before it, which resumes its own session with the findings as untrusted text; the review then runs again. A Run sends work back at most as often as its Workflow's limit says (two by default, never more), counted once per Run across all its review Phases, and a Follow-up starts the count again. The Run page shows each round and the send-backs used out of the limit.
+_Avoid_: Retry, loop, rework
+
+**Round**:
+One time a Phase ran in a Run: a send-back runs the work Phase and the review again, each in a round of its own.
+
 **Review not passed**:
-How a Workflow ends when a review Phase asks for changes: the Run still delivers its pull request, and the findings stay open on the Run page.
+How a Workflow ends when a review Phase asks for changes and no send-back is left: the Run still delivers its pull request, and the findings of the last review stay open on the Run page.
 
 **Checkpoint**:
 A place in a Workflow where the Run waits for the operator, who continues or stops it and may add a comment for the next Phase. Stopping delivers what exists, once; with no change the Run finishes without a pull request.

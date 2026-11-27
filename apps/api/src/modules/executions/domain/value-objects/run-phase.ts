@@ -1,5 +1,7 @@
 import type { RunAgentData } from './run-agent.js';
 import type { RunPhaseFinding } from './run-phase-finding.js';
+import type { RunPhaseRound } from './run-phase-round.js';
+import type { RunPhaseVerdict } from './run-phase-verdict.js';
 
 export const RUN_PHASE_KINDS = ['work', 'review'] as const;
 export type RunPhaseKind = (typeof RUN_PHASE_KINDS)[number];
@@ -7,8 +9,7 @@ export type RunPhaseKind = (typeof RUN_PHASE_KINDS)[number];
 export const RUN_PHASE_STATES = ['pending', 'running', 'done', 'failed'] as const;
 export type RunPhaseState = (typeof RUN_PHASE_STATES)[number];
 
-export const RUN_PHASE_VERDICTS = ['approved', 'changes_requested'] as const;
-export type RunPhaseVerdict = (typeof RUN_PHASE_VERDICTS)[number];
+export { RUN_PHASE_VERDICTS, type RunPhaseVerdict } from './run-phase-verdict.js';
 
 /** One ordered part of a Run with an agent: its place in the Run and the Run steps it took. */
 export interface RunPhaseData {
@@ -29,5 +30,7 @@ export interface RunPhaseData {
   findings?: readonly RunPhaseFinding[];
   /** What the operator wrote at the Checkpoint before the Phase: untrusted; `null` for none. */
   checkpointComment?: string | null;
+  /** The rounds before the current one, oldest first; empty until a send-back runs the Phase again. */
+  rounds?: readonly RunPhaseRound[];
   stepsUsed: number;
 }

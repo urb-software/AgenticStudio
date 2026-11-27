@@ -251,6 +251,15 @@ model Run {
   workflowName                  String?              @map("workflow_name") @db.VarChar(64)
   workflowCommit                String?              @map("workflow_commit") @db.VarChar(64)
   workflowItems                 Json?                @map("workflow_items")
+  /// The most send-backs the Workflow allowed per Run, 0 to 2 (a CHECK holds the range); 0 for a
+  /// Workflow Run started before send-backs existed; null for a Run started with an agent.
+  workflowSendBacks             Int?                 @map("workflow_send_backs")
+  /// The send-backs the Run used since it started or last started its Workflow again (a CHECK
+  /// holds 0 to 2): one count for the Run, across every review Phase.
+  sendBacksUsed                 Int                  @default(0) @map("send_backs_used")
+  /// The position of the review Phase that sent work back and has to run again, until it gives its
+  /// Verdict; null outside such a round.
+  sendBackReview                Int?                 @map("send_back_review")
   /// A Workflow Run whose next Phase has not been claimed yet: queued, it holds its place and goes
   /// only to the worker that holds its Working copy, like an answered Run does.
   phasePending                  Boolean              @default(false) @map("phase_pending")
@@ -370,6 +379,10 @@ model RunPhase {
   /// What the operator wrote on "Continue" at the Checkpoint before the Phase: untrusted text the
   /// Phase is told after its instructions. Null when there was none.
   checkpointComment String?   @map("checkpoint_comment")
+  /// The results of this Phase's earlier rounds, oldest first: `[{ round, summary, verdict,
+  /// findings }]`, kept when a send-back runs the Phase again (at most six). The current round's
+  /// result is in summary, verdict and findings.
+  rounds            Json      @default("[]")
   /// The agent's name, `built_in` | `definitions` (a CHECK holds the list and that agent_commit is
   /// set exactly for `definitions`), the definitions Repository's commit, the Provider, the model
   /// the definition named and the instructions' text. Treated like the task: never logged in full.

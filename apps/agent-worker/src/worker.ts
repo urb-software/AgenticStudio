@@ -595,6 +595,14 @@ export class AgentWorker {
       }
       if (run.phase !== undefined && result.outcome !== 'needs_input') {
         log.push(stepIndex, 'notice', phaseEndNotice(run.phase, endNoticeOf(run.phase, result)));
+        const back = run.phase.sendBackTo;
+        if (handsOn && back !== undefined && result.verdict === 'changes_requested') {
+          log.push(
+            stepIndex,
+            'notice',
+            `Changes requested: back to ${back.itemId}, round ${back.round} of ${back.limit}`,
+          );
+        }
         phaseMarked = true;
       }
       // The log goes first: Studio accepts events only while the worker holds the Run.
@@ -1150,7 +1158,11 @@ function failureOf(error: unknown): RunFailure {
 
 /** The log's notice where a Phase starts. */
 function phaseStartNotice(run: RunPayload, phase: NonNullable<RunPayload['phase']>): string {
-  return `Phase ${phase.itemId} (${phase.position + 1}/${phase.count}): agent ${run.agent.name}, ${PROVIDER_NAMES[run.provider]}`;
+  const round =
+    phase.sendBack === undefined
+      ? ''
+      : `, send-back round ${phase.sendBack.round} of ${phase.sendBack.limit}`;
+  return `Phase ${phase.itemId} (${phase.position + 1}/${phase.count}): agent ${run.agent.name}, ${PROVIDER_NAMES[run.provider]}${round}`;
 }
 
 /** The log's notice where a Phase ends, with its outcome. */
@@ -1160,7 +1172,7 @@ function phaseEndNotice(phase: NonNullable<RunPayload['phase']>, outcome: string
 
 /**
  * Whether the Workflow ends with this Phase's result, as Studio decided it for the claim: a work
- * Phase's `done`, an approval, or changes requested (which end it until sending back exists).
+ * Phase's `done`, an approval, or changes requested when no send-back is left.
  */
 function phaseEndsWorkflow(
   phase: NonNullable<RunPayload['phase']>,

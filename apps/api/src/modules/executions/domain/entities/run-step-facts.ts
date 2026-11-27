@@ -24,6 +24,9 @@ export interface RunStepRecord {
 export type NextStep =
   { kind: 'phase'; position: number } | { kind: 'checkpoint'; item: number } | { kind: 'end' };
 
+/** What follows a Phase's result: also a send-back to the work Phase at `position`. */
+export type PhaseNext = NextStep | { kind: 'send_back'; position: number };
+
 /** What storing a reported Run step did. */
 export type RunStepOutcome =
   /** A review Phase's `done` without a Verdict: nothing was stored and the Run is now `failed`. */

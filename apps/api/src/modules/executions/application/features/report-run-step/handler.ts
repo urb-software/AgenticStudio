@@ -91,7 +91,10 @@ export class ReportRunStepHandler {
         // Decided in the same transaction that stores the result, from the plan the Run recorded;
         // a Run started with an agent never asks, nor does a review Phase without a Verdict.
         run.workflow !== null && input.result.outcome === 'done' && (!review || phaseVerdict)
-          ? this.plans.next(run.workflow.toData(), run.currentPhase, phaseVerdict ?? 'done')
+          ? this.plans.next(run.workflow.toData(), run.currentPhase, phaseVerdict ?? 'done', {
+              used: run.sendBacksUsed,
+              returnTo: run.sendBackReview,
+            })
           : undefined,
       );
     });

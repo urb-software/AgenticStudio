@@ -273,7 +273,9 @@ describe('run payload (claim response)', () => {
 
     it('carries the Follow-up text, its number, the steps before it and the recorded pull request', () => {
       expect(runPayloadSchema.parse(followUp)).toEqual(followUp);
-      for (const reason of RESUME_REASONS.filter((name) => name !== 'bring_up_to_date')) {
+      for (const reason of RESUME_REASONS.filter(
+        (name) => name !== 'bring_up_to_date' && name !== 'send_back',
+      )) {
         expect(runPayloadSchema.safeParse({ ...followUp, resumeReason: reason }).success).toBe(
           true,
         );
@@ -906,6 +908,81 @@ describe('the Verdict of a review Phase', () => {
     const review = { ...phase, kind: 'review', endsOnChangesRequested: true };
     expect(runPhasePayloadSchema.parse(review)).toEqual(review);
     expect(runPhasePayloadSchema.safeParse({ ...phase, kind: 'checkpoint' }).success).toBe(false);
+  });
+});
+
+describe('the claim of a send-back round', () => {
+  const work = { position: 0, itemId: 'build', count: 2, final: false };
+  const findings = [{ text: 'Fix it.', file: 'src/a.ts', line: 3 }, { text: 'And this.' }];
+  const claim = {
+    runId: RUN_ID,
+    projectId: PROJECT_ID,
+    provider: 'claude_code',
+    ...AGENT_FIELDS,
+    task: 'Add a health check',
+    startCommit: 'a'.repeat(40),
+    repository: { remoteUrl: 'git@github.com:acme/shop.git' },
+    integrationBranch: 'dev',
+    kind: 'next_phase',
+    runBranch: 'agent/x-r0b8e5c2d',
+    sessionRef: 'session-1',
+    answer: 'The review asked for changes.',
+    resumeReason: 'send_back',
+    phase: { ...work, sendBack: { round: 1, limit: 2, findings } },
+    stepsBeforePart: 2,
+    nextSeq: 40,
+    studioPaths: [],
+    limits: { stepMinutes: 60, maxSteps: 10 },
+    completedSteps: 2,
+  };
+  const valid = (patch: object) => runPayloadSchema.safeParse({ ...claim, ...patch }).success;
+  const phaseWith = (sendBack: object) => ({ phase: { ...work, sendBack } });
+
+  it('carries the round, the limit and the findings of the review to the work Phase', () => {
+    expect(runPayloadSchema.parse(claim)).toEqual(claim);
+    expect(runPhasePayloadSchema.parse(claim.phase)).toEqual(claim.phase);
+  });
+
+  it('bounds the round, the limit and the findings, and is closed', () => {
+    const sendBack = (patch: object) => phaseWith({ round: 1, limit: 2, findings, ...patch });
+    expect(valid(sendBack({ round: 2 }))).toBe(true);
+    expect(valid(sendBack({ round: 0 }))).toBe(false);
+    expect(valid(sendBack({ round: 3 }))).toBe(false);
+    expect(valid(sendBack({ limit: 3 }))).toBe(false);
+    expect(valid(sendBack({ limit: 0 }))).toBe(false);
+    expect(valid(sendBack({ findings: [] }))).toBe(true);
+    expect(valid(sendBack({ findings: Array.from({ length: 51 }, () => ({ text: 'a' })) }))).toBe(
+      false,
+    );
+    expect(valid(sendBack({ findings: [{ text: 'x'.repeat(2001) }] }))).toBe(false);
+    expect(valid(sendBack({ extra: true }))).toBe(false);
+  });
+
+  it('lets a review say where changes requested go, and the round that would be', () => {
+    const review = { position: 1, itemId: 'check', count: 2, final: true, kind: 'review' };
+    const to = { itemId: 'build', round: 1, limit: 2 };
+    expect(
+      runPhasePayloadSchema.safeParse({ ...review, endsOnChangesRequested: false, sendBackTo: to })
+        .success,
+    ).toBe(true);
+    expect(
+      runPhasePayloadSchema.safeParse({ ...review, sendBackTo: { ...to, round: 3 } }).success,
+    ).toBe(false);
+    expect(
+      runPhasePayloadSchema.safeParse({ ...review, sendBackTo: { ...to, x: 1 } }).success,
+    ).toBe(false);
+  });
+
+  it('allows the reason send_back only for a next-Phase claim of a send-back round', () => {
+    expect(valid({ resumeReason: 'send_back', kind: 'resume' })).toBe(false);
+    expect(valid({ phase: work })).toBe(false);
+    expect(valid({ resumeReason: 'answer' })).toBe(true);
+  });
+
+  it('lets a send-back claim start a new session when there is none to resume', () => {
+    const { sessionRef: _s, answer: _a, resumeReason: _r, ...fresh } = claim;
+    void [_s, _a, _r];
+    expect(runPayloadSchema.safeParse(fresh).success).toBe(true);
   });
 });
 

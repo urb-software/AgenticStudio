@@ -164,10 +164,17 @@ export const RUN_PAYLOAD_KINDS = ['start', 'deliver', 'resume', 'next_phase'] as
 export type RunPayloadKind = (typeof RUN_PAYLOAD_KINDS)[number];
 
 /**
- * Why a `resume` claim continues the agent session: an operator `answer`, the `usage_limit`
- * resume, a `follow_up` or a `bring_up_to_date` request. The text travels as `answer` for all.
+ * Why a claim continues the agent session: an operator `answer`, the `usage_limit` resume, a
+ * `follow_up` or a `bring_up_to_date` request, or a `send_back` (a next-Phase claim only). The text
+ * travels as `answer` for all.
  */
-export const RESUME_REASONS = ['answer', 'usage_limit', 'follow_up', 'bring_up_to_date'] as const;
+export const RESUME_REASONS = [
+  'answer',
+  'usage_limit',
+  'follow_up',
+  'bring_up_to_date',
+  'send_back',
+] as const;
 export type ResumeReason = (typeof RESUME_REASONS)[number];
 
 /**
@@ -270,6 +277,24 @@ export const runSkillSummarySchema = z.strictObject({
 });
 export type RunSkillSummary = z.infer<typeof runSkillSummarySchema>;
 
+/** What a review Phase decides. */
+export const PHASE_VERDICTS = ['approved', 'changes_requested'] as const;
+export type PhaseVerdict = (typeof PHASE_VERDICTS)[number];
+
+/** Most findings a review Phase reports. */
+export const PHASE_FINDINGS_MAX = 50;
+
+/** One thing a review found: untrusted text, and where in the Working copy it is, when it says. */
+export const phaseFindingSchema = z.strictObject({
+  text: z.string().min(1).max(2000),
+  file: z.string().min(1).max(512).optional(),
+  line: z.int().positive().optional(),
+});
+export type PhaseFinding = z.infer<typeof phaseFindingSchema>;
+
+/** Most send-backs a Run uses: the Workflow format's limit, repeated here for the wire. */
+export const SEND_BACKS_MAX = 2;
+
 /** Most Phases a Run of a Workflow has: the Workflow format's limit, repeated here for the wire. */
 export const RUN_PHASES_MAX = 12;
 
@@ -301,6 +326,29 @@ export const runPhasePayloadSchema = z.strictObject({
   final: z.boolean(),
   /** A review Phase only: Studio decided that `changes_requested` ends the Workflow too. */
   endsOnChangesRequested: z.boolean().optional(),
+  /**
+   * A review Phase that will send work back on `changes_requested`: the work Phase it goes to and
+   * the number of that send-back out of the limit, for the Run's log. Absent when changes
+   * requested end the Workflow.
+   */
+  sendBackTo: z
+    .strictObject({
+      itemId: z.string().min(1).max(64),
+      round: z.int().min(1).max(SEND_BACKS_MAX),
+      limit: z.int().min(1).max(SEND_BACKS_MAX),
+    })
+    .optional(),
+  /**
+   * A Phase of a send-back round. The work Phase is told `findings`, the review's text: untrusted,
+   * like the Task. The review that runs again carries none.
+   */
+  sendBack: z
+    .strictObject({
+      round: z.int().min(1).max(SEND_BACKS_MAX),
+      limit: z.int().min(1).max(SEND_BACKS_MAX),
+      findings: z.array(phaseFindingSchema).max(PHASE_FINDINGS_MAX),
+    })
+    .optional(),
   /** The Workflow item's own instructions for this Phase, after the agent's. */
   instructions: z
     .string()
@@ -504,6 +552,15 @@ export const runPayloadSchema = z
   )
   .refine(
     (payload) =>
+      payload.resumeReason !== 'send_back' ||
+      (payload.kind === 'next_phase' && payload.phase?.sendBack !== undefined),
+    {
+      path: ['resumeReason'],
+      message: 'The reason send_back comes only with a next-Phase claim of a send-back round.',
+    },
+  )
+  .refine(
+    (payload) =>
       (payload.updateBase === undefined && payload.updateTip === undefined) ||
       payload.bringUpToDate === true,
     {
@@ -637,21 +694,6 @@ export const runQuestionSchema = z.strictObject({
   recommendation: z.string().min(1).max(QUESTION_OPTION_MAX_LENGTH).optional(),
 });
 export type RunQuestion = z.infer<typeof runQuestionSchema>;
-
-/** What a review Phase decides. */
-export const PHASE_VERDICTS = ['approved', 'changes_requested'] as const;
-export type PhaseVerdict = (typeof PHASE_VERDICTS)[number];
-
-/** Most findings a review Phase reports. */
-export const PHASE_FINDINGS_MAX = 50;
-
-/** One thing a review found: untrusted text, and where in the Working copy it is, when it says. */
-export const phaseFindingSchema = z.strictObject({
-  text: z.string().min(1).max(2000),
-  file: z.string().min(1).max(512).optional(),
-  line: z.int().positive().optional(),
-});
-export type PhaseFinding = z.infer<typeof phaseFindingSchema>;
 
 /**
  * The structured result a Run step ends with: `done`, or `needs_input` with the question (it

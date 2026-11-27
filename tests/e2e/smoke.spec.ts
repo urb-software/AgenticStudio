@@ -1968,6 +1968,7 @@ test('a Workflow Run: the New run dialog, the Phases and the default card, in bo
     verdict: null,
     findings: [],
     summary: text,
+    rounds: [],
     agent: {
       name: position === 0 ? agentName : 'helper',
       source: 'definitions',
@@ -2160,6 +2161,7 @@ test('a Run waiting at a Checkpoint: the card, the Stop confirmation and the Run
         findings: [],
         state: 'done',
         summary: report,
+        rounds: [],
         agent: agent('planner'),
         stepsUsed: 1,
       },
@@ -2171,6 +2173,7 @@ test('a Run waiting at a Checkpoint: the card, the Stop confirmation and the Run
         findings: [],
         state: 'pending',
         summary: null,
+        rounds: [],
         agent: agent('builder'),
         stepsUsed: 0,
       },
@@ -2317,6 +2320,7 @@ test('a Run whose review did not pass: the Verdict, the findings and the Runs li
         verdict: null,
         findings: [],
         summary: 'Added the handler.',
+        rounds: [],
         agent: agent('helper', 'codex'),
         stepsUsed: 1,
       },
@@ -2328,6 +2332,7 @@ test('a Run whose review did not pass: the Verdict, the findings and the Runs li
         verdict: 'changes_requested',
         findings,
         summary: 'The handler needs work.',
+        rounds: [],
         agent: agent('reviewer', 'claude_code'),
         stepsUsed: 1,
       },
@@ -2430,6 +2435,184 @@ test('a Run whose review did not pass: the Verdict, the findings and the Runs li
         .getByRole('button', { name: /src\/handler\.ts/ }),
     ).toHaveAttribute('aria-current', 'true');
   }
+  await expectNoHorizontalScroll(page);
+  await expectNoAxeViolations(page);
+  expect(foreign, 'a request left the Studio origin').toEqual([]);
+});
+
+test('a Run whose review sent work back: the send-backs used and every round, in both themes', async ({
+  page,
+}, testInfo) => {
+  const runId = '00000000-0000-4000-8000-0000000000c3';
+  const commit = EDITOR_SHA;
+  const longText = `${'The loop in the handler never ends when the list is empty. '.repeat(30)}${'w'.repeat(100)}`;
+  const longFile = `${'src/deeply/nested/'.repeat(20)}handler.ts`;
+
+  await signIn(page);
+  await createAndOpenProject(page, `Send-back runs ${testInfo.project.name}`);
+  const projectId = /\/projects\/([0-9a-f-]{36})$/.exec(page.url())![1]!;
+
+  const agent = (name: string, provider: string) => ({
+    name,
+    source: 'definitions',
+    commit,
+    provider,
+    model: 'default',
+    skills: [],
+  });
+  const first = [
+    { text: longText, file: 'src/handler.ts', line: 12 },
+    { text: '<img src=x onerror=alert(1)> and **not bold**, [not a link](https://example.test).' },
+    { text: 'A very long path.', file: longFile, line: 3 },
+  ];
+  const second = [{ text: 'Still open.', file: '../outside/secret.txt' }];
+  const run = {
+    id: runId,
+    projectId,
+    provider: 'claude_code',
+    agent: agent('reviewer', 'claude_code'),
+    workflowName: 'implement-review',
+    reviewNotPassed: true,
+    sendBacks: { used: 2, limit: 2 },
+    workflow: {
+      name: 'implement-review',
+      commit,
+      items: [
+        { id: 'implement', kind: 'work', agent: 'helper' },
+        { id: 'review', kind: 'review', agent: 'reviewer' },
+      ],
+    },
+    phases: [
+      {
+        position: 0,
+        itemId: 'implement',
+        kind: 'work',
+        state: 'done',
+        verdict: null,
+        findings: [],
+        summary: 'Tried once more.',
+        rounds: [
+          { round: 1, summary: 'Added the handler.', verdict: null, findings: [] },
+          { round: 2, summary: 'Fixed the loop.', verdict: null, findings: [] },
+          { round: 3, summary: 'Tried once more.', verdict: null, findings: [] },
+        ],
+        agent: agent('helper', 'codex'),
+        stepsUsed: 3,
+      },
+      {
+        position: 1,
+        itemId: 'review',
+        kind: 'review',
+        state: 'done',
+        verdict: 'changes_requested',
+        findings: second,
+        summary: 'It is still wrong.',
+        rounds: [
+          {
+            round: 1,
+            summary: 'The handler needs work.',
+            verdict: 'changes_requested',
+            findings: first,
+          },
+          {
+            round: 2,
+            summary: 'Better, not there.',
+            verdict: 'changes_requested',
+            findings: first,
+          },
+          {
+            round: 3,
+            summary: 'It is still wrong.',
+            verdict: 'changes_requested',
+            findings: second,
+          },
+        ],
+        agent: agent('reviewer', 'claude_code'),
+        stepsUsed: 3,
+      },
+    ],
+    task: 'Add a health check',
+    state: 'succeeded',
+    startCommit: commit,
+    createdAt: '2026-11-27T09:00:00.000Z',
+    environmentFileSupplied: false,
+    limits: { stepMinutes: 60, maxSteps: 10, waitingDays: 14, maxTotalSteps: 50 },
+    steps: { used: 6, usedInPart: 6 },
+    followUps: 0,
+    messages: [
+      {
+        role: 'operator',
+        kind: 'task',
+        text: 'Add a health check',
+        at: '2026-11-27T09:00:00.000Z',
+      },
+    ],
+  };
+  const answer = (body: unknown) => ({
+    contentType: 'application/json',
+    body: JSON.stringify(body),
+  });
+  await page.route(new RegExp(`/api/runs/${runId}$`), (route) => route.fulfill(answer(run)));
+  await page.route(new RegExp(`/api/runs/${runId}/events\\?`), (route) =>
+    route.fulfill(answer({ events: [] })),
+  );
+  await page.route(new RegExp(`/api/runs/${runId}/steps$`), (route) =>
+    route.fulfill(answer({ steps: [] })),
+  );
+  await page.route(new RegExp(`/api/runs/${runId}/diff\\?`), (route) =>
+    route.fulfill(
+      answer({
+        scope: 'run',
+        baseCommit: commit,
+        includesUnpushed: true,
+        truncated: false,
+        files: [{ path: 'src/handler.ts', status: 'added', additions: 3, deletions: 0 }],
+      }),
+    ),
+  );
+  const foreign = watchForeignRequests(page);
+
+  const main = page.getByRole('main', { name: 'Page content' });
+  await page.goto(`/executions/${runId}`);
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate((value) => localStorage.setItem('theme', value), theme);
+    await page.reload();
+    await expect(page.locator('html')).toHaveClass(new RegExp(`(^|\\s)${theme}(\\s|$)`));
+    const phases = main.getByRole('region', { name: 'Phases of implement-review' });
+    await expect(phases.getByTestId('run-send-backs')).toHaveText('Send-backs used: 2 of 2');
+    const [work, review] = [
+      phases.getByTestId('run-phase').nth(0),
+      phases.getByTestId('run-phase').nth(1),
+    ];
+    await expect(work.getByTestId('run-phase-round')).toHaveCount(3);
+    await expect(work.getByTestId('run-round-summary')).toHaveText([
+      'Added the handler.',
+      'Fixed the loop.',
+      'Tried once more.',
+    ]);
+    await expect(review.getByTestId('run-phase-round')).toHaveCount(3);
+    await expect(review.getByTestId('run-phase-round').first()).toContainText(
+      'Verdict: Changes requested',
+    );
+    // The reviewer's markup is text, never an element; a path outside the copy is only text.
+    await expect(review.getByTestId('run-finding-text').nth(1)).toHaveText(
+      '<img src=x onerror=alert(1)> and **not bold**, [not a link](https://example.test).',
+    );
+    await expect(phases.locator('img, a')).toHaveCount(0);
+    await expect(review.getByTestId('run-finding-file').last()).toHaveText('../outside/secret.txt');
+    await expect(phases.getByTestId('review-not-passed')).toBeVisible();
+    await expectNoHorizontalScroll(page);
+    await expectNoAxeViolations(page);
+  }
+
+  // By keyboard: focus the first finding's file in a round, press Enter, and the Changes tab shows it.
+  const firstFile = main
+    .getByRole('region', { name: 'Phases of implement-review' })
+    .getByRole('button', { name: /src\/handler\.ts.*show it on the Changes tab/ })
+    .first();
+  await firstFile.focus();
+  await page.keyboard.press('Enter');
+  await expect(main.getByRole('tab', { name: 'Changes' })).toHaveAttribute('aria-selected', 'true');
   await expectNoHorizontalScroll(page);
   await expectNoAxeViolations(page);
   expect(foreign, 'a request left the Studio origin').toEqual([]);

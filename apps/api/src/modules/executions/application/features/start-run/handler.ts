@@ -192,7 +192,12 @@ export class StartRunHandler {
             provider: first.provider,
             agent: first,
             workflow: {
-              record: { name: plan.name, commit: plan.commit, items: plan.items },
+              record: {
+                name: plan.name,
+                commit: plan.commit,
+                items: plan.items,
+                ...(plan.sendBacks === undefined ? {} : { sendBacks: plan.sendBacks }),
+              },
               phaseAgents,
             },
             task: Task.of(input.task),

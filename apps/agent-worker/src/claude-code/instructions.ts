@@ -188,9 +188,20 @@ function untrustedSentence(what: string, marker: string): string {
   );
 }
 
+/** A finding as one plain line: where it says it is, then its text, with no line breaks. */
+function findingLine(finding: { text: string; file?: string; line?: number }): string {
+  const flat = (text: string) => text.replace(/\s*[\r\n]+\s*/g, ' ').trim();
+  const where =
+    finding.file === undefined
+      ? ''
+      : `${flat(finding.file)}${finding.line === undefined ? '' : `:${finding.line}`}: `;
+  return `- ${where}${flat(finding.text)}`;
+}
+
 /**
- * The Task, what the Phase before reported and the operator's note from a Checkpoint, as one block
- * bounded to {@link PHASE_HAND_OVER_MAX_BYTES} (a cut is noted); empty when there is nothing to add.
+ * The Task, what the Phase before reported, the operator's note from a Checkpoint and, in a
+ * send-back round, what the review found, as one block bounded to {@link PHASE_HAND_OVER_MAX_BYTES}
+ * (a cut is noted); empty when there is nothing to add.
  */
 export function handOverSection(
   phase: RunPayload['phase'],
@@ -200,13 +211,31 @@ export function handOverSection(
 ): string {
   const previous = phase?.previous;
   const comment = phase?.checkpointComment;
-  if (phase === undefined || (previous === undefined && comment === undefined)) return '';
+  const asked = phase?.sendBack;
+  const found =
+    asked === undefined || asked.findings.length === 0
+      ? undefined
+      : asked.findings.map(findingLine).join('\n');
+  if (
+    phase === undefined ||
+    (previous === undefined && comment === undefined && found === undefined)
+  ) {
+    return '';
+  }
   const limit = PHASE_HAND_OVER_MAX_BYTES;
   const note = `\n[... cut: the hand-over reached Studio's limit of ${limit / 1024} KiB]`;
-  const parts = previous !== undefined && comment !== undefined ? 3 : 2;
+  const parts = 1 + [previous, comment, found].filter((part) => part !== undefined).length;
   // The Task keeps at most half of the room, so the Phase's own report always has some.
   const taskPart = cutToBytes(task.trimEnd(), limit / 2);
-  const room = Math.max(limit - bytesOf(taskPart.text) - bytesOf(note) * parts, 0);
+  const roomAll = Math.max(limit - bytesOf(taskPart.text) - bytesOf(note) * parts, 0);
+  // What the review found shares the room with the others, and keeps at most half when they are
+  // there; the others share what is left as before.
+  const others = (previous === undefined ? 0 : 1) + (comment === undefined ? 0 : 1);
+  const foundPart =
+    found === undefined
+      ? undefined
+      : cutToBytes(found, others === 0 ? roomAll : Math.floor(roomAll / 2));
+  const room = roomAll - (foundPart === undefined ? 0 : bytesOf(foundPart.text));
   // The operator's note keeps at most half of what is left when a report shares the room.
   const commentPart =
     comment === undefined
@@ -219,15 +248,19 @@ export function handOverSection(
           previous.summary.trimEnd(),
           Math.max(room - (commentPart === undefined ? 0 : bytesOf(commentPart.text)), 0),
         );
-  if (taskPart.cut || summaryPart?.cut || commentPart?.cut) {
+  if (taskPart.cut || summaryPart?.cut || commentPart?.cut || foundPart?.cut) {
     notices.push(`The hand-over from the Phase before was cut at ${limit / 1024} KiB.`);
   }
   const before =
-    previous === undefined
-      ? 'The operator looked at the Workflow at a Checkpoint before you. '
-      : `The Phase before you, ${previous.itemId} (agent ${previous.agent}), has finished. `;
+    foundPart !== undefined
+      ? 'The review that followed your work asked for changes, and the Run sent the work back ' +
+        `to you (send-back ${asked!.round} of ${asked!.limit}). `
+      : previous === undefined
+        ? 'The operator looked at the Workflow at a Checkpoint before you. '
+        : `The Phase before you, ${previous.itemId} (agent ${previous.agent}), has finished. `;
   const what = [
     'the Task',
+    ...(foundPart === undefined ? [] : ['what the review found']),
     ...(previous === undefined ? [] : ['what that Phase reported']),
     ...(comment === undefined ? [] : ["the operator's note"]),
   ].join(', ');
@@ -241,6 +274,10 @@ export function handOverSection(
     summaryPart === undefined
       ? ''
       : `Reported by the Phase before:\n${summaryPart.text}${summaryPart.cut ? note : ''}\n`;
+  const review =
+    foundPart === undefined
+      ? ''
+      : `What the review found (send-back ${asked!.round} of ${asked!.limit}):\n${foundPart.text}${foundPart.cut ? note : ''}\n`;
   const operator =
     commentPart === undefined
       ? ''
@@ -248,6 +285,7 @@ export function handOverSection(
   return (
     head +
     `Task:\n${taskPart.text}${taskPart.cut ? note : ''}\n\n` +
+    (review === '' ? '' : `${review}${report === '' && operator === '' ? '' : '\n'}`) +
     report +
     operator +
     `===== END ${marker} hand-over =====\n`

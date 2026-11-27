@@ -205,6 +205,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         // Started with an agent: no Workflow.
         workflow: null,
         workflowName: null,
+        sendBacks: null,
         reviewNotPassed: false,
         // One Phase with that agent; the list leaves the Phases out.
         phases: [
@@ -216,6 +217,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
             verdict: null,
             findings: [],
             summary: null,
+            rounds: [],
             agent: {
               name: 'default-codex',
               source: 'built_in',
@@ -263,6 +265,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
         messages: _messages,
         phases: _phases,
         workflow: _workflow,
+        sendBacks: _sendBacks,
         followUp: _followUp,
         merge: _merge,
         integrationBranch: _integrationBranch,
@@ -270,6 +273,7 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       } = read;
       void _phases;
       void _workflow;
+      void _sendBacks;
       void _messages;
       void _followUp;
       void _merge;

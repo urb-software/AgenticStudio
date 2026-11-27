@@ -28,6 +28,8 @@ export interface RunView {
   phases: readonly RunPhaseView[];
   /** What the Run recorded of its Workflow; `null` for a Run started with an agent. */
   workflow: RunWorkflowData | null;
+  /** The send-backs used out of the Workflow's limit; `null` for a Run started with an agent. */
+  sendBack: { used: number; limit: number } | null;
   /** A review Phase asked for changes: the Run delivered its pull request without an approval. */
   reviewNotPassed: boolean;
   task: string;
@@ -91,6 +93,7 @@ export function runView(run: Run, facts: RunViewFacts): RunView {
     agent: run.agent.toData(),
     phases: run.phases,
     workflow: run.workflow === null ? null : run.workflow.toData(),
+    sendBack: run.sendBack,
     reviewNotPassed: run.reviewNotPassed,
     task: run.task,
     state: lifecycle.state,

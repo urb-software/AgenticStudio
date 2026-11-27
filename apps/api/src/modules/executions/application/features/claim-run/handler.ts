@@ -22,6 +22,7 @@ import type { Run } from '../../../domain/entities/run.js';
 import type { Provider } from '../../../domain/value-objects/provider.js';
 import type { RunAgentData } from '../../../domain/value-objects/run-agent.js';
 import type { RunHandOut } from '../../../domain/value-objects/run-hand-out.js';
+import type { RunPhaseFinding } from '../../../domain/value-objects/run-phase-finding.js';
 import type { RunState } from '../../../domain/value-objects/run-state.js';
 import { RunFailure } from '../../../domain/value-objects/run-failure.js';
 import { RUN_LOG, type RunLog } from '../../ports/run-log.js';
@@ -70,8 +71,15 @@ export interface ClaimedPhase {
   kind: 'work' | 'review';
   /** The Workflow ends after this Phase's `done` (a review: `approved`): the Run delivers then. */
   final: boolean;
-  /** A review Phase: the Workflow ends after `changes_requested` too. */
+  /** A review Phase: the Workflow ends after `changes_requested` too (no send-back is left). */
   endsOnChangesRequested?: boolean;
+  /** A review Phase that will send work back on `changes_requested`: where, and the round. */
+  sendBackTo?: { itemId: string; round: number; limit: number };
+  /**
+   * A Phase of a send-back round: the work Phase is told `findings` (untrusted text of the review
+   * before it), the review that runs again has none.
+   */
+  sendBack?: { round: number; limit: number; findings: RunPhaseFinding[] };
   instructions?: string;
   /** What the Phase before reported; only for a Phase after the first. */
   previous?: { itemId: string; agent: string; summary: string };
@@ -310,9 +318,21 @@ export class ClaimRunHandler {
     const position = run.currentPhase;
     const item = workflow.phases[position]!;
     const review = item.kind === 'review';
-    const next = this.plans.next(workflow.toData(), position, review ? 'approved' : 'done');
-    const before = position > 0 ? run.phases[position - 1] : undefined;
-    const comment = run.phases[position]!.checkpointComment;
+    const state = { used: run.sendBacksUsed, returnTo: run.sendBackReview };
+    const next = this.plans.next(workflow.toData(), position, review ? 'approved' : 'done', state);
+    const asked = review
+      ? this.plans.next(workflow.toData(), position, 'changes_requested', state)
+      : undefined;
+    const round = run.sendBackClaim;
+    // A send-back round's work Phase continues its own session: what the Phase before it said was
+    // told long ago, and no Checkpoint comment is read again.
+    // A review that runs again is told what the work Phase it sent back reported.
+    const back = round?.returning
+      ? this.plans.next(workflow.toData(), position, 'changes_requested', { used: 0 })
+      : undefined;
+    const beforeAt = back?.kind === 'send_back' ? back.position : position - 1;
+    const before = position > 0 && round?.returning !== false ? run.phases[beforeAt] : undefined;
+    const comment = round === null ? run.phases[position]!.checkpointComment : null;
     return {
       phase: {
         position,
@@ -321,12 +341,25 @@ export class ClaimRunHandler {
         kind: item.kind,
         // A Checkpoint after the Phase is not an end: the Run waits there, the Phase hands on.
         final: next.kind === 'end',
-        ...(review
+        ...(asked === undefined ? {} : { endsOnChangesRequested: asked.kind === 'end' }),
+        ...(asked?.kind === 'send_back'
           ? {
-              endsOnChangesRequested:
-                this.plans.next(workflow.toData(), position, 'changes_requested').kind === 'end',
+              sendBackTo: {
+                itemId: workflow.phases[asked.position]!.id,
+                round: run.sendBacksUsed + 1,
+                limit: workflow.sendBacks,
+              },
             }
           : {}),
+        ...(round === null
+          ? {}
+          : {
+              sendBack: {
+                round: round.round,
+                limit: round.limit,
+                findings: round.findings.map(cutFinding),
+              },
+            }),
         ...(item.instructions === undefined || item.instructions === ''
           ? {}
           : { instructions: item.instructions }),
@@ -475,7 +508,19 @@ export class ClaimRunHandler {
 
 /** Redaction can lengthen a stored summary; the claim carries at most the protocol's limit. */
 const REPORT_MAX_LENGTH = 20_000;
+/** The longest finding text and path the worker protocol carries. */
+const FINDING_TEXT_MAX_LENGTH = 2000;
+const FINDING_PATH_MAX_LENGTH = 512;
 const REPORT_CUT_NOTE = '\n[... cut: the report reached the limit of Studio]';
+
+/** A finding as the protocol carries it: the redaction may have lengthened a text. */
+function cutFinding(finding: RunPhaseFinding): RunPhaseFinding {
+  return {
+    text: finding.text.slice(0, FINDING_TEXT_MAX_LENGTH),
+    ...(finding.file === undefined ? {} : { file: finding.file.slice(0, FINDING_PATH_MAX_LENGTH) }),
+    ...(finding.line === undefined ? {} : { line: finding.line }),
+  };
+}
 
 function cutReport(summary: string): string {
   if (summary.length <= REPORT_MAX_LENGTH) return summary;

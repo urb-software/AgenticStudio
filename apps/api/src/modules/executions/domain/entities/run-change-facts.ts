@@ -1,5 +1,6 @@
 import type { Provider } from '../value-objects/provider.js';
 import type { RunPhaseFinding } from '../value-objects/run-phase-finding.js';
+import type { RunPhaseRound } from '../value-objects/run-phase-round.js';
 import type { RunPhaseState, RunPhaseVerdict } from '../value-objects/run-phase.js';
 import type { RunStep } from './run-step.js';
 import type { BringUpDetails } from '../value-objects/bring-up-details.js';
@@ -27,6 +28,8 @@ export type RunFieldChanges = Partial<
       /** The place of the Checkpoint the Run waits at among its items; `null` when none. */
       checkpointItem: number | null;
       workflowEnded: boolean;
+      sendBacksUsed: number;
+      sendBackReview: number | null;
       /** Changes of Phases other than by the session and step count, by position. */
       phaseUpdates: Record<
         number,
@@ -37,6 +40,7 @@ export type RunFieldChanges = Partial<
           verdict?: RunPhaseVerdict | null;
           findings?: readonly RunPhaseFinding[];
           checkpointComment?: string | null;
+          rounds?: readonly RunPhaseRound[];
         }
       >;
     }

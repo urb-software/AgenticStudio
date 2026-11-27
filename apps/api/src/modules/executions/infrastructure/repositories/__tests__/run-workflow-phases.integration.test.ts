@@ -164,7 +164,7 @@ describe('a Run started with a Workflow is stored and moved by Phase (PostgreSQL
       { position: 2, item_id: 'finish', kind: 'work', state: 'pending', agent_provider: 'codex' },
     ]);
     const restored = await runs().findById(id);
-    expect(restored?.workflow?.toData()).toEqual(WORKFLOW_RECORD);
+    expect(restored?.workflow?.toData()).toEqual({ ...WORKFLOW_RECORD, sendBacks: 2 });
     expect(restored?.phases.map((phase) => phase.agent.name)).toEqual([
       'builder',
       'polisher',

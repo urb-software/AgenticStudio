@@ -39,6 +39,7 @@ describe('the Workflow plans', () => {
           { id: 'look', kind: 'checkpoint', text: 'Look at it.' },
           { id: 'check', kind: 'review', agent: 'reviewer' },
         ],
+        sendBacks: 2,
       },
     });
   });
@@ -109,7 +110,7 @@ describe('the Workflow plans', () => {
     expect(plans.next(plan, 1, 'done')).toEqual({ kind: 'end' });
   });
 
-  it('goes on after an approval and ends the Workflow when changes are requested', () => {
+  it('goes on after an approval and sends the work back when changes are requested, within the limit', () => {
     const { plans } = scripted({});
     const plan = {
       name: 'ship',
@@ -122,7 +123,47 @@ describe('the Workflow plans', () => {
     };
 
     expect(plans.next(plan, 1, 'approved')).toEqual({ kind: 'phase', position: 2 });
-    expect(plans.next(plan, 1, 'changes_requested')).toEqual({ kind: 'end' });
+    expect(plans.next(plan, 1, 'changes_requested')).toEqual({ kind: 'send_back', position: 0 });
+    expect(plans.next(plan, 1, 'changes_requested', { used: 1 })).toEqual({
+      kind: 'send_back',
+      position: 0,
+    });
+    expect(plans.next(plan, 1, 'changes_requested', { used: 2 })).toEqual({ kind: 'end' });
+  });
+
+  it('takes the limit from the plan the Run recorded, never above two', () => {
+    const { plans } = scripted({});
+    const items = [
+      { id: 'a', kind: 'work' as const, agent: 'x' },
+      { id: 'b', kind: 'review' as const, agent: 'y' },
+    ];
+    const asked = (sendBacks: number | undefined, used: number) =>
+      plans.next(
+        { name: 'ship', commit: COMMIT, items, ...(sendBacks === undefined ? {} : { sendBacks }) },
+        1,
+        'changes_requested',
+        { used },
+      ).kind;
+
+    expect([asked(0, 0), asked(1, 0), asked(1, 1), asked(undefined, 1), asked(9, 2)]).toEqual([
+      'end',
+      'send_back',
+      'end',
+      'send_back',
+      'end',
+    ]);
+  });
+
+  it('records the limit the Workflow file names, and two when it names none', async () => {
+    const named = await shipping(
+      workflowText('ship', [phase('build', 'work', 'builder')], 'send-backs: 1\n'),
+    ).resolve('p', 'ship');
+    const unnamed = await shipping(
+      workflowText('ship', [phase('build', 'work', 'builder')]),
+    ).resolve('p', 'ship');
+
+    expect(named).toMatchObject({ plan: { sendBacks: 1 } });
+    expect(unnamed).toMatchObject({ plan: { sendBacks: 2 } });
   });
 
   it('reads Workflows only at the published commit, so one that exists only in a Draft is unknown', async () => {

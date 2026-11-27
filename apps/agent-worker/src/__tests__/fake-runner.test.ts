@@ -558,3 +558,138 @@ describe('the fake review Phase', () => {
     expect(result.result).not.toHaveProperty('verdict');
   });
 });
+
+describe('the fake runner in a send-back round', () => {
+  const sendBack = {
+    round: 1,
+    limit: 2,
+    findings: [{ text: 'Add a test.', file: 'src/a.ts', line: 3 }, { text: 'Rename it.' }],
+  };
+  const reviewPhase = {
+    position: 1,
+    itemId: 'check',
+    count: 2,
+    kind: 'review' as const,
+    final: true,
+  };
+
+  const resumed = async (
+    task: string,
+    phase: NonNullable<RunPayload['phase']>,
+    reason: ResumeReason = 'send_back',
+  ) => {
+    const base = run(task);
+    const events: RunnerEvent[] = [];
+    const result = await drainRunStep(
+      new FakeRunner({ slowMs: 10, slowLineMs: 2 }).resume({
+        run: { ...base, kind: 'next_phase', phase },
+        workspace,
+        signal: new AbortController().signal,
+        processes,
+        answer: 'The review asked for changes.',
+        reason,
+        sessionRef: fakeSessionRef(base.runId, phase.position),
+      }),
+      (event) => events.push(event),
+    );
+    return { events: events.map((event) => event.text), result };
+  };
+
+  it('logs the round and each finding, as plain lines, for the work Phase it tells', () => {
+    expect(
+      fakePhaseLines({
+        phase: { position: 0, itemId: 'build', count: 2, final: false, sendBack },
+      }),
+    ).toEqual([
+      'fake runner: phase build (1/2)',
+      'fake runner: send-back round 1 of 2',
+      'fake runner: told by the review: src/a.ts:3: Add a test.',
+      'fake runner: told by the review: Rename it.',
+    ]);
+  });
+
+  it.each([
+    ['[fake-review:changes-once]', 'changes-once'],
+    ['[fake-review:changes]', 'changes'],
+  ])('plays %s as the %s review', (task, scenario) => {
+    expect(fakeReviewScenarioOf(task)).toBe(scenario);
+  });
+
+  it('asks for changes once with changes-once, then approves when it runs again', async () => {
+    const first = await drainRunStep(
+      new FakeRunner({ slowMs: 10, slowLineMs: 2 }).start({
+        run: { ...run('Add [fake-review:changes-once]'), kind: 'next_phase', phase: reviewPhase },
+        workspace,
+        signal: new AbortController().signal,
+        processes,
+      }),
+      () => undefined,
+    );
+    expect(first).toMatchObject({ verdict: 'changes_requested' });
+
+    const again = await resumed('Add [fake-review:changes-once]', {
+      ...reviewPhase,
+      sendBack: { ...sendBack, findings: [] },
+    });
+
+    expect(again.result).toMatchObject({
+      verdict: 'approved',
+      sessionRef: fakeSessionRef(run('x').runId, 1),
+    });
+  });
+
+  it('asks for changes again with changes, at every round', async () => {
+    const again = await resumed('Add [fake-review:changes]', {
+      ...reviewPhase,
+      sendBack: { ...sendBack, findings: [] },
+    });
+
+    expect(runStepResultSchema.parse(again.result)).toMatchObject({
+      verdict: 'changes_requested',
+      findings: FAKE_REVIEW_FINDINGS,
+    });
+  });
+
+  it('resumes the work Phase in its own session, telling what the review found', async () => {
+    const { events, result } = await resumed('Add a feature', {
+      position: 0,
+      itemId: 'build',
+      count: 2,
+      final: false,
+      sendBack,
+    });
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        'fake runner: send-back',
+        'fake runner: told by the review: src/a.ts:3: Add a test.',
+      ]),
+    );
+    expect(result).toMatchObject({
+      outcome: 'done',
+      sessionRef: fakeSessionRef(run('x').runId, 0),
+    });
+  });
+
+  it('refuses to resume a work Phase in the session of another Phase', async () => {
+    const base = run('Add a feature');
+    await expect(
+      drainRunStep(
+        new FakeRunner().resume({
+          run: {
+            ...base,
+            kind: 'next_phase',
+            phase: { position: 0, itemId: 'build', count: 2, final: false, sendBack },
+          },
+          workspace,
+          signal: new AbortController().signal,
+          processes,
+          answer: 'x',
+          reason: 'send_back',
+          sessionRef: fakeSessionRef(base.runId, 1),
+        }),
+        () => undefined,
+      ),
+    ).rejects.toBeInstanceOf(AgentFailedError);
+  });
+});

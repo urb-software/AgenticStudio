@@ -38,6 +38,10 @@ export interface RunData
   checkpointItem?: number | null;
   /** The Workflow is over and the Run is queued only to deliver what exists. */
   workflowEnded?: boolean;
+  /** The send-backs the Run used since it started, or since its last Follow-up; 0 when left out. */
+  sendBacksUsed?: number;
+  /** The review Phase that sent work back and is to run again; `null` for none. */
+  sendBackReview?: number | null;
   task: string;
   startCommit: string;
   /** Never a credential. */

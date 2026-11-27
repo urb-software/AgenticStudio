@@ -189,6 +189,8 @@ describe('restoring a Run from its flat record and giving it back', () => {
         'provider',
         'pullRequestStatus',
         'remoteUrl',
+        'sendBackReview',
+        'sendBacksUsed',
         'startCommit',
         'task',
         'workflow',

@@ -1,4 +1,10 @@
-export const RESUME_REASONS = ['answer', 'usage_limit', 'follow_up', 'bring_up_to_date'] as const;
+export const RESUME_REASONS = [
+  'answer',
+  'usage_limit',
+  'follow_up',
+  'bring_up_to_date',
+  'send_back',
+] as const;
 export type ResumeReason = (typeof RESUME_REASONS)[number];
 
 export class RunResume {
