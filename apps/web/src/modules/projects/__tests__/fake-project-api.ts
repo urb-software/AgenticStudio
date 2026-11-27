@@ -56,6 +56,9 @@ export function fakeProjectApi(project: ProjectOutput, initial: RepositoryOutput
     environmentFileContent: null as string | null,
     mergeMethod: project.mergeMethod,
     defaultAgent: project.defaultAgent,
+    defaultWorkflow: project.defaultWorkflow as string | null,
+    /** What `GET /api/workflows` lists: none unless a test names some. */
+    workflows: [] as { name: string; description: string | null; usable: boolean }[],
     // What `GET /api/projects/:id/run-agents` answers: the built-in Defaults.
     runAgents: {
       agents: [
@@ -96,6 +99,19 @@ export function fakeProjectApi(project: ProjectOutput, initial: RepositoryOutput
   const held: Partial<Record<Route, Promise<void>>> = {};
 
   const fetch = vi.fn(async (request: Request): Promise<Response> => {
+    if (request.method === 'GET' && new URL(request.url).pathname === '/api/workflows') {
+      return json(200, {
+        commit: 'a'.repeat(40),
+        repository: { state: 'ready', note: null },
+        truncated: false,
+        workflows: state.workflows.map((workflow) => ({
+          ...workflow,
+          valid: true,
+          notUsableReason: null,
+          problems: [],
+        })),
+      });
+    }
     // The composed Runs section lists the project's Runs: none here.
     if (request.method === 'GET' && RUNS_ROUTE.test(new URL(request.url).pathname)) {
       return json(200, []);
@@ -154,6 +170,7 @@ export function fakeProjectApi(project: ProjectOutput, initial: RepositoryOutput
           ...project,
           mergeMethod: state.mergeMethod,
           defaultAgent: state.defaultAgent,
+          defaultWorkflow: state.defaultWorkflow,
           repository: state.repository && {
             state: state.repository.state,
             url: state.repository.url,
@@ -249,8 +266,14 @@ export function fakeProjectApi(project: ProjectOutput, initial: RepositoryOutput
       case 'runAgents':
         return json(200, state.runAgents);
       case 'setDefaultAgent': {
-        state.defaultAgent = (body as { agent: string | null }).agent;
-        return json(200, { ...project, defaultAgent: state.defaultAgent });
+        const named = body as { agent?: string | null; workflow?: string | null };
+        state.defaultWorkflow = named.workflow ?? null;
+        state.defaultAgent = state.defaultWorkflow === null ? (named.agent ?? null) : null;
+        return json(200, {
+          ...project,
+          defaultAgent: state.defaultAgent,
+          defaultWorkflow: state.defaultWorkflow,
+        });
       }
       case 'removeEnvironmentFile':
         state.environmentFile = null;

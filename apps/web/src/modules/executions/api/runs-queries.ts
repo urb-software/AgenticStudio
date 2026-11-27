@@ -196,6 +196,22 @@ export function useRunAgents(projectId: string, opening: number, enabled: boolea
   });
 }
 
+/**
+ * The Workflows a Run can start with are the usable ones of the list. Own entry per opening, like
+ * the agents; the API judges the Providers again at the start.
+ */
+export function useRunWorkflows(opening: number, enabled: boolean) {
+  return useQuery({
+    queryKey: ['runs', 'run-workflows', opening] as const,
+    queryFn: api.listWorkflows,
+    enabled,
+    staleTime: Infinity,
+    gcTime: 0,
+    retry: false,
+    select: (list) => list.workflows.filter((workflow) => workflow.usable),
+  });
+}
+
 /** The mutation stays pending until the Run is read (frontend.md §4). */
 export function useRetryDelivery(runId: string) {
   const queryClient = useQueryClient();

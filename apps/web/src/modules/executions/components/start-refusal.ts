@@ -16,6 +16,19 @@ const AGENT_REFUSALS = {
     refreshProviders: false,
     showDetail: false,
   },
+  'urn:agentic-studio:problem:workflow-unknown': {
+    message: 'This Workflow no longer exists. The list has been read again; pick another.',
+    refreshAgents: true,
+    refreshProviders: false,
+    showDetail: false,
+  },
+  'urn:agentic-studio:problem:workflow-not-usable': {
+    message: 'This Workflow cannot start a run now.',
+    refreshAgents: true,
+    refreshProviders: true,
+    // The server's detail names the reason (a Phase, a Provider, or what is not supported yet).
+    showDetail: true,
+  },
   'urn:agentic-studio:problem:provider-unavailable': {
     message:
       "This agent's Provider is switched off on the agent worker. Pick an agent of another Provider, or try again later.",

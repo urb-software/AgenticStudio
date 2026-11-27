@@ -26,7 +26,7 @@ const section = () => screen.getByRole('region', { name: 'Runs' });
 const newRunButton = () => within(section()).getByRole('button', { name: 'New run' });
 const dialog = () => screen.getByRole('dialog', { name: 'New run' });
 const taskInput = () => within(dialog()).getByLabelText<HTMLTextAreaElement>('Task');
-const agentSelect = () => within(dialog()).getByLabelText<HTMLSelectElement>('Agent');
+const agentSelect = () => within(dialog()).getByLabelText<HTMLSelectElement>('Agent or Workflow');
 const selectedAgent = () => agentSelect().value;
 const optionOf = (name: string) =>
   within(agentSelect()).getByRole<HTMLOptionElement>('option', { name: new RegExp(name) });
@@ -552,7 +552,7 @@ describe('New run dialog: provider availability (Issue #101)', () => {
     await userEvent.click(newRunButton());
 
     expect(within(dialog()).getByRole('status').textContent).toBe('Checking the agents…');
-    expect(within(dialog()).queryByLabelText('Agent')).toBeNull();
+    expect(within(dialog()).queryByLabelText('Agent or Workflow')).toBeNull();
     expect(startButton()).toHaveProperty('disabled', true);
     await expect(document.body).toHaveNoAxeViolations();
     answer(

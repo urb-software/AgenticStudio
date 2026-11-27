@@ -286,6 +286,15 @@ export function useProjectRunAgents(projectId: string, enabled: boolean) {
  * Names the project's default agent, or none. The project and the agents are read again, and the
  * mutation stays pending until they are (the answer is not written into the cache).
  */
+export function useProjectWorkflows(enabled: boolean) {
+  return useQuery({
+    queryKey: ['projects', 'usable-workflows'] as const,
+    queryFn: api.listWorkflows,
+    enabled,
+    select: (list) => list.workflows.filter((workflow) => workflow.usable),
+  });
+}
+
 export function useSetDefaultAgent(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({

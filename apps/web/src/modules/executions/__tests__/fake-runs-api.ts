@@ -14,6 +14,7 @@ import type {
   RunEventOutput,
   RunOutput,
   RunStepOutput,
+  WorkflowListOutput,
 } from '../../../platform/api';
 
 type Route =
@@ -28,6 +29,7 @@ type Route =
   | 'resume'
   | 'providers'
   | 'runAgents'
+  | 'workflows'
   | 'agentWorker'
   | 'events'
   | 'steps'
@@ -66,6 +68,7 @@ const ROUTES: readonly [RegExp, (method: string) => Route][] = [
   [/^\/api\/runs\/([^/]+)\/resume$/, () => 'resume'],
   [/^\/api\/providers()$/, () => 'providers'],
   [/^\/api\/projects\/([^/]+)\/run-agents$/, () => 'runAgents'],
+  [/^\/api\/workflows()$/, () => 'workflows'],
   [/^\/api\/agent-worker()$/, () => 'agentWorker'],
   [/^\/api\/runs\/([^/]+)\/cancel$/, () => 'cancel'],
   [/^\/api\/runs\/([^/]+)\/answer$/, () => 'answer'],
@@ -220,6 +223,7 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     resume: [],
     providers: [],
     runAgents: [],
+    workflows: [],
     agentWorker: [],
     cancel: [],
     answer: [],
@@ -245,6 +249,8 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
   const calls: { route: Route; body?: unknown; query?: URLSearchParams }[] = [];
   /** What `GET /api/agent-worker` answers: no worker connected by default. */
   let agentWorker: AgentWorkerOutput = { connected: false };
+  /** What `GET /api/workflows` lists: none by default. */
+  let workflows: WorkflowListOutput['workflows'] = [];
   /** Each Run's stored log and step results, as the API would hold them. */
   const logs = new Map<string, RunEventOutput[]>();
   const stepResults = new Map<string, RunStepOutput[]>();
@@ -351,6 +357,13 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
         return json(200, BOTH_AVAILABLE);
       case 'runAgents':
         return json(200, DEFAULT_RUN_AGENTS);
+      case 'workflows':
+        return json(200, {
+          commit: SHA,
+          repository: { state: 'ready', note: null },
+          truncated: false,
+          workflows,
+        });
       case 'agentWorker':
         return json(200, agentWorker);
       case 'run': {
@@ -733,6 +746,10 @@ export function fakeRunsApi(initial: RunOutput[] = []) {
     reviewComments: (runId: string) => reviewComments.get(runId),
     /** Whether the Run still has a prepared Follow-up on the server. */
     hasPrepared: (runId: string) => prepared.has(runId),
+    /** Sets the Workflows the server lists. */
+    setWorkflows(list: WorkflowListOutput['workflows']) {
+      workflows = list;
+    },
     /** Sets what the agent worker's status answers. */
     setAgentWorker(status: AgentWorkerOutput) {
       agentWorker = status;

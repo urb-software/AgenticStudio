@@ -275,7 +275,7 @@ describe('Run page', () => {
         'Add pagination\nUse cursors.',
       );
       await vi.waitFor(() =>
-        expect(within(dialog).getByLabelText<HTMLSelectElement>('Agent').value).toBe(
+        expect(within(dialog).getByLabelText<HTMLSelectElement>('Agent or Workflow').value).toBe(
           'default-codex',
         ),
       );
@@ -308,7 +308,7 @@ describe('Run page', () => {
     const dialog = screen.getByRole('dialog', { name: 'New run' });
 
     await vi.waitFor(() =>
-      expect(within(dialog).getByLabelText<HTMLSelectElement>('Agent').value).toBe(
+      expect(within(dialog).getByLabelText<HTMLSelectElement>('Agent or Workflow').value).toBe(
         'default-claude-code',
       ),
     );
@@ -335,7 +335,7 @@ describe('Run page', () => {
     const dialog = screen.getByRole('dialog', { name: 'New run' });
 
     await vi.waitFor(() =>
-      expect(within(dialog).getByLabelText<HTMLSelectElement>('Agent').value).toBe(
+      expect(within(dialog).getByLabelText<HTMLSelectElement>('Agent or Workflow').value).toBe(
         'default-claude-code',
       ),
     );
@@ -361,7 +361,7 @@ describe('Run page', () => {
     await heading();
     const chosen = () =>
       within(screen.getByRole('dialog', { name: 'New run' })).getByLabelText<HTMLSelectElement>(
-        'Agent',
+        'Agent or Workflow',
       ).value;
 
     await userEvent.click(screen.getByRole('button', { name: 'Run again' }));

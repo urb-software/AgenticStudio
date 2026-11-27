@@ -19,6 +19,14 @@ export const SKILL_FILE = `---\nname: ${SKILL_NAME}\ndescription: Writes release
 /** The entry file of that agent. */
 export const REVIEWER_FILE = `---\nname: reviewer\ndescription: Reviews every change twice\nprovider: claude_code\nmodel: opus\nskills:\n  - release-notes\n---\n${REVIEWER_INSTRUCTIONS}`;
 
+/** A second agent and a Workflow of two work Phases that name one agent each. */
+export const HELPER_FILE =
+  '---\nname: helper\ndescription: Polishes what the first Phase did\nprovider: claude_code\nmodel: sonnet\n---\nPolish the work.\n';
+export const TWO_PHASES_FILE =
+  '---\nname: two-phases\ndescription: Two work Phases, one agent each\nsequence:\n' +
+  '  - id: first\n    kind: work\n    agent: reviewer\n' +
+  '  - id: second\n    kind: work\n    agent: helper\n---\nNotes for the operator.\n';
+
 async function until(read, done, what, timeoutMs = 60_000) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
@@ -104,7 +112,7 @@ export async function runAgentPhase(options) {
   assert(offered.status === 200, `the run agents answered ${offered.status}`);
   assert(
     offered.body.agents.map((agent) => agent.name).join() ===
-      'default-claude-code,default-codex,reviewer',
+      'default-claude-code,default-codex,helper,reviewer',
     `unexpected agents ${JSON.stringify(offered.body.agents)}`,
   );
   assert(
@@ -233,6 +241,8 @@ export async function runAgentPhase(options) {
   );
   assert(stopped.pullRequest === undefined, 'a pull request was opened for the copied file');
 
+  await runWorkflowPhase({ call, projectId, definitionsCommit });
+
   const listedRuns = (await call(`/api/projects/${projectId}/runs`)).body;
   assert(
     listedRuns.every((run) => run.agent && run.agent.instructions === undefined),
@@ -240,5 +250,127 @@ export async function runAgentPhase(options) {
   );
   console.log(
     '[e2e] agent phase: a Run started with an agent from the definitions Repository recorded it, handed the fake runner its instructions and its files, and was stopped from pushing a copy of them',
+  );
+}
+
+/** A Run started with a Workflow of two work Phases: the record, the order and the hand-over. */
+async function runWorkflowPhase({ call, projectId, definitionsCommit }) {
+  const listed = await call('/api/workflows');
+  assert(listed.status === 200, `listing the Workflows answered ${listed.status}`);
+  const flow = listed.body.workflows.find((workflow) => workflow.name === 'two-phases');
+  assert(flow?.valid && flow.usable, `the Workflow is ${JSON.stringify(flow)}`);
+
+  // Refusals of the start, over HTTP.
+  const unknown = await call(`/api/projects/${projectId}/runs`, {
+    method: 'POST',
+    body: JSON.stringify({ task: 'x', workflow: 'no-such-workflow' }),
+  });
+  assert(
+    unknown.status === 409 && unknown.body.type === 'urn:agentic-studio:problem:workflow-unknown',
+    `an unknown Workflow answered ${unknown.status} ${JSON.stringify(unknown.body)}`,
+  );
+  const both = await call(`/api/projects/${projectId}/runs`, {
+    method: 'POST',
+    body: JSON.stringify({ task: 'x', workflow: 'two-phases', agent: 'reviewer' }),
+  });
+  assert(both.status === 422, `an agent with a Workflow answered ${both.status}`);
+
+  const started = await call(`/api/projects/${projectId}/runs`, {
+    method: 'POST',
+    body: JSON.stringify({ task: 'Work through the Workflow', workflow: 'two-phases' }),
+  });
+  assert(started.status === 201, `starting the Workflow Run answered ${started.status}`);
+  const runId = started.body.id;
+  const queued = (await call(`/api/runs/${runId}`)).body;
+  assert(queued.workflowName === 'two-phases', 'the Run does not name its Workflow');
+  assert(
+    queued.workflow.commit === definitionsCommit &&
+      queued.workflow.items.map((item) => `${item.id}:${item.agent}`).join() ===
+        'first:reviewer,second:helper',
+    `the Run recorded ${JSON.stringify(queued.workflow)}`,
+  );
+  assert(
+    queued.phases
+      .map((phase) => `${phase.itemId}:${phase.agent.name}:${phase.agent.commit}`)
+      .join() === `first:reviewer:${definitionsCommit},second:helper:${definitionsCommit}`,
+    `the Phases recorded ${JSON.stringify(queued.phases)}`,
+  );
+
+  const finished = await until(
+    async () => (await call(`/api/runs/${runId}`)).body,
+    (run) => ['succeeded', 'failed', 'cancelled', 'timed_out'].includes(run.state),
+    'the Workflow Run to finish',
+    180_000,
+  );
+  assert(finished.state === 'succeeded', `the Workflow Run is ${finished.state}`);
+  assert(
+    finished.phases.every((phase) => phase.state === 'done' && phase.stepsUsed === 1),
+    `the Phases ended as ${JSON.stringify(finished.phases)}`,
+  );
+  assert(
+    finished.phases[0].summary === 'The fake agent finished the task. (Phase first)' &&
+      finished.phases[1].summary === 'The fake agent finished the task. (Phase second)',
+    `the Phases reported ${JSON.stringify(finished.phases.map((phase) => phase.summary))}`,
+  );
+  assert(finished.agent.name === 'helper', 'the Run does not show the agent of its last Phase');
+
+  const listedRuns = await call('/api/runs');
+  assert(
+    listedRuns.body.find((run) => run.id === runId)?.workflowName === 'two-phases',
+    'the Runs list does not name the Workflow',
+  );
+
+  // The log marks where each Phase starts and ends; the second Phase was told what the first
+  // one reported and ran in a session of its own.
+  const log = await call(`/api/runs/${runId}/events?limit=1000`);
+  const texts = log.body.events.map((event) => event.text);
+  for (const expected of [
+    'Phase first (1/2): agent reviewer, Claude Code',
+    'Phase first (1/2) ended: done',
+    'Phase second (2/2): agent helper, Claude Code',
+    'Phase second (2/2) ended: done',
+    'fake runner: phase second (2/2)',
+    'fake runner: told by phase first: The fake agent finished the task. (Phase first)',
+  ]) {
+    assert(texts.includes(expected), `the log lacks "${expected}": ${JSON.stringify(texts)}`);
+  }
+  const order = (text) => texts.indexOf(text);
+  assert(
+    order('Phase first (1/2) ended: done') < order('Phase second (2/2): agent helper, Claude Code'),
+    'the Phases did not run in order',
+  );
+
+  // The Project's default may be a Workflow: a start that names nothing starts it.
+  const named = await call(`/api/projects/${projectId}/default-agent`, {
+    method: 'PUT',
+    body: JSON.stringify({ workflow: 'two-phases' }),
+  });
+  assert(
+    named.status === 200 &&
+      named.body.defaultWorkflow === 'two-phases' &&
+      named.body.defaultAgent === null,
+    `naming the default Workflow answered ${named.status} ${JSON.stringify(named.body)}`,
+  );
+  const byDefault = await call(`/api/projects/${projectId}/runs`, {
+    method: 'POST',
+    body: JSON.stringify({ task: 'Start the default' }),
+  });
+  assert(byDefault.status === 201, `the default start answered ${byDefault.status}`);
+  const defaulted = await until(
+    async () => (await call(`/api/runs/${byDefault.body.id}`)).body,
+    (run) => ['succeeded', 'failed', 'cancelled', 'timed_out'].includes(run.state),
+    'the default Workflow Run to finish',
+    180_000,
+  );
+  assert(
+    defaulted.state === 'succeeded' && defaulted.workflowName === 'two-phases',
+    `the default Run is ${defaulted.state} of ${defaulted.workflowName}`,
+  );
+  await call(`/api/projects/${projectId}/default-agent`, {
+    method: 'PUT',
+    body: JSON.stringify({ agent: null, workflow: null }),
+  });
+  console.log(
+    '[e2e] workflow phase: a Run started with a Workflow of two work Phases recorded it, ran the Phases in order in sessions of their own, handed the second what the first reported and delivered once',
   );
 }

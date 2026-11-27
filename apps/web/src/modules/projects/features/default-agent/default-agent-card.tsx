@@ -9,46 +9,63 @@ import { Label } from '@/shared/ui/label';
 import { Skeleton } from '@/shared/ui/skeleton';
 import { toast } from '@/shared/ui/sonner';
 import { ApiError } from '../../../../platform/api';
-import { useProjectRunAgents, useSetDefaultAgent } from '../../api/projects-queries';
+import {
+  useProjectRunAgents,
+  useProjectWorkflows,
+  useSetDefaultAgent,
+} from '../../api/projects-queries';
 
 const TITLE_ID = 'default-agent-card-title';
 
-/** The value of the "None" choice: no default agent is named. */
+/** The value of the "None" choice: no default is named. */
 const NONE = '';
 
+/** A Workflow choice is its name after this prefix; an agent name never holds a colon. */
+const WORKFLOW_PREFIX = 'workflow:';
+
 /**
- * The agent a new Run of this project offers first. When that agent is no longer usable, the
+ * The agent or the Workflow a new Run of this project offers first. When that agent is no longer usable, the
  * built-in Default agent of its Provider is offered instead, and the New run dialog says why.
  */
 export function DefaultAgentCard({
   projectId,
   defaultAgent,
+  defaultWorkflow = null,
 }: {
   projectId: string;
   defaultAgent: string | null;
+  defaultWorkflow?: string | null;
 }) {
   const agents = useProjectRunAgents(projectId, true);
+  const workflows = useProjectWorkflows(true);
   const save = useSetDefaultAgent(projectId);
   const [picked, setPicked] = useState<string | null>(null);
   const selectId = useId();
   const reasonId = `${selectId}-reason`;
-  const saved = defaultAgent ?? NONE;
+  const saved = defaultWorkflow ? `${WORKFLOW_PREFIX}${defaultWorkflow}` : (defaultAgent ?? NONE);
   const choice = picked ?? saved;
   const problem = save.error instanceof ApiError ? save.error.problem : undefined;
   const reason = agents.data?.preselectedReason ?? null;
   // The saved default may have stopped being usable: it stays visible as such until changed.
   const unusable =
-    saved !== NONE && agents.data && !agents.data.agents.some((agent) => agent.name === saved)
+    saved !== NONE &&
+    agents.data &&
+    (saved.startsWith(WORKFLOW_PREFIX)
+      ? workflows.data !== undefined &&
+        !workflows.data.some((workflow) => `${WORKFLOW_PREFIX}${workflow.name}` === saved)
+      : !agents.data.agents.some((agent) => agent.name === saved))
       ? saved
       : null;
 
   function submit() {
     save.mutate(
-      { agent: choice === NONE ? null : choice },
+      choice.startsWith(WORKFLOW_PREFIX)
+        ? { workflow: choice.slice(WORKFLOW_PREFIX.length) }
+        : { agent: choice === NONE ? null : choice },
       {
         onSuccess: () => {
           setPicked(null);
-          toast.success('Default agent saved');
+          toast.success('Default saved');
         },
       },
     );
@@ -57,7 +74,7 @@ export function DefaultAgentCard({
   return (
     <Card aria-labelledby={TITLE_ID}>
       <CardHeader>
-        <CardTitle id={TITLE_ID}>Default agent</CardTitle>
+        <CardTitle id={TITLE_ID}>Default agent or Workflow</CardTitle>
       </CardHeader>
       <CardContent>
         {agents.isPending ? (
@@ -81,7 +98,7 @@ export function DefaultAgentCard({
           >
             <div className="flex flex-col">
               <Label htmlFor={selectId} className="mb-1.5">
-                Agent offered first
+                Offered first
               </Label>
               <NativeSelect
                 id={selectId}
@@ -94,12 +111,30 @@ export function DefaultAgentCard({
                 }}
               >
                 <option value={NONE}>None (the built-in Default agent of the Provider)</option>
-                {unusable ? <option value={unusable}>{unusable} (not usable)</option> : null}
-                {agents.data.agents.map((agent) => (
-                  <option key={agent.name} value={agent.name}>
-                    {agent.name}
+                {unusable ? (
+                  <option value={unusable}>
+                    {unusable.startsWith(WORKFLOW_PREFIX)
+                      ? unusable.slice(WORKFLOW_PREFIX.length)
+                      : unusable}{' '}
+                    (not usable)
                   </option>
-                ))}
+                ) : null}
+                <optgroup label="Agents">
+                  {agents.data.agents.map((agent) => (
+                    <option key={agent.name} value={agent.name}>
+                      {agent.name}
+                    </option>
+                  ))}
+                </optgroup>
+                {workflows.data && workflows.data.length > 0 ? (
+                  <optgroup label="Workflows">
+                    {workflows.data.map((workflow) => (
+                      <option key={workflow.name} value={`${WORKFLOW_PREFIX}${workflow.name}`}>
+                        {workflow.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                ) : null}
               </NativeSelect>
               {reason ? (
                 <p
@@ -117,8 +152,8 @@ export function DefaultAgentCard({
               </Banner>
             ) : null}
             <p className="m-0 text-small text-text-muted">
-              New runs offer this agent first. If it is not usable when a run starts, the built-in
-              Default agent is offered instead.
+              New runs offer this agent or Workflow first. If an agent is not usable when a run
+              starts, the built-in Default agent is offered instead.
             </p>
             <div className="flex flex-wrap gap-2 border-t border-border pt-4">
               <Button
