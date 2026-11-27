@@ -61,11 +61,11 @@ A folder in the Definitions Repository holding reusable know-how that agents can
 _Avoid_: Plugin, command, tool
 
 **Definitions Repository**:
-The one Repository, a Project of its own kind, that holds the Agent definitions and the Skill definitions. It accepts no Run, no Preview and no Environment file, and the Agent account has no access to it. Whatever is on its Integration branch is published.
+The one Repository, a Project of its own kind, that holds the Agent definitions, the Skill definitions and the Workflows. It accepts no Run, no Preview and no Environment file, and the Agent account has no access to it. Whatever is on its Integration branch is published.
 _Avoid_: Agents repo, config repo
 
 **Default agent**:
-The agent preselected when a Run starts: the Project's named default, or the built-in Default for the Provider. An agent is always chosen. A built-in "Default" agent per Provider exists without any Repository; each Project can name its own Default agent.
+The agent or Workflow preselected when a Run starts: the Project's named default (an agent or a Workflow), or the built-in Default agent for the Provider. An agent or a Workflow is always chosen. A built-in "Default" agent per Provider exists without any Repository; each Project can name its own Default agent.
 _Avoid_: Standard agent
 
 **Model**:
@@ -80,17 +80,35 @@ _Avoid_: Unsaved version, pending change
 The operator's action that turns a Draft into one commit on the Definitions Repository's Integration branch, pushed as a fast-forward only. It is refused when the Repository moved since the Draft began.
 _Avoid_: Deploy, release
 
+### `workflows`
+
+**Workflow**:
+A file in the Definitions Repository that describes a sequence of Phases carried out on one Run. The operator chooses an agent or a Workflow when starting a Run.
+_Avoid_: Pipeline, flow, graph
+
+**Phase**:
+One part of a Workflow: it names one Agent definition and is either work (it may change the Working copy) or review (it ends with a Verdict). A Phase takes one or more Run steps.
+_Avoid_: Step (a Run step is one execution of the agent CLI), stage, task
+
+**Verdict**:
+How a review Phase ends: approved, or changes requested with findings.
+_Avoid_: Result (a Run step ends with a result), approval (see Merge approval), score
+
+**Checkpoint**:
+A place in a Workflow where the Run waits for the operator, who continues or stops it and may add a comment for the next Phase.
+_Avoid_: Gate, approval, pause
+
 ### `executions`
 
 **Run**:
-One execution of an agent on an operator's Task in a Project, from the operator's start to its latest result. A finished Run can be reopened by a Follow-up; one Run corresponds to at most one pull request.
+One execution of an agent, or of a Workflow's Phases in order, on an operator's Task in a Project, from the operator's start to its latest result. A finished Run can be reopened by a Follow-up; one Run corresponds to at most one pull request.
 _Avoid_: Job, session, task run
 
 **Task**:
 The operator's instruction that starts a Run.
 
 **Follow-up**:
-The operator's further instruction to a finished Run: the agent continues the same agent session and the Run delivers to the same pull request. It is not an Answer: a Follow-up reopens a finished Run.
+The operator's further instruction to a finished Run: the agent continues the same agent session and the Run delivers to the same pull request. For a Run of a Workflow, the Workflow runs again from its first Phase with the sessions resumed. It is not an Answer: a Follow-up reopens a finished Run.
 _Avoid_: New task, re-run, continuation
 
 **Bring up to date**:
@@ -102,8 +120,8 @@ The text Studio builds for the operator to review before it becomes a Follow-up,
 _Avoid_: Draft Follow-up, automatic Follow-up
 
 **Run step**:
-One non-interactive execution of the agent CLI within a Run. A Run consists of one or more Run steps.
-_Avoid_: Turn, step (unqualified), iteration
+One non-interactive execution of the agent CLI within a Run. A Run consists of one or more Run steps; a Phase of a Workflow takes one or more of them.
+_Avoid_: Turn, step (unqualified), iteration, Phase
 
 **Run log**:
 A Run's stored sequence of Run events, numbered per Run: its durable record of what the agent did. The live view streams it; it is redacted and capped before storage.

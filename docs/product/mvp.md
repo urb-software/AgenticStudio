@@ -31,7 +31,7 @@ This is a **capability roadmap**; not all of it belongs in the first implemented
 | --- | --- |
 | `projects` | Projects, repository connection, the Clone and its fetch, Git branches, the merge method setting |
 | `agents` | Agent and skill definitions, assignment, file/Git-first editing, validation, publication |
-| `workflows` | Definition, steps, sequencing, orchestration, human approvals |
+| `workflows` | Definition, Phases, sequencing, orchestration, human approvals ([ADR 0007](../architecture/adr/0007-workflows.md)) |
 | `executions` | Runs and their working copies, queueing, cancellation, status, logs, results, the pull request, its review and merge |
 | `environments` | Project Compose stack lifecycle and one shared Preview per project |
 | `mcp` | Reusable MCP server registry/configuration, project/agent bindings, basic connection management |
@@ -73,7 +73,7 @@ The MVP demonstrates that an operator can complete the end-to-end cycle with con
 - Validate CLI terms, authentication and headless use for **each** provider (tasks B6/B7); automated execution stays disabled per provider until then (acceptance gate in [Security](../engineering/security.md) §2).
 - **Decided** (Epic #84): the run isolation model and which credentials an agent run holds, in [ADR 0002](../architecture/adr/0002-agent-run-isolation.md). Still open before real agent execution: server hardware, networking, and the ADR's pending inputs. Studio's own secret store is decided in [ADR 0001](../architecture/adr/0001-secret-store.md).
 - **Decided** (Epic #55): Git access strategy and credential scope. Private Repositories use a per-project SSH Deploy key, public ones anonymous HTTPS; Studio's own Git transport (clone and fetch) uses Deploy keys or anonymous HTTPS, with no tokens. Studio's side holds one Git host API credential, the Merge credential, used only for an operator's merge or close; the Agent account never merges, and the operator stays the final merge gate. The agent worker pushes run branches and opens draft pull requests through the separate agent account, with a token limited to the managed repositories ([ADR 0002](../architecture/adr/0002-agent-run-isolation.md)). See [Security](../engineering/security.md) §3–§4 and [ADR 0001](../architecture/adr/0001-secret-store.md). Merging from Studio, with the Merge credential, is decided in [ADR 0002](../architecture/adr/0002-agent-run-isolation.md#merge-decisions-2026-11-21); protecting connected Repositories and their integration branches on push is still to be refined.
-- Refine exact workflow step semantics and human approval model.
+- **Decided** (Epic #343): a Workflow is a sequence of Phases on one Run, with a review Verdict, limited send-backs and a Checkpoint for human approval, in [ADR 0007](../architecture/adr/0007-workflows.md). Branches and parallel Phases stay deferred.
 - Specify baseline project schema, auth/session strategy, API contracts, and Preview exposure only when the relevant slice begins.
 - Agree on frontend state-library versions/policy before installing them in feature code.
 - Prioritize the initial User Story Map and define DoR-compliant GitHub Issues.
