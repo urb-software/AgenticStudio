@@ -75,9 +75,29 @@ const SKILL_NAME_CODES: readonly string[] = [
   'skill_invalid',
 ];
 
-/** The front matter key to find: for the skill-name reasons the key is a name, so the `skills` line. */
+/** The reasons about the phases and checkpoints of a workflow: their key is an id or an agent name. */
+const SEQUENCE_CODES: readonly string[] = [
+  'item_invalid',
+  'item_id_duplicate',
+  'sequence_too_long',
+  'phase_agent_reserved',
+  'phase_agent_missing',
+  'phase_agent_invalid',
+  'no_phase',
+  'review_first',
+  'review_before_work',
+  'checkpoint_first',
+  'checkpoint_last',
+  'checkpoints_adjacent',
+];
+
+/**
+ * The front matter key to find: for the skill-name reasons the key is a name, so the `skills`
+ * line; for the reasons about a workflow's items it is an id or an agent name, so the `sequence` line.
+ */
 export function placedKey(code: string, key: string | null | undefined): string | undefined {
   if (SKILL_NAME_CODES.includes(code)) return 'skills';
+  if (SEQUENCE_CODES.includes(code)) return 'sequence';
   return key || undefined;
 }
 
@@ -94,6 +114,8 @@ export interface ListedProblem {
   agent: string | null;
   /** The skill folder the problem is in; null for an agent's. */
   skill: string | null;
+  /** The workflow folder the problem is in; absent for an agent's or a skill's. */
+  workflow?: string | null;
   code: string;
   message: string;
   target: ProblemTarget;
@@ -110,6 +132,8 @@ export type TreeNode =
       agent: string | null;
       /** The skill a folder is the folder of; null for any other folder. */
       skill: string | null;
+      /** The workflow a folder is the folder of; null for any other folder. */
+      workflow: string | null;
       children: TreeNode[];
     }
   | { kind: 'file'; name: string; path: string; entry: EditorEntry };
@@ -125,7 +149,7 @@ function sortTree(nodes: TreeNode[]): TreeNode[] {
   return [...folders, ...files];
 }
 
-/** The flat entries as a tree, folders first. A folder is an agent's when `agents/<name>`, a skill's when `skills/<name>`. */
+/** The flat entries as a tree, folders first. A folder is an agent's when `agents/<name>`, a skill's when `skills/<name>`, a workflow's when `workflows/<name>`. */
 export function buildTree(entries: readonly EditorEntry[]): TreeNode[] {
   const root: TreeNode[] = [];
   const folders = new Map<string, Extract<TreeNode, { kind: 'folder' }>>();
@@ -142,6 +166,7 @@ export function buildTree(entries: readonly EditorEntry[]): TreeNode[] {
           path,
           agent: null,
           skill: null,
+          workflow: null,
           children: [],
         };
         folders.set(path, folder);
@@ -149,6 +174,9 @@ export function buildTree(entries: readonly EditorEntry[]): TreeNode[] {
       }
       if (entry.agent !== null && path === `agents/${entry.agent}`) folder.agent = entry.agent;
       if (entry.skill !== null && path === `skills/${entry.skill}`) folder.skill = entry.skill;
+      if (entry.workflow !== null && path === `workflows/${entry.workflow}`) {
+        folder.workflow = entry.workflow;
+      }
       siblings = folder.children;
     }
     siblings.push({ kind: 'file', name: parts[parts.length - 1]!, path: entry.path, entry });

@@ -26,6 +26,7 @@ const entry = (path: string, overrides: Partial<EditorEntry> = {}): EditorEntry 
   openable: true,
   agent: null,
   skill: skillOfPath(path),
+  workflow: null,
   ...overrides,
 });
 

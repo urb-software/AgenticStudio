@@ -22,6 +22,7 @@ const entry = (path: string, overrides: Partial<EditorEntry> = {}): EditorEntry 
   openable: true,
   agent: null,
   skill: null,
+  workflow: null,
   ...overrides,
 });
 
@@ -35,6 +36,7 @@ const change = (
   size: 5,
   movedFrom: null,
   skill: null,
+  workflow: null,
   ...overrides,
 });
 

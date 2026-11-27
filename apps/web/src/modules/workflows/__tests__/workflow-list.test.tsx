@@ -184,6 +184,26 @@ describe('Workflows page: the list', () => {
     await expect(container).toHaveNoAxeViolations();
   });
 
+  it('offers New workflow, which opens the editor on its New workflow step', async () => {
+    fakeWorkflowsApi(workflowList({ workflows: [SHIP] }));
+    renderWorkflows();
+
+    await screen.findByRole('region', { name: 'Workflows' });
+
+    expect(screen.getByRole('link', { name: 'New workflow' }).getAttribute('href')).toBe(
+      '/agents/editor?new=workflow',
+    );
+  });
+
+  it('offers New workflow when the Repository holds none yet', async () => {
+    fakeWorkflowsApi(workflowList());
+    renderWorkflows();
+
+    expect((await screen.findByRole('link', { name: 'New workflow' })).getAttribute('href')).toBe(
+      '/agents/editor?new=workflow',
+    );
+  });
+
   it('shows the note of a Repository that is not ready above the last known Workflows', async () => {
     fakeWorkflowsApi(
       workflowList({
@@ -217,13 +237,15 @@ describe('Workflows page: the list', () => {
     expect(await screen.findByRole('region', { name: 'Workflows' })).toBeTruthy();
   });
 
-  it('is reachable by keyboard: Tab reaches the link, then Show, and Enter opens the detail', async () => {
+  it('is reachable by keyboard: Tab reaches New workflow, the link, then Show, and Enter opens the detail', async () => {
     fakeWorkflowsApi(workflowList({ workflows: [SHIP] }), {
       ship: workflowDetail(SHIP, { items: [] }),
     });
     renderWorkflows();
 
     await screen.findByRole('region', { name: 'Workflows' });
+    await userEvent.tab();
+    expect(document.activeElement).toBe(screen.getByRole('link', { name: 'New workflow' }));
     await userEvent.tab();
     expect(document.activeElement).toBe(screen.getByRole('link', { name: /^Open in editor/ }));
     await userEvent.tab();

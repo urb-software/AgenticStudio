@@ -59,9 +59,8 @@ export interface ListAgentFilesResult {
 
 /**
  * The whole definitions Repository as a tree, at its last fetched commit, from the Clone's object
- * store. It names which entries belong to an agent, a skill or a workflow folder and judges nothing; the
- * validation of an agent is the agent list, that of a skill the skill list, that of a workflow the
- * workflow list.
+ * store. It names the agent, skill or workflow folder of each entry and judges nothing: problems
+ * come from the agent, skill and workflow lists.
  */
 @Injectable()
 export class ListAgentFilesHandler {

@@ -13,7 +13,12 @@ import { Skeleton } from '@/shared/ui/skeleton';
 import { type WorkflowListOutput, type WorkflowSummaryOutput } from '../../../../platform/api';
 import { useWorkflows } from '../../api/workflows-queries';
 import { Problems } from '../../components/problems';
-import { readRequestOf, shortSha, workflowEditorHref } from '../../components/workflow-links';
+import {
+  newWorkflowHref,
+  readRequestOf,
+  shortSha,
+  workflowEditorHref,
+} from '../../components/workflow-links';
 import { WorkflowDetail } from '../workflow-detail/workflow-detail';
 
 const READ_REQUEST = 'GET /api/workflows';
@@ -30,6 +35,15 @@ function repositoryReason(list: WorkflowListOutput): string | null {
     return 'Nothing has been fetched from the definitions Repository yet, so there are no Workflows to list. Fetch it on the Agents page.';
   }
   return null;
+}
+
+/** Opens the editor on its "New workflow" step: the new entry file opens once it is made. */
+function NewWorkflowLink() {
+  return (
+    <Button asChild size="sm">
+      <Link href={newWorkflowHref()}>New workflow</Link>
+    </Button>
+  );
 }
 
 function StateLabel({ workflow }: { workflow: WorkflowSummaryOutput }) {
@@ -185,9 +199,12 @@ export function WorkflowList() {
                 <Link href="/agents">{notConnected ? 'Connect on Agents' : 'Go to Agents'}</Link>
               </Button>
               {notConnected ? null : (
-                <Button asChild>
-                  <Link href="/agents/editor">Open the editor</Link>
-                </Button>
+                <>
+                  <Button asChild>
+                    <Link href="/agents/editor">Open the editor</Link>
+                  </Button>
+                  <NewWorkflowLink />
+                </>
               )}
             </span>
           }
@@ -202,17 +219,20 @@ export function WorkflowList() {
       <Card aria-labelledby={TITLE_ID}>
         <CardHeader>
           <CardTitle id={TITLE_ID}>Workflows</CardTitle>
-          <span className="text-small text-text-muted">
-            {data.commit ? (
-              <>
-                Read at commit{' '}
-                <code className="text-code" title={data.commit}>
-                  {shortSha(data.commit)}
-                </code>
-              </>
-            ) : (
-              'No commit read'
-            )}
+          <span className="flex flex-wrap items-center gap-3">
+            <span className="text-small text-text-muted">
+              {data.commit ? (
+                <>
+                  Read at commit{' '}
+                  <code className="text-code" title={data.commit}>
+                    {shortSha(data.commit)}
+                  </code>
+                </>
+              ) : (
+                'No commit read'
+              )}
+            </span>
+            <NewWorkflowLink />
           </span>
         </CardHeader>
         <CardContent flush>

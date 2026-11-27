@@ -98,6 +98,7 @@ const entry = (
   openable: true,
   agent: owner.agent ?? null,
   skill: owner.skill ?? null,
+  workflow: null,
 });
 
 const ENTRIES = [
@@ -164,7 +165,16 @@ const TOUCHED_DRAFT: Partial<AgentDraftOutput> = {
   baseCommit: SHA,
   currentCommit: SHA,
   version: 2,
-  files: [{ path: SKILL_PATH, change: 'modified', size: 80, movedFrom: null, skill: 'lint' }],
+  files: [
+    {
+      path: SKILL_PATH,
+      change: 'modified',
+      size: 80,
+      movedFrom: null,
+      skill: 'lint',
+      workflow: null,
+    },
+  ],
 };
 
 const treeNav = () => screen.getByRole('navigation', { name: 'Files' });
@@ -289,6 +299,7 @@ describe('skills in the editor: the tree and the problems', () => {
             size: 90,
             movedFrom: null,
             skill: null,
+            workflow: null,
           },
         ],
         problems: [
@@ -339,7 +350,16 @@ describe('skills in the editor: the tree and the problems', () => {
         baseCommit: SHA,
         currentCommit: SHA,
         version: 2,
-        files: [{ path: SKILL_PATH, change: 'deleted', size: 0, movedFrom: null, skill: 'lint' }],
+        files: [
+          {
+            path: SKILL_PATH,
+            change: 'deleted',
+            size: 0,
+            movedFrom: null,
+            skill: 'lint',
+            workflow: null,
+          },
+        ],
       },
     });
     await screen.findByTestId('monaco');
@@ -408,13 +428,21 @@ describe('skills in the editor: validation while typing', () => {
         currentCommit: SHA,
         version: 2,
         files: [
-          { path: SKILL_PATH, change: 'deleted', size: 0, movedFrom: null, skill: 'lint' },
+          {
+            path: SKILL_PATH,
+            change: 'deleted',
+            size: 0,
+            movedFrom: null,
+            skill: 'lint',
+            workflow: null,
+          },
           {
             path: 'agents/reviewer/AGENT.md',
             change: 'modified',
             size: 90,
             movedFrom: null,
             skill: null,
+            workflow: null,
           },
         ],
       },
@@ -496,6 +524,7 @@ describe('skills in the editor: New skill', () => {
             size: 0,
             movedFrom: null,
             skill: 'rotten',
+            workflow: null,
           },
         ],
       },

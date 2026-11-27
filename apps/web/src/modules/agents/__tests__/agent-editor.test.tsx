@@ -75,6 +75,7 @@ const entry = (
   openable: true,
   agent: null,
   skill: null,
+  workflow: null,
   ...overrides,
 });
 

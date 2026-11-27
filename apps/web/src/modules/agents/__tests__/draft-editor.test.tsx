@@ -82,6 +82,7 @@ const entry = (path: string, agent: string | null = null): AgentFileEntryOutput 
   openable: true,
   agent,
   skill: null,
+  workflow: null,
 });
 
 const ENTRIES = [
@@ -137,7 +138,14 @@ const MODIFIED_DRAFT: Partial<AgentDraftOutput> = {
   currentCommit: SHA,
   version: 3,
   files: [
-    { path: 'agents/reviewer/run.sh', change: 'modified', size: 7, movedFrom: null, skill: null },
+    {
+      path: 'agents/reviewer/run.sh',
+      change: 'modified',
+      size: 7,
+      movedFrom: null,
+      skill: null,
+      workflow: null,
+    },
   ],
 };
 
@@ -545,7 +553,14 @@ describe('Draft editing: the Repository and other writers', () => {
     api.changeDraftElsewhere({
       files: [
         ...MODIFIED_DRAFT.files!,
-        { path: 'README.md', change: 'modified', size: 1, movedFrom: null, skill: null },
+        {
+          path: 'README.md',
+          change: 'modified',
+          size: 1,
+          movedFrom: null,
+          skill: null,
+          workflow: null,
+        },
       ],
     });
     act(() => focusManager.setFocused(true));
@@ -770,6 +785,7 @@ describe('Draft editing: honest confirmations', () => {
             size: 3,
             movedFrom: null,
             skill: null,
+            workflow: null,
           },
         ],
       },

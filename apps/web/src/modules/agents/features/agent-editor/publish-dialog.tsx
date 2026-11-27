@@ -260,7 +260,7 @@ export function PublishDialog({
             ) : null}
             {failure?.kind === 'outside-definitions' ? (
               <ul
-                aria-label="Paths outside agents/ and skills/"
+                aria-label="Paths outside agents/, skills/ and workflows/"
                 className="m-0 flex list-none flex-col gap-1 p-0 text-small"
               >
                 {failure.paths.map((path) => (

@@ -65,6 +65,7 @@ const entry = (path: string, agent: string | null = null): AgentFileEntryOutput 
   openable: true,
   agent,
   skill: null,
+  workflow: null,
 });
 
 const ENTRIES = [
@@ -91,9 +92,30 @@ const MODIFIED: Partial<AgentDraftOutput> = {
   currentCommit: SHA,
   version: 3,
   files: [
-    { path: 'agents/reviewer/run.sh', change: 'modified', size: 7, movedFrom: null, skill: null },
-    { path: 'agents/reviewer/notes.md', change: 'added', size: 3, movedFrom: null, skill: null },
-    { path: 'agents/reviewer/old.txt', change: 'deleted', size: 0, movedFrom: null, skill: null },
+    {
+      path: 'agents/reviewer/run.sh',
+      change: 'modified',
+      size: 7,
+      movedFrom: null,
+      skill: null,
+      workflow: null,
+    },
+    {
+      path: 'agents/reviewer/notes.md',
+      change: 'added',
+      size: 3,
+      movedFrom: null,
+      skill: null,
+      workflow: null,
+    },
+    {
+      path: 'agents/reviewer/old.txt',
+      change: 'deleted',
+      size: 0,
+      movedFrom: null,
+      skill: null,
+      workflow: null,
+    },
   ],
 };
 
@@ -370,6 +392,29 @@ describe('Publish: each refusal has its own message', () => {
     await expect(dialog).toHaveNoAxeViolations();
   });
 
+  it('publish-problems lists the problems of a workflow beside the others', async () => {
+    const { dialog } = await refused(
+      422,
+      fail(422, 'publish-problems', {
+        problems: [],
+        skillProblems: [],
+        workflowProblems: [
+          {
+            workflow: 'ship',
+            code: 'phase_agent_missing',
+            path: 'workflows/ship/WORKFLOW.md',
+            key: 'ghost',
+            message: 'The phase "build" names the agent "ghost", which does not exist.',
+          },
+        ],
+      }),
+    );
+    const list = await within(dialog).findByRole('list', { name: 'Problems of the Draft' });
+    expect(within(list).getByText(/which does not exist./)).toBeTruthy();
+    expect(within(list).getByText('workflows/ship/WORKFLOW.md')).toBeTruthy();
+    await expect(dialog).toHaveNoAxeViolations();
+  });
+
   it('draft-not-judged says the Draft is too large to be checked', async () => {
     const { dialog } = await refused(503, fail(503, 'draft-not-judged', {}));
     const message = await within(dialog).findByText(/Split the changes into smaller Drafts/);
@@ -406,13 +451,27 @@ describe('Publish: each refusal has its own message', () => {
         ...MODIFIED,
         files: [
           ...(MODIFIED.files ?? []),
-          { path: 'README.md', change: 'modified', size: 3, movedFrom: null, skill: null },
-          { path: 'config.json', change: 'added', size: 3, movedFrom: null, skill: null },
+          {
+            path: 'README.md',
+            change: 'modified',
+            size: 3,
+            movedFrom: null,
+            skill: null,
+            workflow: null,
+          },
+          {
+            path: 'config.json',
+            change: 'added',
+            size: 3,
+            movedFrom: null,
+            skill: null,
+            workflow: null,
+          },
         ],
       },
     );
     const list = await within(dialog).findByRole('list', {
-      name: 'Paths outside agents/ and skills/',
+      name: 'Paths outside agents/, skills/ and workflows/',
     });
     expect(within(list).getByText('README.md')).toBeTruthy();
     expect(within(list).getByText('config.json')).toBeTruthy();
@@ -490,12 +549,14 @@ describe('Publish: each refusal has its own message', () => {
     expect(await within(dialog).findByText('Too long for the host.')).toBeTruthy();
   });
 
-  it('says so when reverting the paths outside agents/ and skills/ is refused, and stays open', async () => {
+  it('says so when reverting the paths outside agents/, skills/ and workflows/ is refused, and stays open', async () => {
     const { api, user, dialog } = await refused(
       422,
       fail(422, 'publish-path-outside-definitions', { paths: ['README.md'] }),
     );
-    await within(dialog).findByRole('list', { name: 'Paths outside agents/ and skills/' });
+    await within(dialog).findByRole('list', {
+      name: 'Paths outside agents/, skills/ and workflows/',
+    });
     api.failNextDraftWrite(500, problem(500, 'Broken'));
     await user.click(within(dialog).getByRole('button', { name: 'Revert these files' }));
     expect(await within(dialog).findByText(/Broken \(test\)/)).toBeTruthy();
@@ -557,6 +618,7 @@ describe('Publish: a Draft kept through the publish', () => {
             size: 3,
             movedFrom: null,
             skill: null,
+            workflow: null,
           },
         ],
       },

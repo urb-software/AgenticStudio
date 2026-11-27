@@ -70,8 +70,12 @@ export function useAgents() {
 }
 
 /** One agent with its instructions and files; mounted only while the agent is open. */
-export function useAgent(name: string) {
-  return useQuery({ queryKey: [...AGENT_KEY, name] as const, queryFn: () => api.getAgent(name) });
+export function useAgent(name: string, enabled = true) {
+  return useQuery({
+    queryKey: [...AGENT_KEY, name] as const,
+    queryFn: () => api.getAgent(name),
+    enabled,
+  });
 }
 
 /** Reads the list and the open agent again, e.g. after a fetch brought new commits. */
@@ -94,6 +98,7 @@ export function useRefreshAgents() {
 const FILES_KEY = ['agents', 'editor', 'files'] as const;
 const EDITOR_AGENTS_KEY = ['agents', 'editor', 'agents'] as const;
 const EDITOR_SKILLS_KEY = ['agents', 'editor', 'skills'] as const;
+const EDITOR_WORKFLOWS_KEY = ['agents', 'editor', 'workflows'] as const;
 const FILE_KEY = ['agents', 'editor', 'file'] as const;
 
 export const SNAPSHOT = { staleTime: Infinity, refetchOnWindowFocus: false } as const;
@@ -111,6 +116,11 @@ export function useEditorAgents() {
 /** The skills, with their problems, as of the editor's last (re)load: the tree's marks. */
 export function useEditorSkills() {
   return useQuery({ queryKey: EDITOR_SKILLS_KEY, queryFn: api.listSkills, ...SNAPSHOT });
+}
+
+/** The Workflows, with their problems, as of the editor's last (re)load: the tree's marks. */
+export function useEditorWorkflows() {
+  return useQuery({ queryKey: EDITOR_WORKFLOWS_KEY, queryFn: api.listWorkflows, ...SNAPSHOT });
 }
 
 /** One file at `commit`, the commit the editor shows. */
@@ -132,6 +142,7 @@ export function useReloadEditor() {
         queryClient.invalidateQueries({ queryKey: FILES_KEY, exact: true }),
         queryClient.invalidateQueries({ queryKey: EDITOR_AGENTS_KEY, exact: true }),
         queryClient.invalidateQueries({ queryKey: EDITOR_SKILLS_KEY, exact: true }),
+        queryClient.invalidateQueries({ queryKey: EDITOR_WORKFLOWS_KEY, exact: true }),
       ]),
     [queryClient],
   );
