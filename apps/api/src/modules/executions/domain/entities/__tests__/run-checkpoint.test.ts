@@ -392,6 +392,7 @@ describe('a Workflow that starts at a Checkpoint', () => {
 
     expect(run.lifecycle.state).toBe('waiting_for_operator');
     expect(run.progress.waitingSince).toEqual(AT);
+    expect(run.lifecycle.startedAt).toEqual(AT);
     expect(run.waiting).toMatchObject({ reason: 'checkpoint', checkpoint: { id: 'ready' } });
     expect(run.workingCopy).toBeNull();
     expect(run.phases[0]!.state).toBe('pending');

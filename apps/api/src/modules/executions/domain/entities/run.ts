@@ -309,6 +309,8 @@ export class Run {
         ? {}
         : {
             state: 'waiting_for_operator' as const,
+            // The Workflow began: a waiting Run always has its start.
+            startedAt: input.now,
             waitingSince: input.now,
             checkpointItem: waitingAt,
           }),
