@@ -1,4 +1,4 @@
-import { AGENTS_DIRECTORY, SKILLS_DIRECTORY } from './limits.js';
+import { AGENTS_DIRECTORY, SKILLS_DIRECTORY, WORKFLOWS_DIRECTORY } from './limits.js';
 import type { AgentEntry } from './validate.js';
 
 export interface AgentFolder {
@@ -54,4 +54,16 @@ export function findAgentFolders(repositoryEntries: readonly AgentEntry[]): Agen
 /** The same for skill folders (`skills/<name>/...`); `agents/` and the rest are ignored. Pure. */
 export function findSkillFolders(repositoryEntries: readonly AgentEntry[]): SkillFolder[] {
   return groupFolders(SKILLS_DIRECTORY, repositoryEntries);
+}
+
+export interface WorkflowFolder {
+  /** The folder's name, which is the workflow's name. */
+  name: string;
+  /** The folder's entries, with paths relative to it. */
+  entries: AgentEntry[];
+}
+
+/** The same for workflow folders (`workflows/<name>/...`); the other folders are ignored. Pure. */
+export function findWorkflowFolders(repositoryEntries: readonly AgentEntry[]): WorkflowFolder[] {
+  return groupFolders(WORKFLOWS_DIRECTORY, repositoryEntries);
 }

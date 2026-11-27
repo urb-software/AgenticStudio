@@ -19,6 +19,10 @@ describe('the package stays a pure function that runs in a browser', () => {
     expect(sources.length).toBeGreaterThan(3);
   });
 
+  it('includes the workflow source in what it checks', () => {
+    expect(sources.map(({ file }) => file)).toContain('workflow.ts');
+  });
+
   it('imports only its own files, the contracts providers subpath and the YAML parser', () => {
     const outside = sources.flatMap(({ file, text }) =>
       specifiers(text)
