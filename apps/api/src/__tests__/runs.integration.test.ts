@@ -202,6 +202,21 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
           skills: [],
           instructions: '',
         },
+        // One Phase with that agent; the list leaves the Phases out.
+        phases: [
+          {
+            position: 0,
+            agent: {
+              name: 'default-codex',
+              source: 'built_in',
+              commit: null,
+              provider: 'codex',
+              model: 'default',
+              skills: [],
+            },
+            stepsUsed: 0,
+          },
+        ],
         task: 'Fix the login bug',
         state: 'queued',
         startCommit: project.head,
@@ -236,11 +251,13 @@ describe('runs API and worker protocol (PostgreSQL + Redis via Testcontainers)',
       // Lists leave the conversation out.
       const {
         messages: _messages,
+        phases: _phases,
         followUp: _followUp,
         merge: _merge,
         integrationBranch: _integrationBranch,
         ...listed
       } = read;
+      void _phases;
       void _messages;
       void _followUp;
       void _merge;

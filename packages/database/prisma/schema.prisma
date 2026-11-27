@@ -158,19 +158,6 @@ model Run {
   provider                      String               @db.VarChar(32)
   /// The operator's instruction (1–20 000 characters).
   task                          String               @db.VarChar(20000)
-  /// The agent the Run started with, copied at start and never updated: its name, `built_in` |
-  /// `definitions` (a CHECK holds the list and that agent_commit is set exactly for `definitions`),
-  /// the definitions Repository's commit, the Provider (equal to `provider`), the model the
-  /// definition named and the instructions' text. Treated like the task: never logged in full.
-  agentName                     String               @map("agent_name") @db.VarChar(64)
-  agentSource                   String               @map("agent_source") @db.VarChar(16)
-  agentCommit                   String?              @map("agent_commit") @db.VarChar(64)
-  agentProvider                 String               @map("agent_provider") @db.VarChar(32)
-  agentModel                    String               @map("agent_model") @db.VarChar(64)
-  agentInstructions             String               @map("agent_instructions")
-  /// The names of the agent's skills at agent_commit, in the order the definition lists them,
-  /// recorded at start and never updated; empty for a built-in agent and for an agent with none.
-  agentSkills                   String[]             @default([]) @map("agent_skills")
   /// queued | preparing | running | waiting_for_operator | succeeded | failed | cancelled | timed_out.
   state                         String               @db.VarChar(32)
   /// The integration branch's commit when the Run was started.
@@ -228,6 +215,7 @@ model Run {
   waitingSince                  DateTime?            @map("waiting_since") @db.Timestamptz(6)
   /// The limits copied from the API's configuration when the Run was started (Issue #100).
   limitStepMinutes              Int                  @map("limit_step_minutes")
+  /// The Run steps each part of a Phase may take (the allowance copied at start).
   limitMaxSteps                 Int                  @map("limit_max_steps")
   limitWaitingDays              Int                  @map("limit_waiting_days")
   /// When the current Run step started; set whenever the Run goes to running and cleared when
@@ -248,17 +236,17 @@ model Run {
   /// The secret store's reference to the Run's snapshot of that file, kept for log redaction
   /// until the Run is final (then deleted and cleared). Never the content.
   environmentFileSecretId       String?              @map("environment_file_secret_id") @db.Uuid
-  /// The agent session the last Run step reported (Issue #103): an answer resumes it. Internal:
-  /// sent only to the agent worker that started the Run, never to the operator API.
-  sessionRef                    String?              @map("session_ref") @db.VarChar(256)
+  /// Whether the current Phase holds an agent session (its session_ref is set): an answered Run
+  /// queued with one keeps its place, and the partial unique index below cannot read another
+  /// table. Written together with that column, never on its own.
+  hasSession                    Boolean              @default(false) @map("has_session")
+  /// The position of the Run's current Phase: where its agent, session and Run-step allowance are.
+  currentPhase                  Int                  @default(0) @map("current_phase")
   /// Issue #141: how many Follow-ups the operator sent to the Run.
   followUpCount                 Int                  @default(0) @map("follow_up_count")
   /// Issue #141: the Run is queued for a Follow-up its agent worker has not claimed yet. Unlike an
   /// answered Run it holds no place while it waits: it starts under the concurrency limits.
   followUpQueued                Boolean              @default(false) @map("follow_up_queued")
-  /// Issue #141: how many Run steps the Run had taken when its current part (the first part or
-  /// the latest Follow-up) began; each part gets limit_max_steps Run steps.
-  stepsBeforePart               Int                  @default(0) @map("steps_before_part")
   /// Issue #141: the most Run steps the Run may take in total before it accepts no Follow-up.
   limitMaxTotalSteps            Int                  @default(50) @map("limit_max_total_steps")
   /// Issue #141: the commit the latest push left the remote Run branch at; the commits up to and
@@ -321,6 +309,7 @@ model Run {
   /// Issue #143: when the Run last had activity (a Run step, an Answer or a Follow-up); starts at
   /// creation. Working copy retention counts the idle time from here.
   lastActivityAt                DateTime             @default(dbgenerated("now()")) @map("last_activity_at") @db.Timestamptz(6)
+  phases                        RunPhase[]
   steps                         RunStep[]
   events                        RunEvent[]
   messages                      RunMessage[]
@@ -337,11 +326,46 @@ model Run {
   @@map("runs")
 }
 
+/// One ordered part of a Run with an agent and its session. Every Run has one at position 0; a Run
+/// started with an agent never has another yet. Its agent is copied at start and never updated.
+model RunPhase {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  runId             String    @map("run_id") @db.Uuid
+  run               Run       @relation(fields: [runId], references: [id], onDelete: Cascade)
+  /// 0, 1, … within the Run, in order.
+  position          Int
+  /// The agent's name, `built_in` | `definitions` (a CHECK holds the list and that agent_commit is
+  /// set exactly for `definitions`), the definitions Repository's commit, the Provider, the model
+  /// the definition named and the instructions' text. Treated like the task: never logged in full.
+  agentName         String    @map("agent_name") @db.VarChar(64)
+  agentSource       String    @map("agent_source") @db.VarChar(16)
+  agentCommit       String?   @map("agent_commit") @db.VarChar(64)
+  agentProvider     String    @map("agent_provider") @db.VarChar(32)
+  agentModel        String    @map("agent_model") @db.VarChar(64)
+  agentInstructions String    @map("agent_instructions")
+  /// The names of the agent's skills at agent_commit, in the order the definition lists them;
+  /// empty for a built-in agent and for an agent with none.
+  agentSkills       String[]  @default([]) @map("agent_skills")
+  /// The agent session the last Run step of the Phase reported: an answer resumes it. Internal:
+  /// sent only to the agent worker that started the Run, never to the operator API.
+  sessionRef        String?   @map("session_ref") @db.VarChar(256)
+  /// How many Run steps the Run had taken when the Phase's current part (its first part or the
+  /// latest Follow-up) began; each part gets the Run's limit_max_steps Run steps.
+  stepsBeforePart   Int       @default(0) @map("steps_before_part")
+  steps             RunStep[]
+
+  @@unique([runId, position], map: "run_phases_run_id_position_key")
+  @@map("run_phases")
+}
+
 /// The reported result of one Run step (Issue #96): internal, not in the operator contract yet.
 model RunStep {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   runId     String   @map("run_id") @db.Uuid
   run       Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  /// The Phase the Run step was taken in.
+  phaseId   String   @map("phase_id") @db.Uuid
+  phase     RunPhase @relation(fields: [phaseId], references: [id], onDelete: Cascade)
   /// 1, 2, … within the Run, in report order.
   index     Int
   /// start | resume.
@@ -351,6 +375,7 @@ model RunStep {
   createdAt DateTime @default(dbgenerated("now()")) @map("created_at") @db.Timestamptz(6)
 
   @@unique([runId, index], map: "run_steps_run_id_index_key")
+  @@index([phaseId], map: "run_steps_phase_id_idx")
   @@map("run_steps")
 }
 

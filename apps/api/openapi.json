@@ -6150,6 +6150,12 @@
           "agent": {
             "$ref": "#/components/schemas/RunAgent_Output"
           },
+          "phases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RunPhase_Output"
+            }
+          },
           "task": {
             "type": "string"
           },
@@ -6399,6 +6405,79 @@
           "provider",
           "model",
           "skills"
+        ],
+        "additionalProperties": false
+      },
+      "RunPhase_Output": {
+        "type": "object",
+        "properties": {
+          "position": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "0 for the first Phase, then 1, 2, … in order."
+          },
+          "agent": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "built_in",
+                  "definitions"
+                ],
+                "description": "A built-in Default agent, or a folder."
+              },
+              "commit": {
+                "description": "The definitions Repository commit the agent was read at; null for a built-in one.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "claude_code",
+                  "codex"
+                ]
+              },
+              "model": {
+                "type": "string",
+                "description": "The model the definition named; `default` is the CLI own."
+              },
+              "skills": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "The names of the skills the agent had when the Run started, at the recorded commit; empty for none."
+              }
+            },
+            "required": [
+              "name",
+              "source",
+              "commit",
+              "provider",
+              "model",
+              "skills"
+            ],
+            "additionalProperties": false
+          },
+          "stepsUsed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "The Run steps taken in the Phase."
+          }
+        },
+        "required": [
+          "position",
+          "agent",
+          "stepsUsed"
         ],
         "additionalProperties": false
       },

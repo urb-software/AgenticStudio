@@ -132,12 +132,22 @@ export const runAgentResponseSchema = z
   })
   .meta({ id: 'RunAgent' });
 
+export const runPhaseResponseSchema = z
+  .object({
+    position: z.int().min(0).describe('0 for the first Phase, then 1, 2, … in order.'),
+    agent: runAgentResponseSchema.omit({ instructions: true }),
+    stepsUsed: z.int().min(0).describe('The Run steps taken in the Phase.'),
+  })
+  .meta({ id: 'RunPhase' });
+
 export const runResponseSchema = z
   .object({
     id: z.uuid(),
     projectId: z.uuid(),
     provider: runProviderSchema,
     agent: runAgentResponseSchema,
+    /** Single-Run answers only; a Run started with an agent has one Phase. */
+    phases: z.array(runPhaseResponseSchema).optional(),
     task: z.string(),
     state: runStateSchema,
     startCommit: z.string(),
@@ -265,6 +275,18 @@ export function toRunResponse(
       instructions: string;
       skills: readonly string[];
     };
+    phases: readonly {
+      position: number;
+      agent: {
+        name: string;
+        source: 'built_in' | 'definitions';
+        commit: string | null;
+        provider: z.infer<typeof runProviderSchema>;
+        model: string;
+        skills: readonly string[];
+      };
+      stepsUsed: number;
+    }[];
     task: string;
     state: z.infer<typeof runStateSchema>;
     startCommit: string;
@@ -368,6 +390,18 @@ export function toRunResponse(
       skills: [...run.agent.skills],
       instructions: run.agent.instructions,
     },
+    phases: run.phases.map((phase) => ({
+      position: phase.position,
+      agent: {
+        name: phase.agent.name,
+        source: phase.agent.source,
+        commit: phase.agent.commit,
+        provider: phase.agent.provider,
+        model: phase.agent.model,
+        skills: [...phase.agent.skills],
+      },
+      stepsUsed: phase.stepsUsed,
+    })),
     task: run.task,
     state: run.state,
     startCommit: run.startCommit,
@@ -573,9 +607,10 @@ function preparationResponse(status: Parameters<typeof toRunResponse>[0]['pullRe
 }
 
 export function toRunListItem(run: Parameters<typeof toRunResponse>[0]): RunResponse {
-  const { messages: _messages, question: _question, ...item } = toRunResponse(run);
+  const { messages: _messages, question: _question, phases: _phases, ...item } = toRunResponse(run);
   void _messages;
   void _question;
+  void _phases;
   const { instructions: _instructions, ...agent } = item.agent;
   void _instructions;
   return { ...item, agent };

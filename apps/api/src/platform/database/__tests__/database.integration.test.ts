@@ -51,7 +51,7 @@ describe('database DI against a fresh PostgreSQL', () => {
     );
     expect(index?.indexdef).toMatch(/preparing.*running.*waiting_for_operator/);
     // An answered Run waiting in the queue for its worker keeps the place.
-    expect(index?.indexdef).toMatch(/queued.*session_ref IS NOT NULL/);
+    expect(index?.indexdef).toMatch(/queued.*has_session/);
   });
 
   it('records what `prisma migrate dev` would propose for objects Prisma does not model', async () => {

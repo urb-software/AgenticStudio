@@ -46,6 +46,21 @@ const run = {
     instructions: '',
     skills: [] as string[],
   },
+  phases: [
+    {
+      position: 0,
+      agent: {
+        name: 'default-codex',
+        source: 'built_in' as const,
+        commit: null as string | null,
+        provider: 'codex' as const,
+        model: 'default',
+        instructions: 'Never shown.',
+        skills: [] as string[],
+      },
+      stepsUsed: 1,
+    },
+  ],
   task: 'Add a store',
   state: 'waiting_for_operator' as const,
   startCommit: 'a'.repeat(40),
@@ -147,6 +162,42 @@ describe('Run response: conversation', () => {
     expect(
       toRunResponse({ ...run, state: 'running', question: null, messages: [] }).messages,
     ).toEqual([{ role: 'operator', kind: 'task', text: 'Add a store', at: T0.toISOString() }]);
+  });
+});
+
+describe('Run response: Phases', () => {
+  it('lists the Phases of a single Run with the agent, skills and Run steps of each, no instructions', () => {
+    const named = {
+      ...run,
+      phases: [
+        {
+          ...run.phases[0]!,
+          agent: { ...run.phases[0]!.agent, skills: ['notes', 'lint'] },
+          stepsUsed: 3,
+        },
+      ],
+    };
+
+    const { phases } = runResponseSchema.parse(toRunResponse(named));
+
+    expect(phases).toEqual([
+      {
+        position: 0,
+        agent: {
+          name: 'default-codex',
+          source: 'built_in',
+          commit: null,
+          provider: 'codex',
+          model: 'default',
+          skills: ['notes', 'lint'],
+        },
+        stepsUsed: 3,
+      },
+    ]);
+  });
+
+  it('leaves the Phases out of a list of Runs', () => {
+    expect(toRunListItem(run)).not.toHaveProperty('phases');
   });
 });
 

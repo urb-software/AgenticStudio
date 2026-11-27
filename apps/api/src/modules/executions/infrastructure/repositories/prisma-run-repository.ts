@@ -11,6 +11,7 @@ import {
 } from '../../domain/value-objects/run-state.js';
 import { PROVIDERS, type Provider } from '../../domain/value-objects/provider.js';
 import type { RunAgentSource } from '../../domain/value-objects/run-agent.js';
+import type { RunPhaseData } from '../../domain/value-objects/run-phase.js';
 import {
   RUN_CANCELLED_BY,
   type RunCancelledBy,
@@ -41,16 +42,26 @@ import type {
   RunStateView,
 } from '../../domain/repositories/run-repository.js';
 
-const LIST_FIELDS = {
-  id: true,
-  projectId: true,
-  provider: true,
+/** A list of Runs never reads the agent's instructions. */
+const PHASE_LIST_FIELDS = {
+  position: true,
   agentName: true,
   agentSource: true,
   agentCommit: true,
   agentProvider: true,
   agentModel: true,
   agentSkills: true,
+  sessionRef: true,
+  stepsBeforePart: true,
+  _count: { select: { steps: true } },
+} as const;
+
+const LIST_FIELDS = {
+  id: true,
+  projectId: true,
+  provider: true,
+  currentPhase: true,
+  phases: { select: PHASE_LIST_FIELDS, orderBy: { position: 'asc' } },
   task: true,
   state: true,
   startCommit: true,
@@ -82,11 +93,9 @@ const LIST_FIELDS = {
   limitWaitingDays: true,
   stepStartedAt: true,
   releasedBy: true,
-  sessionRef: true,
   lastClaimedBy: true,
   followUpCount: true,
   followUpQueued: true,
-  stepsBeforePart: true,
   limitMaxTotalSteps: true,
   pushedCommit: true,
   workingCopyRemovedAt: true,
@@ -113,7 +122,10 @@ const LIST_FIELDS = {
 
 const RUN_FIELDS = {
   ...LIST_FIELDS,
-  agentInstructions: true,
+  phases: {
+    select: { ...PHASE_LIST_FIELDS, agentInstructions: true },
+    orderBy: { position: 'asc' },
+  },
   messages: {
     select: {
       kind: true,
@@ -135,18 +147,27 @@ const RUN_FIELDS = {
   },
 } as const;
 
-interface RunRow {
-  id: string;
-  projectId: string;
-  provider: string;
+interface PhaseRow {
+  position: number;
   agentName: string;
   agentSource: string;
   agentCommit: string | null;
   agentProvider: string;
   agentModel: string;
   agentSkills: string[];
-  /** Left out of a list of Runs, which never shows or hands out the agent's text. */
+  /** Left out of a list of Runs. */
   agentInstructions?: string;
+  sessionRef: string | null;
+  stepsBeforePart: number;
+  _count: { steps: number };
+}
+
+interface RunRow {
+  id: string;
+  projectId: string;
+  provider: string;
+  currentPhase: number;
+  phases: PhaseRow[];
   task: string;
   state: string;
   startCommit: string;
@@ -178,11 +199,9 @@ interface RunRow {
   limitWaitingDays: number;
   stepStartedAt: Date | null;
   releasedBy: string | null;
-  sessionRef: string | null;
   lastClaimedBy: string | null;
   followUpCount: number;
   followUpQueued: boolean;
-  stepsBeforePart: number;
   limitMaxTotalSteps: number;
   pushedCommit: string | null;
   workingCopyRemovedAt: Date | null;
@@ -270,7 +289,7 @@ function toMessage(row: NonNullable<RunRow['messages']>[number]): RunMessage {
 
 const HOLDS_PLACE = Prisma.sql`(a.state IN (${PLACE_STATES})
   OR (a.state = 'failed' AND a.claimed_by IS NOT NULL)
-  OR (a.state = 'queued' AND a.session_ref IS NOT NULL AND NOT a.follow_up_queued))`;
+  OR (a.state = 'queued' AND a.has_session AND NOT a.follow_up_queued))`;
 
 function workingCopyColumns(workingCopy: RunWorkingCopy | null | undefined) {
   return workingCopy
@@ -290,6 +309,23 @@ const NEWEST_FIRST = [{ createdAt: 'desc' }, { id: 'desc' }] as const;
 const includes = <T extends string>(list: readonly T[], value: string): value is T =>
   (list as readonly string[]).includes(value);
 
+function toPhaseData(phase: PhaseRow): RunPhaseData {
+  return {
+    position: phase.position,
+    agent: {
+      name: phase.agentName,
+      // The CHECK constraint keeps the list; the Run's own check judges the rest.
+      source: phase.agentSource as RunAgentSource,
+      commit: phase.agentCommit,
+      provider: phase.agentProvider as Provider,
+      model: phase.agentModel,
+      instructions: phase.agentInstructions ?? '',
+      skills: phase.agentSkills,
+    },
+    stepsUsed: phase._count.steps,
+  };
+}
+
 function toRun(row: RunRow): Run {
   if (!includes(RUN_STATES, row.state)) {
     throw new Error(`Unexpected run state in the database: ${row.state}`);
@@ -308,20 +344,16 @@ function toRun(row: RunRow): Run {
   if (row.delivery !== null && !includes(RUN_DELIVERIES, row.delivery)) {
     throw new Error(`Unexpected run delivery in the database: ${row.delivery}`);
   }
+  const current = row.phases.find((phase) => phase.position === row.currentPhase);
+  if (current === undefined) {
+    throw new Error(`The run ${row.id} has no phase at its current position ${row.currentPhase}`);
+  }
   return Run.restore({
     id: row.id,
     projectId: row.projectId,
     provider: row.provider as Provider,
-    agent: {
-      name: row.agentName,
-      // The CHECK constraint keeps the list; the Run's own check judges the rest.
-      source: row.agentSource as RunAgentSource,
-      commit: row.agentCommit,
-      provider: row.agentProvider as Provider,
-      model: row.agentModel,
-      instructions: row.agentInstructions ?? '',
-      skills: row.agentSkills,
-    },
+    agent: toPhaseData(current).agent,
+    phases: row.phases.filter((phase) => phase.position <= row.currentPhase).map(toPhaseData),
     task: row.task,
     state: row.state as RunState,
     startCommit: row.startCommit,
@@ -366,13 +398,13 @@ function toRun(row: RunRow): Run {
     waitingSince: row.waitingSince,
     stepStartedAt: row.stepStartedAt,
     releasedBy: row.releasedBy,
-    sessionRef: row.sessionRef,
+    sessionRef: current.sessionRef,
     messages: (row.messages ?? []).map(toMessage),
     lastClaimedBy: row.lastClaimedBy,
     stepCount: row._count.steps,
     followUpCount: row.followUpCount,
     followUpQueued: row.followUpQueued,
-    stepsBeforePart: row.stepsBeforePart,
+    stepsBeforePart: current.stepsBeforePart,
     pushedCommit: row.pushedCommit,
     workingCopyRemovedAt: row.workingCopyRemovedAt,
     pullRequestStatus: {
@@ -463,7 +495,8 @@ const CHANGED_COLUMNS: {
   lastClaimedBy: (lastClaimedBy) => ({ lastClaimedBy }),
   followUpQueued: (followUpQueued) => ({ followUpQueued: followUpQueued! }),
   followUpCount: (followUpCount) => ({ followUpCount: followUpCount! }),
-  stepsBeforePart: (stepsBeforePart) => ({ stepsBeforePart: stepsBeforePart! }),
+  // Held by the current Phase.
+  stepsBeforePart: () => ({}),
   delivery: (delivery) => ({ delivery }),
   stepStartedAt: (stepStartedAt) => ({ stepStartedAt }),
   deliveryRequested: (deliveryRequested) => ({ deliveryRequested: deliveryRequested! }),
@@ -477,7 +510,8 @@ const CHANGED_COLUMNS: {
   }),
   pushedCommit: (pushedCommit) => ({ pushedCommit }),
   failingChecks: (failingChecks) => ({ failingChecks: [...(failingChecks ?? [])] }),
-  sessionRef: (sessionRef) => ({ sessionRef }),
+  // Held by the current Phase; the Run keeps whether it is set.
+  sessionRef: (sessionRef) => (sessionRef === undefined ? {} : { hasSession: sessionRef !== null }),
   workingCopyRemovedAt: (workingCopyRemovedAt) => ({ workingCopyRemovedAt }),
   environmentFileSupplied: (supplied) => ({ environmentFileSupplied: supplied! }),
   environmentFilePath: (environmentFilePath) => ({ environmentFilePath }),
@@ -507,6 +541,15 @@ const CHANGED_COLUMNS: {
   stepCount: () => ({}),
 };
 
+function changedPhaseColumns(
+  fields: RunChanges['fields'],
+): Prisma.RunPhaseUncheckedUpdateInput | null {
+  const data: Prisma.RunPhaseUncheckedUpdateInput = {};
+  if (fields.sessionRef !== undefined) data.sessionRef = fields.sessionRef;
+  if (fields.stepsBeforePart !== undefined) data.stepsBeforePart = fields.stepsBeforePart;
+  return Object.keys(data).length > 0 ? data : null;
+}
+
 function changedColumns(fields: RunChanges['fields']): Prisma.RunUncheckedUpdateInput {
   const data: Prisma.RunUncheckedUpdateInput = {};
   for (const [field, value] of Object.entries(fields)) {
@@ -516,6 +559,18 @@ function changedColumns(fields: RunChanges['fields']): Prisma.RunUncheckedUpdate
     Object.assign(data, column(value));
   }
   return data;
+}
+
+async function currentPhaseOf(tx: Prisma.TransactionClient, runId: string): Promise<string> {
+  const { currentPhase } = await tx.run.findUniqueOrThrow({
+    where: { id: runId },
+    select: { currentPhase: true },
+  });
+  const phase = await tx.runPhase.findUniqueOrThrow({
+    where: { runId_position: { runId, position: currentPhase } },
+    select: { id: true },
+  });
+  return phase.id;
 }
 
 /**
@@ -534,13 +589,18 @@ export class PrismaRunRepository implements RunRepository {
         id: run.id,
         projectId: run.projectId,
         provider: run.provider,
-        agentName: run.agent.name,
-        agentSource: run.agent.source,
-        agentCommit: run.agent.commit,
-        agentProvider: run.agent.provider,
-        agentModel: run.agent.model,
-        agentInstructions: run.agent.instructions,
-        agentSkills: [...run.agent.skills],
+        phases: {
+          create: {
+            position: 0,
+            agentName: run.agent.name,
+            agentSource: run.agent.source,
+            agentCommit: run.agent.commit,
+            agentProvider: run.agent.provider,
+            agentModel: run.agent.model,
+            agentInstructions: run.agent.instructions,
+            agentSkills: [...run.agent.skills],
+          },
+        },
         task: run.task,
         startCommit: run.startCommit,
         remoteUrl: run.remoteUrl,
@@ -610,7 +670,7 @@ export class PrismaRunRepository implements RunRepository {
           SELECT r.id FROM runs r
           WHERE (${excludeProjectId}::uuid IS NULL OR r.project_id <> ${excludeProjectId}::uuid)
             AND ((r.state = 'queued'
-                  AND (r.session_ref IS NULL OR r.last_claimed_by = ${workerId}::uuid))
+                  AND (NOT r.has_session OR r.last_claimed_by = ${workerId}::uuid))
                  OR (r.state = 'failed' AND r.delivery_requested AND r.claimed_by IS NULL
                      AND r.last_claimed_by = ${workerId}::uuid))
             AND (SELECT count(*) FROM runs a
@@ -764,10 +824,17 @@ export class PrismaRunRepository implements RunRepository {
         await tx.runMessage.create({ data: { runId: run.id, seq: ++seq, ...messageRow(message) } });
       }
     }
+    let phaseId: Promise<string> | undefined;
+    const phase = () => (phaseId ??= currentPhaseOf(tx, run.id));
+    const phaseData = changedPhaseColumns(changes.fields);
+    if (phaseData !== null) {
+      await tx.runPhase.update({ where: { id: await phase() }, data: phaseData });
+    }
     for (const step of changes.steps ?? []) {
       await tx.runStep.create({
         data: {
           runId: run.id,
+          phaseId: await phase(),
           index: step.index,
           kind: step.kind,
           result: step.result as Prisma.InputJsonValue,
@@ -800,7 +867,7 @@ export class PrismaRunRepository implements RunRepository {
 
   async listPendingResumes(): Promise<{ runId: string; startedBy: string | null }[]> {
     const rows = await this.db.run.findMany({
-      where: { state: 'queued', sessionRef: { not: null } },
+      where: { state: 'queued', hasSession: true },
       select: { id: true, lastClaimedBy: true },
     });
     return rows.map((row) => ({ runId: row.id, startedBy: row.lastClaimedBy }));
@@ -813,7 +880,8 @@ export class PrismaRunRepository implements RunRepository {
         id: true,
         projectId: true,
         provider: true,
-        sessionRef: true,
+        currentPhase: true,
+        phases: { select: { position: true, sessionRef: true } },
         state: true,
         finishedAt: true,
         pullRequestNumber: true,
@@ -830,7 +898,8 @@ export class PrismaRunRepository implements RunRepository {
         runId: row.id,
         projectId: row.projectId,
         provider: row.provider as Provider,
-        sessionRef: row.sessionRef,
+        sessionRef:
+          row.phases.find((phase) => phase.position === row.currentPhase)?.sessionRef ?? null,
         state: row.state,
         finishedAt: row.finishedAt,
         hasPullRequest: row.pullRequestNumber !== null,
