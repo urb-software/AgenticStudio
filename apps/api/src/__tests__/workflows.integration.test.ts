@@ -353,6 +353,37 @@ describe('workflows API (PostgreSQL + Redis via Testcontainers)', () => {
       expect((await getAgent('default-codex')).body.usedByWorkflows).toEqual([]);
     });
 
+    it('leaves the list and the detail unchanged by a Workflow in the Draft', async () => {
+      await connectedWith('draft-isolated', {
+        ...AGENTS,
+        'workflows/ship/WORKFLOW.md': workflowFile('ship', SHIP_ITEMS),
+      });
+      const draftPut = (path: string, text: string) =>
+        asOperator(http().put('/api/agents/definitions-repository/draft/files')).send({
+          path,
+          text,
+        });
+      const before = { list: (await listWorkflows()).body, one: (await getWorkflow('ship')).body };
+
+      expect(
+        (
+          await draftPut(
+            'workflows/ship/WORKFLOW.md',
+            workflowFile('ship', SHIP_ITEMS, 'hooks: x\n'),
+          )
+        ).status,
+      ).toBe(200);
+      expect(
+        (await draftPut('workflows/drafted/WORKFLOW.md', workflowFile('drafted', SHIP_ITEMS)))
+          .status,
+      ).toBe(200);
+
+      expect((await listWorkflows()).body).toEqual(before.list);
+      expect((await getWorkflow('ship')).body).toEqual(before.one);
+      expect((await getWorkflow('drafted')).status).toBe(404);
+      expect(names((await listWorkflows()).body)).toEqual(['ship']);
+    });
+
     it('answers a 404 problem for an unknown name and for names that are not Workflow names', async () => {
       await connectedWith('names', {
         ...AGENTS,

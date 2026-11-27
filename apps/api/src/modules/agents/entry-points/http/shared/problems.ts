@@ -237,7 +237,7 @@ export function writeRefused(): ProblemException {
   });
 }
 
-/** 422 while the Draft has any problem of a skill or agent it touches: each one is listed. */
+/** 422 while the Draft has any problem of a skill, agent or workflow it touches: each one is listed. */
 export function publishProblems(
   problems: readonly {
     agent: string;
@@ -248,6 +248,13 @@ export function publishProblems(
   }[],
   skillProblems: readonly {
     skill: string;
+    code: string;
+    path: string;
+    key: string | null;
+    message: string;
+  }[] = [],
+  workflowProblems: readonly {
+    workflow: string;
     code: string;
     path: string;
     key: string | null;
@@ -268,6 +275,13 @@ export function publishProblems(
       })),
       skillProblems: skillProblems.map(({ skill, code, path, key, message }) => ({
         skill,
+        code,
+        path,
+        key,
+        message,
+      })),
+      workflowProblems: workflowProblems.map(({ workflow, code, path, key, message }) => ({
+        workflow,
         code,
         path,
         key,
@@ -296,13 +310,13 @@ export function publishFailed(): ProblemException {
   });
 }
 
-/** 422 when the Draft changes paths outside `agents/` and `skills/`; the paths are listed. */
+/** 422 when the Draft changes paths outside `agents/`, `skills/` and `workflows/`; the paths are listed. */
 export function publishPathOutsideDefinitions(paths: readonly string[]): ProblemException {
   return new ProblemException(HttpStatus.UNPROCESSABLE_ENTITY, {
     type: AGENTS_PROBLEM_TYPES.publishPathOutsideDefinitions,
-    title: 'Paths outside agents/ and skills/',
+    title: 'Paths outside agents/, skills/ and workflows/',
     detail:
-      'Publishing writes only below agents/ and skills/. Revert the changes outside them, or make them with your own Git.',
+      'Publishing writes only below agents/, skills/ and workflows/. Revert the changes outside them, or make them with your own Git.',
     extensions: { paths },
   });
 }

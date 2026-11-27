@@ -2,7 +2,9 @@ import {
   AGENTS_DIRECTORY,
   findAgentFolders,
   findSkillFolders,
+  findWorkflowFolders,
   SKILLS_DIRECTORY,
+  WORKFLOWS_DIRECTORY,
 } from '@agentic-studio/agent-definitions';
 import { Inject, Injectable } from '@nestjs/common';
 import {
@@ -42,6 +44,8 @@ export interface AgentFileEntry {
   agent: string | null;
   /** The skill folder the entry belongs to, or `null` for any other part of the Repository. */
   skill: string | null;
+  /** The workflow folder the entry belongs to, or `null` for any other part of the Repository. */
+  workflow: string | null;
 }
 
 export interface ListAgentFilesResult {
@@ -55,8 +59,9 @@ export interface ListAgentFilesResult {
 
 /**
  * The whole definitions Repository as a tree, at its last fetched commit, from the Clone's object
- * store. It names which entries belong to an agent or a skill folder and judges nothing; the
- * validation of an agent is the agent list, that of a skill the skill list.
+ * store. It names which entries belong to an agent, a skill or a workflow folder and judges nothing; the
+ * validation of an agent is the agent list, that of a skill the skill list, that of a workflow the
+ * workflow list.
  */
 @Injectable()
 export class ListAgentFilesHandler {
@@ -96,6 +101,10 @@ export class ListAgentFilesHandler {
       SKILLS_DIRECTORY,
       new Set(findSkillFolders(tree.entries).map((folder) => folder.name)),
     );
+    const workflowOf = folderOf(
+      WORKFLOWS_DIRECTORY,
+      new Set(findWorkflowFolders(tree.entries).map((folder) => folder.name)),
+    );
     const entries = tree.entries.flatMap((entry): AgentFileEntry[] =>
       entry.kind === 'other'
         ? []
@@ -106,6 +115,7 @@ export class ListAgentFilesHandler {
               size: entry.size,
               agent: agentOf(entry.path),
               skill: skillOf(entry.path),
+              workflow: workflowOf(entry.path),
             },
           ],
     );

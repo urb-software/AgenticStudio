@@ -1,4 +1,8 @@
-import { PROBLEM_CODES, SKILL_PROBLEM_CODES } from '@agentic-studio/agent-definitions';
+import {
+  PROBLEM_CODES,
+  SKILL_PROBLEM_CODES,
+  WORKFLOW_PROBLEM_CODES,
+} from '@agentic-studio/agent-definitions';
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 import type { AgentDraftView } from '../../../application/agent-draft-reader.js';
@@ -17,6 +21,12 @@ const draftFileSchema = z
       .string()
       .nullable()
       .describe('The skill folder the path is in (`skills/<name>/...`); null for any other path.'),
+    workflow: z
+      .string()
+      .nullable()
+      .describe(
+        'The workflow folder the path is in (`workflows/<name>/...`); null for any other path.',
+      ),
   })
   .meta({ id: 'AgentDraftFile' });
 
@@ -57,6 +67,27 @@ const draftSkillProblemSchema = z
   })
   .meta({ id: 'AgentDraftSkillProblem' });
 
+const draftWorkflowProblemSchema = z
+  .object({
+    workflow: z.string().describe('The workflow folder the problem is in.'),
+    code: z.enum(WORKFLOW_PROBLEM_CODES as [string, ...string[]]),
+    path: z
+      .string()
+      .describe('The file or folder the problem is about, relative to the Repository root.'),
+    key: z
+      .string()
+      .nullable()
+      .describe(
+        'The front matter key, when the problem is about one; for the agent reasons, the agent name.',
+      ),
+    message: z
+      .string()
+      .describe(
+        'Fixed wording per code; it may quote a key, an item id or an agent name, never other values or file content.',
+      ),
+  })
+  .meta({ id: 'AgentDraftWorkflowProblem' });
+
 /** The Draft and what it would make of the agents; every write answers it too. */
 export const agentDraftResponseSchema = z
   .object({
@@ -90,11 +121,20 @@ export const agentDraftResponseSchema = z
         'What the shared validation finds in each skill folder the Draft touches, with the ' +
           'Draft laid over the base tree. Empty when the Clone cannot be read.',
       ),
+    workflowProblems: z
+      .array(draftWorkflowProblemSchema)
+      .describe(
+        'What the shared validation finds in each workflow folder the Draft touches and in ' +
+          'each workflow that names an agent the Draft changes, with the Draft laid over the ' +
+          'base tree; an agent that is missing or invalid in the Draft gives ' +
+          '`phase_agent_missing` or `phase_agent_invalid`. Empty when the Clone cannot be read.',
+      ),
     judged: z
       .boolean()
       .describe(
-        'False when the Draft could not be judged: `problems` and `skillProblems` are then ' +
-          'empty without meaning that the Draft is clean, and a publish is refused.',
+        'False when the Draft could not be judged: `problems`, `skillProblems` and ' +
+          '`workflowProblems` are then empty without meaning that the Draft is clean, and a ' +
+          'publish is refused.',
       ),
     notJudgedReason: z
       .enum(['clone_unreadable', 'over_limits'])
@@ -119,12 +159,13 @@ export function toAgentDraftResponse(view: AgentDraftView) {
     baseCommit: view.baseCommit,
     currentCommit: view.currentCommit,
     version: view.version,
-    files: view.files.map(({ path, change, size, movedFrom, skill }) => ({
+    files: view.files.map(({ path, change, size, movedFrom, skill, workflow }) => ({
       path,
       change,
       size,
       movedFrom,
       skill,
+      workflow,
     })),
     problems: view.problems.map(({ agent, code, path, key, message }) => ({
       agent,
@@ -135,6 +176,13 @@ export function toAgentDraftResponse(view: AgentDraftView) {
     })),
     skillProblems: view.skillProblems.map(({ skill, code, path, key, message }) => ({
       skill,
+      code,
+      path,
+      key,
+      message,
+    })),
+    workflowProblems: view.workflowProblems.map(({ workflow, code, path, key, message }) => ({
+      workflow,
       code,
       path,
       key,

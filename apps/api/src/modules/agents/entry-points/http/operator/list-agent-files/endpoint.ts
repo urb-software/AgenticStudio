@@ -17,10 +17,10 @@ export class ListAgentFilesEndpoint {
     operationId: 'listAgentFiles',
     description:
       'The whole definitions Repository as a tree at its last fetched commit: path, kind ' +
-      '(`file`, `symlink` or `submodule`), size and the agent folder and the skill folder each entry belongs to. ' +
+      '(`file`, `symlink` or `submodule`), size and the agent, skill and workflow folder each entry belongs to. ' +
       'At most 2,000 entries; `truncated` says when there are more. Read from Git, never from a ' +
       'working tree; links and submodules are listed and never followed. Judges nothing: the ' +
-      'problems of an agent come from the agent list, those of a skill from the skill list.',
+      'problems of an agent come from the agent list, those of a skill from the skill list, those of a workflow from the workflow list.',
   })
   @ZodResponse({ status: 200, type: AgentFilesResponseDto })
   async list() {

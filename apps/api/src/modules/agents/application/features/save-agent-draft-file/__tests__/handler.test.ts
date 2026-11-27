@@ -45,7 +45,16 @@ describe('SaveAgentDraftFileHandler', () => {
       baseCommit: BASE_COMMIT,
       currentCommit: BASE_COMMIT,
       version: 1,
-      files: [{ path: 'docs/new.md', change: 'added', size: 5, movedFrom: null, skill: null }],
+      files: [
+        {
+          path: 'docs/new.md',
+          change: 'added',
+          size: 5,
+          movedFrom: null,
+          skill: null,
+          workflow: null,
+        },
+      ],
     });
     expect(repository.contents.get('docs/new.md')).toEqual(bytes('hello'));
     expect(repository.stored.baseCommit).toBe(BASE_COMMIT);
@@ -74,7 +83,14 @@ describe('SaveAgentDraftFileHandler', () => {
     const view = await handler.execute({ path: 'docs/new.md', content: bytes('second!') });
 
     expect(view.files).toEqual([
-      { path: 'docs/new.md', change: 'added', size: 7, movedFrom: null, skill: null },
+      {
+        path: 'docs/new.md',
+        change: 'added',
+        size: 7,
+        movedFrom: null,
+        skill: null,
+        workflow: null,
+      },
     ]);
     expect(repository.contents.get('docs/new.md')).toEqual(bytes('second!'));
     expect(view.version).toBe(2);

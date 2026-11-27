@@ -36,7 +36,7 @@ const listed = (entries: DefinitionsTreeEntry[], truncated = false): Definitions
 });
 
 describe('ListAgentFilesHandler', () => {
-  it('lists the whole tree at the last fetched commit and names the agent and the skill of each entry', async () => {
+  it('lists the whole tree at the last fetched commit and names the agent, the skill and the workflow of each entry', async () => {
     const { handler, fake } = scripted({
       tree: listed([
         file('README.md', 3),
@@ -46,6 +46,9 @@ describe('ListAgentFilesHandler', () => {
         { path: 'agents/vendored', kind: 'submodule', size: 0 },
         file('agents/stray.txt', 1),
         file('skills/s/SKILL.md', 6),
+        file('workflows/w/WORKFLOW.md', 9),
+        file('workflows/w/deep/a.md', 2),
+        file('workflows/stray.txt', 1),
       ]),
     });
 
@@ -57,13 +60,14 @@ describe('ListAgentFilesHandler', () => {
       repository: { state: 'ready', note: null },
       truncated: false,
       entries: [
-        { path: 'README.md', kind: 'file', size: 3, agent: null, skill: null },
+        { path: 'README.md', kind: 'file', size: 3, agent: null, skill: null, workflow: null },
         {
           path: 'agents/reviewer/AGENT.md',
           kind: 'file',
           size: 40,
           agent: 'reviewer',
           skill: null,
+          workflow: null,
         },
         {
           path: 'agents/reviewer/notes/a.txt',
@@ -71,11 +75,64 @@ describe('ListAgentFilesHandler', () => {
           size: 5,
           agent: 'reviewer',
           skill: null,
+          workflow: null,
         },
-        { path: 'agents/linked/AGENT.md', kind: 'symlink', size: 0, agent: 'linked', skill: null },
-        { path: 'agents/vendored', kind: 'submodule', size: 0, agent: 'vendored', skill: null },
-        { path: 'agents/stray.txt', kind: 'file', size: 1, agent: null, skill: null },
-        { path: 'skills/s/SKILL.md', kind: 'file', size: 6, agent: null, skill: 's' },
+        {
+          path: 'agents/linked/AGENT.md',
+          kind: 'symlink',
+          size: 0,
+          agent: 'linked',
+          skill: null,
+          workflow: null,
+        },
+        {
+          path: 'agents/vendored',
+          kind: 'submodule',
+          size: 0,
+          agent: 'vendored',
+          skill: null,
+          workflow: null,
+        },
+        {
+          path: 'agents/stray.txt',
+          kind: 'file',
+          size: 1,
+          agent: null,
+          skill: null,
+          workflow: null,
+        },
+        {
+          path: 'skills/s/SKILL.md',
+          kind: 'file',
+          size: 6,
+          agent: null,
+          skill: 's',
+          workflow: null,
+        },
+        {
+          path: 'workflows/w/WORKFLOW.md',
+          kind: 'file',
+          size: 9,
+          agent: null,
+          skill: null,
+          workflow: 'w',
+        },
+        {
+          path: 'workflows/w/deep/a.md',
+          kind: 'file',
+          size: 2,
+          agent: null,
+          skill: null,
+          workflow: 'w',
+        },
+        {
+          path: 'workflows/stray.txt',
+          kind: 'file',
+          size: 1,
+          agent: null,
+          skill: null,
+          workflow: null,
+        },
       ],
     });
   });

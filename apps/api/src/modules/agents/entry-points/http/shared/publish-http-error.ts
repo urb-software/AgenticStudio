@@ -47,7 +47,7 @@ export function toPublishHttpError(error: unknown): unknown {
   }
   if (error instanceof PublishNotJudgedError) return draftNotJudged();
   if (error instanceof PublishProblemsError) {
-    return publishProblems(error.problems, error.skillProblems);
+    return publishProblems(error.problems, error.skillProblems, error.workflowProblems);
   }
   if (error instanceof PublishFailedError) {
     return error.reason === 'failed' ? publishFailed() : agentFilesUnreadable();
