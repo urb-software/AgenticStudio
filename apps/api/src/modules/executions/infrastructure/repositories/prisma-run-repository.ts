@@ -650,19 +650,6 @@ export class PrismaRunRepository implements RunRepository {
   constructor(@Inject(DATABASE_CLIENT) private readonly db: Executor) {}
 
   async add(run: Run): Promise<Run> {
-    try {
-      return await this.insert(run);
-    } catch (error) {
-      // Only a Run that starts waiting (at a Checkpoint) holds a place, so only it can meet the
-      // partial unique index of one active Run per project.
-      if (isUniqueConstraintViolation(error) && run.checkpointItem !== null) {
-        throw new RunSlotTakenError('project');
-      }
-      throw error;
-    }
-  }
-
-  private async insert(run: Run): Promise<Run> {
     const row = await this.db.run.create({
       data: {
         // The creation time is the database's (ordering by it must not depend on the API's clock).
@@ -695,14 +682,7 @@ export class PrismaRunRepository implements RunRepository {
         startCommit: run.startCommit,
         remoteUrl: run.remoteUrl,
         integrationBranch: run.delivery.integrationBranch,
-        state: run.lifecycle.state,
-        ...(run.checkpointItem === null
-          ? {}
-          : {
-              checkpointItem: run.checkpointItem,
-              startedAt: run.lifecycle.startedAt,
-              waitingSince: run.progress.waitingSince,
-            }),
+        state: 'queued',
         limitStepMinutes: run.progress.limits.stepMinutes,
         limitMaxSteps: run.progress.limits.maxSteps,
         limitWaitingDays: run.progress.limits.waitingDays,

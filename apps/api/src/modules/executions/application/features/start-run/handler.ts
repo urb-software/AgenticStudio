@@ -41,6 +41,10 @@ import { WORKER_STATUS_STORE, type WorkerStatusStore } from '../../ports/worker-
 /** Why a Workflow with a review Phase cannot start a Run yet. */
 export const WORKFLOW_ITEMS_NOT_SUPPORTED = 'review Phases are not supported yet';
 
+/** Why a Workflow that starts with a Checkpoint cannot start a Run: there is nothing to look at. */
+export const FIRST_ITEM_NOT_A_PHASE =
+  'the first item of a Workflow must be a Phase, not a Checkpoint';
+
 export interface StartRunInput {
   projectId: string;
   /** The agent by name; absent, the Default agent of `provider`. */
@@ -157,6 +161,9 @@ export class StartRunHandler {
     if (plan.items.some((item) => item.kind === 'review')) {
       throw new WorkflowNotUsableError(WORKFLOW_ITEMS_NOT_SUPPORTED);
     }
+    if (this.plans.first(plan).kind !== 'phase') {
+      throw new WorkflowNotUsableError(FIRST_ITEM_NOT_A_PHASE);
+    }
     const phaseAgents: ResolvedAgent[] = [];
     for (const item of plan.items) {
       if (item.kind === 'checkpoint') continue;
@@ -182,8 +189,6 @@ export class StartRunHandler {
       }
     }
     const first = phaseAgents[0]!;
-    // A Checkpoint before the first Phase makes the Run wait for the operator at once.
-    const start = this.plans.first(plan);
     return {
       id: (
         await this.runs.add(
@@ -195,7 +200,6 @@ export class StartRunHandler {
             workflow: {
               record: { name: plan.name, commit: plan.commit, items: plan.items },
               phaseAgents,
-              ...(start.kind === 'checkpoint' ? { startsAtCheckpoint: start.item } : {}),
             },
             task: Task.of(input.task),
             startCommit: startPoint.startCommit,

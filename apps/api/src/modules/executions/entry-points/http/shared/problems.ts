@@ -32,7 +32,6 @@ export const EXECUTIONS_PROBLEM_TYPES = {
   deliveryNotRetryable: 'urn:agentic-studio:problem:delivery-not-retryable',
   runNotWaiting: 'urn:agentic-studio:problem:run-not-waiting',
   runNotAtCheckpoint: 'urn:agentic-studio:problem:run-not-at-checkpoint',
-  startSlotTaken: 'urn:agentic-studio:problem:start-slot-taken',
   runNotResumable: 'urn:agentic-studio:problem:run-not-resumable',
   resumeSlotTaken: 'urn:agentic-studio:problem:resume-slot-taken',
   followUpNotAllowed: 'urn:agentic-studio:problem:follow-up-not-allowed',
@@ -357,16 +356,6 @@ export function resumeSlotTaken(detail: string): ProblemException {
     type: EXECUTIONS_PROBLEM_TYPES.resumeSlotTaken,
     title: 'No free place to resume the run',
     detail,
-  });
-}
-
-export function startSlotTaken(): ProblemException {
-  return new ProblemException(HttpStatus.CONFLICT, {
-    type: EXECUTIONS_PROBLEM_TYPES.startSlotTaken,
-    title: 'Another run of this project is active',
-    detail:
-      'Another run of this project is active, and this Workflow waits for you before its first ' +
-      'Phase, so it needs the place. Start it again when that run has ended.',
   });
 }
 

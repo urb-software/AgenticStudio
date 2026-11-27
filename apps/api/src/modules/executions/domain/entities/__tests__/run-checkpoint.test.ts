@@ -28,7 +28,7 @@ const RECORD: RunWorkflowData = {
   ],
 };
 
-function start(record: RunWorkflowData = RECORD, startsAtCheckpoint?: number): Run {
+function start(record: RunWorkflowData = RECORD): Run {
   const agents = record.items.flatMap((item) =>
     item.kind === 'checkpoint' ? [] : [phaseAgent(item.agent)],
   );
@@ -40,7 +40,6 @@ function start(record: RunWorkflowData = RECORD, startsAtCheckpoint?: number): R
     workflow: {
       record,
       phaseAgents: agents,
-      ...(startsAtCheckpoint === undefined ? {} : { startsAtCheckpoint }),
     },
     task: Task.of('Add a health check'),
     startCommit: 'a'.repeat(40),
@@ -381,57 +380,27 @@ describe('the Workflow ending at a Checkpoint', () => {
   });
 });
 
-describe('a Workflow that starts at a Checkpoint', () => {
-  const FIRST: RunWorkflowData = {
-    ...RECORD,
-    items: [{ id: 'ready', kind: 'checkpoint', text: 'Ready?' }, ...RECORD.items.slice(0, 1)],
-  };
+describe('the Phase of a delivery that fails and is retried', () => {
+  it('is failed with the failed delivery and done once the retry succeeds', () => {
+    const run = running(start());
+    finishStep(run, 1, { kind: 'end' });
+    run.reportState(
+      WORKER,
+      { state: 'failed', failure: { code: 'delivery_failed', detail: 'no push' } },
+      LATER,
+    );
+    expect(run.phases[0]!.state).toBe('failed');
 
-  it('waits for the operator before any Phase, with no Working copy', () => {
-    const run = start(FIRST, 0);
-
-    expect(run.lifecycle.state).toBe('waiting_for_operator');
-    expect(run.progress.waitingSince).toEqual(AT);
-    expect(run.lifecycle.startedAt).toEqual(AT);
-    expect(run.waiting).toMatchObject({ reason: 'checkpoint', checkpoint: { id: 'ready' } });
-    expect(run.workingCopy).toBeNull();
-    expect(run.phases[0]!.state).toBe('pending');
-  });
-
-  it('starts the first Phase as a new Run when the operator continues, with the comment', () => {
-    const run = start(FIRST, 0);
-
-    run.continueFromCheckpoint({ kind: 'phase', position: 0 }, 'Take care.', LATER);
-
-    expect(run.lifecycle.state).toBe('queued');
-    expect(run.phasePending).toBe(false);
-    expect(run.phases[0]!.checkpointComment).toBe('Take care.');
-    expect(run.handOut()).toEqual({ kind: 'start' });
-    expect(HandOutRule.for(OTHER_WORKER).takes(run.handOutView())).toBe(true);
-  });
-
-  it('finishes without a pull request when the operator stops, as nothing was done', () => {
-    const run = start(FIRST, 0);
-
-    run.stopAtCheckpoint(LATER);
+    run.requestDeliveryRetry();
+    run.claimBy(WORKER, LATER);
+    run.reportState(
+      WORKER,
+      { state: 'succeeded', failure: null, delivery: { outcome: 'none' } },
+      LATER,
+    );
 
     expect(run.lifecycle.state).toBe('succeeded');
-    expect(run.delivery.state).toBe('none');
-    expect(run.lifecycle.finishedAt).toEqual(LATER);
-    expect(run.phases[0]!.state).toBe('pending');
-  });
-
-  it('is cancelled like any waiting Run', () => {
-    const run = start(FIRST, 0);
-
-    run.cancel(LATER);
-
-    expect(run.lifecycle.state).toBe('cancelled');
-    expect(run.pendingChanges().fields.checkpointItem).toBeNull();
-  });
-
-  it('refuses a place that is not a Checkpoint', () => {
-    expect(() => start(RECORD, 0)).toThrow(TypeError);
+    expect(run.phases[0]!.state).toBe('done');
   });
 });
 

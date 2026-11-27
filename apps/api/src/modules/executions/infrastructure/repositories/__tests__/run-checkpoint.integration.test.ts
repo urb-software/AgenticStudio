@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Run } from '../../../domain/entities/run.js';
-import { RunNotAtCheckpointError, RunSlotTakenError } from '../../../domain/errors/run-errors.js';
+import { RunNotAtCheckpointError } from '../../../domain/errors/run-errors.js';
 import { RUN_REPOSITORY, type RunRepository } from '../../../domain/repositories/run-repository.js';
 import type { RunWorkflowData } from '../../../domain/value-objects/run-workflow.js';
 import { Task } from '../../../domain/value-objects/task.js';
@@ -67,11 +67,7 @@ describe('a Run waiting at a Checkpoint is stored, moved and refused as the cont
     return row!.id;
   }
 
-  async function started(
-    projectId: string,
-    record: RunWorkflowData = RECORD,
-    startsAtCheckpoint?: number,
-  ): Promise<string> {
+  async function started(projectId: string, record: RunWorkflowData = RECORD): Promise<string> {
     const planner = phaseAgent('planner');
     const phaseAgents = record.items.flatMap((item) =>
       item.kind === 'checkpoint' ? [] : [phaseAgent(item.agent)],
@@ -85,7 +81,6 @@ describe('a Run waiting at a Checkpoint is stored, moved and refused as the cont
         workflow: {
           record,
           phaseAgents,
-          ...(startsAtCheckpoint === undefined ? {} : { startsAtCheckpoint }),
         },
         task: Task.of('Add a health check'),
         startCommit: 'a'.repeat(40),
@@ -317,57 +312,5 @@ describe('a Run waiting at a Checkpoint is stored, moved and refused as the cont
       RunNotAtCheckpointError,
     );
     expect(await runs().claimNext(WORKER, NOW)).toBeNull();
-  });
-
-  describe('a Workflow that starts at a Checkpoint', () => {
-    const FIRST: RunWorkflowData = {
-      ...RECORD,
-      items: [{ id: 'ready', kind: 'checkpoint', text: 'Ready?' }, ...RECORD.items.slice(0, 1)],
-    };
-
-    it('is stored waiting, with no Working copy, and is handed to no worker', async () => {
-      const id = await started(await project(), FIRST, 0);
-
-      expect(await row(id)).toMatchObject({
-        state: 'waiting_for_operator',
-        checkpoint_item: 0,
-        claimed_by: null,
-      });
-      expect((await row(id)).waiting_since).not.toBeNull();
-      expect(await runs().claimNext(WORKER, NOW)).toBeNull();
-    });
-
-    it('refuses to start while another Run of the Project is active, which holds the place', async () => {
-      const projectId = await project();
-      await started(projectId, FIRST, 0);
-
-      await expect(started(projectId, FIRST, 0)).rejects.toBeInstanceOf(RunSlotTakenError);
-    });
-
-    it('starts its first Phase as a new Run when the operator continues', async () => {
-      const id = await started(await project(), FIRST, 0);
-
-      await runs().change(id, (run) =>
-        run.continueFromCheckpoint({ kind: 'phase', position: 0 }, 'Take care.', LATER),
-      );
-
-      expect(await row(id)).toMatchObject({ state: 'queued', checkpoint_item: null });
-      const claimed = (await runs().claimNext(OTHER_WORKER, NOW))!;
-      expect(claimed.id).toBe(id);
-      expect(claimed.handOut()).toEqual({ kind: 'start' });
-      expect(claimed.phases[0]!.checkpointComment).toBe('Take care.');
-    });
-
-    it('finishes without a pull request when the operator stops', async () => {
-      const id = await started(await project(), FIRST, 0);
-
-      await runs().change(id, (run) => run.stopAtCheckpoint(LATER));
-
-      expect(await row(id)).toMatchObject({
-        state: 'succeeded',
-        delivery: 'none',
-        checkpoint_item: null,
-      });
-    });
   });
 });

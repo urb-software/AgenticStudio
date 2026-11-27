@@ -61,11 +61,7 @@ export interface StartedRun {
   /** The built-in Default agent of `provider` when absent. */
   agent?: RunAgentData;
   /** A Run of a Workflow: its record and the agent of each Phase; `agent` is the first one. */
-  workflow?: {
-    record: RunWorkflowData;
-    phaseAgents: readonly RunAgentData[];
-    startsAtCheckpoint?: number;
-  };
+  workflow?: { record: RunWorkflowData; phaseAgents: readonly RunAgentData[] };
   task: string;
   startCommit: string;
   remoteUrl: string;
@@ -124,15 +120,15 @@ export class InMemoryRunRepository implements RunRepository {
       currentPhase: run.currentPhase,
       workflow: run.workflow === null ? null : run.workflow.toData(),
       phasePending: false,
-      checkpointItem: run.checkpointItem,
+      checkpointItem: null,
       workflowEnded: false,
       task: run.task,
       startCommit: run.startCommit,
       remoteUrl: run.remoteUrl,
       integrationBranch: run.delivery.integrationBranch,
-      state: run.lifecycle.state,
+      state: 'queued' as const,
       createdAt: new Date(Date.UTC(2026, 10, 15, 10, 0, this.sequence++)),
-      startedAt: run.lifecycle.startedAt,
+      startedAt: null,
       finishedAt: null,
       failure: null,
       claimedBy: null,
@@ -141,7 +137,7 @@ export class InMemoryRunRepository implements RunRepository {
       limits: { ...run.progress.limits },
       cancelRequestedAt: null,
       cancellation: null,
-      waitingSince: run.progress.waitingSince,
+      waitingSince: null,
       stepStartedAt: null,
       releasedBy: null,
       delivery: null,

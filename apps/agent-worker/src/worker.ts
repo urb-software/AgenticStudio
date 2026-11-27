@@ -726,7 +726,10 @@ export class AgentWorker {
     );
     await outbox.drain();
     if (outbox.lost) logger.error(`Run ${run.runId} is no longer held by this worker.`);
-    else logger.info(`Run ${run.runId} delivered on retry: ${delivery.outcome}.`);
+    else
+      logger.info(
+        `Run ${run.runId} delivery finished (a retry, or a stop at a Checkpoint): ${delivery.outcome}.`,
+      );
   }
 
   /**
