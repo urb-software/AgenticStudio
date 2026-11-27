@@ -103,6 +103,86 @@ describe('a Follow-up to a finished Workflow Run', () => {
     });
   });
 
+  /** A Follow-up round whose first Phase has run to a Question, answered, and is now done. */
+  function secondRoundAfterQuestion(): Run {
+    const run = finished();
+    run.followUp('Again.', AT, AVAILABLE);
+    run.claimBy(WORKER, AT);
+    run.reportState(WORKER, { state: 'running', failure: null }, AT);
+    run.reportStep(
+      WORKER,
+      {
+        kind: 'resume',
+        index: 4,
+        result: { outcome: 'needs_input', summary: 'q' },
+        question: { text: 'Which one?' },
+        sessionRef: 'session-1',
+      },
+      WORKING_COPY,
+      [],
+      AT,
+    );
+    run.reportState(WORKER, { state: 'waiting_for_operator', failure: null }, AT);
+    run.answer('Take B.', AT);
+    run.claimBy(WORKER, AT);
+    run.reportState(WORKER, { state: 'running', failure: null }, AT);
+    run.reportStep(
+      WORKER,
+      { kind: 'resume', index: 5, result: { outcome: 'done', summary: 'done' } },
+      WORKING_COPY,
+      [],
+      AT,
+      { kind: 'phase', position: 1 },
+    );
+    return run;
+  }
+
+  it('gives a later Phase the Follow-up text, though a Question was answered in an earlier Phase', () => {
+    const run = secondRoundAfterQuestion();
+
+    expect(run.handOut()).toMatchObject({
+      kind: 'next_phase',
+      session: { sessionRef: 'session-2', answer: 'Again.', reason: 'follow_up' },
+      followUpNumber: 1,
+    });
+  });
+
+  it('gives a later Phase the Follow-up text after a usage-limit resume of an earlier Phase', () => {
+    const run = finished();
+    run.followUp('Again.', AT, AVAILABLE);
+    run.claimBy(WORKER, AT);
+    run.reportState(WORKER, { state: 'running', failure: null }, AT);
+    run.reportState(
+      WORKER,
+      {
+        state: 'failed',
+        failure: { code: 'usage_limit', detail: 'limit' },
+        sessionRef: 'session-1',
+      },
+      AT,
+    );
+    run.resumeAfterUsageLimit(AT, {
+      projectPlaceTaken: false,
+      serverPlacesTaken: 0,
+      environmentFileSnapshotKept: true,
+    });
+    run.claimBy(WORKER, AT);
+    run.reportState(WORKER, { state: 'running', failure: null }, AT);
+    run.reportStep(
+      WORKER,
+      { kind: 'resume', index: 4, result: { outcome: 'done', summary: 'done' } },
+      WORKING_COPY,
+      [],
+      AT,
+      { kind: 'phase', position: 1 },
+    );
+
+    expect(run.handOut()).toMatchObject({
+      kind: 'next_phase',
+      session: { sessionRef: 'session-2', answer: 'Again.', reason: 'follow_up' },
+    });
+  });
+
   it('is refused while a Provider of any Phase is not available', () => {
     const run = finished();
 

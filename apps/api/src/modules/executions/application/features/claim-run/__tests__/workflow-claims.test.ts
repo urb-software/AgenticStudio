@@ -120,6 +120,18 @@ describe('the claims of a Run started with a Workflow', () => {
     });
   });
 
+  it('cuts what the Phase before reported to the protocol limit, saying so', async () => {
+    await handler.execute({ workerId: WORKER });
+    await endFirstPhase('x'.repeat(25_000));
+
+    const claimed = await handler.execute({ workerId: WORKER });
+
+    const summary = claimed!.phase!.previous!.summary;
+    expect(summary.length).toBeLessThanOrEqual(20_000);
+    expect(summary.startsWith('xxx')).toBe(true);
+    expect(summary).toContain('[... cut');
+  });
+
   it('hands the next Phase only to the worker that has the Working copy', async () => {
     await handler.execute({ workerId: WORKER });
     await endFirstPhase();

@@ -361,7 +361,7 @@ export class Run {
     const resume = this.resumeMessage();
     const { sessionRef } = this.claim;
     if (this.phasePending) {
-      return this.nextPhaseHandOut(reachable, mergedBase, pullRequest, resume);
+      return this.nextPhaseHandOut(reachable, mergedBase, pullRequest);
     }
     if (resume !== null && sessionRef !== null) {
       // A Working copy the worker reported removed cannot be resumed.
@@ -399,7 +399,6 @@ export class Run {
     reachable: boolean,
     mergedBase: { mergedIntegrationCommit?: string },
     pullRequest: { pullRequestNumber?: number },
-    resume: RunResume | null,
   ): RunHandOut {
     const { workingCopy } = this;
     if (!reachable || !workingCopy || this.claim.workingCopyRemoved) {
@@ -408,10 +407,13 @@ export class Run {
     }
     const { sessionRef } = this.claim;
     const { followUpCount } = this.progress;
+    // The Follow-up the round started with, not the last message: a Question or a usage-limit
+    // resume in an earlier Phase of the round does not replace it.
+    const resume = this.conversation.currentFollowUp();
     return {
       kind: 'next_phase',
       runBranch: workingCopy.runBranch,
-      ...(resume !== null && sessionRef !== null
+      ...(resume !== undefined && sessionRef !== null
         ? { session: { sessionRef, answer: resume.text, reason: resume.reason } }
         : {}),
       ...(followUpCount > 0 ? { followUpNumber: followUpCount } : {}),
@@ -1220,8 +1222,10 @@ export class Run {
 
   /** What a Run's own state change does to the Phase it is working on. */
   private markCurrentPhase(state: RunState): void {
-    // The claim read the Phase as pending; once the Phase runs it is no longer waiting for one.
-    if (state === 'running' && this.phasePending) this.applyPosition({ phasePending: false });
+    // The claim read the Phase as pending; once it runs, or the Run ends, nothing waits for one.
+    if ((state === 'running' || isFinalRunState(state)) && this.phasePending) {
+      this.applyPosition({ phasePending: false });
+    }
     const phase = PHASES.get(this)![this.currentPhase]!;
     if (state === 'running' && phase.state !== 'running') {
       this.updatePhase(phase.position, { state: 'running' });

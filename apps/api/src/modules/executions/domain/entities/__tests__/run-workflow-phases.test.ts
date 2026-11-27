@@ -252,6 +252,31 @@ describe('a Run started with a Workflow', () => {
     expect(run.phasePending).toBe(false);
   });
 
+  it.each([
+    ['is cancelled while it waits', (run: Run) => run.cancel(AT)],
+    [
+      'is abandoned because its worker is gone',
+      (run: Run) => run.abandonResume({ code: 'worker_lost', detail: 'gone' } as never, AT),
+    ],
+    [
+      'fails at its claim',
+      (run: Run) => {
+        run.claimBy(WORKER, AT);
+        run.failPreparation(WORKER, { code: 'preparation_failed', detail: 'x' } as never, AT);
+      },
+    ],
+  ])('holds no pending Phase once the Run %s', (_case, end) => {
+    const run = running(workflowRun());
+    finishStep(run, 1, { kind: 'phase', position: 1 });
+    expect(run.phasePending).toBe(true);
+
+    end(run);
+
+    expect(run.lifecycle.isFinal).toBe(true);
+    expect(run.phasePending).toBe(false);
+    expect(run.pendingChanges().fields.phasePending).toBe(false);
+  });
+
   it('ends its Phase as failed with the Run', () => {
     const run = running(workflowRun());
 

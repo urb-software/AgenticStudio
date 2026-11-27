@@ -132,6 +132,18 @@ export class RunConversation {
     return new RunConversation(messages);
   }
 
+  /** The latest Follow-up request as the text a resumed session gets; none before a Follow-up. */
+  currentFollowUp(): RunResume | undefined {
+    const last = this.latestFollowUp;
+    if (last === undefined) return undefined;
+    return last.source === 'bring_up_to_date'
+      ? RunResume.of(
+          last.text === '' ? RunConversation.BRING_UP_TO_DATE_DEFAULT_TEXT : last.text,
+          'bring_up_to_date',
+        )
+      : RunResume.of(last.text, 'follow_up');
+  }
+
   /**
    * A resumed step that asks again adds a question after it, so it is never handed out twice. An
    * answer that does not follow a question is the usage-limit resume.

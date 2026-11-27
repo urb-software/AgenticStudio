@@ -93,6 +93,37 @@ describe('ReportRunStepHandler for a Run started with a Workflow', () => {
     expect(asked).toEqual([[WORKFLOW_RECORD, 0, 'done']]);
   });
 
+  it('uses the plan the Run recorded when the Workflow was changed or removed after the start', async () => {
+    const resolve = vi.fn(() =>
+      Promise.resolve({
+        status: 'resolved' as const,
+        plan: {
+          name: 'build-and-polish',
+          commit: 'd'.repeat(40),
+          items: [{ id: 'only', kind: 'work' as const, agent: 'other' }],
+        },
+      }),
+    );
+    const changed = new ReportRunStepHandler(
+      runs,
+      { now: () => T0 },
+      { forRun: () => Promise.resolve([]) },
+      { resolve, next: plans.next },
+    );
+
+    await changed.execute({
+      runId,
+      workerId: WORKER,
+      kind: 'start',
+      result: { outcome: 'done', summary: 'Reported.' },
+      workingCopy: WORKING_COPY,
+    });
+
+    expect(resolve).not.toHaveBeenCalled();
+    expect(asked).toEqual([[WORKFLOW_RECORD, 0, 'done']]);
+    expect((await runs.findById(runId))?.currentPhase).toBe(1);
+  });
+
   it('moves the Run to the Phase the Workflow names, saving the result with the Phase it ended', async () => {
     await report(runId);
 

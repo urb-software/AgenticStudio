@@ -321,7 +321,7 @@ export class ClaimRunHandler {
               previous: {
                 itemId: before.itemId ?? '',
                 agent: before.agent.name,
-                summary: before.summary ?? '',
+                summary: cutReport(before.summary ?? ''),
               },
             }),
       },
@@ -455,6 +455,15 @@ export class ClaimRunHandler {
       preparing.failPreparation(workerId, failure, now);
     });
   }
+}
+
+/** Redaction can lengthen a stored summary; the claim carries at most the protocol's limit. */
+const REPORT_MAX_LENGTH = 20_000;
+const REPORT_CUT_NOTE = '\n[... cut: the report reached the limit of Studio]';
+
+function cutReport(summary: string): string {
+  if (summary.length <= REPORT_MAX_LENGTH) return summary;
+  return summary.slice(0, REPORT_MAX_LENGTH - REPORT_CUT_NOTE.length) + REPORT_CUT_NOTE;
 }
 
 function errorName(error: unknown): string {
